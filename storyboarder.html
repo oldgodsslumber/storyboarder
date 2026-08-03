@@ -1,0 +1,3436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Storyboarder</title>
+<style>
+/* Storyboarder — app styles */
+
+:root,
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#15171c;
+  --bg2:#1c1f26;
+  --bg3:#242833;
+  --line:#333844;
+  --line2:#454c5c;
+  --fg:#e6e9ef;
+  --fg-dim:#98a0b0;
+  --accent:#5b8dff;
+  --accent2:#ffb347;
+  --on-accent:#0d1017;
+  --danger:#ff5f56;
+  --ok:#4ec98a;
+  --frame-bg:#0c0e12;
+  --input-bg:#12141a;
+  --shadow:rgba(0,0,0,.5);
+  --hl1:rgba(91,141,255,.20);
+  --hl2:rgba(91,141,255,.36);
+  --hl3:rgba(255,179,71,.42);
+  --card-radius:8px;
+}
+
+:root[data-theme="light"]{
+  color-scheme:light;
+  --bg:#f2f4f7;
+  --bg2:#ffffff;
+  --bg3:#e9ecf1;
+  --line:#d3d8e0;
+  --line2:#b3bac6;
+  --fg:#1a1d23;
+  --fg-dim:#5f6774;
+  --accent:#2563eb;
+  --accent2:#b45309;
+  --on-accent:#ffffff;
+  --danger:#dc2626;
+  --ok:#15803d;
+  --frame-bg:#dadee5;
+  --input-bg:#ffffff;
+  --shadow:rgba(20,25,35,.18);
+  --hl1:rgba(37,99,235,.15);
+  --hl2:rgba(37,99,235,.30);
+  --hl3:rgba(180,83,9,.30);
+}
+
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; background:var(--bg); color:var(--fg);
+  font:13px/1.45 "Segoe UI",system-ui,-apple-system,sans-serif;
+  overflow:hidden;
+}
+button,input,select,textarea{font:inherit;color:inherit}
+.hidden{display:none !important}
+.spacer{flex:1}
+
+#app{display:flex;flex-direction:column;height:100%}
+
+/* ---------- top bar ---------- */
+#topbar{
+  display:flex;align-items:center;gap:8px;padding:6px 10px;
+  background:var(--bg2);border-bottom:1px solid var(--line);flex:0 0 auto;
+  flex-wrap:wrap;
+}
+.brand{font-weight:700;letter-spacing:.4px;color:var(--accent);margin-right:4px}
+.proj-name{
+  background:transparent;border:1px solid transparent;border-radius:4px;
+  padding:3px 6px;width:190px;
+}
+.proj-name:hover{border-color:var(--line)}
+.proj-name:focus{outline:none;border-color:var(--accent);background:var(--bg)}
+.tb-group{display:flex;align-items:center;gap:4px}
+.tb-sep{width:1px;height:20px;background:var(--line)}
+.tb{
+  background:var(--bg3);border:1px solid var(--line);border-radius:4px;
+  padding:4px 9px;cursor:pointer;white-space:nowrap;
+}
+.tb:hover{border-color:var(--line2)}
+.tb.on{background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:600}
+.tb-select{background:var(--bg3);border:1px solid var(--line);border-radius:4px;padding:4px 6px;max-width:180px}
+.tb-check{display:flex;align-items:center;gap:3px;color:var(--fg-dim);cursor:pointer;user-select:none}
+.tb-check input{margin:0}
+.mini{
+  background:var(--bg3);border:1px solid var(--line);border-radius:4px;
+  padding:2px 7px;cursor:pointer;font-size:12px;
+}
+.mini:hover{border-color:var(--line2)}
+.mini.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:600}
+.mini.primary:disabled{opacity:.35;cursor:default}
+.mini.danger:hover{border-color:var(--danger);color:var(--danger)}
+.save-state{color:var(--fg-dim);font-size:11px;min-width:74px}
+.save-state.dirty{color:var(--accent2)}
+.save-state.saved{color:var(--ok)}
+
+/* ---------- layout ---------- */
+#main{flex:1;display:flex;min-height:0}
+#scenePanel{
+  flex:0 0 200px;background:var(--bg2);border-right:1px solid var(--line);
+  display:flex;flex-direction:column;min-height:0;
+}
+#boardPanel{flex:1;min-width:0;overflow:auto}
+#scriptPanel{
+  flex:0 0 380px;background:var(--bg2);border-left:1px solid var(--line);
+  display:flex;flex-direction:column;min-height:0;
+}
+.panel-head{
+  display:flex;align-items:center;gap:6px;padding:6px 8px;
+  border-bottom:1px solid var(--line);font-weight:600;color:var(--fg-dim);
+  text-transform:uppercase;font-size:11px;letter-spacing:.6px;flex:0 0 auto;
+}
+
+/* ---------- scene list ---------- */
+.scene-list{overflow:auto;padding:6px;flex:1}
+.scene-item{
+  border:1px solid var(--line);border-radius:6px;background:var(--bg3);
+  padding:6px 8px;margin-bottom:6px;cursor:grab;
+}
+.scene-item.sel{border-color:var(--accent)}
+.scene-item.drag-over{border-top:2px solid var(--accent2)}
+.scene-item .num{color:var(--accent);font-weight:700;margin-right:5px}
+.scene-item .ttl{font-weight:600}
+.scene-item .cnt{color:var(--fg-dim);font-size:11px;margin-top:2px}
+
+/* ---------- board ---------- */
+.board{padding:12px 14px 60px}
+.scene-block{margin-bottom:22px}
+.scene-head{
+  display:flex;align-items:flex-start;gap:8px;padding:6px 8px;
+  background:var(--bg2);border:1px solid var(--line);border-radius:6px;margin-bottom:10px;
+}
+.scene-head.sel{border-color:var(--accent)}
+.scene-head .snum{
+  color:var(--accent);font-weight:700;font-size:15px;padding-top:2px;min-width:58px;
+}
+.scene-head .fields{flex:1;display:flex;flex-direction:column;gap:4px}
+.scene-head input.sh-heading{
+  background:transparent;border:1px solid transparent;border-radius:4px;padding:2px 5px;
+  font-size:15px;font-weight:600;
+}
+.scene-head textarea.sh-desc{
+  background:transparent;border:1px solid transparent;border-radius:4px;padding:2px 5px;
+  resize:vertical;min-height:24px;color:var(--fg-dim);font-size:12px;
+}
+.scene-head input:hover,.scene-head textarea:hover{border-color:var(--line)}
+.scene-head input:focus,.scene-head textarea:focus{outline:none;border-color:var(--accent);background:var(--bg)}
+.scene-actions{display:flex;gap:4px}
+
+.shots{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-start}
+
+/* ---------- shot card ---------- */
+.card{
+  width:280px;background:var(--bg2);border:1px solid var(--line);
+  border-left:5px solid var(--line2);border-radius:var(--card-radius);
+  display:flex;flex-direction:column;overflow:hidden;
+}
+.card.sel{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.card.noshot{opacity:.72}
+.card.drag-over{outline:2px dashed var(--accent2);outline-offset:2px}
+.card.dragging{opacity:.4}
+.card-head{
+  display:flex;align-items:center;gap:6px;padding:4px 6px;background:var(--bg3);
+  border-bottom:1px solid var(--line);cursor:grab;
+}
+.card-head{flex-wrap:wrap}
+.card-head .code{font-weight:700;color:var(--accent);min-width:34px}
+.card-head select.type{
+  background:var(--bg2);border:1px solid var(--line);border-radius:4px;
+  padding:1px 4px;font-size:11px;flex:1 1 60px;min-width:0;max-width:104px;
+}
+.card-head .ch-actions{margin-left:auto;display:flex;gap:3px;align-items:center}
+.card-head .swatch{width:16px;height:16px;border:1px solid var(--line2);border-radius:3px;padding:0;background:none;cursor:pointer}
+.badge{
+  font-size:10px;padding:1px 5px;border-radius:9px;border:1px solid var(--line2);
+  color:var(--fg-dim);text-transform:uppercase;letter-spacing:.4px;
+}
+.badge.noshot{border-color:var(--accent2);color:var(--accent2)}
+
+.frame{
+  position:relative;background:var(--frame-bg);aspect-ratio:16/9;display:flex;
+  align-items:center;justify-content:center;cursor:pointer;overflow:hidden;
+}
+.frame img.shot-img{width:100%;height:100%;object-fit:contain;display:block}
+.frame img.anno{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;pointer-events:none}
+.frame .drop-hint{color:var(--fg-dim);font-size:11px;text-align:center;padding:8px}
+.frame.drag-over{outline:2px dashed var(--accent);outline-offset:-4px}
+.frame-tools{position:absolute;right:4px;top:4px;display:flex;gap:3px;opacity:0;transition:opacity .12s}
+.frame:hover .frame-tools{opacity:1}
+
+.box-label{
+  display:flex;align-items:center;gap:5px;padding:3px 6px 0;
+  font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--fg-dim);
+}
+.link-dot{width:7px;height:7px;border-radius:50%;background:var(--accent);flex:0 0 auto}
+.link-dot.free{background:var(--fg-dim)}
+.link-dot.broken{background:var(--danger)}
+.box-label .lbl-actions{margin-left:auto;display:flex;gap:4px}
+.box-label button{background:none;border:none;color:var(--fg-dim);cursor:pointer;padding:0;font-size:10px;text-decoration:underline}
+.box-label button:hover{color:var(--fg)}
+
+.script-box,.desc-box{
+  margin:2px 6px 6px;padding:5px 6px;border:1px solid var(--line);border-radius:5px;
+  background:var(--input-bg);white-space:pre-wrap;word-wrap:break-word;overflow:auto;
+}
+.script-box{min-height:44px;max-height:150px;font-size:12px}
+.script-box.broken{border-color:var(--danger);background:rgba(255,95,86,.07)}
+.script-box:empty::before{content:"(empty)";color:var(--fg-dim)}
+.desc-box{min-height:70px;max-height:260px;resize:vertical;width:calc(100% - 12px);font-size:12.5px}
+.script-box:focus,.desc-box:focus{outline:none;border-color:var(--accent)}
+
+.prompt-box{margin:0 6px 6px}
+.prompt-box .ptitle{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--accent2);padding:0 2px 2px;display:flex;gap:6px;align-items:center}
+.prompt-box textarea{
+  width:100%;min-height:58px;max-height:200px;background:var(--input-bg);color:var(--fg);
+  border:1px solid var(--line);border-radius:5px;padding:5px 6px;font-size:11.5px;resize:vertical;
+}
+.prompt-box textarea:focus{outline:none;border-color:var(--accent2)}
+
+.comments{margin:0 6px 6px;border-top:1px dashed var(--line);padding-top:5px}
+.comment{display:flex;gap:6px;align-items:flex-start;font-size:12px;padding:2px 0;border-bottom:1px dotted var(--line)}
+.comment .txt{flex:1;white-space:pre-wrap}
+.comment .when{color:var(--fg-dim);font-size:10px}
+.comment .del{background:none;border:none;color:var(--fg-dim);cursor:pointer}
+.comment .del:hover{color:var(--danger)}
+.comment-add{display:flex;gap:4px;margin-top:4px}
+.comment-add input{flex:1;background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:3px 5px}
+.comment-add input:focus{outline:none;border-color:var(--accent)}
+
+.card-foot{display:flex;gap:4px;padding:0 6px 6px}
+.add-shot{
+  width:280px;min-height:120px;border:1px dashed var(--line2);border-radius:var(--card-radius);
+  background:transparent;color:var(--fg-dim);cursor:pointer;font-size:13px;
+}
+.add-shot:hover{border-color:var(--accent);color:var(--fg)}
+
+/* ---------- master script ---------- */
+.script-hint{padding:6px 8px;color:var(--fg-dim);font-size:11px;border-bottom:1px solid var(--line)}
+.master-script{
+  flex:1;overflow:auto;padding:10px 12px;white-space:pre-wrap;word-wrap:break-word;
+  font-size:13.5px;line-height:1.6;background:var(--bg);
+}
+.master-script:focus{outline:none}
+.master-script .h1{background:var(--hl1);border-radius:2px}
+.master-script .h2{background:var(--hl2);border-radius:2px}
+.master-script .h3{background:var(--hl3);border-radius:2px}
+.master-script .hactive{box-shadow:inset 0 -2px 0 var(--accent2)}
+.capture-form{
+  border-top:1px solid var(--line);padding:8px;background:var(--bg3);
+  display:flex;flex-direction:column;gap:6px;
+}
+.capture-form .row{display:flex;gap:6px;align-items:center}
+.capture-form label{color:var(--fg-dim);font-size:11px;min-width:52px}
+.capture-form select{flex:1;background:var(--bg2);border:1px solid var(--line);border-radius:4px;padding:3px 5px}
+.capture-form .preview{
+  max-height:60px;overflow:auto;background:var(--bg);border:1px solid var(--line);
+  border-radius:4px;padding:4px 6px;font-size:11.5px;color:var(--fg-dim);
+}
+
+/* ---------- modal ---------- */
+.modal-back{
+  position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;
+  align-items:center;justify-content:center;z-index:50;
+}
+.modal{
+  background:var(--bg2);border:1px solid var(--line2);border-radius:8px;
+  min-width:420px;max-width:min(900px,92vw);max-height:88vh;display:flex;flex-direction:column;
+}
+.modal h2{margin:0;padding:10px 14px;border-bottom:1px solid var(--line);font-size:15px}
+.modal .body{padding:12px 14px;overflow:auto}
+.modal .foot{padding:10px 14px;border-top:1px solid var(--line);display:flex;gap:6px;justify-content:flex-end}
+.modal label.field{display:block;margin-bottom:10px}
+.modal label.field > span{display:block;color:var(--fg-dim);font-size:11px;margin-bottom:3px;text-transform:uppercase;letter-spacing:.5px}
+.modal input[type=text],.modal input[type=password],.modal textarea,.modal select{
+  width:100%;background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:5px 7px;
+}
+.modal textarea{resize:vertical;min-height:60px;font-size:12px}
+.modal input:focus,.modal textarea:focus,.modal select:focus{outline:none;border-color:var(--accent)}
+.model-row{border:1px solid var(--line);border-radius:6px;padding:8px;margin-bottom:8px;background:var(--bg3)}
+.model-row .top{display:flex;gap:6px;margin-bottom:6px}
+.model-row .top input{flex:1}
+.model-row .top select{width:96px}
+.ver-row{display:flex;gap:8px;align-items:center;padding:6px;border-bottom:1px solid var(--line)}
+.ver-row .vname{flex:1}
+.ver-row .vmeta{color:var(--fg-dim);font-size:11px}
+.ver-row.current{color:var(--accent)}
+
+/* drawing modal */
+.draw-wrap{position:relative;background:#000;line-height:0}
+.draw-wrap img{display:block;max-width:78vw;max-height:66vh}
+.draw-wrap canvas{position:absolute;inset:0;width:100%;height:100%;cursor:crosshair;touch-action:none}
+.draw-tools{display:flex;gap:8px;align-items:center;padding:8px 0 0}
+.draw-tools .sw{width:20px;height:20px;border-radius:50%;border:2px solid transparent;cursor:pointer}
+.draw-tools .sw.on{border-color:#fff}
+
+/* ---------- toast ---------- */
+#toastRoot{position:fixed;bottom:14px;left:50%;transform:translateX(-50%);z-index:80;display:flex;flex-direction:column;gap:6px;align-items:center}
+.toast{
+  background:var(--bg3);border:1px solid var(--line2);border-radius:6px;padding:6px 12px;
+  box-shadow:0 4px 18px var(--shadow);animation:tin .15s ease-out;
+}
+.toast.err{border-color:var(--danger);color:var(--danger)}
+@keyframes tin{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+/* ---------- prompt panel ---------- */
+#promptPanel{
+  flex:0 0 300px;background:var(--bg2);border-left:1px solid var(--line);
+  display:flex;flex-direction:column;min-height:0;overflow:auto;
+}
+.pp-body{padding:10px;display:flex;flex-direction:column;gap:12px}
+.pp-block{border:1px solid var(--line);border-radius:6px;background:var(--bg3);padding:8px}
+.pp-block > .t{
+  font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--fg-dim);margin-bottom:6px;
+}
+.pp-row{display:flex;align-items:center;gap:6px;margin-bottom:6px}
+.pp-row:last-child{margin-bottom:0}
+.pp-row label{flex:0 0 74px;color:var(--fg-dim);font-size:11px}
+.pp-row select,.pp-row input[type=text]{
+  flex:1;min-width:0;background:var(--input-bg);border:1px solid var(--line);
+  border-radius:4px;padding:3px 5px;
+}
+.pp-row select:focus{outline:none;border-color:var(--accent)}
+.pp-toggle{display:flex;align-items:center;gap:6px;padding:3px 0;cursor:pointer;user-select:none}
+.pp-toggle input{margin:0}
+.pp-note{color:var(--fg-dim);font-size:11px;line-height:1.5}
+.pp-note b{color:var(--fg)}
+.pp-actions{display:flex;gap:6px;flex-wrap:wrap}
+.pp-status{font-size:11px;color:var(--fg-dim);min-height:15px}
+.pp-status.err{color:var(--danger)}
+
+/* ---------- colour palette popover ---------- */
+.swatch{
+  width:16px;height:16px;border:1px solid var(--line2);border-radius:3px;
+  padding:0;cursor:pointer;flex:0 0 auto;
+}
+.pal-pop{
+  position:fixed;z-index:60;background:var(--bg2);border:1px solid var(--line2);
+  border-radius:6px;padding:6px;display:grid;grid-template-columns:repeat(5,20px);
+  gap:6px;box-shadow:0 6px 20px var(--shadow);
+}
+.pal-pop button{
+  width:20px;height:20px;border-radius:4px;border:2px solid transparent;cursor:pointer;padding:0;
+}
+.pal-pop button.on{border-color:var(--fg)}
+
+/* ---------- settings tabs ---------- */
+.tabs{display:flex;gap:4px;padding:8px 14px 0;border-bottom:1px solid var(--line);flex:0 0 auto}
+.tab{
+  background:none;border:1px solid transparent;border-bottom:none;border-radius:5px 5px 0 0;
+  padding:5px 12px;cursor:pointer;color:var(--fg-dim);margin-bottom:-1px;
+}
+.tab:hover{color:var(--fg)}
+.tab.on{background:var(--bg3);border-color:var(--line);color:var(--fg);font-weight:600}
+.tab-panel{display:none}
+.tab-panel.on{display:block}
+
+/* Native selects otherwise keep a platform-themed background that ignores the
+   theme, so draw our own chevron and let the rules above own the colour. */
+select,.tb-select,.pp-row select,.modal select,.capture-form select,.card-head select.type{
+  -webkit-appearance:none;appearance:none;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6'><path d='M0 0h10L5 6z' fill='%238b93a3'/></svg>");
+  background-repeat:no-repeat;background-position:right 6px center;
+  padding-right:20px;
+}
+
+/* comment mode tint */
+body.comment-mode #boardPanel{background:linear-gradient(180deg,rgba(255,179,71,.06),transparent 120px)}
+body.comment-mode .frame{cursor:crosshair}
+
+</style>
+</head>
+<body>
+
+<div id="app">
+
+  <header id="topbar">
+    <div class="brand">Storyboarder</div>
+
+    <input id="projName" class="proj-name" placeholder="Untitled project" spellcheck="false">
+
+    <div class="tb-group">
+      <button id="btnNew"  class="tb">New</button>
+      <button id="btnOpen" class="tb">Open…</button>
+      <button id="btnSaveAs" class="tb">Save as…</button>
+      <span id="saveState" class="save-state">no file</span>
+    </div>
+
+    <div class="tb-sep"></div>
+
+    <div class="tb-group">
+      <button id="btnScript"  class="tb toggle">Script</button>
+      <button id="btnComment" class="tb toggle">Comment mode</button>
+      <button id="btnPrompts" class="tb toggle">Prompts</button>
+    </div>
+
+    <div class="tb-sep"></div>
+
+    <div class="tb-group">
+      <button id="btnVersions" class="tb"><span id="verLabel">v1</span> ▾</button>
+      <button id="btnPdf" class="tb">PDF</button>
+      <button id="btnSettings" class="tb">Settings</button>
+      <button id="btnTheme" class="tb" title="Light / dark">◐</button>
+    </div>
+  </header>
+
+  <main id="main">
+
+    <aside id="scenePanel">
+      <div class="panel-head">
+        <span>Scenes</span>
+        <button id="btnAddScene" class="mini">+ Scene</button>
+      </div>
+      <div id="sceneList" class="scene-list"></div>
+    </aside>
+
+    <section id="boardPanel">
+      <div id="board" class="board"></div>
+    </section>
+
+    <aside id="scriptPanel" class="hidden">
+      <div class="panel-head">
+        <span>Master script</span>
+        <span class="spacer"></span>
+        <button id="btnCapture" class="mini primary" disabled>Capture shot</button>
+      </div>
+      <div class="script-hint">
+        Select text below, then <b>Capture shot</b>. Highlighted text is already driving a shot.
+      </div>
+      <div id="masterScript" class="master-script" contenteditable="true" spellcheck="true"></div>
+      <div id="captureForm" class="capture-form hidden"></div>
+    </aside>
+
+    <aside id="promptPanel" class="hidden">
+      <div class="panel-head"><span>Prompts</span></div>
+      <div id="promptBody" class="pp-body"></div>
+    </aside>
+
+  </main>
+
+  <div id="modalRoot"></div>
+  <div id="toastRoot"></div>
+</div>
+
+<script>
+/* ===== js/theme.js ===== */
+/* theme.js — light / dark. Runs before anything else so there is no flash.
+ * The choice is a browser preference, not project data — it never touches the file.
+ */
+window.SB = window.SB || {};
+(function (SB) {
+  'use strict';
+
+  const KEY = 'sb.theme';
+
+  function stored() {
+    try { return localStorage.getItem(KEY); } catch (e) { return null; }
+  }
+
+  function systemPref() {
+    return (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches)
+      ? 'light' : 'dark';
+  }
+
+  function current() { return document.documentElement.getAttribute('data-theme') || 'dark'; }
+
+  function apply(t) {
+    document.documentElement.setAttribute('data-theme', t === 'light' ? 'light' : 'dark');
+    const b = document.getElementById('btnTheme');
+    if (b) {
+      b.textContent = t === 'light' ? '☾' : '☀';
+      b.title = t === 'light' ? 'Switch to dark' : 'Switch to light';
+    }
+  }
+
+  function set(t) {
+    try { localStorage.setItem(KEY, t); } catch (e) { }
+    apply(t);
+  }
+
+  function toggle() { set(current() === 'light' ? 'dark' : 'light'); }
+
+  apply(stored() || systemPref());
+  document.addEventListener('DOMContentLoaded', function () { apply(current()); });
+
+  SB.Theme = { apply: apply, set: set, toggle: toggle, current: current };
+
+})(window.SB);
+
+</script>
+<script>
+/* ===== js/util.js ===== */
+/* util.js — small shared helpers */
+window.SB = window.SB || {};
+(function (SB) {
+  'use strict';
+
+  let _seq = 0;
+  SB.uid = function (p) {
+    _seq++;
+    return (p || 'id') + '_' + Date.now().toString(36) + '_' + _seq.toString(36) +
+      Math.random().toString(36).slice(2, 6);
+  };
+
+  SB.debounce = function (fn, ms) {
+    let t = null;
+    const wrapped = function () {
+      const args = arguments, self = this;
+      clearTimeout(t);
+      t = setTimeout(function () { t = null; fn.apply(self, args); }, ms);
+    };
+    wrapped.flush = function () { if (t) { clearTimeout(t); t = null; fn(); } };
+    return wrapped;
+  };
+
+  SB.esc = function (s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  };
+
+  SB.clone = function (o) { return JSON.parse(JSON.stringify(o)); };
+
+  SB.clamp = function (v, a, b) { return v < a ? a : (v > b ? b : v); };
+
+  /* A, B, ... Z, AA, AB ... */
+  SB.letters = function (i) {
+    let s = '';
+    i = i | 0;
+    do { s = String.fromCharCode(65 + (i % 26)) + s; i = Math.floor(i / 26) - 1; }
+    while (i >= 0);
+    return s;
+  };
+
+  SB.fmtDate = function (ts) {
+    const d = new Date(ts);
+    return d.toLocaleString(undefined, {
+      year: 'numeric', month: 'short', day: 'numeric',
+      hour: '2-digit', minute: '2-digit'
+    });
+  };
+
+  SB.toast = function (msg, isErr) {
+    const root = document.getElementById('toastRoot');
+    if (!root) return;
+    const el = document.createElement('div');
+    el.className = 'toast' + (isErr ? ' err' : '');
+    el.textContent = msg;
+    root.appendChild(el);
+    setTimeout(function () { el.remove(); }, isErr ? 6000 : 2600);
+  };
+
+  /* ---- images: downscale to <=480p proxy, base64 JPEG ---- */
+  const MAX_W = 854, MAX_H = 480;
+
+  SB.downscaleImage = function (blobOrDataUrl) {
+    return new Promise(function (resolve, reject) {
+      const img = new Image();
+      img.onload = function () {
+        let w = img.naturalWidth, h = img.naturalHeight;
+        if (!w || !h) { reject(new Error('bad image')); return; }
+        const scale = Math.min(1, MAX_W / w, MAX_H / h);
+        w = Math.max(1, Math.round(w * scale));
+        h = Math.max(1, Math.round(h * scale));
+        const c = document.createElement('canvas');
+        c.width = w; c.height = h;
+        const ctx = c.getContext('2d');
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+        resolve({ data: c.toDataURL('image/jpeg', 0.82), w: w, h: h });
+      };
+      img.onerror = function () { reject(new Error('could not decode image')); };
+      if (typeof blobOrDataUrl === 'string') img.src = blobOrDataUrl;
+      else img.src = URL.createObjectURL(blobOrDataUrl);
+    });
+  };
+
+  /* Pull an image out of a drop / paste event. Returns Promise<Blob|string|null> */
+  SB.imageFromTransfer = function (dt) {
+    if (!dt) return Promise.resolve(null);
+    const files = dt.files;
+    if (files && files.length) {
+      for (let i = 0; i < files.length; i++) {
+        if (/^image\//.test(files[i].type)) return Promise.resolve(files[i]);
+      }
+    }
+    if (dt.items) {
+      for (let i = 0; i < dt.items.length; i++) {
+        const it = dt.items[i];
+        if (it.kind === 'file' && /^image\//.test(it.type)) {
+          const f = it.getAsFile();
+          if (f) return Promise.resolve(f);
+        }
+      }
+    }
+    const uri = dt.getData && (dt.getData('text/uri-list') || dt.getData('text/plain'));
+    if (uri && /^(https?:|data:image)/i.test(uri.trim())) {
+      const u = uri.trim().split(/\s+/)[0];
+      if (/^data:image/i.test(u)) return Promise.resolve(u);
+      return fetch(u, { mode: 'cors' }).then(function (r) { return r.blob(); })
+        .catch(function () { return null; });
+    }
+    const html = dt.getData && dt.getData('text/html');
+    if (html) {
+      const m = html.match(/<img[^>]+src=["']([^"']+)["']/i);
+      if (m) {
+        const u = m[1];
+        if (/^data:image/i.test(u)) return Promise.resolve(u);
+        return fetch(u, { mode: 'cors' }).then(function (r) { return r.blob(); })
+          .catch(function () { return null; });
+      }
+    }
+    return Promise.resolve(null);
+  };
+
+  SB.pickImageFile = function () {
+    return new Promise(function (resolve) {
+      const inp = document.createElement('input');
+      inp.type = 'file';
+      inp.accept = 'image/*';
+      inp.onchange = function () { resolve(inp.files && inp.files[0] ? inp.files[0] : null); };
+      inp.click();
+    });
+  };
+
+  /* ---- modal ---- */
+  SB.modal = function (opts) {
+    const back = SB.el('div', 'modal-back');
+    const m = SB.el('div', 'modal');
+    if (opts.width) m.style.minWidth = opts.width;
+    const h = SB.el('h2', null, opts.title || '');
+    const body = SB.el('div', 'body');
+    if (opts.body) body.appendChild(opts.body);
+    const foot = SB.el('div', 'foot');
+    m.appendChild(h); m.appendChild(body); m.appendChild(foot);
+    back.appendChild(m);
+
+    function close() {
+      back.remove();
+      document.removeEventListener('keydown', onKey);
+      if (opts.onClose) opts.onClose();
+    }
+    function onKey(e) { if (e.key === 'Escape') close(); }
+    document.addEventListener('keydown', onKey);
+    back.addEventListener('mousedown', function (e) { if (e.target === back) close(); });
+
+    (opts.buttons || [{ label: 'Close' }]).forEach(function (b) {
+      const btn = SB.el('button', 'tb' + (b.primary ? ' on' : ''), b.label);
+      btn.onclick = function () { if (b.onClick) b.onClick(close, body); else close(); };
+      foot.appendChild(btn);
+    });
+
+    document.getElementById('modalRoot').appendChild(back);
+    return { close: close, body: body, root: back };
+  };
+
+  /* tiny DOM helper */
+  SB.el = function (tag, cls, text) {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  };
+
+})(window.SB);
+
+</script>
+<script>
+/* ===== js/doc.js ===== */
+/* doc.js — the shared-document engine.
+ *
+ * A Doc is { text: string, marks: { b:[[s,e]..], i:[...], u:[...] } }.
+ * Every edit anywhere in the app is funnelled through a single primitive:
+ *
+ *     replace(doc, start, end, insertedText)
+ *
+ * Positions (shot link anchors, marks) are *transformed* through that
+ * primitive rather than re-found by string matching, so they survive edits
+ * elsewhere in the document. Gravity decides what happens when an edit lands
+ * exactly on an anchor.
+ */
+(function (SB) {
+  'use strict';
+
+  const TYPES = ['b', 'i', 'u'];
+  const BIT = { b: 1, i: 2, u: 4 };
+
+  function make(text) {
+    return { text: text || '', marks: { b: [], i: [], u: [] } };
+  }
+
+  function normalize(list) {
+    if (!list || !list.length) return [];
+    const l = list.filter(function (r) { return r[1] > r[0]; })
+      .sort(function (a, b) { return a[0] - b[0] || a[1] - b[1]; });
+    const out = [];
+    for (let k = 0; k < l.length; k++) {
+      const last = out[out.length - 1];
+      if (last && l[k][0] <= last[1]) last[1] = Math.max(last[1], l[k][1]);
+      else out.push([l[k][0], l[k][1]]);
+    }
+    return out;
+  }
+
+  /* Transform position p through replace(start,end,len).
+   * leftGravity=true  -> anchor stays to the LEFT of inserted text
+   * leftGravity=false -> anchor moves to the RIGHT of inserted text
+   */
+  function mapPos(p, start, end, len, leftGravity) {
+    // 1. deletion of [start,end)
+    let q;
+    if (p <= start) q = p;
+    else if (p >= end) q = p - (end - start);
+    else q = start;
+    // 2. insertion of len at start
+    if (q < start) return q;
+    if (q > start) return q + len;
+    return leftGravity ? start : start + len;
+  }
+
+  function mapList(list, start, end, len) {
+    const out = [];
+    for (let k = 0; k < list.length; k++) {
+      // marks: don't grab text typed before them, do extend when typed at their end
+      const a = mapPos(list[k][0], start, end, len, false);
+      const b = mapPos(list[k][1], start, end, len, false);
+      if (b > a) out.push([a, b]);
+    }
+    return normalize(out);
+  }
+
+  /* Apply a replacement to a doc's text + marks. Returns the raw op. */
+  function replace(doc, start, end, text) {
+    start = SB.clamp(start | 0, 0, doc.text.length);
+    end = SB.clamp(end | 0, start, doc.text.length);
+    text = text == null ? '' : String(text);
+    doc.text = doc.text.slice(0, start) + text + doc.text.slice(end);
+    for (let k = 0; k < TYPES.length; k++) {
+      const t = TYPES[k];
+      doc.marks[t] = mapList(doc.marks[t] || [], start, end, text.length);
+    }
+    return { start: start, end: end, len: text.length };
+  }
+
+  /* Does [s,e) carry the mark entirely? */
+  function hasMark(doc, type, s, e) {
+    if (e <= s) return false;
+    const list = doc.marks[type] || [];
+    let cur = s;
+    for (let k = 0; k < list.length && cur < e; k++) {
+      if (list[k][1] <= cur) continue;
+      if (list[k][0] > cur) return false;
+      cur = list[k][1];
+    }
+    return cur >= e;
+  }
+
+  function addMark(doc, type, s, e) {
+    if (e <= s) return;
+    doc.marks[type] = normalize((doc.marks[type] || []).concat([[s, e]]));
+  }
+
+  function removeMark(doc, type, s, e) {
+    if (e <= s) return;
+    const out = [];
+    const list = doc.marks[type] || [];
+    for (let k = 0; k < list.length; k++) {
+      const a = list[k][0], b = list[k][1];
+      if (b <= s || a >= e) { out.push([a, b]); continue; }
+      if (a < s) out.push([a, s]);
+      if (b > e) out.push([e, b]);
+    }
+    doc.marks[type] = normalize(out);
+  }
+
+  function toggleMark(doc, type, s, e) {
+    if (e <= s || !BIT[type]) return;
+    if (hasMark(doc, type, s, e)) removeMark(doc, type, s, e);
+    else addMark(doc, type, s, e);
+  }
+
+  /* Per-character style bitfield for [from,to) */
+  function flags(doc, from, to) {
+    const n = Math.max(0, to - from);
+    const f = new Uint8Array(n);
+    for (let k = 0; k < TYPES.length; k++) {
+      const t = TYPES[k], bit = BIT[t], list = doc.marks[t] || [];
+      for (let j = 0; j < list.length; j++) {
+        const a = Math.max(from, list[j][0]), b = Math.min(to, list[j][1]);
+        for (let i = a; i < b; i++) f[i - from] |= bit;
+      }
+    }
+    return f;
+  }
+
+  /* Marks inside [from,to) rebased to 0 (used when breaking a link). */
+  function sliceMarks(doc, from, to) {
+    const out = { b: [], i: [], u: [] };
+    for (let k = 0; k < TYPES.length; k++) {
+      const t = TYPES[k], list = doc.marks[t] || [];
+      for (let j = 0; j < list.length; j++) {
+        const a = Math.max(from, list[j][0]), b = Math.min(to, list[j][1]);
+        if (b > a) out[t].push([a - from, b - from]);
+      }
+      out[t] = normalize(out[t]);
+    }
+    return out;
+  }
+
+  /* Render [from,to) as HTML. extraFn(absoluteIndex) -> extra class string (or ''). */
+  function renderHTML(doc, from, to, extraFn) {
+    from = SB.clamp(from | 0, 0, doc.text.length);
+    to = SB.clamp(to | 0, from, doc.text.length);
+    const slice = doc.text.slice(from, to);
+    if (!slice) return '';
+    const f = flags(doc, from, to);
+    let html = '';
+    let runStart = 0, runFlag = f[0], runExtra = extraFn ? extraFn(from) : '';
+    function emit(a, b, fl, ex) {
+      let s = SB.esc(slice.slice(a, b));
+      if (fl & BIT.b) s = '<b>' + s + '</b>';
+      if (fl & BIT.i) s = '<i>' + s + '</i>';
+      if (fl & BIT.u) s = '<u>' + s + '</u>';
+      if (ex) s = '<span class="' + ex + '">' + s + '</span>';
+      html += s;
+    }
+    for (let i = 1; i < slice.length; i++) {
+      const ex = extraFn ? extraFn(from + i) : '';
+      if (f[i] !== runFlag || ex !== runExtra) {
+        emit(runStart, i, runFlag, runExtra);
+        runStart = i; runFlag = f[i]; runExtra = ex;
+      }
+    }
+    emit(runStart, slice.length, runFlag, runExtra);
+    if (slice.charAt(slice.length - 1) === '\n') html += '<br class="pad">';
+    return html;
+  }
+
+  SB.Doc = {
+    TYPES: TYPES, BIT: BIT,
+    make: make, normalize: normalize, mapPos: mapPos, mapList: mapList,
+    replace: replace, hasMark: hasMark, toggleMark: toggleMark,
+    addMark: addMark, removeMark: removeMark,
+    flags: flags, sliceMarks: sliceMarks, renderHTML: renderHTML
+  };
+
+})(window.SB);
+
+</script>
+<script>
+/* ===== js/model.js ===== */
+/* model.js — project schema, numbering, and all structural mutations. */
+(function (SB) {
+  'use strict';
+
+  const FILE_VERSION = 1;
+
+  const DEFAULT_SHOT_TYPES = [
+    'Wide', 'Medium', 'Close-up', 'Extreme close-up', 'Over the shoulder',
+    'Two shot', 'Insert', 'Cutaway', 'POV', 'Screen capture', 'Talking head'
+  ];
+
+  const IMG_TPL =
+    'Write a single first-frame still-image prompt for {{MODEL}}.\n' +
+    'Shot type: {{SHOT_TYPE}}. Scene: {{SCENE}}.\n' +
+    'Describe subject, setting, composition, lens, lighting and mood in one dense paragraph. ' +
+    'No camera motion, no narration, no preamble.\n\n' +
+    'SHOT DESCRIPTION:\n{{DESCRIPTION}}';
+
+  const VID_TPL =
+    'Write a single image-to-video prompt for {{MODEL}}, starting from the first frame described below.\n' +
+    'Shot type: {{SHOT_TYPE}}. Scene: {{SCENE}}.\n' +
+    'Describe only what MOVES: subject action, camera move, pacing, and how the shot ends. ' +
+    'Keep it one paragraph, no preamble.\n\n' +
+    'SHOT DESCRIPTION:\n{{DESCRIPTION}}';
+
+  function model(name, kind) {
+    return { id: SB.uid('m'), name: name, kind: kind, imageTemplate: IMG_TPL, videoTemplate: VID_TPL };
+  }
+
+  function defaultModels() {
+    return [
+      model('Wan', 'video'), model('LTX (LTXV 2.3)', 'video'), model('Veo', 'video'),
+      model('Kling', 'video'), model('Sora', 'video'), model('Runway', 'video'),
+      model('Hailuo (MiniMax)', 'video'), model('Seedance', 'video'),
+      model('Nano Banana (Gemini Image)', 'image'), model('Qwen-Image', 'image'),
+      model('FLUX', 'image'), model('GPT Image', 'image'), model('Imagen', 'image'),
+      model('Ideogram', 'image'), model('Midjourney', 'image')
+    ];
+  }
+
+  /* Mid-tone hues, each legible as a card edge on both the light and dark board. */
+  const CARD_COLORS = [
+    '#6b7280', // slate
+    '#3b82f6', // blue
+    '#0891b2', // cyan
+    '#0d9488', // teal
+    '#16a34a', // green
+    '#ca8a04', // gold
+    '#ea580c', // orange
+    '#dc2626', // red
+    '#db2777', // pink
+    '#7c3aed'  // violet
+  ];
+
+  function newShot(opts) {
+    opts = opts || {};
+    return {
+      id: SB.uid('sh'),
+      type: opts.type || '',
+      noShot: !!opts.noShot,
+      color: opts.color || CARD_COLORS[0],
+      link: opts.link || null,          // {from,to} into master, or null = freestanding
+      local: opts.link ? null : SB.Doc.make(opts.text || ''),
+      broken: false,
+      description: '',
+      image: null,                      // {data,w,h}
+      annotation: null,                 // transparent PNG dataURL
+      comments: [],
+      prompts: {}                       // modelName -> {imagePrompt, videoPrompt}
+    };
+  }
+
+  function newScene(heading) {
+    return { id: SB.uid('sc'), heading: heading || 'New scene', description: '', shots: [] };
+  }
+
+  function firstOfKind(models, kind) {
+    const m = models.filter(function (x) { return x.kind === kind; })[0] || models[0];
+    return m ? m.id : null;
+  }
+
+  function newProject() {
+    const p = {
+      fileVersion: FILE_VERSION,
+      id: SB.uid('prj'),
+      name: 'Untitled project',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      master: SB.Doc.make(''),
+      scenes: [newScene('Scene one')],
+      versionNumber: 1,
+      versionName: 'v1',
+      versions: [],
+      settings: {
+        shotTypes: DEFAULT_SHOT_TYPES.slice(),
+        models: defaultModels(),
+        imageModelId: null,
+        videoModelId: null,
+        geminiModel: 'gemini-2.5-flash',
+        // prompt boxes stay off the cards until the user asks for them
+        showImagePrompt: false,
+        showVideoPrompt: false
+      }
+    };
+    p.settings.imageModelId = firstOfKind(p.settings.models, 'image');
+    p.settings.videoModelId = firstOfKind(p.settings.models, 'video');
+    p.scenes[0].shots.push(newShot({ type: DEFAULT_SHOT_TYPES[0] }));
+    return p;
+  }
+
+  /* Fill in anything an older/hand-edited file is missing. */
+  function migrate(p) {
+    if (!p || typeof p !== 'object') throw new Error('not a Storyboarder project');
+    p.fileVersion = FILE_VERSION;
+    p.id = p.id || SB.uid('prj');
+    p.name = p.name || 'Untitled project';
+    p.createdAt = p.createdAt || Date.now();
+    p.master = p.master && typeof p.master.text === 'string' ? p.master : SB.Doc.make('');
+    p.master.marks = p.master.marks || { b: [], i: [], u: [] };
+    ['b', 'i', 'u'].forEach(function (t) { p.master.marks[t] = p.master.marks[t] || []; });
+    p.scenes = Array.isArray(p.scenes) ? p.scenes : [];
+    if (!p.scenes.length) p.scenes.push(newScene('Scene one'));
+    p.versionNumber = p.versionNumber || 1;
+    p.versionName = p.versionName || ('v' + p.versionNumber);
+    p.versions = Array.isArray(p.versions) ? p.versions : [];
+    const s = p.settings = p.settings || {};
+    s.shotTypes = (s.shotTypes && s.shotTypes.length) ? s.shotTypes : DEFAULT_SHOT_TYPES.slice();
+    s.models = (s.models && s.models.length) ? s.models : defaultModels();
+    s.models.forEach(function (m) {
+      m.id = m.id || SB.uid('m');
+      m.kind = m.kind || 'video';
+      m.imageTemplate = m.imageTemplate || IMG_TPL;
+      m.videoTemplate = m.videoTemplate || VID_TPL;
+    });
+    const has = function (id) { return s.models.some(function (m) { return m.id === id; }); };
+    // older files carried a single activeModelId
+    if (s.activeModelId && has(s.activeModelId)) {
+      const old = s.models.filter(function (m) { return m.id === s.activeModelId; })[0];
+      if (old.kind === 'image' && !s.imageModelId) s.imageModelId = old.id;
+      if (old.kind === 'video' && !s.videoModelId) s.videoModelId = old.id;
+    }
+    delete s.activeModelId;
+    if (!has(s.imageModelId)) s.imageModelId = firstOfKind(s.models, 'image');
+    if (!has(s.videoModelId)) s.videoModelId = firstOfKind(s.models, 'video');
+    s.geminiModel = s.geminiModel || 'gemini-2.5-flash';
+    if (typeof s.showImagePrompt !== 'boolean') s.showImagePrompt = false;
+    if (typeof s.showVideoPrompt !== 'boolean') s.showVideoPrompt = false;
+
+    p.scenes.forEach(function (sc) {
+      sc.id = sc.id || SB.uid('sc');
+      sc.heading = sc.heading || '';
+      sc.description = sc.description || '';
+      sc.shots = Array.isArray(sc.shots) ? sc.shots : [];
+      sc.shots.forEach(function (sh) {
+        sh.id = sh.id || SB.uid('sh');
+        sh.type = sh.type || '';
+        sh.noShot = !!sh.noShot;
+        sh.color = sh.color || CARD_COLORS[0];
+        sh.link = sh.link && typeof sh.link.from === 'number' ? sh.link : null;
+        if (!sh.link) {
+          sh.local = sh.local && typeof sh.local.text === 'string' ? sh.local : SB.Doc.make('');
+          sh.local.marks = sh.local.marks || { b: [], i: [], u: [] };
+          ['b', 'i', 'u'].forEach(function (t) { sh.local.marks[t] = sh.local.marks[t] || []; });
+        } else {
+          sh.link.from = SB.clamp(sh.link.from, 0, p.master.text.length);
+          sh.link.to = SB.clamp(sh.link.to, sh.link.from, p.master.text.length);
+        }
+        sh.broken = !!sh.broken;
+        sh.description = sh.description || '';
+        sh.comments = Array.isArray(sh.comments) ? sh.comments : [];
+        sh.prompts = sh.prompts || {};
+      });
+    });
+    return p;
+  }
+
+  /* ---------- lookup / numbering ---------- */
+
+  function eachShot(p, fn) {
+    for (let i = 0; i < p.scenes.length; i++) {
+      const sc = p.scenes[i];
+      for (let j = 0; j < sc.shots.length; j++) fn(sc.shots[j], sc, i, j);
+    }
+  }
+
+  function code(sceneIdx, shotIdx) { return (sceneIdx + 1) + SB.letters(shotIdx); }
+
+  function findShot(p, id) {
+    let res = null;
+    eachShot(p, function (sh, sc, i, j) {
+      if (sh.id === id) res = { shot: sh, scene: sc, sceneIdx: i, shotIdx: j, code: code(i, j) };
+    });
+    return res;
+  }
+
+  function findScene(p, id) {
+    for (let i = 0; i < p.scenes.length; i++) if (p.scenes[i].id === id) return { scene: p.scenes[i], idx: i };
+    return null;
+  }
+
+  /* ---------- the shared-script window ---------- */
+
+  /* What document + slice does this shot's script box show? */
+  function windowFor(p, shot) {
+    if (shot.link) return { doc: p.master, from: shot.link.from, to: shot.link.to, linked: true };
+    return { doc: shot.local, from: 0, to: shot.local.text.length, linked: false };
+  }
+
+  /* The one place master-script text changes.
+   * sourceShotId = the shot whose box the user typed in (null = typed in master).
+   */
+  function applyMasterEdit(p, start, end, text, sourceShotId) {
+    const op = { start: start, end: end, len: (text || '').length };
+    const links = [];
+    eachShot(p, function (sh) { if (sh.link) links.push(sh); });
+
+    links.forEach(function (sh) {
+      let fromLeft, toLeft;
+      if (sh.id === sourceShotId) {
+        // the shot being typed in grows at both edges
+        fromLeft = true; toLeft = false;
+      } else if (!sourceShotId) {
+        // typed in master: text at a shot's end boundary extends that shot
+        fromLeft = false; toLeft = false;
+      } else {
+        // another shot's edit: only interior insertions grow this one
+        fromLeft = false; toLeft = true;
+      }
+      const nf = SB.Doc.mapPos(sh.link.from, start, end, op.len, fromLeft);
+      const nt = SB.Doc.mapPos(sh.link.to, start, end, op.len, toLeft);
+      sh.link.from = Math.min(nf, nt);
+      sh.link.to = Math.max(nf, nt);
+      if (sh.link.to <= sh.link.from) sh.broken = true;
+      else if (sh.broken && sh.link.to > sh.link.from) sh.broken = false;
+    });
+
+    SB.Doc.replace(p.master, start, end, text);
+    p.updatedAt = Date.now();
+    return op;
+  }
+
+  /* Edit routed from a shot's own script box (local coords). */
+  function applyShotEdit(p, shot, lStart, lEnd, text) {
+    if (shot.link) {
+      return applyMasterEdit(p, shot.link.from + lStart, shot.link.from + lEnd, text, shot.id);
+    }
+    SB.Doc.replace(shot.local, lStart, lEnd, text);
+    p.updatedAt = Date.now();
+    return { start: lStart, end: lEnd, len: (text || '').length };
+  }
+
+  function breakLink(p, shot) {
+    if (!shot.link) return;
+    const w = windowFor(p, shot);
+    shot.local = {
+      text: p.master.text.slice(w.from, w.to),
+      marks: SB.Doc.sliceMarks(p.master, w.from, w.to)
+    };
+    shot.link = null;
+    shot.broken = false;
+    p.updatedAt = Date.now();
+  }
+
+  /* how many shots cover each master character (for the highlight underlay) */
+  function coverage(p) {
+    const n = p.master.text.length;
+    const d = new Uint8Array(n);
+    eachShot(p, function (sh) {
+      if (!sh.link) return;
+      for (let i = sh.link.from; i < sh.link.to && i < n; i++) if (d[i] < 250) d[i]++;
+    });
+    return d;
+  }
+
+  /* ---------- structure ---------- */
+
+  function addScene(p, afterIdx) {
+    const sc = newScene('Scene ' + (p.scenes.length + 1));
+    if (typeof afterIdx === 'number') p.scenes.splice(afterIdx + 1, 0, sc);
+    else p.scenes.push(sc);
+    p.updatedAt = Date.now();
+    return sc;
+  }
+
+  function deleteScene(p, sceneId) {
+    const f = findScene(p, sceneId);
+    if (!f) return;
+    p.scenes.splice(f.idx, 1);
+    if (!p.scenes.length) p.scenes.push(newScene('Scene one'));
+    p.updatedAt = Date.now();
+  }
+
+  function addShot(p, sceneId, opts, atIdx) {
+    const f = findScene(p, sceneId);
+    if (!f) return null;
+    const sh = newShot(Object.assign({ type: p.settings.shotTypes[0] || '' }, opts || {}));
+    if (typeof atIdx === 'number') f.scene.shots.splice(atIdx, 0, sh);
+    else f.scene.shots.push(sh);
+    p.updatedAt = Date.now();
+    return sh;
+  }
+
+  /* Deleting a shot leaves its text in the master script (resolved decision #2). */
+  function deleteShot(p, shotId) {
+    const f = findShot(p, shotId);
+    if (!f) return;
+    f.scene.shots.splice(f.shotIdx, 1);
+    p.updatedAt = Date.now();
+  }
+
+  function moveShot(p, shotId, toSceneId, toIdx) {
+    const f = findShot(p, shotId);
+    const t = findScene(p, toSceneId);
+    if (!f || !t) return;
+    f.scene.shots.splice(f.shotIdx, 1);
+    if (f.scene === t.scene && toIdx > f.shotIdx) toIdx--;
+    toIdx = SB.clamp(toIdx, 0, t.scene.shots.length);
+    t.scene.shots.splice(toIdx, 0, f.shot);
+    p.updatedAt = Date.now();
+  }
+
+  function moveScene(p, sceneId, toIdx) {
+    const f = findScene(p, sceneId);
+    if (!f) return;
+    p.scenes.splice(f.idx, 1);
+    if (toIdx > f.idx) toIdx--;
+    p.scenes.splice(SB.clamp(toIdx, 0, p.scenes.length), 0, f.scene);
+    p.updatedAt = Date.now();
+  }
+
+  function modelById(p, id) {
+    return p.settings.models.filter(function (m) { return m.id === id; })[0] || null;
+  }
+  function imageModel(p) { return modelById(p, p.settings.imageModelId); }
+  function videoModel(p) { return modelById(p, p.settings.videoModelId); }
+
+  SB.Model = {
+    FILE_VERSION: FILE_VERSION,
+    CARD_COLORS: CARD_COLORS,
+    DEFAULT_SHOT_TYPES: DEFAULT_SHOT_TYPES,
+    IMG_TPL: IMG_TPL, VID_TPL: VID_TPL,
+    newProject: newProject, migrate: migrate, newShot: newShot, newScene: newScene,
+    defaultModels: defaultModels,
+    eachShot: eachShot, code: code, findShot: findShot, findScene: findScene,
+    windowFor: windowFor, applyMasterEdit: applyMasterEdit, applyShotEdit: applyShotEdit,
+    breakLink: breakLink, coverage: coverage,
+    addScene: addScene, deleteScene: deleteScene, addShot: addShot, deleteShot: deleteShot,
+    moveShot: moveShot, moveScene: moveScene,
+    modelById: modelById, imageModel: imageModel, videoModel: videoModel, firstOfKind: firstOfKind
+  };
+
+})(window.SB);
+
+</script>
+<script>
+/* ===== js/store.js ===== */
+/* store.js — File System Access persistence + local (non-project) secrets.
+ *
+ * The project lives in one .storyboard JSON file the user picks once; after
+ * that every change is written back to the same handle, debounced. The Gemini
+ * API key NEVER goes in that file — it lives in localStorage only.
+ */
+(function (SB) {
+  'use strict';
+
+  const KEY_API = 'sb.geminiApiKey';
+  const IDB_NAME = 'storyboarder';
+  const IDB_STORE = 'handles';
+
+  const S = {
+    handle: null,
+    fileName: null,
+    dirty: false,
+    writing: false,
+    lastSaved: 0,
+    onState: null,
+    getProject: null   // set by app: () => project
+  };
+
+  const hasFS = typeof window.showSaveFilePicker === 'function';
+
+  function state(txt, cls) {
+    if (S.onState) S.onState(txt, cls);
+  }
+
+  /* ---------- IndexedDB (remember the last file handle) ---------- */
+
+  function idb() {
+    return new Promise(function (resolve, reject) {
+      const r = indexedDB.open(IDB_NAME, 1);
+      r.onupgradeneeded = function () {
+        if (!r.result.objectStoreNames.contains(IDB_STORE)) r.result.createObjectStore(IDB_STORE);
+      };
+      r.onsuccess = function () { resolve(r.result); };
+      r.onerror = function () { reject(r.error); };
+    });
+  }
+
+  function idbPut(k, v) {
+    return idb().then(function (db) {
+      return new Promise(function (res, rej) {
+        const tx = db.transaction(IDB_STORE, 'readwrite');
+        tx.objectStore(IDB_STORE).put(v, k);
+        tx.oncomplete = function () { res(); };
+        tx.onerror = function () { rej(tx.error); };
+      });
+    }).catch(function () { });
+  }
+
+  function idbGet(k) {
+    return idb().then(function (db) {
+      return new Promise(function (res) {
+        const tx = db.transaction(IDB_STORE, 'readonly');
+        const rq = tx.objectStore(IDB_STORE).get(k);
+        rq.onsuccess = function () { res(rq.result || null); };
+        rq.onerror = function () { res(null); };
+      });
+    }).catch(function () { return null; });
+  }
+
+  /* ---------- permissions ---------- */
+
+  function ensurePermission(handle, interactive) {
+    if (!handle || !handle.queryPermission) return Promise.resolve(true);
+    return handle.queryPermission({ mode: 'readwrite' }).then(function (p) {
+      if (p === 'granted') return true;
+      if (!interactive) return false;
+      return handle.requestPermission({ mode: 'readwrite' }).then(function (q) { return q === 'granted'; });
+    });
+  }
+
+  /* ---------- write ---------- */
+
+  function serialize(project) {
+    // Belt and braces: the API key must never reach the file.
+    const copy = SB.clone(project);
+    if (copy.settings) delete copy.settings.geminiApiKey;
+    copy.updatedAt = Date.now();
+    return JSON.stringify(copy);
+  }
+
+  function writeNow() {
+    const project = S.getProject && S.getProject();
+    if (!project) return Promise.resolve();
+    if (!S.handle) { state('no file', 'dirty'); return Promise.resolve(); }
+    if (S.writing) { S.pending = true; return Promise.resolve(); }
+    S.writing = true;
+    state('saving…', 'dirty');
+    const text = serialize(project);
+    return ensurePermission(S.handle, false).then(function (ok) {
+      if (!ok) { state('permission needed', 'dirty'); throw new Error('permission'); }
+      return S.handle.createWritable();
+    }).then(function (w) {
+      return w.write(text).then(function () { return w.close(); });
+    }).then(function () {
+      S.writing = false;
+      S.dirty = false;
+      S.lastSaved = Date.now();
+      state('saved ' + new Date().toLocaleTimeString(), 'saved');
+      if (S.pending) { S.pending = false; return writeNow(); }
+    }).catch(function (e) {
+      S.writing = false;
+      if (String(e && e.message) !== 'permission') {
+        state('save failed', 'dirty');
+        console.error('[storyboarder] save failed', e);
+      }
+    });
+  }
+
+  const debouncedWrite = SB.debounce(writeNow, 500);
+
+  function touch() {
+    S.dirty = true;
+    if (S.handle) state('unsaved…', 'dirty');
+    debouncedWrite();
+  }
+
+  /* ---------- open / save-as ---------- */
+
+  const PICKER_TYPES = [{
+    description: 'Storyboard project',
+    accept: { 'application/json': ['.storyboard', '.json'] }
+  }];
+
+  function saveAs(project) {
+    if (!hasFS) return Promise.reject(new Error('This browser has no File System Access API. Use Chrome or Edge.'));
+    return window.showSaveFilePicker({
+      suggestedName: (project.name || 'storyboard').replace(/[\\/:*?"<>|]+/g, '_') + '.storyboard',
+      types: PICKER_TYPES
+    }).then(function (h) {
+      S.handle = h;
+      S.fileName = h.name;
+      return idbPut('last', h);
+    }).then(function () {
+      return writeNow();
+    }).then(function () {
+      return S.fileName;
+    });
+  }
+
+  function openFile() {
+    if (!hasFS) return Promise.reject(new Error('This browser has no File System Access API. Use Chrome or Edge.'));
+    return window.showOpenFilePicker({ types: PICKER_TYPES, multiple: false })
+      .then(function (hs) { return loadFromHandle(hs[0], true); });
+  }
+
+  function loadFromHandle(handle, interactive) {
+    return ensurePermission(handle, interactive).then(function (ok) {
+      if (!ok) throw new Error('Permission to the project file was denied.');
+      return handle.getFile();
+    }).then(function (f) {
+      return f.text();
+    }).then(function (txt) {
+      const p = SB.Model.migrate(JSON.parse(txt));
+      S.handle = handle;
+      S.fileName = handle.name;
+      S.dirty = false;
+      idbPut('last', handle);
+      state('opened ' + handle.name, 'saved');
+      return p;
+    });
+  }
+
+  function lastHandle() { return idbGet('last'); }
+
+  function detach() {
+    S.handle = null;
+    S.fileName = null;
+    idbPut('last', null);
+    state('no file', 'dirty');
+  }
+
+  /* ---------- API key (local only) ---------- */
+
+  function getApiKey() { try { return localStorage.getItem(KEY_API) || ''; } catch (e) { return ''; } }
+  function setApiKey(v) { try { v ? localStorage.setItem(KEY_API, v) : localStorage.removeItem(KEY_API); } catch (e) { } }
+
+  SB.Store = {
+    hasFS: hasFS,
+    S: S,
+    touch: touch,
+    saveNow: function () { debouncedWrite.flush ? debouncedWrite.flush() : null; return writeNow(); },
+    saveAs: saveAs,
+    open: openFile,
+    loadFromHandle: loadFromHandle,
+    lastHandle: lastHandle,
+    detach: detach,
+    getApiKey: getApiKey,
+    setApiKey: setApiKey,
+    serialize: serialize
+  };
+
+})(window.SB);
+
+</script>
+<script>
+/* ===== js/editor.js ===== */
+/* editor.js — a contenteditable "window" onto a slice of a Doc.
+ *
+ * The browser is never allowed to mutate the DOM: every keystroke is
+ * intercepted, turned into a replace(start,end,text) op against the model, and
+ * the view is re-rendered from the model. That is what lets several windows
+ * share (and overlap on) the same underlying characters.
+ */
+(function (SB) {
+  'use strict';
+
+  /* ---------- offset <-> DOM selection ---------- */
+
+  function walk(el, fn) {
+    const it = document.createTreeWalker(el, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT, null);
+    let n;
+    while ((n = it.nextNode())) fn(n);
+  }
+
+  function textOf(el) {
+    let out = '';
+    walk(el, function (n) {
+      if (n.nodeType === 3) out += n.data;
+      else if (n.nodeName === 'BR' && !n.classList.contains('pad')) out += '\n';
+    });
+    return out;
+  }
+
+  function offsetOf(el, node, off) {
+    if (node === el) {
+      // offset counts child nodes
+      let n = 0;
+      for (let i = 0; i < off && i < el.childNodes.length; i++) n += textOf2(el.childNodes[i]);
+      return n;
+    }
+    let total = 0, found = -1;
+    const it = document.createTreeWalker(el, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT, null);
+    let n;
+    while ((n = it.nextNode())) {
+      if (n === node) { found = total + (n.nodeType === 3 ? off : 0); break; }
+      if (n.nodeType === 3) total += n.data.length;
+      else if (n.nodeName === 'BR' && !n.classList.contains('pad')) total += 1;
+    }
+    return found < 0 ? total : found;
+  }
+
+  function textOf2(node) {
+    if (node.nodeType === 3) return node.data.length;
+    if (node.nodeName === 'BR') return node.classList && node.classList.contains('pad') ? 0 : 1;
+    let n = 0;
+    for (let i = 0; i < node.childNodes.length; i++) n += textOf2(node.childNodes[i]);
+    return n;
+  }
+
+  function getSel(el) {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return null;
+    const r = sel.getRangeAt(0);
+    if (!el.contains(r.startContainer) || !el.contains(r.endContainer)) return null;
+    let a = offsetOf(el, r.startContainer, r.startOffset);
+    let b = offsetOf(el, r.endContainer, r.endOffset);
+    return { start: Math.min(a, b), end: Math.max(a, b) };
+  }
+
+  function locate(el, target) {
+    // find [textNode, offset] for a character offset
+    let seen = 0, res = null;
+    const it = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null);
+    let n, last = null;
+    while ((n = it.nextNode())) {
+      last = n;
+      if (seen + n.data.length >= target) { res = [n, target - seen]; break; }
+      seen += n.data.length;
+    }
+    if (res) return res;
+    if (last) return [last, last.data.length];
+    return [el, 0];
+  }
+
+  function setSel(el, start, end) {
+    const sel = window.getSelection();
+    if (!sel) return;
+    const r = document.createRange();
+    const a = locate(el, start), b = locate(el, end == null ? start : end);
+    try {
+      r.setStart(a[0], Math.min(a[1], a[0].nodeType === 3 ? a[0].data.length : 0));
+      r.setEnd(b[0], Math.min(b[1], b[0].nodeType === 3 ? b[0].data.length : 0));
+    } catch (e) { return; }
+    sel.removeAllRanges();
+    sel.addRange(r);
+  }
+
+  /* ---------- word boundaries ---------- */
+
+  const WORD = /[A-Za-z0-9_'À-ɏ]/;
+
+  function wordBack(s, i) {
+    while (i > 0 && /\s/.test(s.charAt(i - 1))) i--;
+    if (i > 0 && !WORD.test(s.charAt(i - 1))) return i - 1;
+    while (i > 0 && WORD.test(s.charAt(i - 1))) i--;
+    return i;
+  }
+
+  function wordFwd(s, i) {
+    const n = s.length;
+    while (i < n && /\s/.test(s.charAt(i))) i++;
+    if (i < n && !WORD.test(s.charAt(i))) return i + 1;
+    while (i < n && WORD.test(s.charAt(i))) i++;
+    return i;
+  }
+
+  /* ---------- attach ---------- */
+
+  /* cfg = {
+   *   get()            -> {doc, from, to} | null
+   *   edit(s,e,text)   -> apply to model (local coords)
+   *   toggle(type,s,e) -> toggle a mark (local coords)
+   *   after()          -> tell the app to re-render every window
+   *   extra(absIdx)    -> extra css class for that master character
+   *   readOnly         -> bool
+   * } */
+  function attach(el, cfg) {
+    const api = { el: el, cfg: cfg, composing: false, pending: null };
+    el.__sbEditor = api;
+    if (!cfg.readOnly) el.setAttribute('contenteditable', 'true');
+
+    function win() { return cfg.get(); }
+
+    api.render = function () {
+      const w = win();
+      if (!w) { el.innerHTML = ''; return; }
+      if (api.composing) return;
+      const focused = document.activeElement === el;
+      const keep = api.pending || (focused ? getSel(el) : null);
+      el.innerHTML = SB.Doc.renderHTML(w.doc, w.from, w.to, cfg.extra || null);
+      if (focused && keep) {
+        const max = w.to - w.from;
+        setSel(el, SB.clamp(keep.start, 0, max), SB.clamp(keep.end == null ? keep.start : keep.end, 0, max));
+      }
+      api.pending = null;
+    };
+
+    if (cfg.readOnly) { api.render(); return api; }
+
+    function doEdit(s, e, text, caret) {
+      const w = win();
+      if (!w) return;
+      const max = w.to - w.from;
+      s = SB.clamp(s, 0, max); e = SB.clamp(e, s, max);
+      if (s === e && !text) return;
+      cfg.edit(s, e, text);
+      api.pending = { start: caret == null ? s + (text || '').length : caret };
+      cfg.after();
+    }
+
+    el.addEventListener('beforeinput', function (ev) {
+      const w = win();
+      if (!w) { ev.preventDefault(); return; }
+      const sel = getSel(el);
+      if (!sel) return;
+      const t = ev.inputType;
+      const text = w.doc.text.slice(w.from, w.to);
+
+      if (t === 'insertCompositionText' || t === 'deleteCompositionText' ||
+        t === 'insertFromComposition') return; // handled on compositionend
+
+      ev.preventDefault();
+
+      let s = sel.start, e = sel.end, ins = null;
+
+      switch (t) {
+        case 'insertText': ins = ev.data == null ? '' : ev.data; break;
+        case 'insertReplacementText': ins = ev.data == null ? '' : ev.data; break;
+        case 'insertLineBreak':
+        case 'insertParagraph': ins = '\n'; break;
+        case 'insertFromPaste':
+        case 'insertFromDrop': {
+          const dt = ev.dataTransfer;
+          ins = dt ? (dt.getData('text/plain') || '') : '';
+          break;
+        }
+        case 'deleteContentBackward':
+          if (s === e) s = Math.max(0, s - 1);
+          ins = ''; break;
+        case 'deleteContentForward':
+          if (s === e) e = Math.min(text.length, e + 1);
+          ins = ''; break;
+        case 'deleteWordBackward':
+          if (s === e) s = wordBack(text, s);
+          ins = ''; break;
+        case 'deleteWordForward':
+          if (s === e) e = wordFwd(text, e);
+          ins = ''; break;
+        case 'deleteSoftLineBackward':
+        case 'deleteHardLineBackward':
+          if (s === e) s = text.lastIndexOf('\n', Math.max(0, s - 1)) + 1;
+          ins = ''; break;
+        case 'deleteByCut':
+        case 'deleteByDrag':
+        case 'deleteContent':
+          ins = ''; break;
+        case 'formatBold': cfg.toggle('b', s, e); cfg.after(); return;
+        case 'formatItalic': cfg.toggle('i', s, e); cfg.after(); return;
+        case 'formatUnderline': cfg.toggle('u', s, e); cfg.after(); return;
+        default: return;
+      }
+      if (ins === null) return;
+      doEdit(s, e, ins);
+    });
+
+    el.addEventListener('paste', function (ev) {
+      ev.preventDefault();
+      const sel = getSel(el);
+      if (!sel) return;
+      const txt = (ev.clipboardData && ev.clipboardData.getData('text/plain')) || '';
+      if (txt) doEdit(sel.start, sel.end, txt);
+    });
+
+    el.addEventListener('keydown', function (ev) {
+      if (!(ev.ctrlKey || ev.metaKey) || ev.altKey) return;
+      const k = ev.key.toLowerCase();
+      if (k !== 'b' && k !== 'i' && k !== 'u') return;
+      const sel = getSel(el);
+      if (!sel || sel.start === sel.end) { ev.preventDefault(); return; }
+      ev.preventDefault();
+      cfg.toggle(k, sel.start, sel.end);
+      api.pending = { start: sel.start, end: sel.end };
+      cfg.after();
+    });
+
+    el.addEventListener('compositionstart', function () { api.composing = true; });
+    el.addEventListener('compositionend', function () {
+      api.composing = false;
+      reconcile();
+    });
+
+    /* safety net: if anything slipped past the interceptors, diff and repair */
+    el.addEventListener('input', function () {
+      if (api.composing) return;
+      setTimeout(reconcile, 0);
+    });
+
+    function reconcile() {
+      const w = win();
+      if (!w || api.composing) return;
+      const cur = textOf(el);
+      const exp = w.doc.text.slice(w.from, w.to);
+      if (cur === exp) return;
+      let p = 0;
+      const n = Math.min(cur.length, exp.length);
+      while (p < n && cur.charAt(p) === exp.charAt(p)) p++;
+      let sfx = 0;
+      while (sfx < n - p && cur.charAt(cur.length - 1 - sfx) === exp.charAt(exp.length - 1 - sfx)) sfx++;
+      const s = p, e = exp.length - sfx, ins = cur.slice(p, cur.length - sfx);
+      cfg.edit(s, e, ins);
+      api.pending = { start: s + ins.length };
+      cfg.after();
+    }
+
+    api.render();
+    return api;
+  }
+
+  SB.Editor = {
+    attach: attach, getSel: getSel, setSel: setSel, textOf: textOf
+  };
+
+})(window.SB);
+
+</script>
+<script>
+/* ===== js/board.js ===== */
+/* board.js — scene list, scene blocks, shot cards, drag & drop. */
+(function (SB) {
+  'use strict';
+
+  const DND_SHOT = 'application/x-sb-shot';
+  const DND_SCENE = 'application/x-sb-scene';
+
+  const B = {
+    scriptEditors: {},   // shotId -> editor api
+    scriptEls: {}        // shotId -> element
+  };
+
+  function P() { return SB.app.project; }
+
+  /* ---------------- scene navigator ---------------- */
+
+  function renderSceneList() {
+    const host = document.getElementById('sceneList');
+    host.innerHTML = '';
+    P().scenes.forEach(function (sc, idx) {
+      const it = SB.el('div', 'scene-item' + (SB.app.selectedSceneId === sc.id ? ' sel' : ''));
+      it.draggable = true;
+      it.dataset.scene = sc.id;
+      const t = SB.el('div');
+      t.innerHTML = '<span class="num">' + (idx + 1) + '</span><span class="ttl">' +
+        SB.esc(sc.heading || '(untitled scene)') + '</span>';
+      it.appendChild(t);
+      it.appendChild(SB.el('div', 'cnt', sc.shots.length + ' shot' + (sc.shots.length === 1 ? '' : 's')));
+
+      it.addEventListener('click', function () {
+        SB.app.selectedSceneId = sc.id;
+        renderSceneList();
+        const blk = document.querySelector('.scene-block[data-scene="' + sc.id + '"]');
+        if (blk) blk.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        document.querySelectorAll('.scene-head').forEach(function (h) {
+          h.classList.toggle('sel', h.parentNode.dataset.scene === sc.id);
+        });
+      });
+
+      it.addEventListener('dragstart', function (ev) {
+        ev.dataTransfer.setData(DND_SCENE, sc.id);
+        ev.dataTransfer.effectAllowed = 'move';
+      });
+      it.addEventListener('dragover', function (ev) {
+        if (ev.dataTransfer.types.indexOf(DND_SCENE) < 0) return;
+        ev.preventDefault();
+        it.classList.add('drag-over');
+      });
+      it.addEventListener('dragleave', function () { it.classList.remove('drag-over'); });
+      it.addEventListener('drop', function (ev) {
+        it.classList.remove('drag-over');
+        const id = ev.dataTransfer.getData(DND_SCENE);
+        if (!id) return;
+        ev.preventDefault();
+        const r = it.getBoundingClientRect();
+        const before = ev.clientY < r.top + r.height / 2;
+        SB.Model.moveScene(P(), id, before ? idx : idx + 1);
+        SB.app.changed(true);
+      });
+
+      host.appendChild(it);
+    });
+  }
+
+  /* ---------------- board ---------------- */
+
+  function render() {
+    B.scriptEditors = {};
+    B.scriptEls = {};
+    const board = document.getElementById('board');
+    board.innerHTML = '';
+    P().scenes.forEach(function (sc, si) { board.appendChild(sceneBlock(sc, si)); });
+    renderSceneList();
+    SB.ScriptMode.refresh();
+  }
+
+  function sceneBlock(sc, si) {
+    const blk = SB.el('div', 'scene-block');
+    blk.dataset.scene = sc.id;
+
+    const head = SB.el('div', 'scene-head' + (SB.app.selectedSceneId === sc.id ? ' sel' : ''));
+    head.appendChild(SB.el('div', 'snum', 'Scene ' + (si + 1)));
+
+    const fields = SB.el('div', 'fields');
+    const h = document.createElement('input');
+    h.className = 'sh-heading';
+    h.value = sc.heading || '';
+    h.placeholder = 'Scene heading';
+    h.addEventListener('input', function () {
+      sc.heading = h.value; SB.app.changed(false); renderSceneList();
+    });
+    const d = document.createElement('textarea');
+    d.className = 'sh-desc';
+    d.rows = 1;
+    d.value = sc.description || '';
+    d.placeholder = 'Scene description';
+    d.addEventListener('input', function () { sc.description = d.value; SB.app.changed(false); });
+    fields.appendChild(h); fields.appendChild(d);
+    head.appendChild(fields);
+
+    const acts = SB.el('div', 'scene-actions');
+    const bAdd = SB.el('button', 'mini', '+ Shot');
+    bAdd.onclick = function () {
+      const sh = SB.Model.addShot(P(), sc.id, {});
+      SB.app.selectedShotId = sh.id;
+      SB.app.changed(true);
+    };
+    const bAddScene = SB.el('button', 'mini', '+ Scene below');
+    bAddScene.onclick = function () { SB.Model.addScene(P(), si); SB.app.changed(true); };
+    const bDel = SB.el('button', 'mini danger', 'Delete scene');
+    bDel.onclick = function () {
+      if (sc.shots.length && !confirm('Delete "' + (sc.heading || 'scene') + '" and its ' +
+        sc.shots.length + ' shot(s)? Script text stays in the master script.')) return;
+      SB.Model.deleteScene(P(), sc.id);
+      SB.app.changed(true);
+    };
+    acts.appendChild(bAdd); acts.appendChild(bAddScene); acts.appendChild(bDel);
+    head.appendChild(acts);
+    blk.appendChild(head);
+
+    const shots = SB.el('div', 'shots');
+    shots.dataset.scene = sc.id;
+    sc.shots.forEach(function (sh, sj) { shots.appendChild(card(sh, sc, si, sj)); });
+
+    const add = SB.el('button', 'add-shot', '+ Add shot');
+    add.onclick = function () {
+      const s = SB.Model.addShot(P(), sc.id, {});
+      SB.app.selectedShotId = s.id;
+      SB.app.changed(true);
+    };
+    shots.appendChild(add);
+
+    shots.addEventListener('dragover', function (ev) {
+      if (ev.dataTransfer.types.indexOf(DND_SHOT) < 0) return;
+      ev.preventDefault();
+    });
+    shots.addEventListener('drop', function (ev) {
+      if (ev.dataTransfer.types.indexOf(DND_SHOT) < 0) return;
+      ev.preventDefault();
+      const id = ev.dataTransfer.getData(DND_SHOT);
+      if (!id) return;
+      SB.Model.moveShot(P(), id, sc.id, sc.shots.length);
+      SB.app.changed(true);
+    });
+
+    blk.appendChild(shots);
+    return blk;
+  }
+
+  /* ---------------- one card ---------------- */
+
+  function card(sh, sc, si, sj) {
+    const c = SB.el('div', 'card' + (sh.noShot ? ' noshot' : '') +
+      (SB.app.selectedShotId === sh.id ? ' sel' : ''));
+    c.dataset.shot = sh.id;
+    c.style.borderLeftColor = sh.color;
+
+    c.addEventListener('dragover', function (ev) {
+      if (ev.dataTransfer.types.indexOf(DND_SHOT) < 0) return;
+      ev.preventDefault(); ev.stopPropagation();
+      c.classList.add('drag-over');
+    });
+    c.addEventListener('dragleave', function () { c.classList.remove('drag-over'); });
+    c.addEventListener('drop', function (ev) {
+      if (ev.dataTransfer.types.indexOf(DND_SHOT) < 0) return;
+      ev.preventDefault(); ev.stopPropagation();
+      c.classList.remove('drag-over');
+      const id = ev.dataTransfer.getData(DND_SHOT);
+      if (!id || id === sh.id) return;
+      const r = c.getBoundingClientRect();
+      const before = ev.clientX < r.left + r.width / 2;
+      SB.Model.moveShot(P(), id, sc.id, sj + (before ? 0 : 1));
+      SB.app.changed(true);
+    });
+    c.addEventListener('mousedown', function () {
+      if (SB.app.selectedShotId === sh.id) return;
+      SB.app.selectedShotId = sh.id;
+      document.querySelectorAll('.card.sel').forEach(function (x) { x.classList.remove('sel'); });
+      c.classList.add('sel');
+      SB.ScriptMode.refresh();
+    });
+
+    /* --- head --- */
+    const head = SB.el('div', 'card-head');
+    head.draggable = true;
+    head.addEventListener('dragstart', function (ev) {
+      ev.dataTransfer.setData(DND_SHOT, sh.id);
+      ev.dataTransfer.effectAllowed = 'move';
+      c.classList.add('dragging');
+    });
+    head.addEventListener('dragend', function () { c.classList.remove('dragging'); });
+
+    head.appendChild(SB.el('span', 'code', SB.Model.code(si, sj)));
+
+    const sel = document.createElement('select');
+    sel.className = 'type';
+    const types = P().settings.shotTypes.slice();
+    if (sh.type && types.indexOf(sh.type) < 0) types.unshift(sh.type);
+    types.forEach(function (t) {
+      const o = document.createElement('option');
+      o.value = t; o.textContent = t;
+      if (t === sh.type) o.selected = true;
+      sel.appendChild(o);
+    });
+    sel.addEventListener('change', function () { sh.type = sel.value; SB.app.changed(false); });
+    head.appendChild(sel);
+
+    if (sh.noShot) head.appendChild(SB.el('span', 'badge noshot', 'no shot'));
+
+    const acts = SB.el('div', 'ch-actions');
+    const col = SB.el('button', 'swatch');
+    col.style.background = sh.color;
+    col.title = 'Card colour';
+    col.onclick = function (ev) {
+      ev.stopPropagation();
+      palette(col, sh.color, function (hex) {
+        sh.color = hex;
+        col.style.background = hex;
+        c.style.borderLeftColor = hex;
+        SB.app.changed(false);
+      });
+    };
+    acts.appendChild(col);
+
+    const ns = SB.el('button', 'mini', sh.noShot ? 'shot' : 'no shot');
+    ns.title = 'Mark as “no shot” — stays on the board, excluded from prompts and PDF';
+    ns.onclick = function () { sh.noShot = !sh.noShot; SB.app.changed(true); };
+    acts.appendChild(ns);
+
+    const del = SB.el('button', 'mini danger', '✕');
+    del.title = 'Delete shot (script text stays in the master)';
+    del.onclick = function () {
+      if (!confirm('Delete shot ' + SB.Model.code(si, sj) + '? The script text stays in the master script.')) return;
+      SB.Model.deleteShot(P(), sh.id);
+      SB.app.changed(true);
+    };
+    acts.appendChild(del);
+    head.appendChild(acts);
+    c.appendChild(head);
+
+    /* --- frame --- */
+    c.appendChild(frame(sh));
+
+    /* --- script box --- */
+    const linked = !!sh.link;
+    const lbl = SB.el('div', 'box-label');
+    const dot = SB.el('span', 'link-dot' + (sh.broken ? ' broken' : (linked ? '' : ' free')));
+    lbl.appendChild(dot);
+    lbl.appendChild(SB.el('span', null,
+      sh.broken ? 'script — link broken' : (linked ? 'script — linked' : 'script — freestanding')));
+    const la = SB.el('div', 'lbl-actions');
+    if (linked) {
+      const bl = SB.el('button', null, 'break link');
+      bl.title = 'Stop syncing with the master script; keep the text as this shot’s own';
+      bl.onclick = function () { SB.Model.breakLink(P(), sh); SB.app.changed(true); };
+      la.appendChild(bl);
+      const go = SB.el('button', null, 'show');
+      go.onclick = function () {
+        SB.app.selectedShotId = sh.id;
+        SB.ScriptMode.open();
+        SB.ScriptMode.scrollTo(sh);
+      };
+      la.appendChild(go);
+    }
+    lbl.appendChild(la);
+    c.appendChild(lbl);
+
+    const box = SB.el('div', 'script-box' + (sh.broken ? ' broken' : ''));
+    box.dataset.shot = sh.id;
+    B.scriptEls[sh.id] = box;
+    B.scriptEditors[sh.id] = SB.Editor.attach(box, {
+      get: function () {
+        const f = SB.Model.findShot(P(), sh.id);
+        return f ? SB.Model.windowFor(P(), f.shot) : null;
+      },
+      edit: function (s, e, t) { SB.Model.applyShotEdit(P(), sh, s, e, t); },
+      toggle: function (type, s, e) {
+        const w = SB.Model.windowFor(P(), sh);
+        SB.Doc.toggleMark(w.doc, type, w.from + s, w.from + e);
+      },
+      after: function () { SB.app.scriptChanged(); }
+    });
+    c.appendChild(box);
+
+    /* --- description --- */
+    const dl = SB.el('div', 'box-label');
+    dl.appendChild(SB.el('span', null, 'description'));
+    c.appendChild(dl);
+
+    const desc = document.createElement('textarea');
+    desc.className = 'desc-box';
+    desc.value = sh.description || '';
+    desc.placeholder = 'What we see. This is what the prompt writer reads.';
+    desc.addEventListener('input', function () { sh.description = desc.value; SB.app.changed(false); });
+    c.appendChild(desc);
+
+    /* --- prompts (hidden until asked for, in the Prompts panel) --- */
+    const st = P().settings;
+    if (st.showImagePrompt) {
+      const im = SB.Model.imageModel(P());
+      if (im) c.appendChild(promptBox(sh, im, 'imagePrompt', 'first-frame prompt'));
+    }
+    if (st.showVideoPrompt) {
+      const vm = SB.Model.videoModel(P());
+      if (vm) c.appendChild(promptBox(sh, vm, 'videoPrompt', 'image→video prompt'));
+    }
+
+    /* --- comments --- */
+    if (SB.app.commentMode || (sh.comments && sh.comments.length)) {
+      c.appendChild(SB.Comments.list(sh));
+    }
+
+    return c;
+  }
+
+  /* a small popover of card colours that read on both themes */
+  function palette(anchor, current, pick) {
+    const old = document.querySelector('.pal-pop');
+    if (old) old.remove();
+    const pop = SB.el('div', 'pal-pop');
+    SB.Model.CARD_COLORS.forEach(function (hex) {
+      const b = SB.el('button', hex.toLowerCase() === String(current).toLowerCase() ? 'on' : '');
+      b.style.background = hex;
+      b.onclick = function (ev) { ev.stopPropagation(); pop.remove(); pick(hex); };
+      pop.appendChild(b);
+    });
+    document.body.appendChild(pop);
+    const r = anchor.getBoundingClientRect();
+    pop.style.left = Math.min(r.left, window.innerWidth - pop.offsetWidth - 8) + 'px';
+    pop.style.top = Math.min(r.bottom + 4, window.innerHeight - pop.offsetHeight - 8) + 'px';
+    setTimeout(function () {
+      document.addEventListener('mousedown', function away(ev) {
+        if (pop.contains(ev.target)) return;
+        pop.remove();
+        document.removeEventListener('mousedown', away);
+      });
+    }, 0);
+  }
+
+  function promptBox(sh, m, field, title) {
+    const pr = sh.prompts[m.id] || null;
+    const wrap = SB.el('div', 'prompt-box');
+    const t = SB.el('div', 'ptitle');
+    t.appendChild(SB.el('span', null, title + ' · ' + m.name));
+    const gen = SB.el('button', 'mini', 'generate');
+    gen.style.marginLeft = 'auto';
+    gen.onclick = function () {
+      gen.disabled = true; gen.textContent = '…';
+      const roles = field === 'imagePrompt' ? { image: true } : { video: true };
+      SB.Prompts.generateFor([sh], { roles: roles })
+        .catch(function (e) {
+          SB.toast(e.message || String(e), true);
+          gen.disabled = false; gen.textContent = 'generate';
+        });
+    };
+    t.appendChild(gen);
+    wrap.appendChild(t);
+    const ta = document.createElement('textarea');
+    ta.value = (pr && pr[field]) || '';
+    ta.placeholder = sh.noShot ? '(“no shot” — excluded from generation)' : 'not generated yet';
+    ta.addEventListener('input', function () {
+      sh.prompts[m.id] = sh.prompts[m.id] || { imagePrompt: '', videoPrompt: '', modelName: m.name };
+      sh.prompts[m.id][field] = ta.value;
+      sh.prompts[m.id].modelName = m.name;
+      SB.app.changed(false);
+    });
+    wrap.appendChild(ta);
+    return wrap;
+  }
+
+  /* ---------------- image frame ---------------- */
+
+  function frame(sh) {
+    const f = SB.el('div', 'frame');
+    if (sh.image) {
+      const img = document.createElement('img');
+      img.className = 'shot-img';
+      img.src = sh.image.data;
+      f.appendChild(img);
+      if (sh.annotation) {
+        const a = document.createElement('img');
+        a.className = 'anno';
+        a.src = sh.annotation;
+        f.appendChild(a);
+      }
+    } else {
+      f.appendChild(SB.el('div', 'drop-hint', 'drop / paste an image, or click to load'));
+    }
+
+    const tools = SB.el('div', 'frame-tools');
+    if (SB.app.commentMode && sh.image) {
+      const dr = SB.el('button', 'mini', 'draw');
+      dr.onclick = function (ev) { ev.stopPropagation(); SB.Comments.draw(sh); };
+      tools.appendChild(dr);
+      if (sh.annotation) {
+        const cl = SB.el('button', 'mini danger', 'clear ink');
+        cl.onclick = function (ev) { ev.stopPropagation(); sh.annotation = null; SB.app.changed(true); };
+        tools.appendChild(cl);
+      }
+    }
+    if (sh.image) {
+      const rm = SB.el('button', 'mini danger', '✕');
+      rm.title = 'Remove image';
+      rm.onclick = function (ev) { ev.stopPropagation(); sh.image = null; SB.app.changed(true); };
+      tools.appendChild(rm);
+    }
+    f.appendChild(tools);
+
+    f.addEventListener('click', function () {
+      SB.pickImageFile().then(function (file) { if (file) setImage(sh, file); });
+    });
+    f.addEventListener('dragover', function (ev) {
+      if (ev.dataTransfer.types.indexOf(DND_SHOT) >= 0) return;
+      ev.preventDefault();
+      ev.dataTransfer.dropEffect = 'copy';
+      f.classList.add('drag-over');
+    });
+    f.addEventListener('dragleave', function () { f.classList.remove('drag-over'); });
+    f.addEventListener('drop', function (ev) {
+      if (ev.dataTransfer.types.indexOf(DND_SHOT) >= 0) return;
+      ev.preventDefault();
+      f.classList.remove('drag-over');
+      SB.imageFromTransfer(ev.dataTransfer).then(function (src) {
+        if (!src) { SB.toast('No image found in that drop', true); return; }
+        setImage(sh, src);
+      });
+    });
+    return f;
+  }
+
+  function setImage(sh, src) {
+    return SB.downscaleImage(src).then(function (img) {
+      sh.image = img;
+      SB.app.changed(true);
+    }).catch(function (e) { SB.toast('Image failed: ' + e.message, true); });
+  }
+
+  /* ---------------- live script sync ---------------- */
+
+  function renderScriptWindows() {
+    Object.keys(B.scriptEditors).forEach(function (id) {
+      const f = SB.Model.findShot(P(), id);
+      const el = B.scriptEls[id];
+      if (!f || !el) return;
+      el.classList.toggle('broken', !!f.shot.broken);
+      B.scriptEditors[id].render();
+      const lbl = el.previousSibling;
+      if (lbl && lbl.classList && lbl.classList.contains('box-label')) {
+        const dot = lbl.querySelector('.link-dot');
+        const txt = lbl.querySelector('span:nth-child(2)');
+        const linked = !!f.shot.link;
+        if (dot) dot.className = 'link-dot' + (f.shot.broken ? ' broken' : (linked ? '' : ' free'));
+        if (txt) txt.textContent = f.shot.broken ? 'script — link broken' :
+          (linked ? 'script — linked' : 'script — freestanding');
+      }
+    });
+  }
+
+  SB.Board = {
+    render: render,
+    renderSceneList: renderSceneList,
+    renderScriptWindows: renderScriptWindows,
+    setImage: setImage,
+    DND_SHOT: DND_SHOT
+  };
+
+})(window.SB);
+
+</script>
+<script>
+/* ===== js/scriptmode.js ===== */
+/* scriptmode.js — the master script panel: live editing, capture, highlights. */
+(function (SB) {
+  'use strict';
+
+  let masterEl, editor, capBtn, form, panel;
+  let cover = null;          // Uint8Array coverage over master text
+  let activeRange = null;    // selected shot's range, drawn with an underline
+  let pendingSel = null;     // range captured when the user clicked "Capture shot"
+
+  function P() { return SB.app.project; }
+
+  function init() {
+    panel = document.getElementById('scriptPanel');
+    masterEl = document.getElementById('masterScript');
+    capBtn = document.getElementById('btnCapture');
+    form = document.getElementById('captureForm');
+
+    editor = SB.Editor.attach(masterEl, {
+      get: function () {
+        const p = P();
+        return p ? { doc: p.master, from: 0, to: p.master.text.length } : null;
+      },
+      edit: function (s, e, t) { SB.Model.applyMasterEdit(P(), s, e, t, null); },
+      toggle: function (type, s, e) { SB.Doc.toggleMark(P().master, type, s, e); },
+      after: function () { SB.app.scriptChanged(); },
+      extra: extraClass
+    });
+
+    document.addEventListener('selectionchange', function () {
+      if (document.activeElement !== masterEl) return;
+      const s = SB.Editor.getSel(masterEl);
+      capBtn.disabled = !(s && s.end > s.start);
+    });
+
+    capBtn.addEventListener('click', function () {
+      const s = SB.Editor.getSel(masterEl);
+      if (!s || s.end <= s.start) return;
+      pendingSel = { from: s.start, to: s.end };
+      showForm();
+    });
+
+    masterEl.addEventListener('paste', function () { /* handled by editor */ });
+  }
+
+  function extraClass(i) {
+    let c = '';
+    if (cover && i < cover.length && cover[i] > 0) c = 'h' + Math.min(3, cover[i]);
+    if (activeRange && i >= activeRange.from && i < activeRange.to) c += (c ? ' ' : '') + 'hactive';
+    return c;
+  }
+
+  function refresh() {
+    if (!masterEl || !P()) return;
+    cover = SB.Model.coverage(P());
+    activeRange = null;
+    if (SB.app.selectedShotId) {
+      const f = SB.Model.findShot(P(), SB.app.selectedShotId);
+      if (f && f.shot.link) activeRange = { from: f.shot.link.from, to: f.shot.link.to };
+    }
+    editor.render();
+  }
+
+  function open() {
+    panel.classList.remove('hidden');
+    document.getElementById('btnScript').classList.add('on');
+    refresh();
+  }
+  function close() {
+    panel.classList.add('hidden');
+    document.getElementById('btnScript').classList.remove('on');
+  }
+  function toggle() { panel.classList.contains('hidden') ? open() : close(); }
+  function isOpen() { return !panel.classList.contains('hidden'); }
+
+  function scrollTo(shot) {
+    const el = masterEl.querySelector('.hactive');
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  /* ---------- capture form ---------- */
+
+  function showForm() {
+    const p = P();
+    const text = p.master.text.slice(pendingSel.from, pendingSel.to);
+    const sceneId = SB.app.selectedSceneId || (p.scenes[p.scenes.length - 1] || {}).id;
+
+    form.innerHTML = '';
+    form.classList.remove('hidden');
+
+    const prev = SB.el('div', 'preview', text);
+    form.appendChild(prev);
+
+    const r1 = SB.el('div', 'row');
+    r1.appendChild(SB.el('label', null, 'Shot type'));
+    const tsel = document.createElement('select');
+    p.settings.shotTypes.forEach(function (t) {
+      const o = document.createElement('option'); o.value = t; o.textContent = t; tsel.appendChild(o);
+    });
+    r1.appendChild(tsel);
+    form.appendChild(r1);
+
+    const r2 = SB.el('div', 'row');
+    r2.appendChild(SB.el('label', null, 'Scene'));
+    const ssel = document.createElement('select');
+    p.scenes.forEach(function (sc, i) {
+      const o = document.createElement('option');
+      o.value = sc.id;
+      o.textContent = (i + 1) + '. ' + (sc.heading || 'untitled');
+      if (sc.id === sceneId) o.selected = true;
+      ssel.appendChild(o);
+    });
+    r2.appendChild(ssel);
+    form.appendChild(r2);
+
+    const r3 = SB.el('div', 'row');
+    const nsLbl = SB.el('label', null, '');
+    nsLbl.style.minWidth = '0';
+    const ns = document.createElement('input');
+    ns.type = 'checkbox';
+    nsLbl.appendChild(ns);
+    nsLbl.appendChild(document.createTextNode(' no shot / no storyboard'));
+    r3.appendChild(nsLbl);
+    form.appendChild(r3);
+
+    const r4 = SB.el('div', 'row');
+    r4.appendChild(SB.el('span', 'spacer'));
+    const cancel = SB.el('button', 'mini', 'Cancel');
+    cancel.onclick = hideForm;
+    const done = SB.el('button', 'mini primary', 'Complete');
+    done.onclick = function () {
+      const sh = SB.Model.addShot(P(), ssel.value, {
+        type: tsel.value,
+        noShot: ns.checked,
+        link: { from: pendingSel.from, to: pendingSel.to }
+      });
+      hideForm();
+      if (sh) {
+        SB.app.selectedShotId = sh.id;
+        SB.app.changed(true);
+        const el = document.querySelector('.card[data-shot="' + sh.id + '"]');
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    };
+    r4.appendChild(cancel); r4.appendChild(done);
+    form.appendChild(r4);
+
+    tsel.focus();
+  }
+
+  function hideForm() {
+    form.classList.add('hidden');
+    form.innerHTML = '';
+    pendingSel = null;
+    capBtn.disabled = true;
+  }
+
+  SB.ScriptMode = {
+    init: init, refresh: refresh, open: open, close: close, toggle: toggle,
+    isOpen: isOpen, scrollTo: scrollTo
+  };
+
+})(window.SB);
+
+</script>
+<script>
+/* ===== js/comments.js ===== */
+/* comments.js — comment mode: per-shot comment list + transparent-PNG ink layer.
+ * Comments and ink belong to the CURRENT version and are frozen into a version
+ * when a new one is created (see versions.js).
+ */
+(function (SB) {
+  'use strict';
+
+  function P() { return SB.app.project; }
+
+  function list(sh) {
+    const wrap = SB.el('div', 'comments');
+    (sh.comments || []).forEach(function (cm) {
+      const row = SB.el('div', 'comment');
+      row.appendChild(SB.el('span', 'when', new Date(cm.at).toLocaleDateString(undefined,
+        { month: 'short', day: 'numeric' })));
+      row.appendChild(SB.el('span', 'txt', cm.text));
+      const d = SB.el('button', 'del', '✕');
+      d.onclick = function () {
+        sh.comments = sh.comments.filter(function (x) { return x.id !== cm.id; });
+        SB.app.changed(true);
+      };
+      row.appendChild(d);
+      wrap.appendChild(row);
+    });
+
+    if (SB.app.commentMode) {
+      const add = SB.el('div', 'comment-add');
+      const inp = document.createElement('input');
+      inp.placeholder = 'Add a comment…';
+      const b = SB.el('button', 'mini primary', 'Add');
+      function submit() {
+        const t = inp.value.trim();
+        if (!t) return;
+        sh.comments.push({ id: SB.uid('cm'), text: t, at: Date.now() });
+        inp.value = '';
+        SB.app.changed(true);
+      }
+      inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); submit(); } });
+      b.onclick = submit;
+      add.appendChild(inp); add.appendChild(b);
+      wrap.appendChild(add);
+    }
+    return wrap;
+  }
+
+  /* ---------- ink ---------- */
+
+  function draw(sh) {
+    if (!sh.image) { SB.toast('Load an image first', true); return; }
+
+    const body = SB.el('div');
+    const wrap = SB.el('div', 'draw-wrap');
+    const img = document.createElement('img');
+    img.src = sh.image.data;
+    const cv = document.createElement('canvas');
+    cv.width = sh.image.w; cv.height = sh.image.h;
+    wrap.appendChild(img); wrap.appendChild(cv);
+    body.appendChild(wrap);
+
+    const tools = SB.el('div', 'draw-tools');
+    const COLORS = ['#ff3b30', '#ffd60a', '#32d74b', '#0a84ff', '#ffffff', '#000000'];
+    let color = COLORS[0], size = 4, erase = false;
+    COLORS.forEach(function (c, i) {
+      const sw = SB.el('button', 'sw' + (i === 0 ? ' on' : ''));
+      sw.style.background = c;
+      sw.onclick = function () {
+        color = c; erase = false;
+        tools.querySelectorAll('.sw').forEach(function (x) { x.classList.remove('on'); });
+        sw.classList.add('on');
+        eraseBtn.classList.remove('on');
+      };
+      tools.appendChild(sw);
+    });
+    const rng = document.createElement('input');
+    rng.type = 'range'; rng.min = 1; rng.max = 20; rng.value = size; rng.style.width = '90px';
+    rng.oninput = function () { size = +rng.value; };
+    tools.appendChild(rng);
+    const eraseBtn = SB.el('button', 'tb', 'Erase');
+    eraseBtn.onclick = function () {
+      erase = !erase;
+      eraseBtn.classList.toggle('on', erase);
+    };
+    tools.appendChild(eraseBtn);
+    const clr = SB.el('button', 'tb', 'Clear');
+    clr.onclick = function () { ctx.clearRect(0, 0, cv.width, cv.height); };
+    tools.appendChild(clr);
+    body.appendChild(tools);
+
+    const ctx = cv.getContext('2d');
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+
+    if (sh.annotation) {
+      const prev = new Image();
+      prev.onload = function () { ctx.drawImage(prev, 0, 0, cv.width, cv.height); };
+      prev.src = sh.annotation;
+    }
+
+    let drawing = false, last = null;
+    function pos(ev) {
+      const r = cv.getBoundingClientRect();
+      return {
+        x: (ev.clientX - r.left) * (cv.width / r.width),
+        y: (ev.clientY - r.top) * (cv.height / r.height)
+      };
+    }
+    cv.addEventListener('pointerdown', function (ev) {
+      cv.setPointerCapture(ev.pointerId);
+      drawing = true; last = pos(ev);
+      stroke(last, last);
+    });
+    cv.addEventListener('pointermove', function (ev) {
+      if (!drawing) return;
+      const p = pos(ev);
+      stroke(last, p);
+      last = p;
+    });
+    cv.addEventListener('pointerup', function () { drawing = false; });
+    cv.addEventListener('pointerleave', function () { drawing = false; });
+
+    function stroke(a, b) {
+      ctx.globalCompositeOperation = erase ? 'destination-out' : 'source-over';
+      ctx.strokeStyle = color;
+      ctx.lineWidth = erase ? size * 2.5 : size;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+    }
+
+    SB.modal({
+      title: 'Draw over frame',
+      body: body,
+      buttons: [
+        { label: 'Cancel' },
+        {
+          label: 'Save ink', primary: true, onClick: function (close) {
+            const data = ctx.getImageData(0, 0, cv.width, cv.height).data;
+            let any = false;
+            for (let i = 3; i < data.length; i += 4) { if (data[i] !== 0) { any = true; break; } }
+            sh.annotation = any ? cv.toDataURL('image/png') : null;
+            close();
+            SB.app.changed(true);
+          }
+        }
+      ]
+    });
+  }
+
+  SB.Comments = { list: list, draw: draw };
+
+})(window.SB);
+
+</script>
+<script>
+/* ===== js/prompts.js ===== */
+/* prompts.js — Gemini is the prompt WRITER. The app never generates media.
+ *
+ * Two roles, each with its own target model:
+ *   image model -> the first-frame prompt      (stored on prompts[imageModel.id].imagePrompt)
+ *   video model -> the image-to-video prompt   (stored on prompts[videoModel.id].videoPrompt)
+ * Every model a shot has been run against keeps its prompts, forever.
+ */
+(function (SB) {
+  'use strict';
+
+  const ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/';
+
+  function P() { return SB.app.project; }
+
+  function fill(tpl, ctx) {
+    return String(tpl || '').replace(/\{\{(\w+)\}\}/g, function (m, k) {
+      return ctx[k] == null ? '' : String(ctx[k]);
+    });
+  }
+
+  function contextFor(shot) {
+    const f = SB.Model.findShot(P(), shot.id);
+    const w = SB.Model.windowFor(P(), shot);
+    return {
+      MODEL: '',
+      CODE: f ? f.code : '',
+      SHOT_TYPE: shot.type || 'unspecified',
+      SCENE: f ? (f.scene.heading || '') : '',
+      SCENE_DESC: f ? (f.scene.description || '') : '',
+      SCRIPT: w.doc.text.slice(w.from, w.to),
+      DESCRIPTION: shot.description || ''
+    };
+  }
+
+  const PREAMBLE = 'You write prompts for generative media models. Follow the instruction ' +
+    'block(s) below exactly. Return the prompts themselves only — no commentary, no markdown fences.\n\n';
+
+  function imageBlock(shot, m) {
+    const ctx = contextFor(shot); ctx.MODEL = m.name;
+    return '=== FIRST-FRAME IMAGE PROMPT — INSTRUCTIONS ===\n' + fill(m.imageTemplate, ctx) + '\n';
+  }
+  function videoBlock(shot, m) {
+    const ctx = contextFor(shot); ctx.MODEL = m.name;
+    return '=== IMAGE-TO-VIDEO PROMPT — INSTRUCTIONS ===\n' + fill(m.videoTemplate, ctx) + '\n';
+  }
+
+  /* Build the request list for one shot given the selected roles. */
+  function jobsFor(shot, im, vm, roles) {
+    const jobs = [];
+    const wantI = roles.image && im, wantV = roles.video && vm;
+    if (wantI && wantV && im.id === vm.id) {
+      jobs.push({
+        text: PREAMBLE + 'Return JSON with the keys "imagePrompt" and "videoPrompt".\n\n' +
+          imageBlock(shot, im) + '\n' + videoBlock(shot, vm),
+        keys: ['imagePrompt', 'videoPrompt'],
+        targets: [{ model: im, field: 'imagePrompt' }, { model: vm, field: 'videoPrompt' }]
+      });
+      return jobs;
+    }
+    if (wantI) {
+      jobs.push({
+        text: PREAMBLE + 'Return JSON with the key "imagePrompt".\n\n' + imageBlock(shot, im),
+        keys: ['imagePrompt'],
+        targets: [{ model: im, field: 'imagePrompt' }]
+      });
+    }
+    if (wantV) {
+      jobs.push({
+        text: PREAMBLE + 'Return JSON with the key "videoPrompt".\n\n' + videoBlock(shot, vm),
+        keys: ['videoPrompt'],
+        targets: [{ model: vm, field: 'videoPrompt' }]
+      });
+    }
+    return jobs;
+  }
+
+  function callGemini(text, keys) {
+    const key = SB.Store.getApiKey();
+    if (!key) return Promise.reject(new Error('No Google API key. Add one in Settings → API.'));
+    const mdl = P().settings.geminiModel || 'gemini-2.5-flash';
+    const props = {};
+    keys.forEach(function (k) { props[k] = { type: 'STRING' }; });
+    const body = {
+      contents: [{ role: 'user', parts: [{ text: text }] }],
+      generationConfig: {
+        temperature: 0.8,
+        responseMimeType: 'application/json',
+        responseSchema: { type: 'OBJECT', properties: props, required: keys }
+      }
+    };
+    return fetch(ENDPOINT + encodeURIComponent(mdl) + ':generateContent?key=' + encodeURIComponent(key), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    }).then(function (r) {
+      return r.text().then(function (t) {
+        if (!r.ok) {
+          let msg = t;
+          try { msg = JSON.parse(t).error.message; } catch (e) { }
+          throw new Error('Gemini ' + r.status + ': ' + msg);
+        }
+        return JSON.parse(t);
+      });
+    }).then(function (data) {
+      const cand = data.candidates && data.candidates[0];
+      const part = cand && cand.content && cand.content.parts && cand.content.parts[0];
+      const raw = part && part.text;
+      if (!raw) throw new Error('Gemini returned no text' + (cand && cand.finishReason ? ' (' + cand.finishReason + ')' : ''));
+      try { return JSON.parse(raw); }
+      catch (e) {
+        const m = raw.match(/\{[\s\S]*\}/);
+        if (!m) throw new Error('Could not parse the Gemini response');
+        return JSON.parse(m[0]);
+      }
+    });
+  }
+
+  function store(shot, model, field, value) {
+    const cur = shot.prompts[model.id] || { imagePrompt: '', videoPrompt: '' };
+    cur[field] = value || '';
+    cur.modelName = model.name;
+    cur.at = Date.now();
+    shot.prompts[model.id] = cur;
+  }
+
+  /* opts = { roles:{image,video}, onProgress(done,total,failed) } */
+  function generateFor(shots, opts) {
+    opts = opts || {};
+    const p = P();
+    const im = SB.Model.imageModel(p), vm = SB.Model.videoModel(p);
+    const roles = opts.roles || { image: true, video: true };
+    if ((!roles.image || !im) && (!roles.video || !vm)) {
+      return Promise.reject(new Error('Pick a target model first'));
+    }
+
+    const jobs = [];
+    shots.forEach(function (s) {
+      if (s.noShot) return;                        // "no shot" fragments never generate
+      if (!(s.description || '').trim()) return;   // nothing for the writer to work from
+      jobsFor(s, im, vm, roles).forEach(function (j) { j.shot = s; jobs.push(j); });
+    });
+    if (!jobs.length) {
+      return Promise.reject(new Error('Nothing to generate — “no shot” cards and empty descriptions are skipped.'));
+    }
+
+    let done = 0, failed = 0;
+    const total = jobs.length;
+    const tick = function () { if (opts.onProgress) opts.onProgress(done, total, failed); };
+    tick();
+
+    const queue = jobs.slice();
+    function worker() {
+      const j = queue.shift();
+      if (!j) return Promise.resolve();
+      return callGemini(j.text, j.keys).then(function (res) {
+        j.targets.forEach(function (t) { store(j.shot, t.model, t.field, res[t.field]); });
+        done++;
+      }).catch(function (e) {
+        failed++;
+        console.error('[storyboarder] prompt failed', e);
+        if (failed === 1) SB.toast(e.message, true);
+      }).then(function () { tick(); return worker(); });
+    }
+    const lanes = [];
+    for (let i = 0; i < Math.min(3, jobs.length); i++) lanes.push(worker());
+    return Promise.all(lanes).then(function () {
+      SB.app.changed(true);
+      return { done: done, failed: failed, total: total };
+    });
+  }
+
+  function allShots() {
+    const all = [];
+    SB.Model.eachShot(P(), function (sh) { all.push(sh); });
+    return all;
+  }
+
+  function sceneShots(sceneId) {
+    const f = SB.Model.findScene(P(), sceneId);
+    return f ? f.scene.shots.slice() : [];
+  }
+
+  SB.Prompts = {
+    generateFor: generateFor, allShots: allShots, sceneShots: sceneShots,
+    jobsFor: jobsFor, fill: fill
+  };
+
+})(window.SB);
+
+</script>
+<script>
+/* ===== js/promptpanel.js ===== */
+/* promptpanel.js — everything prompt-related in one panel, opened when the
+ * user is ready for prompts. Cards stay clean until they ask for them.
+ */
+(function (SB) {
+  'use strict';
+
+  let panel, bodyEl, statusEl;
+  const write = { image: true, video: true };   // which prompts to write this run
+
+  function P() { return SB.app.project; }
+
+  function init() {
+    panel = document.getElementById('promptPanel');
+    bodyEl = document.getElementById('promptBody');
+  }
+
+  function block(title) {
+    const b = SB.el('div', 'pp-block');
+    if (title) b.appendChild(SB.el('div', 't', title));
+    return b;
+  }
+
+  function modelSelect(role) {
+    const p = P();
+    const sel = document.createElement('select');
+    [['image', 'Image models'], ['video', 'Video models']].forEach(function (g) {
+      const list = p.settings.models.filter(function (m) { return m.kind === g[0]; });
+      if (!list.length) return;
+      const og = document.createElement('optgroup');
+      og.label = g[1];
+      list.forEach(function (m) {
+        const o = document.createElement('option');
+        o.value = m.id; o.textContent = m.name;
+        if (m.id === (role === 'image' ? p.settings.imageModelId : p.settings.videoModelId)) o.selected = true;
+        og.appendChild(o);
+      });
+      sel.appendChild(og);
+    });
+    sel.addEventListener('change', function () {
+      if (role === 'image') p.settings.imageModelId = sel.value;
+      else p.settings.videoModelId = sel.value;
+      SB.app.changed(true);   // cards relabel to the new model
+    });
+    return sel;
+  }
+
+  function row(labelText, control) {
+    const r = SB.el('div', 'pp-row');
+    r.appendChild(SB.el('label', null, labelText));
+    r.appendChild(control);
+    return r;
+  }
+
+  function checkRow(labelText, checked, onChange) {
+    const l = SB.el('label', 'pp-toggle');
+    const c = document.createElement('input');
+    c.type = 'checkbox';
+    c.checked = !!checked;
+    c.addEventListener('change', function () { onChange(c.checked); });
+    l.appendChild(c);
+    l.appendChild(document.createTextNode(labelText));
+    return l;
+  }
+
+  function render() {
+    if (!panel || !P()) return;
+    const p = P();
+    bodyEl.innerHTML = '';
+
+    /* --- target models --- */
+    const b1 = block('target models');
+    b1.appendChild(row('First frame', modelSelect('image')));
+    b1.appendChild(row('Video', modelSelect('video')));
+    b1.appendChild(SB.el('div', 'pp-note',
+      'Each shot keeps its prompts per model — switching models here never loses the old ones.'));
+    bodyEl.appendChild(b1);
+
+    /* --- generate --- */
+    const b2 = block('write prompts');
+    b2.appendChild(checkRow(' first-frame prompt', write.image, function (v) { write.image = v; }));
+    b2.appendChild(checkRow(' image→video prompt', write.video, function (v) { write.video = v; }));
+
+    const scope = document.createElement('select');
+    [['project', 'Whole project'], ['scene', 'Selected scene'], ['shot', 'Selected shot']]
+      .forEach(function (o) {
+        const op = document.createElement('option');
+        op.value = o[0]; op.textContent = o[1];
+        scope.appendChild(op);
+      });
+    b2.appendChild(row('Scope', scope));
+
+    const acts = SB.el('div', 'pp-actions');
+    const gen = SB.el('button', 'tb on', 'Generate');
+    acts.appendChild(gen);
+    b2.appendChild(acts);
+
+    statusEl = SB.el('div', 'pp-status', SB.Store.getApiKey() ? '' : 'No API key yet — Settings → API.');
+    if (!SB.Store.getApiKey()) statusEl.classList.add('err');
+    b2.appendChild(statusEl);
+    bodyEl.appendChild(b2);
+
+    gen.addEventListener('click', function () {
+      const shots = scope.value === 'project' ? SB.Prompts.allShots()
+        : scope.value === 'scene' ? SB.Prompts.sceneShots(SB.app.selectedSceneId)
+          : (function () {
+            const f = SB.app.selectedShotId && SB.Model.findShot(p, SB.app.selectedShotId);
+            return f ? [f.shot] : [];
+          })();
+      if (!shots.length) { setStatus('Nothing in scope — select a scene or shot first.', true); return; }
+      run(shots, { image: write.image, video: write.video }, gen);
+    });
+
+    /* --- show on cards --- */
+    const b3 = block('show on cards');
+    b3.appendChild(checkRow(' first-frame prompt', p.settings.showImagePrompt, function (v) {
+      p.settings.showImagePrompt = v; SB.app.changed(true);
+    }));
+    b3.appendChild(checkRow(' image→video prompt', p.settings.showVideoPrompt, function (v) {
+      p.settings.showVideoPrompt = v; SB.app.changed(true);
+    }));
+    b3.appendChild(SB.el('div', 'pp-note',
+      'Off by default so cards stay compact. Generating turns the matching box on for you.'));
+    bodyEl.appendChild(b3);
+
+    /* --- engine --- */
+    const b4 = block('prompt writer');
+    const gm = document.createElement('input');
+    gm.type = 'text';
+    gm.value = p.settings.geminiModel || 'gemini-2.5-flash';
+    gm.addEventListener('change', function () {
+      p.settings.geminiModel = gm.value.trim() || 'gemini-2.5-flash';
+      SB.Store.touch();
+    });
+    b4.appendChild(row('Gemini', gm));
+    const k = SB.el('div', 'pp-note', SB.Store.getApiKey()
+      ? 'API key is set in this browser.' : 'No API key — add one in Settings → API.');
+    b4.appendChild(k);
+    bodyEl.appendChild(b4);
+  }
+
+  function setStatus(txt, isErr) {
+    if (!statusEl) return;
+    statusEl.textContent = txt;
+    statusEl.classList.toggle('err', !!isErr);
+  }
+
+  function run(shots, roles, btn) {
+    if (!roles.image && !roles.video) { setStatus('Tick at least one prompt to write.', true); return; }
+    btn.disabled = true;
+    SB.Prompts.generateFor(shots, {
+      roles: roles,
+      onProgress: function (done, total, failed) {
+        setStatus('writing ' + done + '/' + total + (failed ? ' · ' + failed + ' failed' : ''), false);
+      }
+    }).then(function (r) {
+      btn.disabled = false;
+      // reveal what was just written
+      const s = P().settings;
+      if (roles.image && r.done) s.showImagePrompt = true;
+      if (roles.video && r.done) s.showVideoPrompt = true;
+      SB.app.changed(true);
+      setStatus('done — ' + r.done + ' of ' + r.total + (r.failed ? ' · ' + r.failed + ' failed' : ''), !!r.failed);
+    }).catch(function (e) {
+      btn.disabled = false;
+      setStatus(e.message || String(e), true);
+    });
+  }
+
+  function open() {
+    panel.classList.remove('hidden');
+    document.getElementById('btnPrompts').classList.add('on');
+    render();
+  }
+  function close() {
+    panel.classList.add('hidden');
+    document.getElementById('btnPrompts').classList.remove('on');
+  }
+  function toggle() { panel.classList.contains('hidden') ? open() : close(); }
+  function isOpen() { return panel && !panel.classList.contains('hidden'); }
+  function refresh() { if (isOpen()) render(); }
+
+  SB.PromptPanel = {
+    init: init, open: open, close: close, toggle: toggle, isOpen: isOpen,
+    refresh: refresh, run: run
+  };
+
+})(window.SB);
+
+</script>
+<script>
+/* ===== js/settings.js ===== */
+/* settings.js — tabbed: General · Models & templates · API. */
+(function (SB) {
+  'use strict';
+
+  function P() { return SB.app.project; }
+
+  function field(labelText, control) {
+    const l = SB.el('label', 'field');
+    l.appendChild(SB.el('span', null, labelText));
+    l.appendChild(control);
+    return l;
+  }
+
+  function open(startTab) {
+    const p = P();
+    const body = SB.el('div');
+
+    const tabs = SB.el('div', 'tabs');
+    const panels = {};
+    const order = [['general', 'General'], ['models', 'Models & templates'], ['api', 'API']];
+    order.forEach(function (t) {
+      const b = SB.el('button', 'tab', t[1]);
+      b.dataset.tab = t[0];
+      b.onclick = function () { select(t[0]); };
+      tabs.appendChild(b);
+      panels[t[0]] = SB.el('div', 'tab-panel');
+    });
+    function select(id) {
+      tabs.querySelectorAll('.tab').forEach(function (b) { b.classList.toggle('on', b.dataset.tab === id); });
+      order.forEach(function (t) { panels[t[0]].classList.toggle('on', t[0] === id); });
+    }
+    body.appendChild(tabs);
+    const host = SB.el('div');
+    host.style.paddingTop = '12px';
+    order.forEach(function (t) { host.appendChild(panels[t[0]]); });
+    body.appendChild(host);
+
+    /* ---------------- General ---------------- */
+    const types = document.createElement('textarea');
+    types.rows = 8;
+    types.value = p.settings.shotTypes.join('\n');
+    panels.general.appendChild(field('Shot types (one per line)', types));
+
+    const themeSel = document.createElement('select');
+    [['dark', 'Dark'], ['light', 'Light']].forEach(function (o) {
+      const op = document.createElement('option');
+      op.value = o[0]; op.textContent = o[1];
+      if (SB.Theme.current() === o[0]) op.selected = true;
+      themeSel.appendChild(op);
+    });
+    themeSel.onchange = function () { SB.Theme.set(themeSel.value); };
+    panels.general.appendChild(field('Appearance', themeSel));
+
+    /* ---------------- Models & templates ---------------- */
+    panels.models.appendChild(SB.el('div', 'pp-note',
+      'One entry per target model. The templates tell Gemini how to write for that model — ' +
+      'Midjourney-style parameters, natural language, whatever it needs.'));
+    const hint = SB.el('div', 'vmeta',
+      'Placeholders: {{MODEL}} {{SHOT_TYPE}} {{SCENE}} {{SCENE_DESC}} {{SCRIPT}} {{DESCRIPTION}} {{CODE}}');
+    hint.style.margin = '6px 0 10px';
+    panels.models.appendChild(hint);
+
+    const listHost = SB.el('div');
+    panels.models.appendChild(listHost);
+
+    const working = SB.clone(p.settings.models);
+
+    function drawModels() {
+      listHost.innerHTML = '';
+      working.forEach(function (m, i) {
+        const row = SB.el('div', 'model-row');
+        const top = SB.el('div', 'top');
+        const name = document.createElement('input');
+        name.type = 'text'; name.value = m.name; name.placeholder = 'Model name';
+        name.oninput = function () { m.name = name.value; };
+        const kind = document.createElement('select');
+        [['video', 'video'], ['image', 'image']].forEach(function (k) {
+          const o = document.createElement('option');
+          o.value = k[0]; o.textContent = k[1];
+          if (m.kind === k[0]) o.selected = true;
+          kind.appendChild(o);
+        });
+        kind.onchange = function () { m.kind = kind.value; };
+        const tpl = SB.el('button', 'mini', m.__open ? 'hide templates' : 'templates');
+        tpl.onclick = function () { m.__open = !m.__open; drawModels(); };
+        const rst = SB.el('button', 'mini', 'reset');
+        rst.title = 'Restore the default templates for this model';
+        rst.onclick = function () {
+          m.imageTemplate = SB.Model.IMG_TPL; m.videoTemplate = SB.Model.VID_TPL;
+          m.__open = true; drawModels();
+        };
+        const del = SB.el('button', 'mini danger', 'remove');
+        del.onclick = function () { working.splice(i, 1); drawModels(); };
+        top.appendChild(name); top.appendChild(kind);
+        top.appendChild(tpl); top.appendChild(rst); top.appendChild(del);
+        row.appendChild(top);
+
+        if (m.__open) {
+          const ti = document.createElement('textarea');
+          ti.rows = 5; ti.value = m.imageTemplate;
+          ti.oninput = function () { m.imageTemplate = ti.value; };
+          row.appendChild(field('first-frame (image) template', ti));
+
+          const tv = document.createElement('textarea');
+          tv.rows = 5; tv.value = m.videoTemplate;
+          tv.oninput = function () { m.videoTemplate = tv.value; };
+          row.appendChild(field('image→video template', tv));
+        }
+        listHost.appendChild(row);
+      });
+      const add = SB.el('button', 'tb', '+ Add model');
+      add.onclick = function () {
+        working.push({
+          id: SB.uid('m'), name: 'New model', kind: 'video',
+          imageTemplate: SB.Model.IMG_TPL, videoTemplate: SB.Model.VID_TPL, __open: true
+        });
+        drawModels();
+      };
+      listHost.appendChild(add);
+    }
+    drawModels();
+
+    /* ---------------- API ---------------- */
+    const key = document.createElement('input');
+    key.type = 'password';
+    key.value = SB.Store.getApiKey();
+    key.placeholder = 'AIza…';
+    panels.api.appendChild(field('Google (Gemini) API key', key));
+    panels.api.appendChild(SB.el('div', 'pp-note',
+      'Stored in this browser only — never written into the .storyboard file, so a board can be shared without leaking the key.'));
+
+    const gm = document.createElement('input');
+    gm.type = 'text';
+    gm.value = p.settings.geminiModel || 'gemini-2.5-flash';
+    const gmField = field('Gemini model used to write prompts', gm);
+    gmField.style.marginTop = '14px';
+    panels.api.appendChild(gmField);
+
+    select(startTab && panels[startTab] ? startTab : 'general');
+
+    SB.modal({
+      title: 'Settings',
+      width: '720px',
+      body: body,
+      buttons: [
+        { label: 'Cancel' },
+        {
+          label: 'Save', primary: true, onClick: function (close) {
+            const t = types.value.split('\n').map(function (s) { return s.trim(); })
+              .filter(function (s) { return s; });
+            p.settings.shotTypes = t.length ? t : SB.Model.DEFAULT_SHOT_TYPES.slice();
+            p.settings.geminiModel = gm.value.trim() || 'gemini-2.5-flash';
+            p.settings.models = working.filter(function (m) { return (m.name || '').trim(); })
+              .map(function (m) { delete m.__open; return m; });
+            if (!p.settings.models.length) p.settings.models = SB.Model.defaultModels();
+            const has = function (id) {
+              return p.settings.models.some(function (m) { return m.id === id; });
+            };
+            if (!has(p.settings.imageModelId)) {
+              p.settings.imageModelId = SB.Model.firstOfKind(p.settings.models, 'image');
+            }
+            if (!has(p.settings.videoModelId)) {
+              p.settings.videoModelId = SB.Model.firstOfKind(p.settings.models, 'video');
+            }
+            SB.Store.setApiKey(key.value.trim());
+            close();
+            SB.app.changed(true);
+            SB.PromptPanel.refresh();
+            SB.toast('Settings saved');
+          }
+        }
+      ]
+    });
+  }
+
+  SB.Settings = { open: open };
+
+})(window.SB);
+
+</script>
+<script>
+/* ===== js/versions.js ===== */
+/* versions.js — whole-project versions. Comments and ink freeze with the
+ * version they were made in and do NOT carry forward into the new one.
+ */
+(function (SB) {
+  'use strict';
+
+  function P() { return SB.app.project; }
+
+  function core(p) {
+    return {
+      master: SB.clone(p.master),
+      scenes: SB.clone(p.scenes),
+      versionNumber: p.versionNumber,
+      versionName: p.versionName
+    };
+  }
+
+  function freeze(p, note) {
+    p.versions.push({
+      n: p.versionNumber,
+      name: p.versionName + (note ? ' — ' + note : ''),
+      createdAt: Date.now(),
+      snapshot: core(p)
+    });
+  }
+
+  function countComments(snap) {
+    let n = 0, ink = 0;
+    (snap.scenes || []).forEach(function (sc) {
+      sc.shots.forEach(function (sh) {
+        n += (sh.comments || []).length;
+        if (sh.annotation) ink++;
+      });
+    });
+    return { comments: n, ink: ink };
+  }
+
+  function newVersion() {
+    const p = P();
+    const suggested = 'v' + (p.versionNumber + 1);
+    const name = prompt('Name for the new version:', suggested);
+    if (name === null) return;
+    freeze(p, null);
+    p.versionNumber = p.versionNumber + 1;
+    p.versionName = (name || '').trim() || suggested;
+    // fresh start: comments and drawings stay with the version they were made in
+    SB.Model.eachShot(p, function (sh) { sh.comments = []; sh.annotation = null; });
+    SB.app.changed(true);
+    SB.toast('Now working in ' + p.versionName + ' — comments and ink start clean');
+  }
+
+  function restore(v) {
+    const p = P();
+    if (!confirm('Restore "' + v.name + '"?\n\nThe current state is saved as a version first, so nothing is lost.')) return;
+    freeze(p, 'before restoring ' + v.name);
+    p.master = SB.clone(v.snapshot.master);
+    p.scenes = SB.clone(v.snapshot.scenes);
+    p.versionNumber = p.versions.reduce(function (a, x) { return Math.max(a, x.n); }, p.versionNumber) + 1;
+    p.versionName = v.name + ' (restored)';
+    SB.app.selectedShotId = null;
+    SB.app.changed(true);
+    SB.toast('Restored ' + v.name);
+  }
+
+  function viewComments(v) {
+    const body = SB.el('div');
+    let any = false;
+    (v.snapshot.scenes || []).forEach(function (sc, si) {
+      sc.shots.forEach(function (sh, sj) {
+        if (!(sh.comments || []).length && !sh.annotation) return;
+        any = true;
+        const h = SB.el('div', 'ver-row');
+        h.appendChild(SB.el('b', null, SB.Model.code(si, sj) + ' · ' + (sc.heading || '')));
+        if (sh.annotation) h.appendChild(SB.el('span', 'vmeta', ' (has ink)'));
+        body.appendChild(h);
+        (sh.comments || []).forEach(function (cm) {
+          const r = SB.el('div', 'comment');
+          r.appendChild(SB.el('span', 'when', SB.fmtDate(cm.at)));
+          r.appendChild(SB.el('span', 'txt', cm.text));
+          body.appendChild(r);
+        });
+      });
+    });
+    if (!any) body.appendChild(SB.el('div', 'vmeta', 'No comments or drawings in this version.'));
+    SB.modal({ title: 'Comments in ' + v.name, body: body, buttons: [{ label: 'Close', primary: true }] });
+  }
+
+  function open() {
+    const p = P();
+    const body = SB.el('div');
+
+    const cur = SB.el('div', 'ver-row current');
+    const c = countComments(p);
+    cur.appendChild(SB.el('span', 'vname', p.versionName + '  (working)'));
+    cur.appendChild(SB.el('span', 'vmeta', c.comments + ' comments · ' + c.ink + ' inked'));
+    const nv = SB.el('button', 'mini primary', 'New version…');
+    nv.onclick = function () { m.close(); newVersion(); };
+    cur.appendChild(nv);
+    body.appendChild(cur);
+
+    p.versions.slice().reverse().forEach(function (v) {
+      const cc = countComments(v.snapshot);
+      const row = SB.el('div', 'ver-row');
+      row.appendChild(SB.el('span', 'vname', v.name));
+      row.appendChild(SB.el('span', 'vmeta', SB.fmtDate(v.createdAt) + ' · ' +
+        cc.comments + ' comments · ' + cc.ink + ' inked'));
+      const bc = SB.el('button', 'mini', 'comments');
+      bc.onclick = function () { viewComments(v); };
+      const br = SB.el('button', 'mini', 'restore');
+      br.onclick = function () { m.close(); restore(v); };
+      row.appendChild(bc); row.appendChild(br);
+      body.appendChild(row);
+    });
+
+    if (!p.versions.length) body.appendChild(SB.el('div', 'vmeta', 'No earlier versions yet.'));
+
+    const m = SB.modal({
+      title: 'Versions', width: '560px', body: body,
+      buttons: [{ label: 'Close', primary: true }]
+    });
+  }
+
+  SB.Versions = { open: open, newVersion: newVersion };
+
+})(window.SB);
+
+</script>
+<script>
+/* ===== js/pdf.js ===== */
+/* pdf.js — contact sheet, 6 shots per page, via Chrome's Print → Save as PDF.
+ * Excludes comments, ink, and "no shot" fragments.
+ */
+(function (SB) {
+  'use strict';
+
+  const PER_PAGE = 6;
+
+  function P() { return SB.app.project; }
+
+  function cells() {
+    const out = [];
+    const p = P();
+    p.scenes.forEach(function (sc, si) {
+      sc.shots.forEach(function (sh, sj) {
+        if (sh.noShot) return;
+        const w = SB.Model.windowFor(p, sh);
+        out.push({
+          code: SB.Model.code(si, sj),
+          scene: sc.heading || '',
+          type: sh.type || '',
+          img: sh.image ? sh.image.data : null,
+          script: SB.Doc.renderHTML(w.doc, w.from, w.to, null),
+          desc: sh.description || ''
+        });
+      });
+    });
+    return out;
+  }
+
+  function html() {
+    const p = P();
+    const list = cells();
+    let pages = '';
+    for (let i = 0; i < list.length; i += PER_PAGE) {
+      const grp = list.slice(i, i + PER_PAGE);
+      pages += '<section class="page"><div class="grid">' + grp.map(function (c) {
+        return '<figure class="cell">' +
+          '<div class="frame">' + (c.img ? '<img src="' + c.img + '">' : '<div class="empty">no frame</div>') + '</div>' +
+          '<div class="meta"><span class="code">' + SB.esc(c.code) + '</span>' +
+          '<span class="scene">' + SB.esc(c.scene) + '</span>' +
+          (c.type ? '<span class="type">' + SB.esc(c.type) + '</span>' : '') + '</div>' +
+          '<div class="script">' + (c.script || '<i class="dim">(no script)</i>') + '</div>' +
+          '<div class="desc">' + SB.esc(c.desc) + '</div>' +
+          '</figure>';
+      }).join('') + '</div>' +
+        '<footer>' + SB.esc(p.name) + ' · ' + SB.esc(p.versionName) + ' · page ' +
+        (Math.floor(i / PER_PAGE) + 1) + ' of ' + Math.ceil(list.length / PER_PAGE) + '</footer></section>';
+    }
+    if (!pages) pages = '<section class="page"><p>Nothing to print — every shot is marked “no shot”.</p></section>';
+
+    return '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + SB.esc(p.name) +
+      ' — storyboard</title><style>' +
+      '@page{size:letter portrait;margin:12mm}' +
+      'body{margin:0;font:11px/1.4 "Segoe UI",system-ui,sans-serif;color:#111;background:#fff}' +
+      '.page{page-break-after:always;display:flex;flex-direction:column;height:262mm}' +
+      '.page:last-child{page-break-after:auto}' +
+      '.grid{flex:1;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr 1fr;gap:6mm}' +
+      '.cell{margin:0;display:flex;flex-direction:column;border:1px solid #bbb;border-radius:3px;overflow:hidden}' +
+      '.frame{background:#000;aspect-ratio:16/9;display:flex;align-items:center;justify-content:center}' +
+      '.frame img{width:100%;height:100%;object-fit:contain}' +
+      '.empty{color:#777;font-size:10px}' +
+      '.meta{display:flex;gap:6px;align-items:baseline;padding:3px 5px;background:#eee;border-bottom:1px solid #ddd}' +
+      '.code{font-weight:700}.scene{flex:1;font-size:10px;color:#333}' +
+      '.type{font-size:9px;text-transform:uppercase;letter-spacing:.4px;color:#666}' +
+      '.script{padding:4px 5px;white-space:pre-wrap;border-bottom:1px dashed #ddd;max-height:22mm;overflow:hidden}' +
+      '.desc{padding:4px 5px;color:#333;white-space:pre-wrap;flex:1;overflow:hidden}' +
+      '.dim{color:#999}' +
+      'footer{padding-top:3mm;font-size:9px;color:#666;text-align:center}' +
+      '</style></head><body>' + pages +
+      '<script>window.addEventListener("load",function(){setTimeout(function(){window.print()},250)})<\/script>' +
+      '</body></html>';
+  }
+
+  function exportPdf() {
+    const w = window.open('', '_blank');
+    if (!w) { SB.toast('Allow pop-ups for this page to export the PDF', true); return; }
+    w.document.open();
+    w.document.write(html());
+    w.document.close();
+  }
+
+  SB.Pdf = { exportPdf: exportPdf, html: html, cells: cells };
+
+})(window.SB);
+
+</script>
+<script>
+/* ===== js/app.js ===== */
+/* app.js — boot + wiring. */
+(function (SB) {
+  'use strict';
+
+  const app = SB.app = {
+    project: null,
+    selectedShotId: null,
+    selectedSceneId: null,
+    commentMode: false,
+    pendingHandle: null
+  };
+
+  /* Any change at all. structural = the card layout must be rebuilt. */
+  app.changed = function (structural) {
+    if (structural) {
+      SB.Board.render();
+      renderChrome();
+    } else {
+      SB.Board.renderSceneList();
+    }
+    SB.Store.touch();
+  };
+
+  /* A change to shared script text: refresh every window onto the master. */
+  app.scriptChanged = function () {
+    SB.Board.renderScriptWindows();
+    SB.ScriptMode.refresh();
+    SB.Store.touch();
+  };
+
+  function renderChrome() {
+    const p = app.project;
+    document.getElementById('projName').value = p.name || '';
+    document.getElementById('verLabel').textContent = p.versionName || ('v' + p.versionNumber);
+  }
+
+  function setProject(p) {
+    app.project = p;
+    app.selectedShotId = null;
+    app.selectedSceneId = p.scenes[0] ? p.scenes[0].id : null;
+    SB.Board.render();
+    renderChrome();
+    SB.ScriptMode.refresh();
+    SB.PromptPanel.refresh();
+  }
+
+  /* ---------------- boot ---------------- */
+
+  function boot() {
+    if (!SB.Store.hasFS) {
+      SB.toast('This app needs Chrome or Edge (File System Access API) to autosave.', true);
+    }
+    SB.ScriptMode.init();
+    SB.PromptPanel.init();
+    SB.Store.S.getProject = function () { return app.project; };
+    SB.Store.S.onState = function (txt, cls) {
+      const el = document.getElementById('saveState');
+      el.textContent = txt;
+      el.className = 'save-state ' + (cls || '');
+    };
+
+    setProject(SB.Model.newProject());
+    wire();
+
+    SB.Store.lastHandle().then(function (h) {
+      if (!h) return;
+      return h.queryPermission({ mode: 'readwrite' }).then(function (perm) {
+        if (perm === 'granted') {
+          return SB.Store.loadFromHandle(h, false).then(setProject);
+        }
+        app.pendingHandle = h;
+        const el = document.getElementById('saveState');
+        el.textContent = 'reopen ' + h.name;
+        el.className = 'save-state dirty';
+        el.style.cursor = 'pointer';
+        el.title = 'Click to reopen the last project';
+      });
+    }).catch(function () { });
+  }
+
+  function wire() {
+    const $ = function (id) { return document.getElementById(id); };
+
+    $('projName').addEventListener('input', function () {
+      app.project.name = this.value; SB.Store.touch();
+    });
+
+    $('saveState').addEventListener('click', function () {
+      if (!app.pendingHandle) return;
+      const h = app.pendingHandle;
+      app.pendingHandle = null;
+      this.style.cursor = '';
+      SB.Store.loadFromHandle(h, true).then(setProject)
+        .catch(function (e) { SB.toast(e.message, true); });
+    });
+
+    $('btnNew').addEventListener('click', function () {
+      if (!confirm('Start a new project? The current one is already saved to its file.')) return;
+      SB.Store.detach();
+      setProject(SB.Model.newProject());
+    });
+
+    $('btnOpen').addEventListener('click', function () {
+      SB.Store.open().then(setProject).catch(function (e) {
+        if (e && e.name === 'AbortError') return;
+        SB.toast(e.message || String(e), true);
+      });
+    });
+
+    $('btnSaveAs').addEventListener('click', function () {
+      SB.Store.saveAs(app.project).then(function (n) { SB.toast('Autosaving to ' + n); })
+        .catch(function (e) {
+          if (e && e.name === 'AbortError') return;
+          SB.toast(e.message || String(e), true);
+        });
+    });
+
+    $('btnScript').addEventListener('click', function () { SB.ScriptMode.toggle(); });
+
+    $('btnComment').addEventListener('click', function () {
+      app.commentMode = !app.commentMode;
+      this.classList.toggle('on', app.commentMode);
+      document.body.classList.toggle('comment-mode', app.commentMode);
+      SB.Board.render();
+    });
+
+    $('btnPrompts').addEventListener('click', function () { SB.PromptPanel.toggle(); });
+
+    $('btnTheme').addEventListener('click', function () { SB.Theme.toggle(); });
+
+    $('btnVersions').addEventListener('click', function () { SB.Versions.open(); });
+    $('btnPdf').addEventListener('click', function () { SB.Pdf.exportPdf(); });
+    $('btnSettings').addEventListener('click', function () { SB.Settings.open(); });
+
+    $('btnAddScene').addEventListener('click', function () {
+      const sc = SB.Model.addScene(app.project);
+      app.selectedSceneId = sc.id;
+      app.changed(true);
+    });
+
+    /* paste an image straight onto the selected card (text pastes are left alone) */
+    document.addEventListener('paste', function (ev) {
+      const cd = ev.clipboardData;
+      const file = cd && Array.prototype.filter.call(cd.items || [], function (i) {
+        return i.kind === 'file' && /^image\//.test(i.type);
+      })[0];
+      if (!file) return;
+      if (!app.selectedShotId) { SB.toast('Select a card first, then paste', true); return; }
+      const f = SB.Model.findShot(app.project, app.selectedShotId);
+      if (!f) return;
+      ev.preventDefault();
+      const blob = file.getAsFile();
+      if (blob) SB.Board.setImage(f.shot, blob);
+    });
+
+    document.addEventListener('keydown', function (ev) {
+      if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 's') {
+        ev.preventDefault();
+        SB.Store.saveNow();
+      }
+    });
+
+    window.addEventListener('beforeunload', function (e) {
+      if (SB.Store.S.dirty) { e.preventDefault(); e.returnValue = ''; }
+    });
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+
+})(window.SB);
+
+</script>
+</body>
+</html>

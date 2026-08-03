@@ -1,0 +1,165 @@
+/* headless UI scenario — injected by test-ui.mjs, not part of the app */
+(function () {
+  setTimeout(function () {
+    const out = [];
+    const t = function (name, cond, extra) {
+      out.push((cond ? 'ok   ' : 'FAIL ') + name + (cond ? '' : ' :: ' + extra));
+    };
+    try {
+      const SB = window.SB, app = SB.app, P = function () { return app.project; };
+      const TEXT = 'Wide of the office. Then a close-up of the laptop.';
+
+      SB.Model.applyMasterEdit(P(), 0, 0, TEXT, null);
+      app.scriptChanged();
+      const master = document.getElementById('masterScript');
+      t('master script renders', master.textContent === TEXT, JSON.stringify(master.textContent));
+
+      const scId = P().scenes[0].id;
+      const a = SB.Model.addShot(P(), scId, { type: 'Wide', link: { from: 0, to: 19 } });
+      const b = SB.Model.addShot(P(), scId, { type: 'Close-up', link: { from: 15, to: 40 } });
+      app.changed(true);
+      t('cards rendered', document.querySelectorAll('.card').length === 3,
+        document.querySelectorAll('.card').length);
+
+      const elA = document.querySelector('.script-box[data-shot="' + a.id + '"]');
+      const elB = document.querySelector('.script-box[data-shot="' + b.id + '"]');
+      t('shot A window', elA.textContent === 'Wide of the office.', JSON.stringify(elA.textContent));
+      t('shot B window', elB.textContent === 'ice. Then a close-up of t', JSON.stringify(elB.textContent));
+
+      t('overlap highlighted', master.querySelectorAll('.h2').length > 0,
+        master.innerHTML.slice(0, 200));
+      t('single coverage highlighted', master.querySelectorAll('.h1').length > 0, '');
+
+      // type at the trailing edge of shot A (which is interior to shot B)
+      elA.focus();
+      SB.Editor.setSel(elA, elA.textContent.length, elA.textContent.length);
+      elA.dispatchEvent(new InputEvent('beforeinput',
+        { inputType: 'insertText', data: '!!', bubbles: true, cancelable: true }));
+
+      t('master took the edit', P().master.text.indexOf('office.!!') === 12, P().master.text);
+      t('source shot grew', document.querySelector('.script-box[data-shot="' + a.id + '"]').textContent
+        === 'Wide of the office.!!', JSON.stringify(elA.textContent));
+      t('overlapping shot updated', document.querySelector('.script-box[data-shot="' + b.id + '"]').textContent
+        === 'ice.!! Then a close-up of t', JSON.stringify(elB.textContent));
+
+      // backspace in shot B, away from shot A's range
+      elB.focus();
+      SB.Editor.setSel(elB, elB.textContent.length, elB.textContent.length);
+      elB.dispatchEvent(new InputEvent('beforeinput',
+        { inputType: 'deleteContentBackward', bubbles: true, cancelable: true }));
+      t('delete propagated', P().master.text.indexOf('close-up of he') > 0, P().master.text);
+      t('untouched shot unchanged',
+        document.querySelector('.script-box[data-shot="' + a.id + '"]').textContent === 'Wide of the office.!!', '');
+
+      // bold through the shot window
+      SB.Editor.setSel(elB, 0, 4);
+      elB.dispatchEvent(new InputEvent('beforeinput',
+        { inputType: 'formatBold', bubbles: true, cancelable: true }));
+      t('bold mark stored on master', P().master.marks.b.length === 1, JSON.stringify(P().master.marks.b));
+      t('bold rendered in master', master.querySelector('b') !== null, '');
+
+      // break link
+      SB.Model.breakLink(P(), b);
+      app.changed(true);
+      t('break link keeps text',
+        document.querySelector('.script-box[data-shot="' + b.id + '"]').textContent === 'ice.!! Then a close-up of ',
+        JSON.stringify(document.querySelector('.script-box[data-shot="' + b.id + '"]').textContent));
+      t('freestanding badge', document.querySelector('.card[data-shot="' + b.id + '"] .link-dot.free') !== null, '');
+
+      // no-shot exclusion + pdf
+      a.noShot = true;
+      app.changed(true);
+      const pdfCells = SB.Pdf.cells();
+      t('pdf excludes no-shot', pdfCells.every(function (c) { return c.code !== '1B'; }),
+        JSON.stringify(pdfCells.map(function (c) { return c.code; })));
+      t('pdf html builds', SB.Pdf.html().indexOf('<section class="page">') > 0, '');
+
+      // prompt boxes stay off the cards until asked for
+      t('prompt boxes hidden by default', document.querySelectorAll('.prompt-box').length === 0,
+        document.querySelectorAll('.prompt-box').length);
+      SB.PromptPanel.open();
+      t('prompt panel opens', !document.getElementById('promptPanel').classList.contains('hidden'), '');
+      const ppSel = document.querySelectorAll('#promptBody select');
+      t('panel has image + video model pickers', ppSel.length >= 2, ppSel.length);
+      t('image + video are separate models',
+        P().settings.imageModelId !== P().settings.videoModelId,
+        P().settings.imageModelId + ' / ' + P().settings.videoModelId);
+      const showBoxes = document.querySelectorAll('#promptBody .pp-block')[2]
+        .querySelectorAll('input[type=checkbox]');
+      showBoxes[0].click(); showBoxes[1].click();
+      t('toggling reveals both prompt boxes',
+        document.querySelectorAll('.card:not(.noshot) .prompt-box').length === 4,
+        document.querySelectorAll('.prompt-box').length);
+      const titles = Array.prototype.map.call(document.querySelectorAll('.prompt-box .ptitle span'),
+        function (s) { return s.textContent; });
+      t('each box names its own model',
+        titles[0].indexOf(SB.Model.imageModel(P()).name) > 0 &&
+        titles[1].indexOf(SB.Model.videoModel(P()).name) > 0, JSON.stringify(titles.slice(0, 2)));
+      showBoxes[0].click(); showBoxes[1].click();
+      SB.PromptPanel.close();
+
+      // theme
+      SB.Theme.set('light');
+      t('light theme applied', document.documentElement.getAttribute('data-theme') === 'light', '');
+      const lightBg = getComputedStyle(document.body).backgroundColor;
+      SB.Theme.set('dark');
+      t('theme actually changes colours',
+        getComputedStyle(document.body).backgroundColor !== lightBg, lightBg);
+
+      // colour palette
+      document.querySelector('.card .swatch').click();
+      const pop = document.querySelector('.pal-pop');
+      t('palette popover', pop && pop.children.length === SB.Model.CARD_COLORS.length,
+        pop ? pop.children.length : 'none');
+      t('palette size is 8-10', SB.Model.CARD_COLORS.length >= 8 && SB.Model.CARD_COLORS.length <= 10,
+        SB.Model.CARD_COLORS.length);
+      pop.children[3].click();
+      t('colour applied', P().scenes[0].shots[0].color === SB.Model.CARD_COLORS[3],
+        P().scenes[0].shots[0].color);
+
+      // settings tabs
+      SB.Settings.open();
+      t('settings modal', document.querySelectorAll('.modal').length === 1, '');
+      t('settings is tabbed', document.querySelectorAll('.modal .tab').length === 3,
+        document.querySelectorAll('.modal .tab').length);
+      t('templates are not on the first tab',
+        document.querySelectorAll('.modal .tab-panel.on textarea').length === 1,
+        document.querySelectorAll('.modal .tab-panel.on textarea').length);
+      document.querySelectorAll('.modal .tab')[1].click();
+      t('models tab shows the model list',
+        document.querySelectorAll('.modal .tab-panel.on .model-row').length === 15,
+        document.querySelectorAll('.modal .tab-panel.on .model-row').length);
+      t('templates collapsed until opened',
+        document.querySelectorAll('.modal .tab-panel.on textarea').length === 0, '');
+      document.querySelectorAll('.modal .model-row .mini')[0].click();
+      t('templates open per model',
+        document.querySelectorAll('.modal .tab-panel.on textarea').length === 2,
+        document.querySelectorAll('.modal .tab-panel.on textarea').length);
+      document.querySelector('.modal .foot .tb').click();
+      SB.Versions.open();
+      t('versions modal', document.querySelectorAll('.modal').length === 1, '');
+      document.querySelector('.modal .foot .tb').click();
+
+      // drag/move + renumber
+      const sc2 = SB.Model.addScene(P());
+      SB.Model.moveShot(P(), b.id, sc2.id, 0);
+      app.changed(true);
+      t('moved shot renumbered', SB.Model.findShot(P(), b.id).code === '2A',
+        SB.Model.findShot(P(), b.id).code);
+      SB.Model.moveScene(P(), sc2.id, 0);
+      app.changed(true);
+      t('scene reorder renumbers', SB.Model.findShot(P(), b.id).code === '1A',
+        SB.Model.findShot(P(), b.id).code);
+
+      // comment mode
+      app.commentMode = true;
+      SB.Board.render();
+      t('comment inputs appear', document.querySelectorAll('.comment-add').length === 3,
+        document.querySelectorAll('.comment-add').length);
+    } catch (e) {
+      out.push('FAIL exception :: ' + (e && e.stack || e));
+    }
+    document.getElementById('toastRoot').textContent =
+      'RESULT>>' + out.join(' | ') + '<<RESULT ERRORS:' + JSON.stringify(window.__err || []);
+  }, 400);
+})();

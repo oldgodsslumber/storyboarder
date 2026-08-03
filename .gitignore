@@ -1,0 +1,8 @@
+# scratch from the headless test/screenshot harness
+_*.html
+_*.png
+_*.mjs
+_dump*
+
+# local project files — boards live wherever the user saved them
+*.storyboard
