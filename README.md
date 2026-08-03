@@ -16,10 +16,32 @@ Built from [storyboard_app_spec.md](storyboard_app_spec.md).
 
 1. **Save as…** → pick where the `.storyboard` file lives. From then on every change
    autosaves to that file (~500 ms after you stop typing). There is no Save button.
+   **Copy** downloads a standalone duplicate at any time — the escape hatch if a file
+   ever becomes unwritable.
 2. **Settings** → paste your Google (Gemini) API key. It is stored in this browser only
    and is **never** written into the project file, so a board can be shared safely.
 3. Re-opening the app offers to reopen the last project — click the file name in the
    top bar (Chrome requires a click to re-grant file permission).
+
+### Opening from file:// (and why the app forgets your project)
+
+IndexedDB does not work on `file://` in Chrome — it neither succeeds nor errors, it simply
+never answers. That is where the app stores the handle to your last project, so **opened as
+a local file, Storyboarder cannot remember your board between sessions**: use **Open…** each
+time. The top bar says `no file — Open…` when it detects this. Autosave itself is
+unaffected — it works normally as soon as a file is open.
+
+Serve the folder over http (any static server) and the reopen-last-project prompt returns.
+
+### How the file is protected
+
+- Writes go through a swap file opened with `keepExistingData`, then truncate to length, so
+  a write that fails part-way can never leave a 0-byte project.
+- A save that fails **stops the app and says so**, offering a rescue download — it is never
+  reported only in the small status label.
+- The app refuses to write an empty or unserialisable project over a real one.
+- A project file that will not open is reported as an error. The blank board you get is
+  never silently treated as your project, and your file is not written over.
 
 ## How the script sync works
 
@@ -206,6 +228,7 @@ under it, taken from an exported transcript. Everything lands in scene 1. See
 node test-core.mjs     # the anchored-range engine, numbering, key-never-in-file
 node test-ui.mjs       # boots the built file in headless Chrome, drives the UI
 node test-typing.mjs   # real mouse + keyboard over the DevTools protocol
+node test-store.mjs    # autosave/open against a stubbed File System Access API
 ```
 
 `test-typing.mjs` exists because `test-ui.mjs` dispatches synthetic `beforeinput` events,

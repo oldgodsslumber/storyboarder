@@ -29,14 +29,24 @@
 
   /* ---------- IndexedDB (remember the last file handle) ---------- */
 
+  /* Remembering the handle is a convenience, never a precondition for saving.
+   * IndexedDB is restricted on file:// (which is how this app is normally
+   * opened), and a request that neither succeeds nor errors must not be able
+   * to wedge anything, so every call is time-boxed. */
   function idb() {
     return new Promise(function (resolve, reject) {
-      const r = indexedDB.open(IDB_NAME, 1);
+      let done = false;
+      const fail = function (why) { if (!done) { done = true; reject(new Error(why)); } };
+      setTimeout(function () { fail('indexeddb timeout'); }, 2000);
+      let r;
+      try { r = indexedDB.open(IDB_NAME, 1); }
+      catch (e) { fail('indexeddb unavailable'); return; }
       r.onupgradeneeded = function () {
         if (!r.result.objectStoreNames.contains(IDB_STORE)) r.result.createObjectStore(IDB_STORE);
       };
-      r.onsuccess = function () { resolve(r.result); };
-      r.onerror = function () { reject(r.error); };
+      r.onsuccess = function () { if (!done) { done = true; resolve(r.result); } };
+      r.onerror = function () { fail('indexeddb error'); };
+      r.onblocked = function () { fail('indexeddb blocked'); };
     });
   }
 
@@ -88,27 +98,62 @@
     if (!project) return Promise.resolve();
     if (!S.handle) { state('no file', 'dirty'); return Promise.resolve(); }
     if (S.writing) { S.pending = true; return Promise.resolve(); }
+
+    /* Serialising can throw (and once did leave the writing flag stuck on,
+     * killing autosave for the rest of the session in silence). */
+    let text;
+    try {
+      text = serialize(project);
+    } catch (e) {
+      console.error('[storyboarder] could not serialise the project', e);
+      saveFailed('the project could not be encoded', e);
+      return Promise.resolve();
+    }
+    if (!text || text.length < 2) {          // never write nothing over a board
+      saveFailed('refused to write an empty project', new Error('empty serialisation'));
+      return Promise.resolve();
+    }
+
     S.writing = true;
     state('saving…', 'dirty');
-    const text = serialize(project);
+
     return ensurePermission(S.handle, false).then(function (ok) {
       if (!ok) { state('permission needed', 'dirty'); throw new Error('permission'); }
-      return S.handle.createWritable();
+      /* keepExistingData means the swap file starts as a copy of the board, so
+       * a write that fails part-way can never leave a 0-byte project file. */
+      return S.handle.createWritable({ keepExistingData: true });
     }).then(function (w) {
-      return w.write(text).then(function () { return w.close(); });
+      return Promise.resolve(w.write({ type: 'write', position: 0, data: text }))
+        .then(function () {
+          return w.truncate ? w.truncate(text.length) : null;
+        })
+        .then(function () { return w.close(); })
+        .catch(function (e) {
+          // leave the original alone rather than committing a half write
+          if (w.abort) { try { w.abort(); } catch (x) { } }
+          throw e;
+        });
     }).then(function () {
       S.writing = false;
       S.dirty = false;
       S.lastSaved = Date.now();
+      S.lastGood = text;                     // the rescue copy
       state('saved ' + new Date().toLocaleTimeString(), 'saved');
       if (S.pending) { S.pending = false; return writeNow(); }
     }).catch(function (e) {
       S.writing = false;
-      if (String(e && e.message) !== 'permission') {
-        state('save failed', 'dirty');
-        console.error('[storyboarder] save failed', e);
-      }
+      S.pending = false;
+      if (String(e && e.message) === 'permission') return;
+      saveFailed('the file could not be written', e);
     });
+  }
+
+  /* A failed save is the one thing in this app the user must not miss. */
+  function saveFailed(what, err) {
+    S.writing = false;
+    state('SAVE FAILED', 'dirty');
+    console.error('[storyboarder] save failed —', what, err);
+    if (S.onFailure) S.onFailure(what, err);
   }
 
   const debouncedWrite = SB.debounce(writeNow, 500);
@@ -134,8 +179,7 @@
     }).then(function (h) {
       S.handle = h;
       S.fileName = h.name;
-      return idbPut('last', h);
-    }).then(function () {
+      idbPut('last', h);          // fire and forget — never gate the write on it
       return writeNow();
     }).then(function () {
       return S.fileName;
@@ -179,6 +223,34 @@
   function getApiKey() { try { return localStorage.getItem(KEY_API) || ''; } catch (e) { return ''; } }
   function setApiKey(v) { try { v ? localStorage.setItem(KEY_API, v) : localStorage.removeItem(KEY_API); } catch (e) { } }
 
+  /* ---------- escape hatch ---------- */
+
+  /* Always available, even when the file handle is gone or unwritable: hand
+   * the project back as a download. */
+  function downloadCopy(project, why) {
+    let text;
+    try { text = serialize(project || (S.getProject && S.getProject())); }
+    catch (e) { text = S.lastGood || ''; }
+    if (!text) return false;
+    const name = ((project && project.name) || 'storyboard')
+      .replace(/[\\/:*?"<>|]+/g, '_') + (why ? '-' + why : '') + '.storyboard';
+    const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+    return true;
+  }
+
+  /* Does this context have a working IndexedDB? On file:// it hangs rather
+   * than failing, so "remember the last project" quietly cannot work there. */
+  function storageUsable() {
+    return idb().then(function () { return true; }).catch(function () { return false; });
+  }
+
   SB.Store = {
     hasFS: hasFS,
     S: S,
@@ -191,7 +263,9 @@
     detach: detach,
     getApiKey: getApiKey,
     setApiKey: setApiKey,
-    serialize: serialize
+    serialize: serialize,
+    downloadCopy: downloadCopy,
+    storageUsable: storageUsable
   };
 
 })(window.SB);

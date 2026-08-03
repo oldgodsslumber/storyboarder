@@ -63,14 +63,52 @@
       el.className = 'save-state ' + (cls || '');
     };
 
+    /* A save that fails silently is how a board gets lost. Make it impossible
+     * to miss, and hand over a rescue copy on the spot. */
+    SB.Store.S.onFailure = function (what) {
+      const body = SB.el('div');
+      body.appendChild(SB.el('p', null,
+        'Your board could not be saved to its file — ' + what + '.'));
+      body.appendChild(SB.el('p', null,
+        'Nothing has been lost from this window. Download a copy now, then use ' +
+        '“Save as…” to point the board at a fresh file.'));
+      SB.modal({
+        title: 'Save failed',
+        body: body,
+        buttons: [
+          {
+            label: 'Download a copy', primary: true, onClick: function (close) {
+              SB.Store.downloadCopy(app.project, 'rescue');
+              close();
+            }
+          },
+          { label: 'Save as…', onClick: function (close) { close(); doSaveAs(); } },
+          { label: 'Dismiss' }
+        ]
+      });
+    };
+
     setProject(SB.Model.newProject());
     wire();
 
     SB.Store.lastHandle().then(function (h) {
-      if (!h) return;
+      if (!h) {
+        /* file:// has no working IndexedDB, so the last project cannot be
+         * remembered there. Say so rather than showing a bare "no file". */
+        SB.Store.storageUsable().then(function (ok) {
+          if (ok || SB.Store.S.handle) return;
+          const el = document.getElementById('saveState');
+          el.textContent = 'no file — Open…';
+          el.className = 'save-state dirty';
+          el.title = 'Opened from a file:// page, so this browser cannot remember your ' +
+            'last project. Use Open… each session; autosave works normally once a file is open.';
+        });
+        return;
+      }
       return h.queryPermission({ mode: 'readwrite' }).then(function (perm) {
         if (perm === 'granted') {
-          return SB.Store.loadFromHandle(h, false).then(setProject);
+          return SB.Store.loadFromHandle(h, false).then(setProject)
+            .catch(function (e) { loadFailed(h, e); });
         }
         app.pendingHandle = h;
         const el = document.getElementById('saveState');
@@ -80,6 +118,45 @@
         el.title = 'Click to reopen the last project';
       });
     }).catch(function () { });
+  }
+
+  /* A project file that will not open must never look like a fresh start. */
+  function loadFailed(handle, err) {
+    const el = document.getElementById('saveState');
+    el.textContent = 'could not open ' + (handle && handle.name ? handle.name : 'the project');
+    el.className = 'save-state dirty';
+    const body = SB.el('div');
+    body.appendChild(SB.el('p', null,
+      'Storyboarder could not read “' + (handle && handle.name || 'the project file') + '”: ' +
+      (err && err.message ? err.message : String(err))));
+    body.appendChild(SB.el('p', null,
+      'The blank board on screen is NOT your project — nothing has overwritten your file, ' +
+      'and it will not be saved over unless you choose that file again.'));
+    body.appendChild(SB.el('p', null,
+      'If the file is 0 bytes, an interrupted save emptied it. Otherwise try Open… again.'));
+    SB.modal({
+      title: 'That project would not open',
+      body: body,
+      buttons: [
+        { label: 'Open a different file…', primary: true, onClick: function (close) { close(); doOpen(); } },
+        { label: 'Dismiss' }
+      ]
+    });
+  }
+
+  function doOpen() {
+    SB.Store.open().then(setProject).catch(function (e) {
+      if (e && e.name === 'AbortError') return;
+      SB.toast(e.message || String(e), true);
+    });
+  }
+
+  function doSaveAs() {
+    SB.Store.saveAs(app.project).then(function (n) { SB.toast('Autosaving to ' + n); })
+      .catch(function (e) {
+        if (e && e.name === 'AbortError') return;
+        SB.toast(e.message || String(e), true);
+      });
   }
 
   function wire() {
@@ -104,19 +181,10 @@
       setProject(SB.Model.newProject());
     });
 
-    $('btnOpen').addEventListener('click', function () {
-      SB.Store.open().then(setProject).catch(function (e) {
-        if (e && e.name === 'AbortError') return;
-        SB.toast(e.message || String(e), true);
-      });
-    });
-
-    $('btnSaveAs').addEventListener('click', function () {
-      SB.Store.saveAs(app.project).then(function (n) { SB.toast('Autosaving to ' + n); })
-        .catch(function (e) {
-          if (e && e.name === 'AbortError') return;
-          SB.toast(e.message || String(e), true);
-        });
+    $('btnOpen').addEventListener('click', doOpen);
+    $('btnSaveAs').addEventListener('click', doSaveAs);
+    $('btnCopy').addEventListener('click', function () {
+      if (!SB.Store.downloadCopy(app.project)) SB.toast('Nothing to copy yet', true);
     });
 
     $('btnScript').addEventListener('click', function () { SB.ScriptMode.toggle(); });

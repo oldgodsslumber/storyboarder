@@ -451,6 +451,7 @@ body.comment-mode .frame{cursor:crosshair}
       <button id="btnNew"  class="tb">New</button>
       <button id="btnOpen" class="tb">Open…</button>
       <button id="btnSaveAs" class="tb">Save as…</button>
+      <button id="btnCopy" class="tb" title="Download a standalone copy of this board">Copy</button>
       <span id="saveState" class="save-state">no file</span>
     </div>
 
@@ -1928,14 +1929,24 @@ window.SB = window.SB || {};
 
   /* ---------- IndexedDB (remember the last file handle) ---------- */
 
+  /* Remembering the handle is a convenience, never a precondition for saving.
+   * IndexedDB is restricted on file:// (which is how this app is normally
+   * opened), and a request that neither succeeds nor errors must not be able
+   * to wedge anything, so every call is time-boxed. */
   function idb() {
     return new Promise(function (resolve, reject) {
-      const r = indexedDB.open(IDB_NAME, 1);
+      let done = false;
+      const fail = function (why) { if (!done) { done = true; reject(new Error(why)); } };
+      setTimeout(function () { fail('indexeddb timeout'); }, 2000);
+      let r;
+      try { r = indexedDB.open(IDB_NAME, 1); }
+      catch (e) { fail('indexeddb unavailable'); return; }
       r.onupgradeneeded = function () {
         if (!r.result.objectStoreNames.contains(IDB_STORE)) r.result.createObjectStore(IDB_STORE);
       };
-      r.onsuccess = function () { resolve(r.result); };
-      r.onerror = function () { reject(r.error); };
+      r.onsuccess = function () { if (!done) { done = true; resolve(r.result); } };
+      r.onerror = function () { fail('indexeddb error'); };
+      r.onblocked = function () { fail('indexeddb blocked'); };
     });
   }
 
@@ -1987,27 +1998,62 @@ window.SB = window.SB || {};
     if (!project) return Promise.resolve();
     if (!S.handle) { state('no file', 'dirty'); return Promise.resolve(); }
     if (S.writing) { S.pending = true; return Promise.resolve(); }
+
+    /* Serialising can throw (and once did leave the writing flag stuck on,
+     * killing autosave for the rest of the session in silence). */
+    let text;
+    try {
+      text = serialize(project);
+    } catch (e) {
+      console.error('[storyboarder] could not serialise the project', e);
+      saveFailed('the project could not be encoded', e);
+      return Promise.resolve();
+    }
+    if (!text || text.length < 2) {          // never write nothing over a board
+      saveFailed('refused to write an empty project', new Error('empty serialisation'));
+      return Promise.resolve();
+    }
+
     S.writing = true;
     state('saving…', 'dirty');
-    const text = serialize(project);
+
     return ensurePermission(S.handle, false).then(function (ok) {
       if (!ok) { state('permission needed', 'dirty'); throw new Error('permission'); }
-      return S.handle.createWritable();
+      /* keepExistingData means the swap file starts as a copy of the board, so
+       * a write that fails part-way can never leave a 0-byte project file. */
+      return S.handle.createWritable({ keepExistingData: true });
     }).then(function (w) {
-      return w.write(text).then(function () { return w.close(); });
+      return Promise.resolve(w.write({ type: 'write', position: 0, data: text }))
+        .then(function () {
+          return w.truncate ? w.truncate(text.length) : null;
+        })
+        .then(function () { return w.close(); })
+        .catch(function (e) {
+          // leave the original alone rather than committing a half write
+          if (w.abort) { try { w.abort(); } catch (x) { } }
+          throw e;
+        });
     }).then(function () {
       S.writing = false;
       S.dirty = false;
       S.lastSaved = Date.now();
+      S.lastGood = text;                     // the rescue copy
       state('saved ' + new Date().toLocaleTimeString(), 'saved');
       if (S.pending) { S.pending = false; return writeNow(); }
     }).catch(function (e) {
       S.writing = false;
-      if (String(e && e.message) !== 'permission') {
-        state('save failed', 'dirty');
-        console.error('[storyboarder] save failed', e);
-      }
+      S.pending = false;
+      if (String(e && e.message) === 'permission') return;
+      saveFailed('the file could not be written', e);
     });
+  }
+
+  /* A failed save is the one thing in this app the user must not miss. */
+  function saveFailed(what, err) {
+    S.writing = false;
+    state('SAVE FAILED', 'dirty');
+    console.error('[storyboarder] save failed —', what, err);
+    if (S.onFailure) S.onFailure(what, err);
   }
 
   const debouncedWrite = SB.debounce(writeNow, 500);
@@ -2033,8 +2079,7 @@ window.SB = window.SB || {};
     }).then(function (h) {
       S.handle = h;
       S.fileName = h.name;
-      return idbPut('last', h);
-    }).then(function () {
+      idbPut('last', h);          // fire and forget — never gate the write on it
       return writeNow();
     }).then(function () {
       return S.fileName;
@@ -2078,6 +2123,34 @@ window.SB = window.SB || {};
   function getApiKey() { try { return localStorage.getItem(KEY_API) || ''; } catch (e) { return ''; } }
   function setApiKey(v) { try { v ? localStorage.setItem(KEY_API, v) : localStorage.removeItem(KEY_API); } catch (e) { } }
 
+  /* ---------- escape hatch ---------- */
+
+  /* Always available, even when the file handle is gone or unwritable: hand
+   * the project back as a download. */
+  function downloadCopy(project, why) {
+    let text;
+    try { text = serialize(project || (S.getProject && S.getProject())); }
+    catch (e) { text = S.lastGood || ''; }
+    if (!text) return false;
+    const name = ((project && project.name) || 'storyboard')
+      .replace(/[\\/:*?"<>|]+/g, '_') + (why ? '-' + why : '') + '.storyboard';
+    const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+    return true;
+  }
+
+  /* Does this context have a working IndexedDB? On file:// it hangs rather
+   * than failing, so "remember the last project" quietly cannot work there. */
+  function storageUsable() {
+    return idb().then(function () { return true; }).catch(function () { return false; });
+  }
+
   SB.Store = {
     hasFS: hasFS,
     S: S,
@@ -2090,7 +2163,9 @@ window.SB = window.SB || {};
     detach: detach,
     getApiKey: getApiKey,
     setApiKey: setApiKey,
-    serialize: serialize
+    serialize: serialize,
+    downloadCopy: downloadCopy,
+    storageUsable: storageUsable
   };
 
 })(window.SB);
@@ -4745,14 +4820,52 @@ window.SB = window.SB || {};
       el.className = 'save-state ' + (cls || '');
     };
 
+    /* A save that fails silently is how a board gets lost. Make it impossible
+     * to miss, and hand over a rescue copy on the spot. */
+    SB.Store.S.onFailure = function (what) {
+      const body = SB.el('div');
+      body.appendChild(SB.el('p', null,
+        'Your board could not be saved to its file — ' + what + '.'));
+      body.appendChild(SB.el('p', null,
+        'Nothing has been lost from this window. Download a copy now, then use ' +
+        '“Save as…” to point the board at a fresh file.'));
+      SB.modal({
+        title: 'Save failed',
+        body: body,
+        buttons: [
+          {
+            label: 'Download a copy', primary: true, onClick: function (close) {
+              SB.Store.downloadCopy(app.project, 'rescue');
+              close();
+            }
+          },
+          { label: 'Save as…', onClick: function (close) { close(); doSaveAs(); } },
+          { label: 'Dismiss' }
+        ]
+      });
+    };
+
     setProject(SB.Model.newProject());
     wire();
 
     SB.Store.lastHandle().then(function (h) {
-      if (!h) return;
+      if (!h) {
+        /* file:// has no working IndexedDB, so the last project cannot be
+         * remembered there. Say so rather than showing a bare "no file". */
+        SB.Store.storageUsable().then(function (ok) {
+          if (ok || SB.Store.S.handle) return;
+          const el = document.getElementById('saveState');
+          el.textContent = 'no file — Open…';
+          el.className = 'save-state dirty';
+          el.title = 'Opened from a file:// page, so this browser cannot remember your ' +
+            'last project. Use Open… each session; autosave works normally once a file is open.';
+        });
+        return;
+      }
       return h.queryPermission({ mode: 'readwrite' }).then(function (perm) {
         if (perm === 'granted') {
-          return SB.Store.loadFromHandle(h, false).then(setProject);
+          return SB.Store.loadFromHandle(h, false).then(setProject)
+            .catch(function (e) { loadFailed(h, e); });
         }
         app.pendingHandle = h;
         const el = document.getElementById('saveState');
@@ -4762,6 +4875,45 @@ window.SB = window.SB || {};
         el.title = 'Click to reopen the last project';
       });
     }).catch(function () { });
+  }
+
+  /* A project file that will not open must never look like a fresh start. */
+  function loadFailed(handle, err) {
+    const el = document.getElementById('saveState');
+    el.textContent = 'could not open ' + (handle && handle.name ? handle.name : 'the project');
+    el.className = 'save-state dirty';
+    const body = SB.el('div');
+    body.appendChild(SB.el('p', null,
+      'Storyboarder could not read “' + (handle && handle.name || 'the project file') + '”: ' +
+      (err && err.message ? err.message : String(err))));
+    body.appendChild(SB.el('p', null,
+      'The blank board on screen is NOT your project — nothing has overwritten your file, ' +
+      'and it will not be saved over unless you choose that file again.'));
+    body.appendChild(SB.el('p', null,
+      'If the file is 0 bytes, an interrupted save emptied it. Otherwise try Open… again.'));
+    SB.modal({
+      title: 'That project would not open',
+      body: body,
+      buttons: [
+        { label: 'Open a different file…', primary: true, onClick: function (close) { close(); doOpen(); } },
+        { label: 'Dismiss' }
+      ]
+    });
+  }
+
+  function doOpen() {
+    SB.Store.open().then(setProject).catch(function (e) {
+      if (e && e.name === 'AbortError') return;
+      SB.toast(e.message || String(e), true);
+    });
+  }
+
+  function doSaveAs() {
+    SB.Store.saveAs(app.project).then(function (n) { SB.toast('Autosaving to ' + n); })
+      .catch(function (e) {
+        if (e && e.name === 'AbortError') return;
+        SB.toast(e.message || String(e), true);
+      });
   }
 
   function wire() {
@@ -4786,19 +4938,10 @@ window.SB = window.SB || {};
       setProject(SB.Model.newProject());
     });
 
-    $('btnOpen').addEventListener('click', function () {
-      SB.Store.open().then(setProject).catch(function (e) {
-        if (e && e.name === 'AbortError') return;
-        SB.toast(e.message || String(e), true);
-      });
-    });
-
-    $('btnSaveAs').addEventListener('click', function () {
-      SB.Store.saveAs(app.project).then(function (n) { SB.toast('Autosaving to ' + n); })
-        .catch(function (e) {
-          if (e && e.name === 'AbortError') return;
-          SB.toast(e.message || String(e), true);
-        });
+    $('btnOpen').addEventListener('click', doOpen);
+    $('btnSaveAs').addEventListener('click', doSaveAs);
+    $('btnCopy').addEventListener('click', function () {
+      if (!SB.Store.downloadCopy(app.project)) SB.toast('Nothing to copy yet', true);
     });
 
     $('btnScript').addEventListener('click', function () { SB.ScriptMode.toggle(); });
