@@ -25,30 +25,22 @@
     return out;
   }
 
+  /* Character offset of a DOM position within el.
+   *
+   * A click can land on an ELEMENT container (Chrome reports the highlight
+   * span or a <b> run with a child index, not a text node) — measuring the
+   * range text handles every container kind, which hand-walking did not:
+   * it used to ignore the child index and snap to the start of the span, so
+   * typing at the edge of a highlight jumped backwards. */
   function offsetOf(el, node, off) {
-    if (node === el) {
-      // offset counts child nodes
-      let n = 0;
-      for (let i = 0; i < off && i < el.childNodes.length; i++) n += textOf2(el.childNodes[i]);
-      return n;
+    const r = document.createRange();
+    try {
+      r.setStart(el, 0);
+      r.setEnd(node, off);
+    } catch (e) {
+      return 0;
     }
-    let total = 0, found = -1;
-    const it = document.createTreeWalker(el, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT, null);
-    let n;
-    while ((n = it.nextNode())) {
-      if (n === node) { found = total + (n.nodeType === 3 ? off : 0); break; }
-      if (n.nodeType === 3) total += n.data.length;
-      else if (n.nodeName === 'BR' && !n.classList.contains('pad')) total += 1;
-    }
-    return found < 0 ? total : found;
-  }
-
-  function textOf2(node) {
-    if (node.nodeType === 3) return node.data.length;
-    if (node.nodeName === 'BR') return node.classList && node.classList.contains('pad') ? 0 : 1;
-    let n = 0;
-    for (let i = 0; i < node.childNodes.length; i++) n += textOf2(node.childNodes[i]);
-    return n;
+    return r.toString().length;
   }
 
   function getSel(el) {
@@ -131,7 +123,9 @@
       if (api.composing) return;
       const focused = document.activeElement === el;
       const keep = api.pending || (focused ? getSel(el) : null);
+      const scroll = el.scrollTop;
       el.innerHTML = SB.Doc.renderHTML(w.doc, w.from, w.to, cfg.extra || null);
+      if (el.scrollTop !== scroll) el.scrollTop = scroll;
       if (focused && keep) {
         const max = w.to - w.from;
         setSel(el, SB.clamp(keep.start, 0, max), SB.clamp(keep.end == null ? keep.start : keep.end, 0, max));
@@ -140,6 +134,16 @@
     };
 
     if (cfg.readOnly) { api.render(); return api; }
+
+    function mark(type, s, e) {
+      if (e <= s) return;
+      SB.History.seal();
+      SB.History.push('mark');
+      SB.History.seal();
+      cfg.toggle(type, s, e);
+      api.pending = { start: s, end: e };
+      cfg.after();
+    }
 
     function doEdit(s, e, text, caret) {
       const w = win();
@@ -198,9 +202,9 @@
         case 'deleteByDrag':
         case 'deleteContent':
           ins = ''; break;
-        case 'formatBold': cfg.toggle('b', s, e); cfg.after(); return;
-        case 'formatItalic': cfg.toggle('i', s, e); cfg.after(); return;
-        case 'formatUnderline': cfg.toggle('u', s, e); cfg.after(); return;
+        case 'formatBold': mark('b', s, e); return;
+        case 'formatItalic': mark('i', s, e); return;
+        case 'formatUnderline': mark('u', s, e); return;
         default: return;
       }
       if (ins === null) return;
@@ -218,13 +222,21 @@
     el.addEventListener('keydown', function (ev) {
       if (!(ev.ctrlKey || ev.metaKey) || ev.altKey) return;
       const k = ev.key.toLowerCase();
+
+      /* undo / redo — we suppress the browser's own history (we own the DOM),
+       * so without this Ctrl+Z did nothing at all. */
+      if (k === 'z' || k === 'y') {
+        ev.preventDefault();
+        const redo = (k === 'y') || ev.shiftKey;
+        const moved = redo ? SB.History.redo() : SB.History.undo();
+        if (!moved) SB.toast(redo ? 'Nothing to redo' : 'Nothing to undo');
+        return;
+      }
       if (k !== 'b' && k !== 'i' && k !== 'u') return;
       const sel = getSel(el);
-      if (!sel || sel.start === sel.end) { ev.preventDefault(); return; }
       ev.preventDefault();
-      cfg.toggle(k, sel.start, sel.end);
-      api.pending = { start: sel.start, end: sel.end };
-      cfg.after();
+      if (!sel || sel.start === sel.end) return;
+      mark(k, sel.start, sel.end);
     });
 
     el.addEventListener('compositionstart', function () { api.composing = true; });

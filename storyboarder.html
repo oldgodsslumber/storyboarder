@@ -248,6 +248,10 @@ button,input,select,textarea{font:inherit;color:inherit}
   font-size:13.5px;line-height:1.6;background:var(--bg);
 }
 .master-script:focus{outline:none}
+.master-script:empty::before{
+  content:"Paste or type the script here, then select a line and press Capture shot.";
+  color:var(--fg-dim);
+}
 .master-script .h1{background:var(--hl1);border-radius:2px}
 .master-script .h2{background:var(--hl2);border-radius:2px}
 .master-script .h3{background:var(--hl3);border-radius:2px}
@@ -443,7 +447,9 @@ body.comment-mode .frame{cursor:crosshair}
       <div class="panel-head">
         <span>Master script</span>
         <span class="spacer"></span>
-        <button id="btnCapture" class="mini primary" disabled>Capture shot</button>
+        <button id="btnUndo" class="mini" title="Undo script edit (Ctrl+Z)">↶</button>
+        <button id="btnRedo" class="mini" title="Redo script edit (Ctrl+Shift+Z)">↷</button>
+        <button id="btnCapture" class="mini primary" disabled title="Select some text in the script first">Capture shot</button>
       </div>
       <div class="script-hint">
         Select text below, then <b>Capture shot</b>. Highlighted text is already driving a shot.
@@ -1324,6 +1330,7 @@ window.SB = window.SB || {};
    * sourceShotId = the shot whose box the user typed in (null = typed in master).
    */
   function applyMasterEdit(p, start, end, text, sourceShotId) {
+    if (SB.History) SB.History.push('master:' + (sourceShotId || ''));
     const op = { start: start, end: end, len: (text || '').length };
     const links = [];
     eachShot(p, function (sh) { if (sh.link) links.push(sh); });
@@ -1358,6 +1365,7 @@ window.SB = window.SB || {};
     if (shot.link) {
       return applyMasterEdit(p, shot.link.from + lStart, shot.link.from + lEnd, text, shot.id);
     }
+    if (SB.History) SB.History.push('local:' + shot.id);
     SB.Doc.replace(shot.local, lStart, lEnd, text);
     p.updatedAt = Date.now();
     return { start: lStart, end: lEnd, len: (text || '').length };
@@ -1365,6 +1373,7 @@ window.SB = window.SB || {};
 
   function breakLink(p, shot) {
     if (!shot.link) return;
+    if (SB.History) { SB.History.seal(); SB.History.push('break:' + shot.id); SB.History.seal(); }
     const w = windowFor(p, shot);
     shot.local = {
       text: p.master.text.slice(w.from, w.to),
@@ -1668,6 +1677,106 @@ window.SB = window.SB || {};
 
 </script>
 <script>
+/* ===== js/history.js ===== */
+/* history.js — undo/redo for script text.
+ *
+ * The editor suppresses the browser's own undo (we own the DOM), so this
+ * supplies it. A step snapshots the script layer only: the master document
+ * plus every shot's link range / freestanding text. Structural changes —
+ * adding, deleting or moving shots and scenes — are deliberately NOT undone,
+ * so Ctrl+Z can never make a card disappear out from under you.
+ *
+ * Consecutive typing in the same window coalesces into one step.
+ */
+(function (SB) {
+  'use strict';
+
+  const LIMIT = 200;
+  const COALESCE_MS = 700;
+
+  const H = { past: [], future: [], applying: false, lastTag: null, lastAt: 0 };
+
+  function P() { return SB.app && SB.app.project; }
+
+  function snap(p) {
+    const shots = [];
+    SB.Model.eachShot(p, function (s) {
+      shots.push({
+        id: s.id,
+        link: s.link ? { from: s.link.from, to: s.link.to } : null,
+        broken: !!s.broken,
+        local: s.local ? SB.clone(s.local) : null
+      });
+    });
+    return { text: p.master.text, marks: SB.clone(p.master.marks), shots: shots };
+  }
+
+  function apply(p, s) {
+    p.master.text = s.text;
+    p.master.marks = SB.clone(s.marks);
+    const byId = {};
+    s.shots.forEach(function (x) { byId[x.id] = x; });
+    SB.Model.eachShot(p, function (sh) {
+      const x = byId[sh.id];
+      if (!x) return;                    // shot created after this snapshot — leave it alone
+      sh.link = x.link ? { from: x.link.from, to: x.link.to } : null;
+      sh.broken = x.broken;
+      sh.local = x.local ? SB.clone(x.local) : null;
+    });
+  }
+
+  /* Called just BEFORE a script edit lands. tag identifies the window so that
+   * a run of keystrokes in one box becomes a single undo step. */
+  function push(tag) {
+    const p = P();
+    if (!p || H.applying) return;
+    const now = Date.now();
+    if (H.past.length && tag && tag === H.lastTag && (now - H.lastAt) < COALESCE_MS) {
+      H.lastAt = now;
+      return;                            // already have the pre-typing state
+    }
+    H.past.push(snap(p));
+    if (H.past.length > LIMIT) H.past.shift();
+    H.future.length = 0;
+    H.lastTag = tag || null;
+    H.lastAt = now;
+  }
+
+  /* A discrete action (capture, break link, paste) shouldn't merge with typing. */
+  function seal() { H.lastTag = null; H.lastAt = 0; }
+
+  function step(from, to) {
+    const p = P();
+    if (!p || !from.length) return false;
+    H.applying = true;
+    to.push(snap(p));
+    apply(p, from.pop());
+    H.applying = false;
+    seal();
+    SB.app.scriptChanged();
+    SB.Board.renderScriptWindows();
+    return true;
+  }
+
+  function undo() { return step(H.past, H.future); }
+  function redo() { return step(H.future, H.past); }
+
+  function reset() {
+    H.past.length = 0;
+    H.future.length = 0;
+    seal();
+  }
+
+  SB.History = {
+    push: push, undo: undo, redo: redo, reset: reset, seal: seal,
+    depth: function () { return H.past.length; },
+    redoDepth: function () { return H.future.length; }
+  };
+
+})(window.SB);
+
+</script>
+<script>
 /* ===== js/editor.js ===== */
 /* editor.js — a contenteditable "window" onto a slice of a Doc.
  *
@@ -1696,30 +1805,22 @@ window.SB = window.SB || {};
     return out;
   }
 
+  /* Character offset of a DOM position within el.
+   *
+   * A click can land on an ELEMENT container (Chrome reports the highlight
+   * span or a <b> run with a child index, not a text node) — measuring the
+   * range text handles every container kind, which hand-walking did not:
+   * it used to ignore the child index and snap to the start of the span, so
+   * typing at the edge of a highlight jumped backwards. */
   function offsetOf(el, node, off) {
-    if (node === el) {
-      // offset counts child nodes
-      let n = 0;
-      for (let i = 0; i < off && i < el.childNodes.length; i++) n += textOf2(el.childNodes[i]);
-      return n;
+    const r = document.createRange();
+    try {
+      r.setStart(el, 0);
+      r.setEnd(node, off);
+    } catch (e) {
+      return 0;
     }
-    let total = 0, found = -1;
-    const it = document.createTreeWalker(el, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT, null);
-    let n;
-    while ((n = it.nextNode())) {
-      if (n === node) { found = total + (n.nodeType === 3 ? off : 0); break; }
-      if (n.nodeType === 3) total += n.data.length;
-      else if (n.nodeName === 'BR' && !n.classList.contains('pad')) total += 1;
-    }
-    return found < 0 ? total : found;
-  }
-
-  function textOf2(node) {
-    if (node.nodeType === 3) return node.data.length;
-    if (node.nodeName === 'BR') return node.classList && node.classList.contains('pad') ? 0 : 1;
-    let n = 0;
-    for (let i = 0; i < node.childNodes.length; i++) n += textOf2(node.childNodes[i]);
-    return n;
+    return r.toString().length;
   }
 
   function getSel(el) {
@@ -1802,7 +1903,9 @@ window.SB = window.SB || {};
       if (api.composing) return;
       const focused = document.activeElement === el;
       const keep = api.pending || (focused ? getSel(el) : null);
+      const scroll = el.scrollTop;
       el.innerHTML = SB.Doc.renderHTML(w.doc, w.from, w.to, cfg.extra || null);
+      if (el.scrollTop !== scroll) el.scrollTop = scroll;
       if (focused && keep) {
         const max = w.to - w.from;
         setSel(el, SB.clamp(keep.start, 0, max), SB.clamp(keep.end == null ? keep.start : keep.end, 0, max));
@@ -1811,6 +1914,16 @@ window.SB = window.SB || {};
     };
 
     if (cfg.readOnly) { api.render(); return api; }
+
+    function mark(type, s, e) {
+      if (e <= s) return;
+      SB.History.seal();
+      SB.History.push('mark');
+      SB.History.seal();
+      cfg.toggle(type, s, e);
+      api.pending = { start: s, end: e };
+      cfg.after();
+    }
 
     function doEdit(s, e, text, caret) {
       const w = win();
@@ -1869,9 +1982,9 @@ window.SB = window.SB || {};
         case 'deleteByDrag':
         case 'deleteContent':
           ins = ''; break;
-        case 'formatBold': cfg.toggle('b', s, e); cfg.after(); return;
-        case 'formatItalic': cfg.toggle('i', s, e); cfg.after(); return;
-        case 'formatUnderline': cfg.toggle('u', s, e); cfg.after(); return;
+        case 'formatBold': mark('b', s, e); return;
+        case 'formatItalic': mark('i', s, e); return;
+        case 'formatUnderline': mark('u', s, e); return;
         default: return;
       }
       if (ins === null) return;
@@ -1889,13 +2002,21 @@ window.SB = window.SB || {};
     el.addEventListener('keydown', function (ev) {
       if (!(ev.ctrlKey || ev.metaKey) || ev.altKey) return;
       const k = ev.key.toLowerCase();
+
+      /* undo / redo — we suppress the browser's own history (we own the DOM),
+       * so without this Ctrl+Z did nothing at all. */
+      if (k === 'z' || k === 'y') {
+        ev.preventDefault();
+        const redo = (k === 'y') || ev.shiftKey;
+        const moved = redo ? SB.History.redo() : SB.History.undo();
+        if (!moved) SB.toast(redo ? 'Nothing to redo' : 'Nothing to undo');
+        return;
+      }
       if (k !== 'b' && k !== 'i' && k !== 'u') return;
       const sel = getSel(el);
-      if (!sel || sel.start === sel.end) { ev.preventDefault(); return; }
       ev.preventDefault();
-      cfg.toggle(k, sel.start, sel.end);
-      api.pending = { start: sel.start, end: sel.end };
-      cfg.after();
+      if (!sel || sel.start === sel.end) return;
+      mark(k, sel.start, sel.end);
     });
 
     el.addEventListener('compositionstart', function () { api.composing = true; });
@@ -2419,6 +2540,7 @@ window.SB = window.SB || {};
   let cover = null;          // Uint8Array coverage over master text
   let activeRange = null;    // selected shot's range, drawn with an underline
   let pendingSel = null;     // range captured when the user clicked "Capture shot"
+  let lastSel = null;        // last real selection made in the master script
 
   function P() { return SB.app.project; }
 
@@ -2439,20 +2561,55 @@ window.SB = window.SB || {};
       extra: extraClass
     });
 
+    /* Remember the last real selection made in the master. Chrome drops the
+     * DOM selection the moment focus moves, so without latching it the button
+     * stayed lit after you clicked a card and then Capture did nothing. */
     document.addEventListener('selectionchange', function () {
       if (document.activeElement !== masterEl) return;
       const s = SB.Editor.getSel(masterEl);
-      capBtn.disabled = !(s && s.end > s.start);
+      lastSel = (s && s.end > s.start) ? { from: s.start, to: s.end } : null;
+      syncCaptureBtn();
     });
 
+    /* don't let the button steal focus — keeps the selection visible too */
+    capBtn.addEventListener('mousedown', function (ev) { ev.preventDefault(); });
+
     capBtn.addEventListener('click', function () {
-      const s = SB.Editor.getSel(masterEl);
-      if (!s || s.end <= s.start) return;
-      pendingSel = { from: s.start, to: s.end };
+      const live = SB.Editor.getSel(masterEl);
+      const s = (live && live.end > live.start) ? { from: live.start, to: live.end } : lastSel;
+      if (!s || s.to <= s.from) {
+        SB.toast('Select some script text first', true);
+        syncCaptureBtn();
+        return;
+      }
+      pendingSel = { from: s.from, to: s.to };
       showForm();
     });
 
-    masterEl.addEventListener('paste', function () { /* handled by editor */ });
+    /* clicking a dead part of the panel should land you in the script */
+    panel.addEventListener('mousedown', function (ev) {
+      if (ev.target === panel || ev.target.classList.contains('script-hint')) {
+        ev.preventDefault();
+        masterEl.focus();
+      }
+    });
+  }
+
+  function syncCaptureBtn() {
+    if (!capBtn) return;
+    const ok = !!(lastSel && lastSel.to > lastSel.from &&
+      lastSel.to <= (P() ? P().master.text.length : 0));
+    capBtn.disabled = !ok;
+    capBtn.title = ok
+      ? 'Make a shot from the selected text'
+      : 'Select some text in the script first';
+  }
+
+  /* Any edit moves the text under a remembered selection — drop it. */
+  function invalidateSelection() {
+    if (document.activeElement === masterEl) return;   // still live, selectionchange owns it
+    lastSel = null;
+    syncCaptureBtn();
   }
 
   function extraClass(i) {
@@ -2564,12 +2721,15 @@ window.SB = window.SB || {};
     form.classList.add('hidden');
     form.innerHTML = '';
     pendingSel = null;
-    capBtn.disabled = true;
+    lastSel = null;
+    syncCaptureBtn();
   }
 
   SB.ScriptMode = {
     init: init, refresh: refresh, open: open, close: close, toggle: toggle,
-    isOpen: isOpen, scrollTo: scrollTo
+    isOpen: isOpen, scrollTo: scrollTo,
+    invalidateSelection: invalidateSelection, syncCaptureBtn: syncCaptureBtn,
+    lastSelection: function () { return lastSel; }
   };
 
 })(window.SB);
@@ -3617,6 +3777,7 @@ window.SB = window.SB || {};
   app.scriptChanged = function () {
     SB.Board.renderScriptWindows();
     SB.ScriptMode.refresh();
+    SB.ScriptMode.invalidateSelection();
     SB.Store.touch();
   };
 
@@ -3628,6 +3789,7 @@ window.SB = window.SB || {};
 
   function setProject(p) {
     app.project = p;
+    SB.History.reset();
     app.selectedShotId = null;
     app.selectedSceneId = p.scenes[0] ? p.scenes[0].id : null;
     SB.Board.render();
@@ -3709,6 +3871,15 @@ window.SB = window.SB || {};
 
     $('btnScript').addEventListener('click', function () { SB.ScriptMode.toggle(); });
 
+    $('btnUndo').addEventListener('mousedown', function (e) { e.preventDefault(); });
+    $('btnUndo').addEventListener('click', function () {
+      if (!SB.History.undo()) SB.toast('Nothing to undo');
+    });
+    $('btnRedo').addEventListener('mousedown', function (e) { e.preventDefault(); });
+    $('btnRedo').addEventListener('click', function () {
+      if (!SB.History.redo()) SB.toast('Nothing to redo');
+    });
+
     $('btnComment').addEventListener('click', function () {
       app.commentMode = !app.commentMode;
       this.classList.toggle('on', app.commentMode);
@@ -3746,9 +3917,23 @@ window.SB = window.SB || {};
     });
 
     document.addEventListener('keydown', function (ev) {
-      if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 's') {
+      if (!(ev.ctrlKey || ev.metaKey) || ev.altKey) return;
+      const k = ev.key.toLowerCase();
+      if (k === 's') {
         ev.preventDefault();
         SB.Store.saveNow();
+        return;
+      }
+      /* undo/redo also works when focus isn't in a script box */
+      const t = ev.target;
+      if (t && t.isContentEditable) return;          // the editor handles its own
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return;
+      if (k === 'z' || k === 'y') {
+        ev.preventDefault();
+        const redo = (k === 'y') || ev.shiftKey;
+        if (!(redo ? SB.History.redo() : SB.History.undo())) {
+          SB.toast(redo ? 'Nothing to redo' : 'Nothing to undo');
+        }
       }
     });
 

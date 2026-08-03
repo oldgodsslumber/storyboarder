@@ -42,6 +42,14 @@ it is an **anchored range** into the master:
 Master-script highlighting shows what is captured: light = one shot, stronger = two,
 amber = three or more. The selected card's range gets an amber underline.
 
+**Capture** remembers the last selection you made in the script, so clicking a card (or a
+dropdown, or anything else) in between doesn't lose it — the button only goes dark when
+there is genuinely nothing selected. Any edit to the script clears it.
+
+**Ctrl+Z / Ctrl+Shift+Z** undo and redo script edits, and the ↶ ↷ buttons in the script
+panel do the same. A run of typing collapses into one step. Undo covers script *text* only —
+it will never make a card or scene reappear or vanish.
+
 ## Board
 
 - Scenes auto-number, shots auto-letter inside their scene: `1A 1B 1C`, `2A`…
@@ -132,9 +140,13 @@ fragments are excluded. Print → *Save as PDF*.
 ## Tests
 
 ```
-node test-core.mjs   # the anchored-range engine, numbering, key-never-in-file
-node test-ui.mjs     # boots the built file in headless Chrome and drives the UI
+node test-core.mjs     # the anchored-range engine, numbering, key-never-in-file
+node test-ui.mjs       # boots the built file in headless Chrome, drives the UI
+node test-typing.mjs   # real mouse + keyboard over the DevTools protocol
 ```
+
+`test-typing.mjs` exists because `test-ui.mjs` dispatches synthetic `beforeinput` events,
+which cannot catch focus, selection or caret bugs — real clicks and keypresses can.
 
 ## Files
 
@@ -148,6 +160,7 @@ js/doc.js         Doc + position transforms (the anchoring core)
 js/geminimodels.js writer model list, ListModels refresh, daily call counter
 js/model.js       project schema, numbering, all mutations
 js/store.js       File System Access autosave, API key in localStorage
+js/history.js     undo/redo for script text
 js/editor.js      contenteditable window onto a Doc slice
 js/board.js       scenes, cards, drag & drop
 js/scriptmode.js  master script panel, capture, highlights

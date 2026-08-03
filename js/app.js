@@ -25,6 +25,7 @@
   app.scriptChanged = function () {
     SB.Board.renderScriptWindows();
     SB.ScriptMode.refresh();
+    SB.ScriptMode.invalidateSelection();
     SB.Store.touch();
   };
 
@@ -36,6 +37,7 @@
 
   function setProject(p) {
     app.project = p;
+    SB.History.reset();
     app.selectedShotId = null;
     app.selectedSceneId = p.scenes[0] ? p.scenes[0].id : null;
     SB.Board.render();
@@ -117,6 +119,15 @@
 
     $('btnScript').addEventListener('click', function () { SB.ScriptMode.toggle(); });
 
+    $('btnUndo').addEventListener('mousedown', function (e) { e.preventDefault(); });
+    $('btnUndo').addEventListener('click', function () {
+      if (!SB.History.undo()) SB.toast('Nothing to undo');
+    });
+    $('btnRedo').addEventListener('mousedown', function (e) { e.preventDefault(); });
+    $('btnRedo').addEventListener('click', function () {
+      if (!SB.History.redo()) SB.toast('Nothing to redo');
+    });
+
     $('btnComment').addEventListener('click', function () {
       app.commentMode = !app.commentMode;
       this.classList.toggle('on', app.commentMode);
@@ -154,9 +165,23 @@
     });
 
     document.addEventListener('keydown', function (ev) {
-      if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 's') {
+      if (!(ev.ctrlKey || ev.metaKey) || ev.altKey) return;
+      const k = ev.key.toLowerCase();
+      if (k === 's') {
         ev.preventDefault();
         SB.Store.saveNow();
+        return;
+      }
+      /* undo/redo also works when focus isn't in a script box */
+      const t = ev.target;
+      if (t && t.isContentEditable) return;          // the editor handles its own
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return;
+      if (k === 'z' || k === 'y') {
+        ev.preventDefault();
+        const redo = (k === 'y') || ev.shiftKey;
+        if (!(redo ? SB.History.redo() : SB.History.undo())) {
+          SB.toast(redo ? 'Nothing to redo' : 'Nothing to undo');
+        }
       }
     });
 

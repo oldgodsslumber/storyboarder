@@ -57,7 +57,9 @@
       <div class="panel-head">
         <span>Master script</span>
         <span class="spacer"></span>
-        <button id="btnCapture" class="mini primary" disabled>Capture shot</button>
+        <button id="btnUndo" class="mini" title="Undo script edit (Ctrl+Z)">↶</button>
+        <button id="btnRedo" class="mini" title="Redo script edit (Ctrl+Shift+Z)">↷</button>
+        <button id="btnCapture" class="mini primary" disabled title="Select some text in the script first">Capture shot</button>
       </div>
       <div class="script-hint">
         Select text below, then <b>Capture shot</b>. Highlighted text is already driving a shot.
@@ -83,6 +85,7 @@
 <script src="js/geminimodels.js"></script>
 <script src="js/model.js"></script>
 <script src="js/store.js"></script>
+<script src="js/history.js"></script>
 <script src="js/editor.js"></script>
 <script src="js/board.js"></script>
 <script src="js/scriptmode.js"></script>

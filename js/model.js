@@ -211,6 +211,7 @@
    * sourceShotId = the shot whose box the user typed in (null = typed in master).
    */
   function applyMasterEdit(p, start, end, text, sourceShotId) {
+    if (SB.History) SB.History.push('master:' + (sourceShotId || ''));
     const op = { start: start, end: end, len: (text || '').length };
     const links = [];
     eachShot(p, function (sh) { if (sh.link) links.push(sh); });
@@ -245,6 +246,7 @@
     if (shot.link) {
       return applyMasterEdit(p, shot.link.from + lStart, shot.link.from + lEnd, text, shot.id);
     }
+    if (SB.History) SB.History.push('local:' + shot.id);
     SB.Doc.replace(shot.local, lStart, lEnd, text);
     p.updatedAt = Date.now();
     return { start: lStart, end: lEnd, len: (text || '').length };
@@ -252,6 +254,7 @@
 
   function breakLink(p, shot) {
     if (!shot.link) return;
+    if (SB.History) { SB.History.seal(); SB.History.push('break:' + shot.id); SB.History.seal(); }
     const w = windowFor(p, shot);
     shot.local = {
       text: p.master.text.slice(w.from, w.to),

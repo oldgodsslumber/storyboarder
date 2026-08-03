@@ -242,6 +242,10 @@ button,input,select,textarea{font:inherit;color:inherit}
   font-size:13.5px;line-height:1.6;background:var(--bg);
 }
 .master-script:focus{outline:none}
+.master-script:empty::before{
+  content:"Paste or type the script here, then select a line and press Capture shot.";
+  color:var(--fg-dim);
+}
 .master-script .h1{background:var(--hl1);border-radius:2px}
 .master-script .h2{background:var(--hl2);border-radius:2px}
 .master-script .h3{background:var(--hl3);border-radius:2px}

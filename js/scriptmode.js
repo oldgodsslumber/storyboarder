@@ -6,6 +6,7 @@
   let cover = null;          // Uint8Array coverage over master text
   let activeRange = null;    // selected shot's range, drawn with an underline
   let pendingSel = null;     // range captured when the user clicked "Capture shot"
+  let lastSel = null;        // last real selection made in the master script
 
   function P() { return SB.app.project; }
 
@@ -26,20 +27,55 @@
       extra: extraClass
     });
 
+    /* Remember the last real selection made in the master. Chrome drops the
+     * DOM selection the moment focus moves, so without latching it the button
+     * stayed lit after you clicked a card and then Capture did nothing. */
     document.addEventListener('selectionchange', function () {
       if (document.activeElement !== masterEl) return;
       const s = SB.Editor.getSel(masterEl);
-      capBtn.disabled = !(s && s.end > s.start);
+      lastSel = (s && s.end > s.start) ? { from: s.start, to: s.end } : null;
+      syncCaptureBtn();
     });
 
+    /* don't let the button steal focus — keeps the selection visible too */
+    capBtn.addEventListener('mousedown', function (ev) { ev.preventDefault(); });
+
     capBtn.addEventListener('click', function () {
-      const s = SB.Editor.getSel(masterEl);
-      if (!s || s.end <= s.start) return;
-      pendingSel = { from: s.start, to: s.end };
+      const live = SB.Editor.getSel(masterEl);
+      const s = (live && live.end > live.start) ? { from: live.start, to: live.end } : lastSel;
+      if (!s || s.to <= s.from) {
+        SB.toast('Select some script text first', true);
+        syncCaptureBtn();
+        return;
+      }
+      pendingSel = { from: s.from, to: s.to };
       showForm();
     });
 
-    masterEl.addEventListener('paste', function () { /* handled by editor */ });
+    /* clicking a dead part of the panel should land you in the script */
+    panel.addEventListener('mousedown', function (ev) {
+      if (ev.target === panel || ev.target.classList.contains('script-hint')) {
+        ev.preventDefault();
+        masterEl.focus();
+      }
+    });
+  }
+
+  function syncCaptureBtn() {
+    if (!capBtn) return;
+    const ok = !!(lastSel && lastSel.to > lastSel.from &&
+      lastSel.to <= (P() ? P().master.text.length : 0));
+    capBtn.disabled = !ok;
+    capBtn.title = ok
+      ? 'Make a shot from the selected text'
+      : 'Select some text in the script first';
+  }
+
+  /* Any edit moves the text under a remembered selection — drop it. */
+  function invalidateSelection() {
+    if (document.activeElement === masterEl) return;   // still live, selectionchange owns it
+    lastSel = null;
+    syncCaptureBtn();
   }
 
   function extraClass(i) {
@@ -151,12 +187,15 @@
     form.classList.add('hidden');
     form.innerHTML = '';
     pendingSel = null;
-    capBtn.disabled = true;
+    lastSel = null;
+    syncCaptureBtn();
   }
 
   SB.ScriptMode = {
     init: init, refresh: refresh, open: open, close: close, toggle: toggle,
-    isOpen: isOpen, scrollTo: scrollTo
+    isOpen: isOpen, scrollTo: scrollTo,
+    invalidateSelection: invalidateSelection, syncCaptureBtn: syncCaptureBtn,
+    lastSelection: function () { return lastSel; }
   };
 
 })(window.SB);
