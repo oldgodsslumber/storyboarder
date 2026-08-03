@@ -243,10 +243,72 @@
       t('scene reorder renumbers', SB.Model.findShot(P(), b.id).code === '1A',
         SB.Model.findShot(P(), b.id).code);
 
+      // moving a card between scenes — every target you might aim at
+      (function () {
+        var p = P();
+        p.scenes.forEach(function (s) { s.shots = []; });
+        var s1 = p.scenes[0];
+        var s2 = SB.Model.addScene(p);
+        var s3 = SB.Model.addScene(p);
+        SB.Model.addShot(p, s3.id, { type: 'Insert' });
+        SB.app.changed(true);
+
+        function drop(fromShotId, toSel, label, targetScene) {
+          var src = document.querySelector('.card[data-shot="' + fromShotId + '"] .card-head');
+          var dst = document.querySelector(toSel);
+          if (!src || !dst) { t(label, false, 'no ' + (src ? toSel : 'source')); return; }
+          var dt = new DataTransfer();
+          src.dispatchEvent(new DragEvent('dragstart',
+            { dataTransfer: dt, bubbles: true, cancelable: true }));
+          var over = new DragEvent('dragover', { dataTransfer: dt, bubbles: true, cancelable: true });
+          dst.dispatchEvent(over);
+          dst.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
+          var f = SB.Model.findShot(P(), fromShotId);
+          t(label, !!over.defaultPrevented && f && f.scene.id === targetScene.id,
+            'accepted=' + over.defaultPrevented + ' landed in ' +
+            (f ? (f.scene.heading || f.sceneIdx) : 'nowhere'));
+        }
+
+        var c1 = SB.Model.addShot(p, s1.id, { type: 'Wide' });
+        SB.app.changed(true);
+        drop(c1.id, '.shots[data-scene="' + s2.id + '"]', 'drop on an empty scene’s shot row', s2);
+
+        var c2 = SB.Model.addShot(p, s1.id, { type: 'Wide' });
+        SB.app.changed(true);
+        drop(c2.id, '.scene-block[data-scene="' + s3.id + '"] .card',
+          'drop on a card in another scene', s3);
+
+        var c3 = SB.Model.addShot(p, s1.id, { type: 'Wide' });
+        SB.app.changed(true);
+        drop(c3.id, '.scene-block[data-scene="' + s2.id + '"] .scene-head',
+          'drop on another scene’s heading', s2);
+
+        var c4 = SB.Model.addShot(p, s1.id, { type: 'Wide' });
+        SB.app.changed(true);
+        drop(c4.id, '.scene-item[data-scene="' + s2.id + '"]',
+          'drop on a scene in the left-hand list', s2);
+
+        var c5 = SB.Model.addShot(p, s1.id, { type: 'Wide' });
+        SB.app.changed(true);
+        drop(c5.id, '.shots[data-scene="' + s3.id + '"] .add-shot',
+          'drop on another scene’s + Add shot', s3);
+
+        t('scene drags still reorder scenes', (function () {
+          var dt = new DataTransfer();
+          var src = document.querySelector('.scene-item[data-scene="' + s3.id + '"]');
+          var dst = document.querySelector('.scene-item[data-scene="' + s1.id + '"]');
+          src.dispatchEvent(new DragEvent('dragstart',
+            { dataTransfer: dt, bubbles: true, cancelable: true }));
+          dst.dispatchEvent(new DragEvent('dragover', { dataTransfer: dt, bubbles: true, cancelable: true }));
+          dst.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
+          return P().scenes[0].id === s3.id;
+        })(), P().scenes.map(function (s) { return s.heading; }).join(','));
+      })();
+
       // comment mode
       app.commentMode = true;
       SB.Board.render();
-      t('comment inputs appear', document.querySelectorAll('.comment-add').length === 3,
+      t('comment inputs appear', document.querySelectorAll('.comment-add').length === document.querySelectorAll('.card').length,
         document.querySelectorAll('.comment-add').length);
     } catch (e) {
       out.push('FAIL exception :: ' + (e && e.stack || e));

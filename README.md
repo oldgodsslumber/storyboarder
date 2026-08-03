@@ -75,8 +75,12 @@ it will never make a card or scene reappear or vanish.
 ## Board
 
 - Scenes auto-number, shots auto-letter inside their scene: `1A 1B 1C`, `2A`…
-- Drag a card by its header to reorder it, or drop it on another scene. Drag scenes in the
-  left list to reorder. Everything renumbers automatically.
+- Drag a card by its header to reorder it or move it to another scene. Any of these are a
+  valid drop: another card, a scene's shot row, a scene's **heading**, its *+ Add shot*
+  button, or **the scene in the left-hand list** — the last one is the quickest way to
+  reach a scene that is scrolled off the board. The board auto-scrolls while you drag near
+  its top or bottom edge, and every valid target lights up. Drag scenes in the left list to
+  reorder them. Everything renumbers automatically.
 - Images: drop, paste (with a card selected), or click the frame. Everything is downscaled
   to a ≤480p JPEG proxy and stored inline — no full-res copies anywhere.
 - Card colour is a fixed palette of ten mid-tone hues, each legible on the light and the

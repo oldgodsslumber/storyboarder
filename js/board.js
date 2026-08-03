@@ -42,13 +42,35 @@
         ev.dataTransfer.effectAllowed = 'move';
       });
       it.addEventListener('dragover', function (ev) {
-        if (ev.dataTransfer.types.indexOf(DND_SCENE) < 0) return;
+        const types = ev.dataTransfer.types;
+        /* dropping a CARD on a scene here moves it into that scene — the
+         * shortest way to reach a scene that is off-screen on the board */
+        if (types.indexOf(DND_SHOT) >= 0) {
+          ev.preventDefault();
+          it.classList.add('drop-shot');
+          return;
+        }
+        if (types.indexOf(DND_SCENE) < 0) return;
         ev.preventDefault();
         it.classList.add('drag-over');
       });
-      it.addEventListener('dragleave', function () { it.classList.remove('drag-over'); });
+      it.addEventListener('dragleave', function () {
+        it.classList.remove('drag-over');
+        it.classList.remove('drop-shot');
+      });
       it.addEventListener('drop', function (ev) {
         it.classList.remove('drag-over');
+        it.classList.remove('drop-shot');
+        const shotId = ev.dataTransfer.getData(DND_SHOT);
+        if (shotId) {
+          ev.preventDefault();
+          SB.Model.moveShot(P(), shotId, sc.id, sc.shots.length);
+          SB.app.selectedSceneId = sc.id;
+          SB.app.changed(true);
+          const f = SB.Model.findShot(P(), shotId);
+          if (f) SB.toast('Moved to scene ' + (idx + 1) + ' — now ' + f.code);
+          return;
+        }
         const id = ev.dataTransfer.getData(DND_SCENE);
         if (!id) return;
         ev.preventDefault();
@@ -64,7 +86,30 @@
 
   /* ---------------- board ---------------- */
 
+  /* Dragging a card to a scene further down the board needs the board to
+   * follow — Chrome will not scroll a container on its own. */
+  function armAutoScroll() {
+    if (B.autoScroll) return;
+    B.autoScroll = true;
+    const panel = document.getElementById('boardPanel');
+    panel.addEventListener('dragover', function (ev) {
+      if (ev.dataTransfer.types.indexOf(DND_SHOT) < 0) return;
+      const r = panel.getBoundingClientRect();
+      const edge = 70;
+      if (ev.clientY < r.top + edge) panel.scrollTop -= 18;
+      else if (ev.clientY > r.bottom - edge) panel.scrollTop += 18;
+    });
+    document.addEventListener('dragend', function () {
+      document.querySelectorAll('.drag-over,.drop-shot,.dragging').forEach(function (el) {
+        el.classList.remove('drag-over');
+        el.classList.remove('drop-shot');
+        el.classList.remove('dragging');
+      });
+    });
+  }
+
   function render() {
+    armAutoScroll();
     B.scriptEditors = {};
     B.scriptEls = {};
     const board = document.getElementById('board');
@@ -133,10 +178,17 @@
     shots.addEventListener('dragover', function (ev) {
       if (ev.dataTransfer.types.indexOf(DND_SHOT) < 0) return;
       ev.preventDefault();
+      ev.stopPropagation();
+      shots.classList.add('drag-over');
+    });
+    shots.addEventListener('dragleave', function (ev) {
+      if (!shots.contains(ev.relatedTarget)) shots.classList.remove('drag-over');
     });
     shots.addEventListener('drop', function (ev) {
       if (ev.dataTransfer.types.indexOf(DND_SHOT) < 0) return;
       ev.preventDefault();
+      ev.stopPropagation();
+      shots.classList.remove('drag-over');
       const id = ev.dataTransfer.getData(DND_SHOT);
       if (!id) return;
       SB.Model.moveShot(P(), id, sc.id, sc.shots.length);
@@ -144,6 +196,27 @@
     });
 
     blk.appendChild(shots);
+
+    /* Anywhere in the scene block — including its heading — accepts a card.
+     * Aiming at a scene's title is the obvious gesture; it used to do nothing. */
+    blk.addEventListener('dragover', function (ev) {
+      if (ev.dataTransfer.types.indexOf(DND_SHOT) < 0) return;
+      ev.preventDefault();
+      blk.classList.add('drag-over');
+    });
+    blk.addEventListener('dragleave', function (ev) {
+      if (!blk.contains(ev.relatedTarget)) blk.classList.remove('drag-over');
+    });
+    blk.addEventListener('drop', function (ev) {
+      if (ev.dataTransfer.types.indexOf(DND_SHOT) < 0) return;
+      ev.preventDefault();
+      blk.classList.remove('drag-over');
+      const id = ev.dataTransfer.getData(DND_SHOT);
+      if (!id) return;
+      SB.Model.moveShot(P(), id, sc.id, sc.shots.length);
+      SB.app.changed(true);
+    });
+
     return blk;
   }
 
