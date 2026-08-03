@@ -328,6 +328,20 @@ button,input,select,textarea{font:inherit;color:inherit}
 .pp-actions{display:flex;gap:6px;flex-wrap:wrap}
 .pp-status{font-size:11px;color:var(--fg-dim);min-height:15px}
 .pp-status.err{color:var(--danger)}
+.pp-usage{flex:1;font-size:11px;color:var(--fg-dim)}
+.pp-usage.spent{color:var(--danger);font-weight:600}
+.pp-limit{
+  width:58px;background:var(--input-bg);border:1px solid var(--line);
+  border-radius:4px;padding:2px 4px;font-size:11px;
+}
+.pp-limit:focus{outline:none;border-color:var(--accent)}
+.gm-picker{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
+.gm-picker select,.gm-picker input{
+  width:100%;background:var(--input-bg);border:1px solid var(--line);
+  border-radius:4px;padding:3px 5px;
+}
+.gm-picker select:focus,.gm-picker input:focus{outline:none;border-color:var(--accent)}
+.modal .gm-picker{width:100%}
 
 /* ---------- colour palette popover ---------- */
 .swatch{
@@ -357,7 +371,8 @@ button,input,select,textarea{font:inherit;color:inherit}
 
 /* Native selects otherwise keep a platform-themed background that ignores the
    theme, so draw our own chevron and let the rules above own the colour. */
-select,.tb-select,.pp-row select,.modal select,.capture-form select,.card-head select.type{
+select,.tb-select,.pp-row select,.modal select,.capture-form select,.card-head select.type,
+.gm-picker select{
   -webkit-appearance:none;appearance:none;
   background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6'><path d='M0 0h10L5 6z' fill='%238b93a3'/></svg>");
   background-repeat:no-repeat;background-position:right 6px center;

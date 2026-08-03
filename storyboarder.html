@@ -334,6 +334,20 @@ button,input,select,textarea{font:inherit;color:inherit}
 .pp-actions{display:flex;gap:6px;flex-wrap:wrap}
 .pp-status{font-size:11px;color:var(--fg-dim);min-height:15px}
 .pp-status.err{color:var(--danger)}
+.pp-usage{flex:1;font-size:11px;color:var(--fg-dim)}
+.pp-usage.spent{color:var(--danger);font-weight:600}
+.pp-limit{
+  width:58px;background:var(--input-bg);border:1px solid var(--line);
+  border-radius:4px;padding:2px 4px;font-size:11px;
+}
+.pp-limit:focus{outline:none;border-color:var(--accent)}
+.gm-picker{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
+.gm-picker select,.gm-picker input{
+  width:100%;background:var(--input-bg);border:1px solid var(--line);
+  border-radius:4px;padding:3px 5px;
+}
+.gm-picker select:focus,.gm-picker input:focus{outline:none;border-color:var(--accent)}
+.modal .gm-picker{width:100%}
 
 /* ---------- colour palette popover ---------- */
 .swatch{
@@ -363,7 +377,8 @@ button,input,select,textarea{font:inherit;color:inherit}
 
 /* Native selects otherwise keep a platform-themed background that ignores the
    theme, so draw our own chevron and let the rules above own the colour. */
-select,.tb-select,.pp-row select,.modal select,.capture-form select,.card-head select.type{
+select,.tb-select,.pp-row select,.modal select,.capture-form select,.card-head select.type,
+.gm-picker select{
   -webkit-appearance:none;appearance:none;
   background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6'><path d='M0 0h10L5 6z' fill='%238b93a3'/></svg>");
   background-repeat:no-repeat;background-position:right 6px center;
@@ -855,6 +870,246 @@ window.SB = window.SB || {};
 
 </script>
 <script>
+/* ===== js/geminimodels.js ===== */
+/* geminimodels.js — which Gemini model writes the prompts.
+ *
+ * Curated list of the text models documented at ai.google.dev (checked Aug 2026),
+ * filtered to ones that take text in and return text/JSON out — no image, TTS,
+ * live-audio, embedding or video models, none of which can write a prompt.
+ *
+ * Google retires ids on its own schedule, so the picker can also ask the key
+ * itself: "refresh from my key" calls ListModels and replaces the list with
+ * whatever that key can actually reach today. That result is cached locally.
+ */
+(function (SB) {
+  'use strict';
+
+  const DEFAULT = 'gemini-3.6-flash';
+  const CACHE_KEY = 'sb.geminiModelList';
+
+  const LIST = [
+    { id: 'gemini-3.6-flash', label: 'Gemini 3.6 Flash — latest, balanced (default)' },
+    { id: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash — most intelligent' },
+    { id: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash-Lite — fastest / cheapest 3.5' },
+    { id: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash-Lite — frontier-class, low cost' },
+    { id: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro — deepest reasoning (preview)' },
+    { id: 'gemini-3-flash-preview', label: 'Gemini 3 Flash (preview)' },
+    { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash — older price/performance' },
+    { id: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash-Lite — older, budget' },
+    { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro — older, deep reasoning' }
+  ];
+
+  /* ids Google has shut down — anything pointing at these gets moved to DEFAULT */
+  const RETIRED = [
+    'gemini-2.0-flash', 'gemini-2.0-flash-lite',
+    'gemini-3-pro-preview', 'gemini-3.1-flash-lite-preview',
+    'gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-flash-latest', 'gemini-pro'
+  ];
+
+  /* ---- daily request counting (same idea as the AI GM app) ----
+   * Google stopped publishing per-model free-tier RPD in the docs, so the
+   * count here is real (every request this browser sent today) while the
+   * limit is whatever AI Studio shows you. Resets at local midnight.
+   */
+  const USAGE_KEY = 'sb.geminiUsage';
+  const LIMITS_KEY = 'sb.geminiLimits';
+  const DEFAULT_LIMITS = { 'gemini-2.5-flash': 20, 'gemini-2.5-flash-lite': 20 };
+
+  function today() {
+    const d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' +
+      String(d.getDate()).padStart(2, '0');
+  }
+
+  function usage() {
+    try {
+      const u = JSON.parse(localStorage.getItem(USAGE_KEY));
+      if (u && u.date === today()) return u;
+    } catch (e) { }
+    return { date: today(), counts: {} };
+  }
+
+  function saveUsage(u) {
+    try { localStorage.setItem(USAGE_KEY, JSON.stringify(u)); } catch (e) { }
+  }
+
+  function bump(id) {
+    const u = usage();
+    u.counts[id] = (u.counts[id] || 0) + 1;
+    saveUsage(u);
+    return u.counts[id];
+  }
+
+  function count(id) { return usage().counts[id] || 0; }
+
+  /* a 429 means today's allowance is gone whatever the number says */
+  function markExhausted(id) {
+    const u = usage();
+    const lim = limit(id);
+    u.counts[id] = lim ? Math.max(lim, u.counts[id] || 0) : (u.counts[id] || 0) + 1;
+    saveUsage(u);
+  }
+
+  function limits() {
+    try { return JSON.parse(localStorage.getItem(LIMITS_KEY)) || {}; } catch (e) { return {}; }
+  }
+
+  function limit(id) {
+    const l = limits();
+    if (typeof l[id] === 'number') return l[id];
+    return DEFAULT_LIMITS[id] || 0;   // 0 = unknown, just show the count
+  }
+
+  function setLimit(id, n) {
+    const l = limits();
+    if (n > 0) l[id] = n; else delete l[id];
+    try { localStorage.setItem(LIMITS_KEY, JSON.stringify(l)); } catch (e) { }
+  }
+
+  function remaining(id) {
+    const lim = limit(id);
+    return lim ? Math.max(0, lim - count(id)) : null;
+  }
+
+  function usageText(id) {
+    const c = count(id), lim = limit(id);
+    if (!lim) return c + ' request' + (c === 1 ? '' : 's') + ' today';
+    return c + ' / ' + lim + ' today · ' + Math.max(0, lim - c) + ' left';
+  }
+
+  function cached() {
+    try {
+      const v = JSON.parse(localStorage.getItem(CACHE_KEY));
+      return (v && Array.isArray(v.models) && v.models.length) ? v : null;
+    } catch (e) { return null; }
+  }
+
+  /* Curated list, or the live one from the key if it has been fetched. */
+  function options() {
+    const c = cached();
+    if (!c) return LIST.slice();
+    return c.models.map(function (m) {
+      return { id: m.id, label: m.label || m.id };
+    });
+  }
+
+  function isRetired(id) { return RETIRED.indexOf(id) >= 0; }
+
+  function normalize(id) {
+    if (!id || isRetired(id)) return DEFAULT;
+    return id;
+  }
+
+  /* Ask the user's own key what it can reach. */
+  function fetchAvailable() {
+    const key = SB.Store.getApiKey();
+    if (!key) return Promise.reject(new Error('Add your API key first, then refresh the list.'));
+    return fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200&key=' +
+      encodeURIComponent(key))
+      .then(function (r) {
+        return r.text().then(function (t) {
+          if (!r.ok) {
+            let msg = t;
+            try { msg = JSON.parse(t).error.message; } catch (e) { }
+            throw new Error('Gemini ' + r.status + ': ' + msg);
+          }
+          return JSON.parse(t);
+        });
+      })
+      .then(function (data) {
+        const models = (data.models || []).filter(function (m) {
+          const methods = m.supportedGenerationMethods || m.supportedActions || [];
+          if (methods.indexOf('generateContent') < 0) return false;
+          const id = String(m.name || '').replace(/^models\//, '');
+          // drop anything that can't write text back
+          return !/embedding|aqa|tts|image|live|veo|imagen|robotics/i.test(id);
+        }).map(function (m) {
+          const id = String(m.name).replace(/^models\//, '');
+          return { id: id, label: (m.displayName || id) + ' — ' + id };
+        });
+        if (!models.length) throw new Error('That key returned no text models.');
+        try {
+          localStorage.setItem(CACHE_KEY, JSON.stringify({ at: Date.now(), models: models }));
+        } catch (e) { }
+        return models;
+      });
+  }
+
+  function clearCache() {
+    try { localStorage.removeItem(CACHE_KEY); } catch (e) { }
+  }
+
+  /* A <select> of known models plus a "Custom…" escape hatch.
+   * Returns {el, value()} — el is a wrapper holding the select and, when
+   * "Custom…" is chosen, a text input. */
+  function picker(current, onChange) {
+    const wrap = SB.el('div', 'gm-picker');
+    const sel = document.createElement('select');
+    const custom = document.createElement('input');
+    custom.type = 'text';
+    custom.placeholder = 'model id, e.g. gemini-3.6-flash';
+    custom.className = 'gm-custom';
+
+    function build() {
+      const list = options();
+      sel.innerHTML = '';
+      let matched = false;
+      list.forEach(function (m) {
+        const o = document.createElement('option');
+        o.value = m.id; o.textContent = m.label;
+        if (m.id === current) { o.selected = true; matched = true; }
+        sel.appendChild(o);
+      });
+      if (current && !matched) {
+        const o = document.createElement('option');
+        o.value = current; o.textContent = current + ' — (not in list)';
+        o.selected = true;
+        sel.insertBefore(o, sel.firstChild);
+      }
+      const oc = document.createElement('option');
+      oc.value = '__custom'; oc.textContent = 'Custom…';
+      sel.appendChild(oc);
+    }
+    build();
+
+    custom.classList.add('hidden');
+    sel.addEventListener('change', function () {
+      if (sel.value === '__custom') {
+        custom.classList.remove('hidden');
+        custom.value = current || '';
+        custom.focus();
+        return;
+      }
+      custom.classList.add('hidden');
+      current = sel.value;
+      if (onChange) onChange(current);
+    });
+    custom.addEventListener('input', function () {
+      current = custom.value.trim();
+      if (onChange) onChange(current);
+    });
+
+    wrap.appendChild(sel);
+    wrap.appendChild(custom);
+    return {
+      el: wrap,
+      value: function () { return current; },
+      rebuild: function (cur) { if (cur) current = cur; build(); }
+    };
+  }
+
+  SB.GeminiModels = {
+    DEFAULT: DEFAULT, LIST: LIST, RETIRED: RETIRED,
+    options: options, isRetired: isRetired, normalize: normalize,
+    fetchAvailable: fetchAvailable, clearCache: clearCache, picker: picker,
+    bump: bump, count: count, markExhausted: markExhausted,
+    limit: limit, setLimit: setLimit, remaining: remaining, usageText: usageText
+  };
+
+})(window.SB);
+
+</script>
+<script>
 /* ===== js/model.js ===== */
 /* model.js — project schema, numbering, and all structural mutations. */
 (function (SB) {
@@ -954,7 +1209,7 @@ window.SB = window.SB || {};
         models: defaultModels(),
         imageModelId: null,
         videoModelId: null,
-        geminiModel: 'gemini-2.5-flash',
+        geminiModel: SB.GeminiModels.DEFAULT,
         // prompt boxes stay off the cards until the user asks for them
         showImagePrompt: false,
         showVideoPrompt: false
@@ -1000,7 +1255,8 @@ window.SB = window.SB || {};
     delete s.activeModelId;
     if (!has(s.imageModelId)) s.imageModelId = firstOfKind(s.models, 'image');
     if (!has(s.videoModelId)) s.videoModelId = firstOfKind(s.models, 'video');
-    s.geminiModel = s.geminiModel || 'gemini-2.5-flash';
+    // Google retires ids; move a project off anything that is gone
+    s.geminiModel = SB.GeminiModels.normalize(s.geminiModel);
     if (typeof s.showImagePrompt !== 'boolean') s.showImagePrompt = false;
     if (typeof s.showVideoPrompt !== 'boolean') s.showVideoPrompt = false;
 
@@ -2555,7 +2811,7 @@ window.SB = window.SB || {};
   function callGemini(text, keys) {
     const key = SB.Store.getApiKey();
     if (!key) return Promise.reject(new Error('No Google API key. Add one in Settings → API.'));
-    const mdl = P().settings.geminiModel || 'gemini-2.5-flash';
+    const mdl = P().settings.geminiModel || SB.GeminiModels.DEFAULT;
     const props = {};
     keys.forEach(function (k) { props[k] = { type: 'STRING' }; });
     const body = {
@@ -2575,8 +2831,18 @@ window.SB = window.SB || {};
         if (!r.ok) {
           let msg = t;
           try { msg = JSON.parse(t).error.message; } catch (e) { }
+          if (r.status === 429) {
+            SB.GeminiModels.markExhausted(mdl);
+            throw new Error('Gemini 429 — daily/rate limit reached for ' + mdl +
+              '. Pick another model in the Prompts panel. (' + msg + ')');
+          }
+          if (r.status === 404) {
+            throw new Error('Gemini 404 — "' + mdl + '" is not available to this key. ' +
+              'Settings → API → refresh the model list. (' + msg + ')');
+          }
           throw new Error('Gemini ' + r.status + ': ' + msg);
         }
+        SB.GeminiModels.bump(mdl);
         return JSON.parse(t);
       });
     }).then(function (data) {
@@ -2674,7 +2940,7 @@ window.SB = window.SB || {};
 (function (SB) {
   'use strict';
 
-  let panel, bodyEl, statusEl;
+  let panel, bodyEl, statusEl, usageEl, limitEl;
   const write = { image: true, video: true };   // which prompts to write this run
 
   function P() { return SB.app.project; }
@@ -2794,18 +3060,50 @@ window.SB = window.SB || {};
 
     /* --- engine --- */
     const b4 = block('prompt writer');
-    const gm = document.createElement('input');
-    gm.type = 'text';
-    gm.value = p.settings.geminiModel || 'gemini-2.5-flash';
-    gm.addEventListener('change', function () {
-      p.settings.geminiModel = gm.value.trim() || 'gemini-2.5-flash';
+    const pick = SB.GeminiModels.picker(p.settings.geminiModel, function (id) {
+      p.settings.geminiModel = id || SB.GeminiModels.DEFAULT;
       SB.Store.touch();
+      refreshUsage();
     });
-    b4.appendChild(row('Gemini', gm));
-    const k = SB.el('div', 'pp-note', SB.Store.getApiKey()
-      ? 'API key is set in this browser.' : 'No API key — add one in Settings → API.');
-    b4.appendChild(k);
+    b4.appendChild(row('Gemini', pick.el));
+
+    const uRow = SB.el('div', 'pp-row');
+    uRow.appendChild(SB.el('label', null, 'Free calls'));
+    usageEl = SB.el('span', 'pp-usage');
+    uRow.appendChild(usageEl);
+    limitEl = document.createElement('input');
+    limitEl.type = 'number';
+    limitEl.min = '0';
+    limitEl.className = 'pp-limit';
+    limitEl.title = 'Your free-tier requests per day for this model (AI Studio shows the real number). Blank = just count.';
+    limitEl.placeholder = 'limit';
+    limitEl.addEventListener('change', function () {
+      SB.GeminiModels.setLimit(p.settings.geminiModel, parseInt(limitEl.value, 10) || 0);
+      refreshUsage();
+    });
+    uRow.appendChild(limitEl);
+    b4.appendChild(uRow);
+    b4.appendChild(SB.el('div', 'pp-note',
+      'Counted in this browser and reset at midnight. Google no longer publishes the free-tier ' +
+      'daily cap per model — set it from your AI Studio rate-limit page.'));
+
+    b4.appendChild(SB.el('div', 'pp-note', SB.Store.getApiKey()
+      ? 'API key is set in this browser.' : 'No API key — add one in Settings → API.'));
     bodyEl.appendChild(b4);
+
+    refreshUsage();
+  }
+
+  function refreshUsage() {
+    if (!usageEl || !P()) return;
+    const id = P().settings.geminiModel;
+    usageEl.textContent = SB.GeminiModels.usageText(id);
+    const rem = SB.GeminiModels.remaining(id);
+    usageEl.classList.toggle('spent', rem === 0);
+    if (limitEl && document.activeElement !== limitEl) {
+      const lim = SB.GeminiModels.limit(id);
+      limitEl.value = lim ? lim : '';
+    }
   }
 
   function setStatus(txt, isErr) {
@@ -2821,6 +3119,7 @@ window.SB = window.SB || {};
       roles: roles,
       onProgress: function (done, total, failed) {
         setStatus('writing ' + done + '/' + total + (failed ? ' · ' + failed + ' failed' : ''), false);
+        refreshUsage();
       }
     }).then(function (r) {
       btn.disabled = false;
@@ -2851,7 +3150,7 @@ window.SB = window.SB || {};
 
   SB.PromptPanel = {
     init: init, open: open, close: close, toggle: toggle, isOpen: isOpen,
-    refresh: refresh, run: run
+    refresh: refresh, run: run, refreshUsage: refreshUsage
   };
 
 })(window.SB);
@@ -2990,12 +3289,44 @@ window.SB = window.SB || {};
     panels.api.appendChild(SB.el('div', 'pp-note',
       'Stored in this browser only — never written into the .storyboard file, so a board can be shared without leaking the key.'));
 
-    const gm = document.createElement('input');
-    gm.type = 'text';
-    gm.value = p.settings.geminiModel || 'gemini-2.5-flash';
-    const gmField = field('Gemini model used to write prompts', gm);
+    let chosenModel = p.settings.geminiModel || SB.GeminiModels.DEFAULT;
+    const pick = SB.GeminiModels.picker(chosenModel, function (id) { chosenModel = id; });
+    const gmField = field('Gemini model used to write prompts', pick.el);
     gmField.style.marginTop = '14px';
     panels.api.appendChild(gmField);
+
+    const refreshRow = SB.el('div', 'pp-actions');
+    const refresh = SB.el('button', 'tb', 'Refresh list from my key');
+    const refreshNote = SB.el('span', 'pp-note', '');
+    refresh.onclick = function () {
+      SB.Store.setApiKey(key.value.trim());   // use whatever is typed right now
+      refresh.disabled = true;
+      refreshNote.textContent = 'asking Google…';
+      refreshNote.classList.remove('err');
+      SB.GeminiModels.fetchAvailable().then(function (models) {
+        pick.rebuild(chosenModel);
+        refresh.disabled = false;
+        refreshNote.textContent = models.length + ' models this key can reach.';
+      }).catch(function (e) {
+        refresh.disabled = false;
+        refreshNote.textContent = e.message || String(e);
+        refreshNote.classList.add('err');
+      });
+    };
+    const useCurated = SB.el('button', 'tb', 'Back to curated list');
+    useCurated.onclick = function () {
+      SB.GeminiModels.clearCache();
+      pick.rebuild(chosenModel);
+      refreshNote.textContent = 'showing the built-in list.';
+      refreshNote.classList.remove('err');
+    };
+    refreshRow.appendChild(refresh);
+    refreshRow.appendChild(useCurated);
+    panels.api.appendChild(refreshRow);
+    panels.api.appendChild(refreshNote);
+    panels.api.appendChild(SB.el('div', 'pp-note',
+      'Google retires model ids on its own schedule. If a prompt run comes back 404, ' +
+      'refresh this list — it asks your key what it can actually reach today.'));
 
     select(startTab && panels[startTab] ? startTab : 'general');
 
@@ -3010,7 +3341,7 @@ window.SB = window.SB || {};
             const t = types.value.split('\n').map(function (s) { return s.trim(); })
               .filter(function (s) { return s; });
             p.settings.shotTypes = t.length ? t : SB.Model.DEFAULT_SHOT_TYPES.slice();
-            p.settings.geminiModel = gm.value.trim() || 'gemini-2.5-flash';
+            p.settings.geminiModel = (chosenModel || '').trim() || SB.GeminiModels.DEFAULT;
             p.settings.models = working.filter(function (m) { return (m.name || '').trim(); })
               .map(function (m) { delete m.__open; return m; });
             if (!p.settings.models.length) p.settings.models = SB.Model.defaultModels();

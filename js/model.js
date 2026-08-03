@@ -96,7 +96,7 @@
         models: defaultModels(),
         imageModelId: null,
         videoModelId: null,
-        geminiModel: 'gemini-2.5-flash',
+        geminiModel: SB.GeminiModels.DEFAULT,
         // prompt boxes stay off the cards until the user asks for them
         showImagePrompt: false,
         showVideoPrompt: false
@@ -142,7 +142,8 @@
     delete s.activeModelId;
     if (!has(s.imageModelId)) s.imageModelId = firstOfKind(s.models, 'image');
     if (!has(s.videoModelId)) s.videoModelId = firstOfKind(s.models, 'video');
-    s.geminiModel = s.geminiModel || 'gemini-2.5-flash';
+    // Google retires ids; move a project off anything that is gone
+    s.geminiModel = SB.GeminiModels.normalize(s.geminiModel);
     if (typeof s.showImagePrompt !== 'boolean') s.showImagePrompt = false;
     if (typeof s.showVideoPrompt !== 'boolean') s.showVideoPrompt = false;
 

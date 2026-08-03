@@ -79,7 +79,30 @@ prompts. Everything prompt-related lives in one **Prompts** panel (top bar):
   **description** plus that model's templates. The app never generates images or video.
 - **Show on cards** — the two independent hide/show toggles. Generating turns the matching
   one on for you, so results appear as soon as they exist.
-- **Prompt writer** — which Gemini model does the writing.
+- **Prompt writer** — which Gemini model does the writing, picked from a dropdown of the
+  current text models (plus *Custom…* for anything not listed), and a **free-call counter**
+  for that model.
+
+Gemini is only ever asked for **text**. The app never requests an image or a video from it —
+"Nano Banana", "Veo" and friends are *target* names written into the prompt, not endpoints
+that get called. The writer dropdown filters out image/TTS/live/embedding/video models for
+that reason.
+
+### Model ids and quota
+
+Google retires model ids on its own schedule, so:
+
+- The dropdown ships with the models documented as current (Gemini 3.6 / 3.5 / 3.1 Flash
+  family, 3.1 Pro, and the 2.5 family). Default is **gemini-3.6-flash**.
+- Opening an older project silently moves it off a dead id (`gemini-2.0-flash`,
+  `gemini-flash-latest`, …) onto the default.
+- **Settings → API → Refresh list from my key** calls Google's ListModels with your key and
+  replaces the dropdown with what that key can actually reach today (cached locally,
+  *Back to curated list* undoes it). A 404 from a prompt run says to do exactly this.
+- **Free calls** counts every request this browser sent today, per model, resetting at
+  midnight. Google no longer publishes the free-tier daily cap per model, so the limit box
+  next to the counter is yours to set from your AI Studio rate-limit page — leave it blank
+  and you just get a running count. A 429 marks that model spent for the day.
 
 Prompts are stored **per model**, all at once — switching target models only changes what is
 displayed; every model's prompts stay saved. Each card's prompt box names the model it came
@@ -122,6 +145,7 @@ css/app.css
 js/theme.js       light / dark
 js/util.js        helpers, image downscale, modal
 js/doc.js         Doc + position transforms (the anchoring core)
+js/geminimodels.js writer model list, ListModels refresh, daily call counter
 js/model.js       project schema, numbering, all mutations
 js/store.js       File System Access autosave, API key in localStorage
 js/editor.js      contenteditable window onto a Doc slice

@@ -96,6 +96,28 @@
         titles[0].indexOf(SB.Model.imageModel(P()).name) > 0 &&
         titles[1].indexOf(SB.Model.videoModel(P()).name) > 0, JSON.stringify(titles.slice(0, 2)));
       showBoxes[0].click(); showBoxes[1].click();
+
+      // gemini model picker + free-call counter live in the panel
+      const gmSel = document.querySelector('#promptBody .gm-picker select');
+      t('gemini model is a dropdown', !!gmSel, 'missing');
+      t('dropdown lists current models',
+        gmSel.options.length === SB.GeminiModels.LIST.length + 1, gmSel.options.length);
+      t('default selected', gmSel.value === SB.GeminiModels.DEFAULT, gmSel.value);
+      t('custom escape hatch',
+        gmSel.options[gmSel.options.length - 1].value === '__custom', '');
+      gmSel.value = 'gemini-2.5-pro';
+      gmSel.dispatchEvent(new Event('change', { bubbles: true }));
+      t('picking a model sticks', P().settings.geminiModel === 'gemini-2.5-pro',
+        P().settings.geminiModel);
+      const usage = document.querySelector('#promptBody .pp-usage');
+      t('free-call counter shown', /request/.test(usage.textContent), usage.textContent);
+      SB.GeminiModels.setLimit('gemini-2.5-pro', 10);
+      SB.GeminiModels.bump('gemini-2.5-pro');
+      SB.PromptPanel.refreshUsage();
+      t('counter tracks a limit', usage.textContent === '1 / 10 today · 9 left', usage.textContent);
+      gmSel.value = SB.GeminiModels.DEFAULT;
+      gmSel.dispatchEvent(new Event('change', { bubbles: true }));
+
       SB.PromptPanel.close();
 
       // theme
@@ -131,6 +153,12 @@
         document.querySelectorAll('.modal .tab-panel.on .model-row').length);
       t('templates collapsed until opened',
         document.querySelectorAll('.modal .tab-panel.on textarea').length === 0, '');
+      document.querySelectorAll('.modal .tab')[2].click();
+      t('api tab has the model dropdown',
+        document.querySelectorAll('.modal .tab-panel.on .gm-picker select').length === 1, '');
+      t('api tab can refresh from the key',
+        /Refresh list/.test(document.querySelector('.modal .tab-panel.on .pp-actions').textContent), '');
+      document.querySelectorAll('.modal .tab')[1].click();
       document.querySelectorAll('.modal .model-row .mini')[0].click();
       t('templates open per model',
         document.querySelectorAll('.modal .tab-panel.on textarea').length === 2,

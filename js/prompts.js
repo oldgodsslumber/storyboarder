@@ -77,7 +77,7 @@
   function callGemini(text, keys) {
     const key = SB.Store.getApiKey();
     if (!key) return Promise.reject(new Error('No Google API key. Add one in Settings → API.'));
-    const mdl = P().settings.geminiModel || 'gemini-2.5-flash';
+    const mdl = P().settings.geminiModel || SB.GeminiModels.DEFAULT;
     const props = {};
     keys.forEach(function (k) { props[k] = { type: 'STRING' }; });
     const body = {
@@ -97,8 +97,18 @@
         if (!r.ok) {
           let msg = t;
           try { msg = JSON.parse(t).error.message; } catch (e) { }
+          if (r.status === 429) {
+            SB.GeminiModels.markExhausted(mdl);
+            throw new Error('Gemini 429 — daily/rate limit reached for ' + mdl +
+              '. Pick another model in the Prompts panel. (' + msg + ')');
+          }
+          if (r.status === 404) {
+            throw new Error('Gemini 404 — "' + mdl + '" is not available to this key. ' +
+              'Settings → API → refresh the model list. (' + msg + ')');
+          }
           throw new Error('Gemini ' + r.status + ': ' + msg);
         }
+        SB.GeminiModels.bump(mdl);
         return JSON.parse(t);
       });
     }).then(function (data) {

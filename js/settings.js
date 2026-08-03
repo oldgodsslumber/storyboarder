@@ -129,12 +129,44 @@
     panels.api.appendChild(SB.el('div', 'pp-note',
       'Stored in this browser only — never written into the .storyboard file, so a board can be shared without leaking the key.'));
 
-    const gm = document.createElement('input');
-    gm.type = 'text';
-    gm.value = p.settings.geminiModel || 'gemini-2.5-flash';
-    const gmField = field('Gemini model used to write prompts', gm);
+    let chosenModel = p.settings.geminiModel || SB.GeminiModels.DEFAULT;
+    const pick = SB.GeminiModels.picker(chosenModel, function (id) { chosenModel = id; });
+    const gmField = field('Gemini model used to write prompts', pick.el);
     gmField.style.marginTop = '14px';
     panels.api.appendChild(gmField);
+
+    const refreshRow = SB.el('div', 'pp-actions');
+    const refresh = SB.el('button', 'tb', 'Refresh list from my key');
+    const refreshNote = SB.el('span', 'pp-note', '');
+    refresh.onclick = function () {
+      SB.Store.setApiKey(key.value.trim());   // use whatever is typed right now
+      refresh.disabled = true;
+      refreshNote.textContent = 'asking Google…';
+      refreshNote.classList.remove('err');
+      SB.GeminiModels.fetchAvailable().then(function (models) {
+        pick.rebuild(chosenModel);
+        refresh.disabled = false;
+        refreshNote.textContent = models.length + ' models this key can reach.';
+      }).catch(function (e) {
+        refresh.disabled = false;
+        refreshNote.textContent = e.message || String(e);
+        refreshNote.classList.add('err');
+      });
+    };
+    const useCurated = SB.el('button', 'tb', 'Back to curated list');
+    useCurated.onclick = function () {
+      SB.GeminiModels.clearCache();
+      pick.rebuild(chosenModel);
+      refreshNote.textContent = 'showing the built-in list.';
+      refreshNote.classList.remove('err');
+    };
+    refreshRow.appendChild(refresh);
+    refreshRow.appendChild(useCurated);
+    panels.api.appendChild(refreshRow);
+    panels.api.appendChild(refreshNote);
+    panels.api.appendChild(SB.el('div', 'pp-note',
+      'Google retires model ids on its own schedule. If a prompt run comes back 404, ' +
+      'refresh this list — it asks your key what it can actually reach today.'));
 
     select(startTab && panels[startTab] ? startTab : 'general');
 
@@ -149,7 +181,7 @@
             const t = types.value.split('\n').map(function (s) { return s.trim(); })
               .filter(function (s) { return s; });
             p.settings.shotTypes = t.length ? t : SB.Model.DEFAULT_SHOT_TYPES.slice();
-            p.settings.geminiModel = gm.value.trim() || 'gemini-2.5-flash';
+            p.settings.geminiModel = (chosenModel || '').trim() || SB.GeminiModels.DEFAULT;
             p.settings.models = working.filter(function (m) { return (m.name || '').trim(); })
               .map(function (m) { delete m.__open; return m; });
             if (!p.settings.models.length) p.settings.models = SB.Model.defaultModels();

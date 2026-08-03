@@ -17,13 +17,20 @@ const sandbox = {
   },
   setTimeout, clearTimeout,
   indexedDB: undefined,
-  localStorage: { getItem: () => null, setItem() { }, removeItem() { } },
+  localStorage: (() => {
+    const m = new Map();
+    return {
+      getItem: k => (m.has(k) ? m.get(k) : null),
+      setItem: (k, v) => m.set(k, String(v)),
+      removeItem: k => m.delete(k)
+    };
+  })(),
   Uint8Array
 };
 sandbox.window = sandbox;
 vm.createContext(sandbox);
 
-for (const f of ['js/util.js', 'js/doc.js', 'js/model.js']) {
+for (const f of ['js/util.js', 'js/doc.js', 'js/geminimodels.js', 'js/model.js']) {
   vm.runInContext(readFileSync(join(root, f), 'utf8'), sandbox, { filename: f });
 }
 const SB = sandbox.SB;
@@ -148,6 +155,43 @@ console.log('\n— coverage for the highlight underlay —');
   addLinked(p, 0, 6);
   addLinked(p, 4, 8);
   eq(Array.from(SB.Model.coverage(p)), [1, 1, 1, 1, 2, 2, 1, 1], 'overlap counted per character');
+}
+
+console.log('\n— gemini model list —');
+{
+  const G = SB.GeminiModels;
+  eq(G.LIST.some(m => m.id === G.DEFAULT), true, 'the default is in the list');
+  eq(G.DEFAULT, 'gemini-3.6-flash', 'default is a current model');
+  eq(G.LIST.some(m => /image|tts|embedding|live|veo/.test(m.id)), false,
+    'no non-text models in the picker');
+  eq(G.normalize('gemini-2.0-flash'), G.DEFAULT, 'retired id falls back to the default');
+  eq(G.normalize('gemini-flash-latest'), G.DEFAULT, 'retired alias falls back too');
+  eq(G.normalize('gemini-2.5-pro'), 'gemini-2.5-pro', 'a live id is left alone');
+  eq(G.normalize('some-custom-id'), 'some-custom-id', 'a custom id is left alone');
+
+  const p = SB.Model.newProject();
+  eq(p.settings.geminiModel, G.DEFAULT, 'new projects start on the default');
+  const old = SB.Model.migrate(Object.assign(SB.Model.newProject(),
+    { settings: Object.assign(SB.Model.newProject().settings, { geminiModel: 'gemini-2.0-flash' }) }));
+  eq(old.settings.geminiModel, G.DEFAULT, 'opening an old file migrates a dead model id');
+}
+
+console.log('\n— free-call counting —');
+{
+  const G = SB.GeminiModels;
+  const id = 'gemini-3.6-flash';
+  eq(G.count(id), 0, 'starts at zero today');
+  G.bump(id); G.bump(id);
+  eq(G.count(id), 2, 'requests are counted');
+  eq(G.remaining(id), null, 'no limit set -> no remaining figure');
+  eq(G.usageText(id), '2 requests today', 'count-only text');
+  G.setLimit(id, 20);
+  eq(G.remaining(id), 18, 'remaining against a set limit');
+  eq(G.usageText(id), '2 / 20 today · 18 left', 'count/limit text');
+  G.markExhausted(id);
+  eq(G.remaining(id), 0, 'a 429 burns the rest of the day');
+  eq(G.limit('gemini-2.5-flash'), 20, 'known free-tier default limit');
+  eq(G.limit('gemini-3.5-flash'), 0, 'unknown limits stay unset rather than guessed');
 }
 
 console.log('\n— the API key never reaches the file —');

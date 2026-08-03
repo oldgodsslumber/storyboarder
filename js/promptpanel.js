@@ -4,7 +4,7 @@
 (function (SB) {
   'use strict';
 
-  let panel, bodyEl, statusEl;
+  let panel, bodyEl, statusEl, usageEl, limitEl;
   const write = { image: true, video: true };   // which prompts to write this run
 
   function P() { return SB.app.project; }
@@ -124,18 +124,50 @@
 
     /* --- engine --- */
     const b4 = block('prompt writer');
-    const gm = document.createElement('input');
-    gm.type = 'text';
-    gm.value = p.settings.geminiModel || 'gemini-2.5-flash';
-    gm.addEventListener('change', function () {
-      p.settings.geminiModel = gm.value.trim() || 'gemini-2.5-flash';
+    const pick = SB.GeminiModels.picker(p.settings.geminiModel, function (id) {
+      p.settings.geminiModel = id || SB.GeminiModels.DEFAULT;
       SB.Store.touch();
+      refreshUsage();
     });
-    b4.appendChild(row('Gemini', gm));
-    const k = SB.el('div', 'pp-note', SB.Store.getApiKey()
-      ? 'API key is set in this browser.' : 'No API key — add one in Settings → API.');
-    b4.appendChild(k);
+    b4.appendChild(row('Gemini', pick.el));
+
+    const uRow = SB.el('div', 'pp-row');
+    uRow.appendChild(SB.el('label', null, 'Free calls'));
+    usageEl = SB.el('span', 'pp-usage');
+    uRow.appendChild(usageEl);
+    limitEl = document.createElement('input');
+    limitEl.type = 'number';
+    limitEl.min = '0';
+    limitEl.className = 'pp-limit';
+    limitEl.title = 'Your free-tier requests per day for this model (AI Studio shows the real number). Blank = just count.';
+    limitEl.placeholder = 'limit';
+    limitEl.addEventListener('change', function () {
+      SB.GeminiModels.setLimit(p.settings.geminiModel, parseInt(limitEl.value, 10) || 0);
+      refreshUsage();
+    });
+    uRow.appendChild(limitEl);
+    b4.appendChild(uRow);
+    b4.appendChild(SB.el('div', 'pp-note',
+      'Counted in this browser and reset at midnight. Google no longer publishes the free-tier ' +
+      'daily cap per model — set it from your AI Studio rate-limit page.'));
+
+    b4.appendChild(SB.el('div', 'pp-note', SB.Store.getApiKey()
+      ? 'API key is set in this browser.' : 'No API key — add one in Settings → API.'));
     bodyEl.appendChild(b4);
+
+    refreshUsage();
+  }
+
+  function refreshUsage() {
+    if (!usageEl || !P()) return;
+    const id = P().settings.geminiModel;
+    usageEl.textContent = SB.GeminiModels.usageText(id);
+    const rem = SB.GeminiModels.remaining(id);
+    usageEl.classList.toggle('spent', rem === 0);
+    if (limitEl && document.activeElement !== limitEl) {
+      const lim = SB.GeminiModels.limit(id);
+      limitEl.value = lim ? lim : '';
+    }
   }
 
   function setStatus(txt, isErr) {
@@ -151,6 +183,7 @@
       roles: roles,
       onProgress: function (done, total, failed) {
         setStatus('writing ' + done + '/' + total + (failed ? ' · ' + failed + ' failed' : ''), false);
+        refreshUsage();
       }
     }).then(function (r) {
       btn.disabled = false;
@@ -181,7 +214,7 @@
 
   SB.PromptPanel = {
     init: init, open: open, close: close, toggle: toggle, isOpen: isOpen,
-    refresh: refresh, run: run
+    refresh: refresh, run: run, refreshUsage: refreshUsage
   };
 
 })(window.SB);
