@@ -48,11 +48,13 @@
   function jobsFor(shot, im, vm, roles) {
     const jobs = [];
     const wantI = roles.image && im, wantV = roles.video && vm;
+    const sys = function (role) { return SB.Brand.systemFor(P(), shot, role); };
     if (wantI && wantV && im.id === vm.id) {
       jobs.push({
         text: PREAMBLE + 'Return JSON with the keys "imagePrompt" and "videoPrompt".\n\n' +
           imageBlock(shot, im) + '\n' + videoBlock(shot, vm),
         keys: ['imagePrompt', 'videoPrompt'],
+        system: sys('both'),
         targets: [{ model: im, field: 'imagePrompt' }, { model: vm, field: 'videoPrompt' }]
       });
       return jobs;
@@ -61,6 +63,7 @@
       jobs.push({
         text: PREAMBLE + 'Return JSON with the key "imagePrompt".\n\n' + imageBlock(shot, im),
         keys: ['imagePrompt'],
+        system: sys('image'),
         targets: [{ model: im, field: 'imagePrompt' }]
       });
     }
@@ -68,6 +71,7 @@
       jobs.push({
         text: PREAMBLE + 'Return JSON with the key "videoPrompt".\n\n' + videoBlock(shot, vm),
         keys: ['videoPrompt'],
+        system: sys('video'),
         targets: [{ model: vm, field: 'videoPrompt' }]
       });
     }
@@ -108,12 +112,16 @@
   const NO_SCHEMA_HINT =
     '\n\nReply with ONLY the JSON object — start with { and end with }, no markdown fences.';
 
-  function callGemini(text, keys) {
+  function callGemini(text, keys, system) {
     const key = SB.Store.getApiKey();
     if (!key) return Promise.reject(new Error('No Google API key. Add one in Settings → API.'));
     const mdl = P().settings.geminiModel || SB.GeminiModels.DEFAULT;
     const props = {};
     keys.forEach(function (k) { props[k] = { type: 'STRING' }; });
+
+    /* Gemma takes neither a response schema nor a systemInstruction — it gets
+     * both folded into the one user turn instead. */
+    const plain = SB.GeminiModels.isGemma(mdl);
 
     function build(withSchema) {
       const gen = { temperature: 0.8 };
@@ -121,15 +129,19 @@
         gen.responseMimeType = 'application/json';
         gen.responseSchema = { type: 'OBJECT', properties: props, required: keys };
       }
-      return {
-        contents: [{ role: 'user', parts: [{ text: withSchema ? text : text + NO_SCHEMA_HINT }] }],
-        generationConfig: gen
-      };
+      let user = withSchema ? text : text + NO_SCHEMA_HINT;
+      const body = { generationConfig: gen };
+      if (system) {
+        if (plain) user = system + '\n\n----\n\n' + user;
+        else body.systemInstruction = { parts: [{ text: system }] };
+      }
+      body.contents = [{ role: 'user', parts: [{ text: user }] }];
+      return body;
     }
 
     /* Gemma runs on the same endpoint but has no JSON mode — ask it in words.
      * Any other model that rejects the schema gets the same treatment on retry. */
-    const useSchema = !SB.GeminiModels.isGemma(mdl);
+    const useSchema = !plain;
 
     return request(mdl, key, build(useSchema)).catch(function (e) {
       const schemaProblem = /schema|json|mime|not supported|unsupported|invalid argument/i
@@ -152,12 +164,46 @@
     });
   }
 
-  function store(shot, model, field, value) {
+  function store(shot, model, field, value, flagged) {
     const cur = shot.prompts[model.id] || { imagePrompt: '', videoPrompt: '' };
     cur[field] = value || '';
     cur.modelName = model.name;
     cur.at = Date.now();
+    cur.flagged = cur.flagged || {};
+    if (flagged && flagged.length) cur.flagged[field] = flagged;
+    else delete cur.flagged[field];
     shot.prompts[model.id] = cur;
+  }
+
+  /* "No gender references" is a hard brand rule, so it gets verified rather
+   * than hoped for: one corrective rewrite, then a visible flag on the card if
+   * the writer still won't let go of it. */
+  function enforceNeutral(job, res) {
+    if (!SB.Brand.brandOf(P()).enabled) return Promise.resolve({ res: res, flags: {} });
+    const bad = {};
+    let any = false;
+    job.keys.forEach(function (k) {
+      const terms = SB.Brand.genderedTerms(res[k]);
+      if (terms.length) { bad[k] = terms; any = true; }
+    });
+    if (!any) return Promise.resolve({ res: res, flags: {} });
+
+    const all = Object.keys(bad).reduce(function (a, k) { return a.concat(bad[k]); }, []);
+    const fix = job.text +
+      '\n\nYour previous draft used gendered language (' + all.join(', ') + '). ' +
+      'Rewrite it with no gendered nouns, adjectives, titles or pronouns — ' +
+      'use "the subject", "the person", or no pronoun at all. Keep everything else the same.';
+
+    return callGemini(fix, job.keys, job.system).then(function (res2) {
+      const still = {};
+      job.keys.forEach(function (k) {
+        const terms = SB.Brand.genderedTerms(res2[k]);
+        if (terms.length) still[k] = terms;
+      });
+      return { res: res2, flags: still };
+    }).catch(function () {
+      return { res: res, flags: bad };   // rewrite failed — keep the draft, flag it
+    });
   }
 
   /* opts = { roles:{image,video}, onProgress(done,total,failed) } */
@@ -189,8 +235,12 @@
     function worker() {
       const j = queue.shift();
       if (!j) return Promise.resolve();
-      return callGemini(j.text, j.keys).then(function (res) {
-        j.targets.forEach(function (t) { store(j.shot, t.model, t.field, res[t.field]); });
+      return callGemini(j.text, j.keys, j.system).then(function (res) {
+        return enforceNeutral(j, res);
+      }).then(function (out) {
+        j.targets.forEach(function (t) {
+          store(j.shot, t.model, t.field, out.res[t.field], out.flags[t.field]);
+        });
         done++;
       }).catch(function (e) {
         failed++;

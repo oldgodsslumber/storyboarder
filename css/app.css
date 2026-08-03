@@ -177,6 +177,7 @@ button,input,select,textarea{font:inherit;color:inherit}
   color:var(--fg-dim);text-transform:uppercase;letter-spacing:.4px;
 }
 .badge.noshot{border-color:var(--accent2);color:var(--accent2)}
+.badge.warn{border-color:var(--danger);color:var(--danger);cursor:help}
 
 .frame{
   position:relative;background:var(--frame-bg);aspect-ratio:16/9;display:flex;

@@ -97,6 +97,7 @@
         imageModelId: null,
         videoModelId: null,
         geminiModel: SB.GeminiModels.DEFAULT,
+        brand: { enabled: true, text: SB.Brand.DEFAULT },
         // prompt boxes stay off the cards until the user asks for them
         showImagePrompt: false,
         showVideoPrompt: false
@@ -144,6 +145,9 @@
     if (!has(s.videoModelId)) s.videoModelId = firstOfKind(s.models, 'video');
     // Google retires ids; move a project off anything that is gone
     s.geminiModel = SB.GeminiModels.normalize(s.geminiModel);
+    s.brand = (s.brand && typeof s.brand === 'object') ? s.brand : {};
+    if (typeof s.brand.enabled !== 'boolean') s.brand.enabled = true;
+    if (typeof s.brand.text !== 'string' || !s.brand.text.trim()) s.brand.text = SB.Brand.DEFAULT;
     if (typeof s.showImagePrompt !== 'boolean') s.showImagePrompt = false;
     if (typeof s.showVideoPrompt !== 'boolean') s.showVideoPrompt = false;
 

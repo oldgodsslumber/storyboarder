@@ -101,7 +101,10 @@ that reason.
 Google retires model ids on its own schedule, so:
 
 - The dropdown ships with the models documented as current (Gemini 3.6 / 3.5 / 3.1 Flash
-  family, 3.1 Pro, and the 2.5 family). Default is **gemini-3.6-flash**.
+  family, 3.1 Pro, the 2.5 family, and **Gemma 4 31B**). Default is **gemini-3.6-flash**.
+- Gemma runs on the same endpoint but is not a Gemini model — it has no JSON mode, so the
+  app asks it for JSON in words rather than sending a response schema, and parses what
+  comes back. Any other model that rejects a schema gets the same treatment on retry.
 - Opening an older project silently moves it off a dead id (`gemini-2.0-flash`,
   `gemini-flash-latest`, …) onto the default.
 - **Settings → API → Refresh list from my key** calls Google's ListModels with your key and
@@ -111,6 +114,32 @@ Google retires model ids on its own schedule, so:
   midnight. Google no longer publishes the free-tier daily cap per model, so the limit box
   next to the counter is yours to set from your AI Studio rate-limit page — leave it blank
   and you just get a running count. A 429 marks that model spent for the day.
+
+### Brand style
+
+The house style lives in **Settings → Brand style** and rides along with every prompt the
+app writes, as a system instruction on top of the per-model templates: the creative
+constraints, style guidance, camera and technical feel, environment, and overall mood.
+It is stored in the project file, so a board carries its own house style. The toggle is in
+the Prompts panel (*apply house style*) and in the Settings tab.
+
+Two things the app adds that a style guide can't know on its own:
+
+- **Scene continuity.** Each request carries the scene's beat list in order, which beat this
+  frame is, and which shot is the wide/reference frame — so "same subject, same wardrobe,
+  same location, same grade across consecutive frames" is something the writer can act on
+  rather than a wish. "No shot" fragments are left out of the sequence. If no shot in the
+  scene is a wide, the writer is told to compose this one so it can double as a reference.
+- **The no-gendered-language rule is verified, not just requested.** Returned prompts are
+  scanned for gendered nouns, titles and pronouns; if any appear the app asks for one
+  rewrite naming the offending words, and if they survive that, the prompt box gets a
+  **gendered** badge listing them. (`human`, `manager` and the like are not false positives.)
+
+Video prompts get the same house style plus motion rules — subject, wardrobe and location
+must not change mid-shot, camera moves stay restrained and motivated.
+
+**Preview what a shot sends** in the Brand style tab shows the exact system instruction for
+the selected shot, continuity block included.
 
 Prompts are stored **per model**, all at once — switching target models only changes what is
 displayed; every model's prompts stay saved. Each card's prompt box names the model it came
@@ -122,8 +151,9 @@ per model so the list stays readable. They accept:
 
 ## Settings
 
-Three tabs: **General** (shot types, light/dark), **Models & templates** (the model list and
-its per-model image/video templates), **API** (Google key + the Gemini model used to write).
+Four tabs: **General** (shot types, light/dark), **Brand style** (the house style every
+prompt obeys), **Models & templates** (the model list and its per-model image/video
+templates), **API** (Google key + the Gemini model used to write).
 
 ## Light / dark
 
@@ -136,6 +166,13 @@ written into the project file.
 **PDF** opens a print view: a contact sheet, 6 shots per page, each cell showing the frame,
 shot code, scene heading, shot type, script and description. Comments, ink and “no shot”
 fragments are excluded. Print → *Save as PDF*.
+
+## Premiere Pro panel
+
+`premiere-plugin/` is a UXP panel that builds a `.storyboard` file straight from a
+sequence — one card per cut, each with a frame grabbed from that shot and the words spoken
+under it, taken from an exported transcript. Everything lands in scene 1. See
+[premiere-plugin/README.md](premiere-plugin/README.md).
 
 ## Tests
 
@@ -165,6 +202,7 @@ js/editor.js      contenteditable window onto a Doc slice
 js/board.js       scenes, cards, drag & drop
 js/scriptmode.js  master script panel, capture, highlights
 js/comments.js    comment list + ink layer
+js/brand.js       house style, scene continuity, gendered-language check
 js/prompts.js     Gemini prompt writing
 js/promptpanel.js the Prompts panel
 js/settings.js    tabbed settings

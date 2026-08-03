@@ -30,7 +30,7 @@ const sandbox = {
 sandbox.window = sandbox;
 vm.createContext(sandbox);
 
-for (const f of ['js/util.js', 'js/doc.js', 'js/geminimodels.js', 'js/model.js']) {
+for (const f of ['js/util.js', 'js/doc.js', 'js/geminimodels.js', 'js/brand.js', 'js/model.js']) {
   vm.runInContext(readFileSync(join(root, f), 'utf8'), sandbox, { filename: f });
 }
 const SB = sandbox.SB;
@@ -196,6 +196,59 @@ console.log('\n— free-call counting —');
   eq(G.remaining(id), 0, 'a 429 burns the rest of the day');
   eq(G.limit('gemini-2.5-flash'), 20, 'known free-tier default limit');
   eq(G.limit('gemini-3.5-flash'), 0, 'unknown limits stay unset rather than guessed');
+}
+
+console.log('\n— brand style —');
+{
+  const B = SB.Brand;
+  const p = SB.Model.newProject();
+  eq(p.settings.brand.enabled, true, 'house style is on by default');
+  eq(p.settings.brand.text === B.DEFAULT, true, 'seeded with the house style');
+
+  const sc = p.scenes[0];
+  sc.heading = 'Opening'; sc.description = 'Client office, morning.';
+  sc.shots = [];
+  const a = SB.Model.addShot(p, sc.id, { type: 'Wide' });
+  const b = SB.Model.addShot(p, sc.id, { type: 'Close-up' });
+  const c = SB.Model.addShot(p, sc.id, { type: 'Insert', noShot: true });
+  a.description = 'Open-plan office, the subject mid-stride.';
+  b.description = 'Hands on a laptop trackpad.';
+
+  const sys = B.systemFor(p, b, 'image');
+  eq(/HOUSE STYLE/.test(sys), true, 'system instruction carries the house style');
+  eq(/No gender references/i.test(sys), true, 'the no-gender rule is in there');
+  eq(/SCENE CONTINUITY/.test(sys), true, 'the scene continuity block is added');
+  eq(/beat 2 of 2/.test(sys), true, 'the shot knows which beat it is');
+  eq(/Scene 1: Opening/.test(sys), true, 'scene heading is passed through');
+  eq(/Client office, morning\./.test(sys), true, 'scene description is passed through');
+  eq(/Hands on a laptop trackpad[\s\S]*writing/.test(sys), true, 'the frame being written is marked');
+  eq(/\[1A\] Wide/.test(sys), true, 'sibling beats are listed with their codes');
+  eq(sys.indexOf('Insert') < 0, true, '“no shot” fragments are not part of the sequence');
+  eq(/wide\/reference frame for this scene is 1A/.test(sys), true, 'the wide reference frame is named');
+
+  eq(/MOTION/.test(B.systemFor(p, b, 'image')), false, 'image jobs get no motion rider');
+  eq(/MOTION/.test(B.systemFor(p, b, 'video')), true, 'video jobs do');
+  eq(/MOTION/.test(B.systemFor(p, b, 'both')), true, 'combined jobs do too');
+
+  const noWide = SB.Model.newProject();
+  noWide.scenes[0].shots[0].type = 'Close-up';
+  eq(/No wide frame exists/.test(B.systemFor(noWide, noWide.scenes[0].shots[0], 'image')), true,
+    'a scene with no wide frame is told to make one');
+
+  p.settings.brand.enabled = false;
+  eq(B.systemFor(p, b, 'image'), '', 'turning the house style off sends nothing');
+}
+
+console.log('\n— gendered language detector —');
+{
+  const g = SB.Brand.genderedTerms;
+  eq(g('The subject leans in, they adjust the lens.'), [], 'neutral copy passes');
+  eq(g('He adjusts his cuff while she waits.'), ['he', 'his', 'she'], 'pronouns are caught');
+  eq(g('A businessman greets the ladies.'), ['businessman', 'ladies'], 'gendered nouns are caught');
+  eq(g('Human hands, a manager mid-thought, therapist listening.'), [],
+    'human / manager / therapist are not false positives');
+  eq(g('MAN in frame'), ['man'], 'case-insensitive');
+  eq(g(''), [], 'empty text is fine');
 }
 
 console.log('\n— the API key never reaches the file —');

@@ -342,6 +342,15 @@
     const wrap = SB.el('div', 'prompt-box');
     const t = SB.el('div', 'ptitle');
     t.appendChild(SB.el('span', null, title + ' · ' + m.name));
+
+    /* the brand forbids gendered language; say so if some got through */
+    const flagged = (pr && pr.flagged && pr.flagged[field]) || null;
+    if (flagged && flagged.length) {
+      const warn = SB.el('span', 'badge warn', 'gendered');
+      warn.title = 'This prompt still contains: ' + flagged.join(', ') +
+        '. The rewrite pass could not clear it — edit it or generate again.';
+      t.appendChild(warn);
+    }
     const gen = SB.el('button', 'mini', 'generate');
     gen.style.marginLeft = 'auto';
     gen.onclick = function () {

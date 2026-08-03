@@ -183,6 +183,7 @@ button,input,select,textarea{font:inherit;color:inherit}
   color:var(--fg-dim);text-transform:uppercase;letter-spacing:.4px;
 }
 .badge.noshot{border-color:var(--accent2);color:var(--accent2)}
+.badge.warn{border-color:var(--danger);color:var(--danger);cursor:help}
 
 .frame{
   position:relative;background:var(--frame-bg);aspect-ratio:16/9;display:flex;
@@ -1125,6 +1126,186 @@ window.SB = window.SB || {};
 
 </script>
 <script>
+/* ===== js/brand.js ===== */
+/* brand.js — the house style every written prompt has to obey.
+ *
+ * This is a separate layer from the per-model templates: templates say HOW a
+ * given model likes to be addressed, the brand says what the picture must look
+ * and feel like. It rides along on every call as a system instruction.
+ *
+ * The app also supplies what a style guide can't know by itself — the scene's
+ * beats, so "consistent subject / wardrobe / environment across consecutive
+ * frames" is something the writer can actually act on.
+ */
+(function (SB) {
+  'use strict';
+
+  const DEFAULT_BRAND = [
+    'CREATIVE CONSTRAINTS',
+    '- Story sequence: the frames of a scene are consecutive beats in one narrative — a clear progression of action and moment.',
+    '- Consistent subject: the subject stays identical across every frame of the scene (matches the reference 100%).',
+    '- Consistent wardrobe: the subject stays in the same clothes across every frame of the scene (matches the reference 100%).',
+    '- Consistent environment + style: same location, same lighting mood, same overall aesthetic across the whole scene.',
+    '- No gender references: do not mention or imply gender. Avoid gendered nouns, adjectives, titles and pronouns. Use only neutral language — "the subject", "the person", "they" — or omit pronouns entirely.',
+    '- Cinematic + technical: maintain professional photographic detail — focal length, aperture, distance/angle, depth of field, and lighting notes for the frame.',
+    '',
+    'STYLE GUIDANCE',
+    '- Keep framing mostly tight (close-ups, partial crops, hands and face details), with a few wider shots for rhythm.',
+    '- Every scene needs one true wide angle that also works as a reference photo later.',
+    '- Vary angles subtly (slight high/low tilt, over-shoulder, profile, foreground obstructions) while staying coherent.',
+    '- Include tactile props or environmental elements that support the story (fabric, glass, rain, reflections, paper, steam) without changing location.',
+    '- Finishing: "Capture RAW", "muted professional grade", "smooth tonal rolloff", "subtle cinematic grain", "controlled contrast".',
+    '',
+    'STYLE & TONE',
+    '- Authentic, documentary-style realism.',
+    '- Natural expressions: relaxed faces, genuine smiles, subtle emotion — never exaggerated.',
+    '- Real human gestures: mid-conversation, mid-task, mid-thought.',
+    '- Diversity across age, gender presentation, life stage and cultural background.',
+    '- Inclusive and global representation appropriate for the region.',
+    '- Slight imperfections that feel lived-in (gentle motion, natural falloff, real textures).',
+    '- Professional yet approachable tone.',
+    '- Colour palette matches real-world lighting — warm neutrals, soft highlights, no artificial gloss.',
+    '',
+    'CAMERA & TECHNICAL FEEL',
+    '- Natural light only: window light, office daylight, practical lamps, soft outdoor light.',
+    '- Shallow depth of field with a clear focal point that guides the viewer.',
+    '- Clean exposure — avoid harsh highlights, avoid blown-out whites.',
+    '- Soft contrast and realistic colour (no HDR, no overly sharp digital edges).',
+    '- Subtle grain or film-inspired softness is fine where it supports realism.',
+    '- Composition avoids clichés (staged handshakes, pointing at screens, contrived poses).',
+    '',
+    'ENVIRONMENT & COMPOSITION',
+    '- People centred in believable, everyday moments.',
+    '- Thriving, confident, efficient individuals — not product-first imagery.',
+    '- Open office spaces, home offices, industry environments, outdoor movement.',
+    '- Work settings that feel modern, diverse and relatable.',
+    '- Industry scenes that show clear context through subtle cues, not overemphasis.',
+    '- Well-organised compositions with a single clear focal point.',
+    '- Avoid cluttered backgrounds; aim for clean, lived-in realism.',
+    '- Depth created through blurred backgrounds, reflections or foreground elements.',
+    '',
+    'OVERALL MOOD',
+    '- Confident, approachable, human.',
+    '- Calm, clear and aspirational without being glossy.',
+    '- Feels like a real moment you walked into — not staged or overproduced.',
+    '- Warm, modern, people-centric storytelling.',
+    '- The image communicates authenticity, trust, competence, clarity and human connection.'
+  ].join('\n');
+
+  /* Motion inherits the same rules; these are the ones that only make sense once
+   * the frame starts moving. */
+  const VIDEO_RIDER = [
+    'MOTION',
+    '- The subject, the wardrobe and the location must not change during the shot.',
+    '- Camera moves are restrained and motivated — no flourishes the scene has not earned.',
+    '- Movement is documentary-real: the pace of an actual moment, not choreography.',
+    '- Hold the natural-light look and the clean exposure through the whole move.'
+  ].join('\n');
+
+  /* Gendered language the "no gender references" rule forbids. Word-bounded, so
+   * "human", "manager" and "therapist" are safe. */
+  const GENDERED = new RegExp('\\b(' + [
+    'he', 'him', 'his', 'himself', 'she', 'her', 'hers', 'herself',
+    'man', 'men', "man's", 'woman', 'women', "woman's",
+    'male', 'males', 'female', 'females',
+    'boy', 'boys', 'girl', 'girls', 'guy', 'guys', 'gal', 'gals',
+    'lady', 'ladies', 'gentleman', 'gentlemen',
+    'businessman', 'businesswoman', 'businessmen', 'businesswomen',
+    'salesman', 'saleswoman', 'spokesman', 'spokeswoman', 'chairman', 'chairwoman',
+    'mr', 'mrs', 'ms', 'miss', 'sir', 'madam', "ma'am",
+    'husband', 'wife', 'mother', 'father', 'mom', 'mum', 'dad',
+    'son', 'daughter', 'brother', 'sister', 'aunt', 'uncle',
+    'actress', 'waitress', 'hostess', 'stewardess'
+  ].join('|') + ')\\b', 'gi');
+
+  /* Which gendered words a written prompt actually used (deduped, lowercase). */
+  function genderedTerms(text) {
+    const hits = String(text || '').match(GENDERED);
+    if (!hits) return [];
+    const seen = {}, out = [];
+    hits.forEach(function (h) {
+      const k = h.toLowerCase();
+      if (!seen[k]) { seen[k] = 1; out.push(k); }
+    });
+    return out;
+  }
+
+  function brandOf(p) {
+    const b = (p.settings && p.settings.brand) || {};
+    return {
+      enabled: b.enabled !== false,
+      text: typeof b.text === 'string' && b.text.trim() ? b.text : DEFAULT_BRAND
+    };
+  }
+
+  /* Everything the writer needs to keep this frame consistent with its
+   * neighbours: where the beat sits, and what the other beats are. */
+  function sequenceBlock(p, shot) {
+    const f = SB.Model.findShot(p, shot.id);
+    if (!f) return '';
+    const scene = f.scene;
+    const beats = scene.shots.filter(function (s) { return !s.noShot; });
+    const pos = beats.indexOf(shot) + 1;
+    const wide = beats.filter(function (s) { return /wide|establish/i.test(s.type || ''); });
+    const lines = [];
+
+    lines.push('SCENE CONTINUITY — this frame is one beat of a sequence, not a standalone image.');
+    lines.push('Scene ' + (f.sceneIdx + 1) + ': ' + (scene.heading || '(untitled)'));
+    if (scene.description) lines.push('Scene note: ' + scene.description);
+    if (pos > 0) lines.push('This is beat ' + pos + ' of ' + beats.length + ' (shot ' + f.code + ').');
+
+    if (beats.length > 1) {
+      lines.push('The full beat list, in order — keep the subject, the wardrobe, the location and the grade identical across all of them:');
+      beats.forEach(function (s, i) {
+        const sf = SB.Model.findShot(p, s.id);
+        const d = (s.description || '').replace(/\s+/g, ' ').trim();
+        lines.push('  ' + (i + 1) + '. [' + (sf ? sf.code : '?') + '] ' + (s.type || 'shot') + ' — ' +
+          (d ? (d.length > 160 ? d.slice(0, 157) + '…' : d) : '(no description yet)') +
+          (s.id === shot.id ? '   <-- the frame you are writing' : ''));
+      });
+    }
+
+    if (wide.length) {
+      const codes = wide.map(function (s) {
+        const sf = SB.Model.findShot(p, s.id);
+        return sf ? sf.code : '?';
+      }).join(', ');
+      lines.push('The wide/reference frame for this scene is ' + codes +
+        (wide.indexOf(shot) >= 0
+          ? ' — this one. Make it work as a standalone reference photo of the subject and the location.'
+          : '. Stay consistent with it.'));
+    } else {
+      lines.push('No wide frame exists in this scene yet. If this is the widest beat, compose it so it can double as a reference photo of the subject and the location.');
+    }
+    return lines.join('\n');
+  }
+
+  /* The system instruction for one prompt-writing job. */
+  function systemFor(p, shot, role) {
+    const b = brandOf(p);
+    if (!b.enabled) return '';
+    const parts = ['HOUSE STYLE — every prompt you write must obey this.', '', b.text];
+    if (role === 'video' || role === 'both') parts.push('', VIDEO_RIDER);
+    const seq = sequenceBlock(p, shot);
+    if (seq) parts.push('', seq);
+    parts.push('', 'Fold these requirements into the prompt itself as concrete description — ' +
+      'do not quote the rules back, do not add headings or commentary, and never use gendered language.');
+    return parts.join('\n');
+  }
+
+  SB.Brand = {
+    DEFAULT: DEFAULT_BRAND,
+    VIDEO_RIDER: VIDEO_RIDER,
+    brandOf: brandOf,
+    systemFor: systemFor,
+    sequenceBlock: sequenceBlock,
+    genderedTerms: genderedTerms
+  };
+
+})(window.SB);
+
+</script>
+<script>
 /* ===== js/model.js ===== */
 /* model.js — project schema, numbering, and all structural mutations. */
 (function (SB) {
@@ -1225,6 +1406,7 @@ window.SB = window.SB || {};
         imageModelId: null,
         videoModelId: null,
         geminiModel: SB.GeminiModels.DEFAULT,
+        brand: { enabled: true, text: SB.Brand.DEFAULT },
         // prompt boxes stay off the cards until the user asks for them
         showImagePrompt: false,
         showVideoPrompt: false
@@ -1272,6 +1454,9 @@ window.SB = window.SB || {};
     if (!has(s.videoModelId)) s.videoModelId = firstOfKind(s.models, 'video');
     // Google retires ids; move a project off anything that is gone
     s.geminiModel = SB.GeminiModels.normalize(s.geminiModel);
+    s.brand = (s.brand && typeof s.brand === 'object') ? s.brand : {};
+    if (typeof s.brand.enabled !== 'boolean') s.brand.enabled = true;
+    if (typeof s.brand.text !== 'string' || !s.brand.text.trim()) s.brand.text = SB.Brand.DEFAULT;
     if (typeof s.showImagePrompt !== 'boolean') s.showImagePrompt = false;
     if (typeof s.showVideoPrompt !== 'boolean') s.showVideoPrompt = false;
 
@@ -2414,6 +2599,15 @@ window.SB = window.SB || {};
     const wrap = SB.el('div', 'prompt-box');
     const t = SB.el('div', 'ptitle');
     t.appendChild(SB.el('span', null, title + ' · ' + m.name));
+
+    /* the brand forbids gendered language; say so if some got through */
+    const flagged = (pr && pr.flagged && pr.flagged[field]) || null;
+    if (flagged && flagged.length) {
+      const warn = SB.el('span', 'badge warn', 'gendered');
+      warn.title = 'This prompt still contains: ' + flagged.join(', ') +
+        '. The rewrite pass could not clear it — edit it or generate again.';
+      t.appendChild(warn);
+    }
     const gen = SB.el('button', 'mini', 'generate');
     gen.style.marginLeft = 'auto';
     gen.onclick = function () {
@@ -2951,11 +3145,13 @@ window.SB = window.SB || {};
   function jobsFor(shot, im, vm, roles) {
     const jobs = [];
     const wantI = roles.image && im, wantV = roles.video && vm;
+    const sys = function (role) { return SB.Brand.systemFor(P(), shot, role); };
     if (wantI && wantV && im.id === vm.id) {
       jobs.push({
         text: PREAMBLE + 'Return JSON with the keys "imagePrompt" and "videoPrompt".\n\n' +
           imageBlock(shot, im) + '\n' + videoBlock(shot, vm),
         keys: ['imagePrompt', 'videoPrompt'],
+        system: sys('both'),
         targets: [{ model: im, field: 'imagePrompt' }, { model: vm, field: 'videoPrompt' }]
       });
       return jobs;
@@ -2964,6 +3160,7 @@ window.SB = window.SB || {};
       jobs.push({
         text: PREAMBLE + 'Return JSON with the key "imagePrompt".\n\n' + imageBlock(shot, im),
         keys: ['imagePrompt'],
+        system: sys('image'),
         targets: [{ model: im, field: 'imagePrompt' }]
       });
     }
@@ -2971,6 +3168,7 @@ window.SB = window.SB || {};
       jobs.push({
         text: PREAMBLE + 'Return JSON with the key "videoPrompt".\n\n' + videoBlock(shot, vm),
         keys: ['videoPrompt'],
+        system: sys('video'),
         targets: [{ model: vm, field: 'videoPrompt' }]
       });
     }
@@ -3011,12 +3209,16 @@ window.SB = window.SB || {};
   const NO_SCHEMA_HINT =
     '\n\nReply with ONLY the JSON object — start with { and end with }, no markdown fences.';
 
-  function callGemini(text, keys) {
+  function callGemini(text, keys, system) {
     const key = SB.Store.getApiKey();
     if (!key) return Promise.reject(new Error('No Google API key. Add one in Settings → API.'));
     const mdl = P().settings.geminiModel || SB.GeminiModels.DEFAULT;
     const props = {};
     keys.forEach(function (k) { props[k] = { type: 'STRING' }; });
+
+    /* Gemma takes neither a response schema nor a systemInstruction — it gets
+     * both folded into the one user turn instead. */
+    const plain = SB.GeminiModels.isGemma(mdl);
 
     function build(withSchema) {
       const gen = { temperature: 0.8 };
@@ -3024,15 +3226,19 @@ window.SB = window.SB || {};
         gen.responseMimeType = 'application/json';
         gen.responseSchema = { type: 'OBJECT', properties: props, required: keys };
       }
-      return {
-        contents: [{ role: 'user', parts: [{ text: withSchema ? text : text + NO_SCHEMA_HINT }] }],
-        generationConfig: gen
-      };
+      let user = withSchema ? text : text + NO_SCHEMA_HINT;
+      const body = { generationConfig: gen };
+      if (system) {
+        if (plain) user = system + '\n\n----\n\n' + user;
+        else body.systemInstruction = { parts: [{ text: system }] };
+      }
+      body.contents = [{ role: 'user', parts: [{ text: user }] }];
+      return body;
     }
 
     /* Gemma runs on the same endpoint but has no JSON mode — ask it in words.
      * Any other model that rejects the schema gets the same treatment on retry. */
-    const useSchema = !SB.GeminiModels.isGemma(mdl);
+    const useSchema = !plain;
 
     return request(mdl, key, build(useSchema)).catch(function (e) {
       const schemaProblem = /schema|json|mime|not supported|unsupported|invalid argument/i
@@ -3055,12 +3261,46 @@ window.SB = window.SB || {};
     });
   }
 
-  function store(shot, model, field, value) {
+  function store(shot, model, field, value, flagged) {
     const cur = shot.prompts[model.id] || { imagePrompt: '', videoPrompt: '' };
     cur[field] = value || '';
     cur.modelName = model.name;
     cur.at = Date.now();
+    cur.flagged = cur.flagged || {};
+    if (flagged && flagged.length) cur.flagged[field] = flagged;
+    else delete cur.flagged[field];
     shot.prompts[model.id] = cur;
+  }
+
+  /* "No gender references" is a hard brand rule, so it gets verified rather
+   * than hoped for: one corrective rewrite, then a visible flag on the card if
+   * the writer still won't let go of it. */
+  function enforceNeutral(job, res) {
+    if (!SB.Brand.brandOf(P()).enabled) return Promise.resolve({ res: res, flags: {} });
+    const bad = {};
+    let any = false;
+    job.keys.forEach(function (k) {
+      const terms = SB.Brand.genderedTerms(res[k]);
+      if (terms.length) { bad[k] = terms; any = true; }
+    });
+    if (!any) return Promise.resolve({ res: res, flags: {} });
+
+    const all = Object.keys(bad).reduce(function (a, k) { return a.concat(bad[k]); }, []);
+    const fix = job.text +
+      '\n\nYour previous draft used gendered language (' + all.join(', ') + '). ' +
+      'Rewrite it with no gendered nouns, adjectives, titles or pronouns — ' +
+      'use "the subject", "the person", or no pronoun at all. Keep everything else the same.';
+
+    return callGemini(fix, job.keys, job.system).then(function (res2) {
+      const still = {};
+      job.keys.forEach(function (k) {
+        const terms = SB.Brand.genderedTerms(res2[k]);
+        if (terms.length) still[k] = terms;
+      });
+      return { res: res2, flags: still };
+    }).catch(function () {
+      return { res: res, flags: bad };   // rewrite failed — keep the draft, flag it
+    });
   }
 
   /* opts = { roles:{image,video}, onProgress(done,total,failed) } */
@@ -3092,8 +3332,12 @@ window.SB = window.SB || {};
     function worker() {
       const j = queue.shift();
       if (!j) return Promise.resolve();
-      return callGemini(j.text, j.keys).then(function (res) {
-        j.targets.forEach(function (t) { store(j.shot, t.model, t.field, res[t.field]); });
+      return callGemini(j.text, j.keys, j.system).then(function (res) {
+        return enforceNeutral(j, res);
+      }).then(function (out) {
+        j.targets.forEach(function (t) {
+          store(j.shot, t.model, t.field, out.res[t.field], out.flags[t.field]);
+        });
         done++;
       }).catch(function (e) {
         failed++;
@@ -3211,6 +3455,15 @@ window.SB = window.SB || {};
     const b2 = block('write prompts');
     b2.appendChild(checkRow(' first-frame prompt', write.image, function (v) { write.image = v; }));
     b2.appendChild(checkRow(' image→video prompt', write.video, function (v) { write.video = v; }));
+
+    const brand = SB.Brand.brandOf(p);
+    const bRow = checkRow(' apply house style', brand.enabled, function (v) {
+      p.settings.brand = p.settings.brand || {};
+      p.settings.brand.enabled = v;
+      SB.Store.touch();
+    });
+    bRow.title = 'Continuity, camera, tone and the no-gendered-language rule — Settings → Brand style';
+    b2.appendChild(bRow);
 
     const scope = document.createElement('select');
     [['project', 'Whole project'], ['scene', 'Selected scene'], ['shot', 'Selected shot']]
@@ -3373,7 +3626,8 @@ window.SB = window.SB || {};
 
     const tabs = SB.el('div', 'tabs');
     const panels = {};
-    const order = [['general', 'General'], ['models', 'Models & templates'], ['api', 'API']];
+    const order = [['general', 'General'], ['brand', 'Brand style'],
+    ['models', 'Models & templates'], ['api', 'API']];
     order.forEach(function (t) {
       const b = SB.el('button', 'tab', t[1]);
       b.dataset.tab = t[0];
@@ -3406,6 +3660,57 @@ window.SB = window.SB || {};
     });
     themeSel.onchange = function () { SB.Theme.set(themeSel.value); };
     panels.general.appendChild(field('Appearance', themeSel));
+
+    /* ---------------- Brand style ---------------- */
+    const brand = SB.Brand.brandOf(p);
+    const bOn = SB.el('label', 'pp-toggle');
+    const bChk = document.createElement('input');
+    bChk.type = 'checkbox';
+    bChk.checked = brand.enabled;
+    bOn.appendChild(bChk);
+    bOn.appendChild(document.createTextNode(' Apply the house style to every prompt'));
+    panels.brand.appendChild(bOn);
+
+    panels.brand.appendChild(SB.el('div', 'pp-note',
+      'Rides along with every prompt the app writes, on top of the per-model templates. ' +
+      'The app adds the scene’s beat list underneath it automatically, so “same subject, same ' +
+      'wardrobe, same location across the sequence” is something the writer can actually act on. ' +
+      'The no-gendered-language rule is verified on the way back, not just requested.'));
+
+    const bText = document.createElement('textarea');
+    bText.rows = 22;
+    bText.value = (p.settings.brand && p.settings.brand.text) || SB.Brand.DEFAULT;
+    bText.style.fontSize = '11.5px';
+    const bField = field('House style', bText);
+    bField.style.marginTop = '10px';
+    panels.brand.appendChild(bField);
+
+    const bActs = SB.el('div', 'pp-actions');
+    const bReset = SB.el('button', 'tb', 'Restore the default style');
+    bReset.onclick = function () { bText.value = SB.Brand.DEFAULT; };
+    const bPreview = SB.el('button', 'tb', 'Preview what a shot sends');
+    bPreview.onclick = function () {
+      const f = SB.app.selectedShotId && SB.Model.findShot(p, SB.app.selectedShotId);
+      const shot = f ? f.shot : (p.scenes[0] && p.scenes[0].shots[0]);
+      if (!shot) { SB.toast('Add a shot first', true); return; }
+      const saved = p.settings.brand.text;
+      p.settings.brand.text = bText.value;      // preview what is on screen
+      const body = SB.el('div');
+      const pre = document.createElement('textarea');
+      pre.rows = 24;
+      pre.readOnly = true;
+      pre.value = SB.Brand.systemFor(p, shot, 'both');
+      pre.style.fontSize = '11px';
+      body.appendChild(pre);
+      p.settings.brand.text = saved;
+      SB.modal({
+        title: 'System instruction for this shot', width: '760px', body: body,
+        buttons: [{ label: 'Close', primary: true }]
+      });
+    };
+    bActs.appendChild(bReset);
+    bActs.appendChild(bPreview);
+    panels.brand.appendChild(bActs);
 
     /* ---------------- Models & templates ---------------- */
     panels.models.appendChild(SB.el('div', 'pp-note',
@@ -3537,6 +3842,10 @@ window.SB = window.SB || {};
             const t = types.value.split('\n').map(function (s) { return s.trim(); })
               .filter(function (s) { return s; });
             p.settings.shotTypes = t.length ? t : SB.Model.DEFAULT_SHOT_TYPES.slice();
+            p.settings.brand = {
+              enabled: bChk.checked,
+              text: bText.value.trim() || SB.Brand.DEFAULT
+            };
             p.settings.geminiModel = (chosenModel || '').trim() || SB.GeminiModels.DEFAULT;
             p.settings.models = working.filter(function (m) { return (m.name || '').trim(); })
               .map(function (m) { delete m.__open; return m; });

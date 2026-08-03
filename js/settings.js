@@ -17,7 +17,8 @@
 
     const tabs = SB.el('div', 'tabs');
     const panels = {};
-    const order = [['general', 'General'], ['models', 'Models & templates'], ['api', 'API']];
+    const order = [['general', 'General'], ['brand', 'Brand style'],
+    ['models', 'Models & templates'], ['api', 'API']];
     order.forEach(function (t) {
       const b = SB.el('button', 'tab', t[1]);
       b.dataset.tab = t[0];
@@ -50,6 +51,57 @@
     });
     themeSel.onchange = function () { SB.Theme.set(themeSel.value); };
     panels.general.appendChild(field('Appearance', themeSel));
+
+    /* ---------------- Brand style ---------------- */
+    const brand = SB.Brand.brandOf(p);
+    const bOn = SB.el('label', 'pp-toggle');
+    const bChk = document.createElement('input');
+    bChk.type = 'checkbox';
+    bChk.checked = brand.enabled;
+    bOn.appendChild(bChk);
+    bOn.appendChild(document.createTextNode(' Apply the house style to every prompt'));
+    panels.brand.appendChild(bOn);
+
+    panels.brand.appendChild(SB.el('div', 'pp-note',
+      'Rides along with every prompt the app writes, on top of the per-model templates. ' +
+      'The app adds the scene’s beat list underneath it automatically, so “same subject, same ' +
+      'wardrobe, same location across the sequence” is something the writer can actually act on. ' +
+      'The no-gendered-language rule is verified on the way back, not just requested.'));
+
+    const bText = document.createElement('textarea');
+    bText.rows = 22;
+    bText.value = (p.settings.brand && p.settings.brand.text) || SB.Brand.DEFAULT;
+    bText.style.fontSize = '11.5px';
+    const bField = field('House style', bText);
+    bField.style.marginTop = '10px';
+    panels.brand.appendChild(bField);
+
+    const bActs = SB.el('div', 'pp-actions');
+    const bReset = SB.el('button', 'tb', 'Restore the default style');
+    bReset.onclick = function () { bText.value = SB.Brand.DEFAULT; };
+    const bPreview = SB.el('button', 'tb', 'Preview what a shot sends');
+    bPreview.onclick = function () {
+      const f = SB.app.selectedShotId && SB.Model.findShot(p, SB.app.selectedShotId);
+      const shot = f ? f.shot : (p.scenes[0] && p.scenes[0].shots[0]);
+      if (!shot) { SB.toast('Add a shot first', true); return; }
+      const saved = p.settings.brand.text;
+      p.settings.brand.text = bText.value;      // preview what is on screen
+      const body = SB.el('div');
+      const pre = document.createElement('textarea');
+      pre.rows = 24;
+      pre.readOnly = true;
+      pre.value = SB.Brand.systemFor(p, shot, 'both');
+      pre.style.fontSize = '11px';
+      body.appendChild(pre);
+      p.settings.brand.text = saved;
+      SB.modal({
+        title: 'System instruction for this shot', width: '760px', body: body,
+        buttons: [{ label: 'Close', primary: true }]
+      });
+    };
+    bActs.appendChild(bReset);
+    bActs.appendChild(bPreview);
+    panels.brand.appendChild(bActs);
 
     /* ---------------- Models & templates ---------------- */
     panels.models.appendChild(SB.el('div', 'pp-note',
@@ -181,6 +233,10 @@
             const t = types.value.split('\n').map(function (s) { return s.trim(); })
               .filter(function (s) { return s; });
             p.settings.shotTypes = t.length ? t : SB.Model.DEFAULT_SHOT_TYPES.slice();
+            p.settings.brand = {
+              enabled: bChk.checked,
+              text: bText.value.trim() || SB.Brand.DEFAULT
+            };
             p.settings.geminiModel = (chosenModel || '').trim() || SB.GeminiModels.DEFAULT;
             p.settings.models = working.filter(function (m) { return (m.name || '').trim(); })
               .map(function (m) { delete m.__open; return m; });

@@ -120,6 +120,22 @@
 
       SB.PromptPanel.close();
 
+      // the house style actually rides along on the request
+      var im = SB.Model.imageModel(P()), vm = SB.Model.videoModel(P());
+      var jobs = SB.Prompts.jobsFor(P().scenes[0].shots[0], im, vm, { image: true, video: true });
+      t('separate models -> two jobs', jobs.length === 2, jobs.length);
+      t('image job carries the house style', /HOUSE STYLE/.test(jobs[0].system), '');
+      t('image job carries scene continuity', /SCENE CONTINUITY/.test(jobs[0].system), '');
+      t('video job gets the motion rules', /MOTION/.test(jobs[1].system), '');
+      t('image job does not', !/MOTION/.test(jobs[0].system), '');
+      var same = SB.Prompts.jobsFor(P().scenes[0].shots[0], im, im, { image: true, video: true });
+      t('one model -> one job with both rulesets',
+        same.length === 1 && /MOTION/.test(same[0].system) && /HOUSE STYLE/.test(same[0].system), same.length);
+      P().settings.brand.enabled = false;
+      t('switching the house style off empties the system instruction',
+        SB.Prompts.jobsFor(P().scenes[0].shots[0], im, vm, { image: true })[0].system === '', '');
+      P().settings.brand.enabled = true;
+
       // theme
       SB.Theme.set('light');
       t('light theme applied', document.documentElement.getAttribute('data-theme') === 'light', '');
@@ -142,23 +158,30 @@
       // settings tabs
       SB.Settings.open();
       t('settings modal', document.querySelectorAll('.modal').length === 1, '');
-      t('settings is tabbed', document.querySelectorAll('.modal .tab').length === 3,
+      t('settings is tabbed', document.querySelectorAll('.modal .tab').length === 4,
         document.querySelectorAll('.modal .tab').length);
       t('templates are not on the first tab',
         document.querySelectorAll('.modal .tab-panel.on textarea').length === 1,
         document.querySelectorAll('.modal .tab-panel.on textarea').length);
       document.querySelectorAll('.modal .tab')[1].click();
+      t('brand tab holds the house style',
+        /HOUSE STYLE|CREATIVE CONSTRAINTS/.test(
+          document.querySelector('.modal .tab-panel.on textarea').value), '');
+      t('house style can be switched off',
+        document.querySelectorAll('.modal .tab-panel.on input[type=checkbox]').length === 1, '');
+
+      document.querySelectorAll('.modal .tab')[2].click();
       t('models tab shows the model list',
         document.querySelectorAll('.modal .tab-panel.on .model-row').length === 15,
         document.querySelectorAll('.modal .tab-panel.on .model-row').length);
       t('templates collapsed until opened',
         document.querySelectorAll('.modal .tab-panel.on textarea').length === 0, '');
-      document.querySelectorAll('.modal .tab')[2].click();
+      document.querySelectorAll('.modal .tab')[3].click();
       t('api tab has the model dropdown',
         document.querySelectorAll('.modal .tab-panel.on .gm-picker select').length === 1, '');
       t('api tab can refresh from the key',
         /Refresh list/.test(document.querySelector('.modal .tab-panel.on .pp-actions').textContent), '');
-      document.querySelectorAll('.modal .tab')[1].click();
+      document.querySelectorAll('.modal .tab')[2].click();
       document.querySelectorAll('.modal .model-row .mini')[0].click();
       t('templates open per model',
         document.querySelectorAll('.modal .tab-panel.on textarea').length === 2,

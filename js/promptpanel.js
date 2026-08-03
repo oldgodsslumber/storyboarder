@@ -80,6 +80,15 @@
     b2.appendChild(checkRow(' first-frame prompt', write.image, function (v) { write.image = v; }));
     b2.appendChild(checkRow(' image→video prompt', write.video, function (v) { write.video = v; }));
 
+    const brand = SB.Brand.brandOf(p);
+    const bRow = checkRow(' apply house style', brand.enabled, function (v) {
+      p.settings.brand = p.settings.brand || {};
+      p.settings.brand.enabled = v;
+      SB.Store.touch();
+    });
+    bRow.title = 'Continuity, camera, tone and the no-gendered-language rule — Settings → Brand style';
+    b2.appendChild(bRow);
+
     const scope = document.createElement('select');
     [['project', 'Whole project'], ['scene', 'Selected scene'], ['shot', 'Selected shot']]
       .forEach(function (o) {
