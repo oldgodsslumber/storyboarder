@@ -123,20 +123,46 @@ constraints, style guidance, camera and technical feel, environment, and overall
 It is stored in the project file, so a board carries its own house style. The toggle is in
 the Prompts panel (*apply house style*) and in the Settings tab.
 
+The house style is only stored in the project file once you edit it. A board left on the
+stock text follows the app, so a correction to the style reaches every board that never
+customised it.
+
 Two things the app adds that a style guide can't know on its own:
 
-- **Scene continuity.** Each request carries the scene's beat list in order, which beat this
-  frame is, and which shot is the wide/reference frame — so "same subject, same wardrobe,
-  same location, same grade across consecutive frames" is something the writer can act on
-  rather than a wish. "No shot" fragments are left out of the sequence. If no shot in the
-  scene is a wide, the writer is told to compose this one so it can double as a reference.
+- **Scene context.** Each request carries the scene heading and note, the scene's beat list
+  in order, and which beat this frame is — so the writer isn't composing in a vacuum, and
+  the location, lighting mood and grade stay coherent across a scene. "No shot" fragments
+  are left out. *Who* is in the frame is the personas layer's job, below.
 - **The no-gendered-language rule is verified, not just requested.** Returned prompts are
   scanned for gendered nouns, titles and pronouns; if any appear the app asks for one
   rewrite naming the offending words, and if they survive that, the prompt box gets a
   **gendered** badge listing them. (`human`, `manager` and the like are not false positives.)
 
-Video prompts get the same house style plus motion rules — subject, wardrobe and location
-must not change mid-shot, camera moves stay restrained and motivated.
+Video prompts get the same house style plus motion rules — wardrobe and location must not
+change mid-shot, camera moves stay restrained and motivated.
+
+## Personas
+
+**Personas** (top bar) is how the same face and the same clothes come back shot after shot.
+Each persona holds a **name**, a **description carrying the wardrobe**, the **reference image
+prompt**, and the **reference frame** itself (dropped, pasted or loaded; stored as a ≤480p
+proxy like everything else).
+
+- **Generate** reads the master script and the shot descriptions and invents recurring
+  people through the house style — names, full wardrobe descriptions, and a reference-frame
+  prompt for each. Everything is editable afterwards, and **+ Blank persona** skips the
+  model entirely.
+- **write it for me** on a persona turns its description into a reference-frame prompt;
+  **copy prompt** puts it on the clipboard for whichever image model you're using.
+- Cards get a **cast row**: click *+ cast* to tick who appears in that shot. The order you
+  add them is the order their reference images are fed.
+
+When a shot has cast, its prompt request carries a CAST block — each person's description
+and wardrobe, plus the reference-image wording **that model expects**. That wording is a
+per-model field (Settings → Models & templates → *reference-image wording*), because models
+differ: Qwen wants "the person in image 1", others want them named. `{{N}}` is the image
+number and `{{NAME}}` the names; the app appends the actual mapping (`image 1 = Ops lead`).
+A persona with no reference image is described in full instead, so it still stays consistent.
 
 **Preview what a shot sends** in the Brand style tab shows the exact system instruction for
 the selected shot, continuity block included.
@@ -202,7 +228,9 @@ js/editor.js      contenteditable window onto a Doc slice
 js/board.js       scenes, cards, drag & drop
 js/scriptmode.js  master script panel, capture, highlights
 js/comments.js    comment list + ink layer
-js/brand.js       house style, scene continuity, gendered-language check
+js/brand.js       house style, scene context, gendered-language check
+js/personas.js    recurring people + per-model reference-image wording
+js/personapanel.js the Personas panel
 js/prompts.js     Gemini prompt writing
 js/promptpanel.js the Prompts panel
 js/settings.js    tabbed settings

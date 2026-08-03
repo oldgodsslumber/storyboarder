@@ -30,7 +30,8 @@ const sandbox = {
 sandbox.window = sandbox;
 vm.createContext(sandbox);
 
-for (const f of ['js/util.js', 'js/doc.js', 'js/geminimodels.js', 'js/brand.js', 'js/model.js']) {
+for (const f of ['js/util.js', 'js/doc.js', 'js/geminimodels.js', 'js/brand.js',
+  'js/personas.js', 'js/model.js']) {
   vm.runInContext(readFileSync(join(root, f), 'utf8'), sandbox, { filename: f });
 }
 const SB = sandbox.SB;
@@ -203,7 +204,19 @@ console.log('\n— brand style —');
   const B = SB.Brand;
   const p = SB.Model.newProject();
   eq(p.settings.brand.enabled, true, 'house style is on by default');
-  eq(p.settings.brand.text === B.DEFAULT, true, 'seeded with the house style');
+  eq(B.brandOf(p).text === B.DEFAULT, true, 'uses the app house style');
+  eq(p.settings.brand.custom, false, 'nothing stored until it is edited');
+  // a board left on the stock text follows the app when the style is corrected
+  const stale = SB.Model.migrate(Object.assign(SB.Model.newProject(), {
+    settings: Object.assign(SB.Model.newProject().settings,
+      { brand: { enabled: true, text: 'OLD 9-frame grid text' } })
+  }));
+  eq(B.brandOf(stale).text, B.DEFAULT, 'an unedited board picks up the corrected style');
+  const mine = SB.Model.migrate(Object.assign(SB.Model.newProject(), {
+    settings: Object.assign(SB.Model.newProject().settings,
+      { brand: { enabled: true, custom: true, text: 'MY OWN STYLE' } })
+  }));
+  eq(B.brandOf(mine).text, 'MY OWN STYLE', 'a hand-edited style is kept');
 
   const sc = p.scenes[0];
   sc.heading = 'Opening'; sc.description = 'Client office, morning.';
@@ -217,26 +230,80 @@ console.log('\n— brand style —');
   const sys = B.systemFor(p, b, 'image');
   eq(/HOUSE STYLE/.test(sys), true, 'system instruction carries the house style');
   eq(/No gender references/i.test(sys), true, 'the no-gender rule is in there');
-  eq(/SCENE CONTINUITY/.test(sys), true, 'the scene continuity block is added');
+  eq(/SCENE CONTEXT/.test(sys), true, 'the scene context block is added');
   eq(/beat 2 of 2/.test(sys), true, 'the shot knows which beat it is');
   eq(/Scene 1: Opening/.test(sys), true, 'scene heading is passed through');
   eq(/Client office, morning\./.test(sys), true, 'scene description is passed through');
   eq(/Hands on a laptop trackpad[\s\S]*writing/.test(sys), true, 'the frame being written is marked');
   eq(/\[1A\] Wide/.test(sys), true, 'sibling beats are listed with their codes');
   eq(sys.indexOf('Insert') < 0, true, '“no shot” fragments are not part of the sequence');
-  eq(/wide\/reference frame for this scene is 1A/.test(sys), true, 'the wide reference frame is named');
+
+  // the 9-frame grid language is gone for good
+  eq(/9 frames|entire grid|the grid|matches reference|matches the reference/i.test(sys), false,
+    'no grid language survives');
+  eq(/reference photo later|wide\/reference frame/i.test(sys), false,
+    'no wide-as-reference-photo mandate');
+  eq(/consistent subject|identical across every frame/i.test(sys), false,
+    'no locked-subject language — personas handle that');
+  eq(/9 frames|grid|matches reference 100/i.test(B.DEFAULT), false,
+    'and none of it is left in the house style itself');
 
   eq(/MOTION/.test(B.systemFor(p, b, 'image')), false, 'image jobs get no motion rider');
   eq(/MOTION/.test(B.systemFor(p, b, 'video')), true, 'video jobs do');
   eq(/MOTION/.test(B.systemFor(p, b, 'both')), true, 'combined jobs do too');
 
-  const noWide = SB.Model.newProject();
-  noWide.scenes[0].shots[0].type = 'Close-up';
-  eq(/No wide frame exists/.test(B.systemFor(noWide, noWide.scenes[0].shots[0], 'image')), true,
-    'a scene with no wide frame is told to make one');
-
   p.settings.brand.enabled = false;
   eq(B.systemFor(p, b, 'image'), '', 'turning the house style off sends nothing');
+}
+
+console.log('\n— personas —');
+{
+  const Per = SB.Personas;
+  const p = SB.Model.newProject();
+  const sc = p.scenes[0];
+  const shot = sc.shots[0];
+  shot.description = 'Two people at a whiteboard.';
+
+  const a = Per.add(p, { name: 'Ops lead', description: 'Late 30s, cropped hair, charcoal knit.' });
+  const b = Per.add(p, { name: 'Technician', description: 'Twenties, navy work shirt, tool roll.' });
+  eq(Per.all(p).length, 2, 'personas are stored on the project');
+  eq(Per.block(p, shot, null), '', 'a shot with no cast adds nothing');
+
+  Per.toggleOnShot(p, shot, a.id);
+  Per.toggleOnShot(p, shot, b.id);
+  eq(Per.forShot(p, shot).length, 2, 'both are cast in the shot');
+
+  const model = { name: 'Qwen-Image', referenceTemplate: 'Use "the person in image {{N}}".' };
+  let blk = Per.block(p, shot, model);
+  eq(/CAST/.test(blk), true, 'cast block is built');
+  eq(/Ops lead/.test(blk) && /Technician/.test(blk), true, 'everyone cast is named');
+  eq(/charcoal knit/.test(blk), true, 'wardrobe travels with the description');
+  eq(/No reference image/.test(blk), true, 'a persona with no image says so');
+  eq(/image 1 =/.test(blk), false, 'no image numbering when nobody has an image');
+
+  a.image = { data: 'data:image/jpeg;base64,x', w: 4, h: 3 };
+  b.image = { data: 'data:image/jpeg;base64,y', w: 4, h: 3 };
+  blk = Per.block(p, shot, model);
+  eq(/the person in image \{\{N\}\}/.test(blk), false, 'the placeholder is not left raw');
+  eq(/image 1 = Ops lead/.test(blk), true, 'reference images are numbered in cast order');
+  eq(/image 2 = Technician/.test(blk), true, 'and the second one too');
+  eq(/Use "the person in image N"/.test(blk), true, "the model's own wording is used");
+
+  const named = { name: 'Other', referenceTemplate: 'Refer to them by name ({{NAME}}).' };
+  eq(/Refer to them by name \(Ops lead, Technician\)/.test(Per.block(p, shot, named)), true,
+    'a model that wants names gets names');
+
+  eq(Per.block(p, shot, { name: 'NoRef', referenceTemplate: '' }).indexOf('image 1 =') > 0, true,
+    'the mapping is still listed even with no wording template');
+
+  Per.toggleOnShot(p, shot, b.id);
+  eq(Per.forShot(p, shot).length, 1, 'a persona can be taken off a shot');
+  Per.remove(p, a.id);
+  eq(Per.all(p).length, 1, 'removing a persona deletes it');
+  eq((shot.personaIds || []).length, 0, 'and takes it off every shot');
+
+  eq(SB.Model.newProject().settings.models[0].referenceTemplate === Per.DEFAULT_REF_TEMPLATE, true,
+    'models ship with a default reference wording');
 }
 
 console.log('\n— gendered language detector —');

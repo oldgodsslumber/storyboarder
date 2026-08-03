@@ -26,6 +26,7 @@
     <div class="tb-group">
       <button id="btnScript"  class="tb toggle">Script</button>
       <button id="btnComment" class="tb toggle">Comment mode</button>
+      <button id="btnPersonas" class="tb toggle">Personas</button>
       <button id="btnPrompts" class="tb toggle">Prompts</button>
     </div>
 
@@ -68,6 +69,11 @@
       <div id="captureForm" class="capture-form hidden"></div>
     </aside>
 
+    <aside id="personaPanel" class="hidden">
+      <div class="panel-head"><span>Personas</span></div>
+      <div id="personaBody" class="pp-body"></div>
+    </aside>
+
     <aside id="promptPanel" class="hidden">
       <div class="panel-head"><span>Prompts</span></div>
       <div id="promptBody" class="pp-body"></div>
@@ -84,6 +90,7 @@
 <script src="js/doc.js"></script>
 <script src="js/geminimodels.js"></script>
 <script src="js/brand.js"></script>
+<script src="js/personas.js"></script>
 <script src="js/model.js"></script>
 <script src="js/store.js"></script>
 <script src="js/history.js"></script>
@@ -93,6 +100,7 @@
 <script src="js/comments.js"></script>
 <script src="js/prompts.js"></script>
 <script src="js/promptpanel.js"></script>
+<script src="js/personapanel.js"></script>
 <script src="js/settings.js"></script>
 <script src="js/versions.js"></script>
 <script src="js/pdf.js"></script>

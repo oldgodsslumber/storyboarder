@@ -241,6 +241,9 @@
     /* --- frame --- */
     c.appendChild(frame(sh));
 
+    /* --- cast --- */
+    if (SB.Personas.all(P()).length) c.appendChild(castRow(sh));
+
     /* --- script box --- */
     const linked = !!sh.link;
     const lbl = SB.el('div', 'box-label');
@@ -311,6 +314,77 @@
     }
 
     return c;
+  }
+
+  /* Who is in this shot. The order is the order their reference images are fed
+   * to the model, so it is shown. */
+  function castRow(sh) {
+    const row = SB.el('div', 'cast-row');
+    row.dataset.shot = sh.id;
+    const cast = SB.Personas.forShot(P(), sh);
+    cast.forEach(function (per) {
+      const chip = SB.el('span', 'cast-chip' + (per.image ? ' has-img' : ''),
+        (per.image ? '◉ ' : '') + (per.name || 'unnamed'));
+      chip.title = per.image
+        ? (per.name + ' — reference image supplied')
+        : (per.name + ' — no reference image, described in full');
+      row.appendChild(chip);
+    });
+    if (!cast.length) row.appendChild(SB.el('span', 'cast-empty', 'no cast'));
+
+    const b = SB.el('button', 'mini cast-edit', cast.length ? 'edit' : '+ cast');
+    b.onclick = function (ev) {
+      ev.stopPropagation();
+      castPicker(b, sh);
+    };
+    row.appendChild(b);
+    return row;
+  }
+
+  function castPicker(anchor, sh) {
+    const old = document.querySelector('.cast-pop');
+    if (old) old.remove();
+    const pop = SB.el('div', 'cast-pop');
+    SB.Personas.all(P()).forEach(function (per) {
+      const l = SB.el('label', 'cast-opt');
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = (sh.personaIds || []).indexOf(per.id) >= 0;
+      cb.onchange = function () {
+        SB.Personas.toggleOnShot(P(), sh, per.id);
+        SB.Store.touch();
+        refreshCast();
+      };
+      l.appendChild(cb);
+      l.appendChild(document.createTextNode(' ' + (per.name || 'unnamed')));
+      pop.appendChild(l);
+    });
+    const manage = SB.el('button', 'mini', 'manage personas…');
+    manage.onclick = function () { pop.remove(); SB.PersonaPanel.open(); };
+    pop.appendChild(manage);
+
+    document.body.appendChild(pop);
+    const r = anchor.getBoundingClientRect();
+    pop.style.left = Math.min(r.left, window.innerWidth - pop.offsetWidth - 8) + 'px';
+    pop.style.top = Math.min(r.bottom + 4, window.innerHeight - pop.offsetHeight - 8) + 'px';
+    setTimeout(function () {
+      document.addEventListener('mousedown', function away(ev) {
+        if (pop.contains(ev.target)) return;
+        pop.remove();
+        document.removeEventListener('mousedown', away);
+      });
+    }, 0);
+  }
+
+  /* Redraw just the cast rows — cheaper than rebuilding every card. */
+  function refreshCast() {
+    document.querySelectorAll('.cast-row').forEach(function (row) {
+      const f = SB.Model.findShot(P(), row.dataset.shot);
+      if (!f) return;
+      const fresh = castRow(f.shot);
+      row.parentNode.replaceChild(fresh, row);
+    });
+    SB.PersonaPanel.refresh();
   }
 
   /* a small popover of card colours that read on both themes */
@@ -469,6 +543,7 @@
     render: render,
     renderSceneList: renderSceneList,
     renderScriptWindows: renderScriptWindows,
+    refreshCast: refreshCast,
     setImage: setImage,
     DND_SHOT: DND_SHOT
   };

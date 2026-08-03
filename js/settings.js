@@ -157,6 +157,17 @@
           tv.rows = 5; tv.value = m.videoTemplate;
           tv.oninput = function () { m.videoTemplate = tv.value; };
           row.appendChild(field('image→video template', tv));
+
+          const tr = document.createElement('textarea');
+          tr.rows = 3;
+          tr.value = m.referenceTemplate || SB.Personas.DEFAULT_REF_TEMPLATE;
+          tr.oninput = function () { m.referenceTemplate = tr.value; };
+          const trF = field('reference-image wording — how THIS model expects to be told about ' +
+            'persona references ({{N}} = image number, {{NAME}} = names)', tr);
+          row.appendChild(trF);
+          const trHint = SB.el('div', 'pp-note',
+            'Only used on shots that have cast. Leave blank for a model that takes no references.');
+          row.appendChild(trHint);
         }
         listHost.appendChild(row);
       });
@@ -233,10 +244,10 @@
             const t = types.value.split('\n').map(function (s) { return s.trim(); })
               .filter(function (s) { return s; });
             p.settings.shotTypes = t.length ? t : SB.Model.DEFAULT_SHOT_TYPES.slice();
-            p.settings.brand = {
-              enabled: bChk.checked,
-              text: bText.value.trim() || SB.Brand.DEFAULT
-            };
+            const bTxt = bText.value.trim();
+            p.settings.brand = (bTxt && bTxt !== SB.Brand.DEFAULT.trim())
+              ? { enabled: bChk.checked, custom: true, text: bTxt }
+              : { enabled: bChk.checked, custom: false };
             p.settings.geminiModel = (chosenModel || '').trim() || SB.GeminiModels.DEFAULT;
             p.settings.models = working.filter(function (m) { return (m.name || '').trim(); })
               .map(function (m) { delete m.__open; return m; });

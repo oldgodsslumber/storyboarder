@@ -348,6 +348,48 @@ button,input,select,textarea{font:inherit;color:inherit}
 .gm-picker select:focus,.gm-picker input:focus{outline:none;border-color:var(--accent)}
 .modal .gm-picker{width:100%}
 
+/* ---------- personas ---------- */
+#personaPanel{
+  flex:0 0 320px;background:var(--bg2);border-left:1px solid var(--line);
+  display:flex;flex-direction:column;min-height:0;overflow:auto;
+}
+.persona{border:1px solid var(--line);border-radius:6px;background:var(--bg3);padding:8px;margin-bottom:10px}
+.persona-head{display:flex;align-items:center;gap:6px;margin-bottom:6px}
+.persona-name{
+  flex:1;min-width:0;background:var(--input-bg);border:1px solid var(--line);
+  border-radius:4px;padding:3px 5px;font-weight:600;
+}
+.persona-name:focus{outline:none;border-color:var(--accent)}
+.persona-used{color:var(--fg-dim);font-size:11px;white-space:nowrap}
+.persona-frame{
+  position:relative;background:var(--frame-bg);aspect-ratio:3/4;max-height:220px;
+  display:flex;align-items:center;justify-content:center;cursor:pointer;
+  border-radius:5px;overflow:hidden;margin-bottom:4px;
+}
+.persona-frame img{width:100%;height:100%;object-fit:contain}
+.persona-frame.drag-over{outline:2px dashed var(--accent);outline-offset:-4px}
+.persona-clear{position:absolute;right:4px;top:4px}
+.persona-text{
+  width:100%;background:var(--input-bg);color:var(--fg);border:1px solid var(--line);
+  border-radius:5px;padding:5px 6px;font-size:11.5px;resize:vertical;margin-bottom:6px;
+}
+.persona-text:focus{outline:none;border-color:var(--accent)}
+
+.cast-row{display:flex;flex-wrap:wrap;gap:4px;align-items:center;padding:4px 6px 0}
+.cast-chip{
+  font-size:10px;padding:1px 6px;border-radius:9px;
+  border:1px solid var(--line2);color:var(--fg-dim);white-space:nowrap;
+}
+.cast-chip.has-img{border-color:var(--accent);color:var(--accent)}
+.cast-empty{font-size:10px;color:var(--fg-dim);text-transform:uppercase;letter-spacing:.5px}
+.cast-edit{margin-left:auto}
+.cast-pop{
+  position:fixed;z-index:60;background:var(--bg2);border:1px solid var(--line2);
+  border-radius:6px;padding:6px;display:flex;flex-direction:column;gap:4px;
+  box-shadow:0 6px 20px var(--shadow);max-height:60vh;overflow:auto;min-width:160px;
+}
+.cast-opt{display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;font-size:12px}
+
 /* ---------- colour palette popover ---------- */
 .swatch{
   width:16px;height:16px;border:1px solid var(--line2);border-radius:3px;

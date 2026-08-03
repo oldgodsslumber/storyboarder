@@ -44,6 +44,7 @@
     renderChrome();
     SB.ScriptMode.refresh();
     SB.PromptPanel.refresh();
+    SB.PersonaPanel.refresh();
   }
 
   /* ---------------- boot ---------------- */
@@ -54,6 +55,7 @@
     }
     SB.ScriptMode.init();
     SB.PromptPanel.init();
+    SB.PersonaPanel.init();
     SB.Store.S.getProject = function () { return app.project; };
     SB.Store.S.onState = function (txt, cls) {
       const el = document.getElementById('saveState');
@@ -134,6 +136,8 @@
       document.body.classList.toggle('comment-mode', app.commentMode);
       SB.Board.render();
     });
+
+    $('btnPersonas').addEventListener('click', function () { SB.PersonaPanel.toggle(); });
 
     $('btnPrompts').addEventListener('click', function () { SB.PromptPanel.toggle(); });
 

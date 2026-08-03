@@ -354,6 +354,48 @@ button,input,select,textarea{font:inherit;color:inherit}
 .gm-picker select:focus,.gm-picker input:focus{outline:none;border-color:var(--accent)}
 .modal .gm-picker{width:100%}
 
+/* ---------- personas ---------- */
+#personaPanel{
+  flex:0 0 320px;background:var(--bg2);border-left:1px solid var(--line);
+  display:flex;flex-direction:column;min-height:0;overflow:auto;
+}
+.persona{border:1px solid var(--line);border-radius:6px;background:var(--bg3);padding:8px;margin-bottom:10px}
+.persona-head{display:flex;align-items:center;gap:6px;margin-bottom:6px}
+.persona-name{
+  flex:1;min-width:0;background:var(--input-bg);border:1px solid var(--line);
+  border-radius:4px;padding:3px 5px;font-weight:600;
+}
+.persona-name:focus{outline:none;border-color:var(--accent)}
+.persona-used{color:var(--fg-dim);font-size:11px;white-space:nowrap}
+.persona-frame{
+  position:relative;background:var(--frame-bg);aspect-ratio:3/4;max-height:220px;
+  display:flex;align-items:center;justify-content:center;cursor:pointer;
+  border-radius:5px;overflow:hidden;margin-bottom:4px;
+}
+.persona-frame img{width:100%;height:100%;object-fit:contain}
+.persona-frame.drag-over{outline:2px dashed var(--accent);outline-offset:-4px}
+.persona-clear{position:absolute;right:4px;top:4px}
+.persona-text{
+  width:100%;background:var(--input-bg);color:var(--fg);border:1px solid var(--line);
+  border-radius:5px;padding:5px 6px;font-size:11.5px;resize:vertical;margin-bottom:6px;
+}
+.persona-text:focus{outline:none;border-color:var(--accent)}
+
+.cast-row{display:flex;flex-wrap:wrap;gap:4px;align-items:center;padding:4px 6px 0}
+.cast-chip{
+  font-size:10px;padding:1px 6px;border-radius:9px;
+  border:1px solid var(--line2);color:var(--fg-dim);white-space:nowrap;
+}
+.cast-chip.has-img{border-color:var(--accent);color:var(--accent)}
+.cast-empty{font-size:10px;color:var(--fg-dim);text-transform:uppercase;letter-spacing:.5px}
+.cast-edit{margin-left:auto}
+.cast-pop{
+  position:fixed;z-index:60;background:var(--bg2);border:1px solid var(--line2);
+  border-radius:6px;padding:6px;display:flex;flex-direction:column;gap:4px;
+  box-shadow:0 6px 20px var(--shadow);max-height:60vh;overflow:auto;min-width:160px;
+}
+.cast-opt{display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;font-size:12px}
+
 /* ---------- colour palette popover ---------- */
 .swatch{
   width:16px;height:16px;border:1px solid var(--line2);border-radius:3px;
@@ -417,6 +459,7 @@ body.comment-mode .frame{cursor:crosshair}
     <div class="tb-group">
       <button id="btnScript"  class="tb toggle">Script</button>
       <button id="btnComment" class="tb toggle">Comment mode</button>
+      <button id="btnPersonas" class="tb toggle">Personas</button>
       <button id="btnPrompts" class="tb toggle">Prompts</button>
     </div>
 
@@ -457,6 +500,11 @@ body.comment-mode .frame{cursor:crosshair}
       </div>
       <div id="masterScript" class="master-script" contenteditable="true" spellcheck="true"></div>
       <div id="captureForm" class="capture-form hidden"></div>
+    </aside>
+
+    <aside id="personaPanel" class="hidden">
+      <div class="panel-head"><span>Personas</span></div>
+      <div id="personaBody" class="pp-body"></div>
     </aside>
 
     <aside id="promptPanel" class="hidden">
@@ -1141,19 +1189,11 @@ window.SB = window.SB || {};
   'use strict';
 
   const DEFAULT_BRAND = [
-    'CREATIVE CONSTRAINTS',
-    '- Story sequence: the frames of a scene are consecutive beats in one narrative — a clear progression of action and moment.',
-    '- Consistent subject: the subject stays identical across every frame of the scene (matches the reference 100%).',
-    '- Consistent wardrobe: the subject stays in the same clothes across every frame of the scene (matches the reference 100%).',
-    '- Consistent environment + style: same location, same lighting mood, same overall aesthetic across the whole scene.',
+    'CONSTRAINTS',
     '- No gender references: do not mention or imply gender. Avoid gendered nouns, adjectives, titles and pronouns. Use only neutral language — "the subject", "the person", "they" — or omit pronouns entirely.',
     '- Cinematic + technical: maintain professional photographic detail — focal length, aperture, distance/angle, depth of field, and lighting notes for the frame.',
-    '',
-    'STYLE GUIDANCE',
-    '- Keep framing mostly tight (close-ups, partial crops, hands and face details), with a few wider shots for rhythm.',
-    '- Every scene needs one true wide angle that also works as a reference photo later.',
-    '- Vary angles subtly (slight high/low tilt, over-shoulder, profile, foreground obstructions) while staying coherent.',
-    '- Include tactile props or environmental elements that support the story (fabric, glass, rain, reflections, paper, steam) without changing location.',
+    '- Vary angles subtly (slight high/low tilt, over-shoulder, profile, foreground obstructions) while staying coherent with the rest of the scene.',
+    '- Include tactile props or environmental elements that support the story (fabric, glass, rain, reflections, paper, steam).',
     '- Finishing: "Capture RAW", "muted professional grade", "smooth tonal rolloff", "subtle cinematic grain", "controlled contrast".',
     '',
     'STYLE & TONE',
@@ -1196,7 +1236,7 @@ window.SB = window.SB || {};
    * the frame starts moving. */
   const VIDEO_RIDER = [
     'MOTION',
-    '- The subject, the wardrobe and the location must not change during the shot.',
+    '- Wardrobe and location must not change during the shot.',
     '- Camera moves are restrained and motivated — no flourishes the scene has not earned.',
     '- Movement is documentary-real: the pace of an actual moment, not choreography.',
     '- Hold the natural-light look and the clean exposure through the whole move.'
@@ -1230,32 +1270,36 @@ window.SB = window.SB || {};
     return out;
   }
 
+  /* A board only stores the house style once someone has edited it. Boards on
+   * the stock text follow the app, so a correction here reaches them. */
   function brandOf(p) {
     const b = (p.settings && p.settings.brand) || {};
+    const custom = !!(b.custom && typeof b.text === 'string' && b.text.trim());
     return {
       enabled: b.enabled !== false,
-      text: typeof b.text === 'string' && b.text.trim() ? b.text : DEFAULT_BRAND
+      custom: custom,
+      text: custom ? b.text : DEFAULT_BRAND
     };
   }
 
-  /* Everything the writer needs to keep this frame consistent with its
-   * neighbours: where the beat sits, and what the other beats are. */
+  /* Where this frame sits in its scene, so the writer isn't composing in a
+   * vacuum. Who is in it — and what they look like and wear — is the personas
+   * layer's job, not this one's. */
   function sequenceBlock(p, shot) {
     const f = SB.Model.findShot(p, shot.id);
     if (!f) return '';
     const scene = f.scene;
     const beats = scene.shots.filter(function (s) { return !s.noShot; });
     const pos = beats.indexOf(shot) + 1;
-    const wide = beats.filter(function (s) { return /wide|establish/i.test(s.type || ''); });
     const lines = [];
 
-    lines.push('SCENE CONTINUITY — this frame is one beat of a sequence, not a standalone image.');
+    lines.push('SCENE CONTEXT');
     lines.push('Scene ' + (f.sceneIdx + 1) + ': ' + (scene.heading || '(untitled)'));
     if (scene.description) lines.push('Scene note: ' + scene.description);
-    if (pos > 0) lines.push('This is beat ' + pos + ' of ' + beats.length + ' (shot ' + f.code + ').');
+    lines.push('This is shot ' + f.code + (pos > 0 ? ' (beat ' + pos + ' of ' + beats.length + ')' : '') + '.');
 
     if (beats.length > 1) {
-      lines.push('The full beat list, in order — keep the subject, the wardrobe, the location and the grade identical across all of them:');
+      lines.push('The other beats in this scene, in order:');
       beats.forEach(function (s, i) {
         const sf = SB.Model.findShot(p, s.id);
         const d = (s.description || '').replace(/\s+/g, ' ').trim();
@@ -1263,19 +1307,7 @@ window.SB = window.SB || {};
           (d ? (d.length > 160 ? d.slice(0, 157) + '…' : d) : '(no description yet)') +
           (s.id === shot.id ? '   <-- the frame you are writing' : ''));
       });
-    }
-
-    if (wide.length) {
-      const codes = wide.map(function (s) {
-        const sf = SB.Model.findShot(p, s.id);
-        return sf ? sf.code : '?';
-      }).join(', ');
-      lines.push('The wide/reference frame for this scene is ' + codes +
-        (wide.indexOf(shot) >= 0
-          ? ' — this one. Make it work as a standalone reference photo of the subject and the location.'
-          : '. Stay consistent with it.'));
-    } else {
-      lines.push('No wide frame exists in this scene yet. If this is the widest beat, compose it so it can double as a reference photo of the subject and the location.');
+      lines.push('Keep the location, the lighting mood and the grade coherent across these beats.');
     }
     return lines.join('\n');
   }
@@ -1300,6 +1332,181 @@ window.SB = window.SB || {};
     systemFor: systemFor,
     sequenceBlock: sequenceBlock,
     genderedTerms: genderedTerms
+  };
+
+})(window.SB);
+
+</script>
+<script>
+/* ===== js/personas.js ===== */
+/* personas.js — recurring people, so the same face and the same clothes come
+ * back shot after shot.
+ *
+ * A persona holds a description, the prompt that made its reference frame, and
+ * the reference image itself (≤480p proxy, like every other image here). Shots
+ * name the personas that appear in them; the prompt writer then gets both the
+ * description AND the phrasing that particular model expects for reference
+ * images — Qwen wants "the person in image 1", others want something else.
+ */
+(function (SB) {
+  'use strict';
+
+  /* How a model wants to be told about reference images. {{N}} = the image's
+   * position, {{NAME}} = the persona's name. */
+  const REF_TEMPLATES = {
+    numbered: 'Reference images are supplied in order. Refer to each recurring subject as ' +
+      '"the person in image {{N}}" and keep their face, hair and wardrobe exactly as in that image.',
+    named: 'Reference images are supplied for each named subject. Refer to them by name ' +
+      '({{NAME}}) and keep their face, hair and wardrobe exactly as in the reference.',
+    none: ''
+  };
+
+  const DEFAULT_REF_TEMPLATE = REF_TEMPLATES.numbered;
+
+  function newPersona(opts) {
+    opts = opts || {};
+    return {
+      id: SB.uid('per'),
+      name: opts.name || 'New persona',
+      description: opts.description || '',
+      imagePrompt: opts.imagePrompt || '',
+      image: opts.image || null      // {data,w,h} — the reference frame
+    };
+  }
+
+  function all(p) { return (p.personas = p.personas || []); }
+
+  function find(p, id) {
+    return all(p).filter(function (x) { return x.id === id; })[0] || null;
+  }
+
+  function add(p, opts) {
+    const per = newPersona(opts);
+    all(p).push(per);
+    return per;
+  }
+
+  function remove(p, id) {
+    p.personas = all(p).filter(function (x) { return x.id !== id; });
+    SB.Model.eachShot(p, function (sh) {
+      sh.personaIds = (sh.personaIds || []).filter(function (x) { return x !== id; });
+    });
+  }
+
+  /* The personas in a shot, in the order their reference images should be fed. */
+  function forShot(p, shot) {
+    return (shot.personaIds || []).map(function (id) { return find(p, id); })
+      .filter(Boolean);
+  }
+
+  function toggleOnShot(p, shot, id) {
+    shot.personaIds = shot.personaIds || [];
+    const i = shot.personaIds.indexOf(id);
+    if (i >= 0) shot.personaIds.splice(i, 1);
+    else shot.personaIds.push(id);
+  }
+
+  /* The CAST block appended to the system instruction for one job. */
+  function block(p, shot, model) {
+    const cast = forShot(p, shot);
+    if (!cast.length) return '';
+    const lines = ['CAST — these people recur across the board. They must look the same every time.'];
+    const withImages = cast.filter(function (x) { return !!x.image; });
+
+    cast.forEach(function (per, i) {
+      const bits = [];
+      bits.push((per.image ? 'image ' + (withImages.indexOf(per) + 1) + ' — ' : '') + (per.name || 'unnamed'));
+      const d = (per.description || '').replace(/\s+/g, ' ').trim();
+      bits.push(d || '(no description yet)');
+      lines.push('  ' + (i + 1) + '. ' + bits.join(': '));
+      if (!per.image) {
+        lines.push('     No reference image — describe this person fully and identically every time.');
+      }
+    });
+
+    if (withImages.length) {
+      const tpl = (model && model.referenceTemplate) || DEFAULT_REF_TEMPLATE;
+      const names = withImages.map(function (x) { return x.name; }).join(', ');
+      lines.push(tpl.replace(/\{\{N\}\}/g, function () { return 'N'; })
+        .replace(/\{\{NAME\}\}/g, names));
+      withImages.forEach(function (per, i) {
+        lines.push('  image ' + (i + 1) + ' = ' + (per.name || 'unnamed'));
+      });
+    }
+    lines.push('Wardrobe stays identical to the description above unless the shot says otherwise.');
+    return lines.join('\n');
+  }
+
+  /* ---- generate personas from the brand + the master script ---- */
+
+  const GEN_SCHEMA = {
+    type: 'OBJECT',
+    properties: {
+      personas: {
+        type: 'ARRAY',
+        items: {
+          type: 'OBJECT',
+          properties: {
+            name: { type: 'STRING' },
+            description: { type: 'STRING' },
+            imagePrompt: { type: 'STRING' }
+          },
+          required: ['name', 'description', 'imagePrompt']
+        }
+      }
+    },
+    required: ['personas']
+  };
+
+  function generate(p, count, extraNote) {
+    const script = (p.master.text || '').trim();
+    const descs = [];
+    SB.Model.eachShot(p, function (sh) {
+      if (sh.description) descs.push(sh.description);
+    });
+    if (!script && !descs.length) {
+      return Promise.reject(new Error('Nothing to work from yet — write some script or shot descriptions first.'));
+    }
+
+    const model = SB.Model.imageModel(p);
+    const text = [
+      'Read the script below and invent ' + count + ' recurring on-camera ' +
+      (count === 1 ? 'person' : 'people') + ' for this video.',
+      '',
+      'For each one return:',
+      '- name: a short label for the board (not a character name in the script — a handle like "Ops lead").',
+      '- description: who they are on camera and, critically, exactly what they look like and are WEARING. ' +
+      'Age range, build, hair, skin tone, and a specific outfit described down to fabric and colour. ' +
+      'This text is what keeps them identical from shot to shot, so be concrete and complete. No gendered language.',
+      '- imagePrompt: a single still-image prompt that would produce a clean, front-facing reference frame of ' +
+      'this person for ' + (model ? model.name : 'an image model') + ' — plain background, natural light, ' +
+      'full wardrobe visible, neutral expression. It must obey the house style.',
+      '',
+      extraNote ? 'Additional direction: ' + extraNote + '\n' : '',
+      script ? 'SCRIPT:\n' + script.slice(0, 12000) : '',
+      descs.length ? '\n\nSHOT DESCRIPTIONS:\n- ' + descs.slice(0, 40).join('\n- ') : ''
+    ].join('\n');
+
+    const system = SB.Brand.brandOf(p).enabled
+      ? 'HOUSE STYLE — the reference frames you describe must obey this.\n\n' + SB.Brand.brandOf(p).text
+      : '';
+
+    return SB.Prompts.raw(text, GEN_SCHEMA, system).then(function (out) {
+      const made = (out.personas || []).map(function (x) {
+        return add(p, {
+          name: x.name, description: x.description, imagePrompt: x.imagePrompt
+        });
+      });
+      if (!made.length) throw new Error('No personas came back');
+      return made;
+    });
+  }
+
+  SB.Personas = {
+    REF_TEMPLATES: REF_TEMPLATES,
+    DEFAULT_REF_TEMPLATE: DEFAULT_REF_TEMPLATE,
+    newPersona: newPersona, all: all, find: find, add: add, remove: remove,
+    forShot: forShot, toggleOnShot: toggleOnShot, block: block, generate: generate
   };
 
 })(window.SB);
@@ -1333,7 +1540,11 @@ window.SB = window.SB || {};
     'SHOT DESCRIPTION:\n{{DESCRIPTION}}';
 
   function model(name, kind) {
-    return { id: SB.uid('m'), name: name, kind: kind, imageTemplate: IMG_TPL, videoTemplate: VID_TPL };
+    return {
+      id: SB.uid('m'), name: name, kind: kind,
+      imageTemplate: IMG_TPL, videoTemplate: VID_TPL,
+      referenceTemplate: SB.Personas.DEFAULT_REF_TEMPLATE
+    };
   }
 
   function defaultModels() {
@@ -1370,6 +1581,7 @@ window.SB = window.SB || {};
       color: opts.color || CARD_COLORS[0],
       link: opts.link || null,          // {from,to} into master, or null = freestanding
       local: opts.link ? null : SB.Doc.make(opts.text || ''),
+      personaIds: [],                   // who appears in this shot
       broken: false,
       description: '',
       image: null,                      // {data,w,h}
@@ -1396,6 +1608,7 @@ window.SB = window.SB || {};
       createdAt: Date.now(),
       updatedAt: Date.now(),
       master: SB.Doc.make(''),
+      personas: [],
       scenes: [newScene('Scene one')],
       versionNumber: 1,
       versionName: 'v1',
@@ -1406,7 +1619,7 @@ window.SB = window.SB || {};
         imageModelId: null,
         videoModelId: null,
         geminiModel: SB.GeminiModels.DEFAULT,
-        brand: { enabled: true, text: SB.Brand.DEFAULT },
+        brand: { enabled: true, custom: false },
         // prompt boxes stay off the cards until the user asks for them
         showImagePrompt: false,
         showVideoPrompt: false
@@ -1428,6 +1641,13 @@ window.SB = window.SB || {};
     p.master = p.master && typeof p.master.text === 'string' ? p.master : SB.Doc.make('');
     p.master.marks = p.master.marks || { b: [], i: [], u: [] };
     ['b', 'i', 'u'].forEach(function (t) { p.master.marks[t] = p.master.marks[t] || []; });
+    p.personas = Array.isArray(p.personas) ? p.personas : [];
+    p.personas.forEach(function (x) {
+      x.id = x.id || SB.uid('per');
+      x.name = x.name || 'Persona';
+      x.description = x.description || '';
+      x.imagePrompt = x.imagePrompt || '';
+    });
     p.scenes = Array.isArray(p.scenes) ? p.scenes : [];
     if (!p.scenes.length) p.scenes.push(newScene('Scene one'));
     p.versionNumber = p.versionNumber || 1;
@@ -1441,6 +1661,9 @@ window.SB = window.SB || {};
       m.kind = m.kind || 'video';
       m.imageTemplate = m.imageTemplate || IMG_TPL;
       m.videoTemplate = m.videoTemplate || VID_TPL;
+      if (typeof m.referenceTemplate !== 'string') {
+        m.referenceTemplate = SB.Personas.DEFAULT_REF_TEMPLATE;
+      }
     });
     const has = function (id) { return s.models.some(function (m) { return m.id === id; }); };
     // older files carried a single activeModelId
@@ -1456,7 +1679,9 @@ window.SB = window.SB || {};
     s.geminiModel = SB.GeminiModels.normalize(s.geminiModel);
     s.brand = (s.brand && typeof s.brand === 'object') ? s.brand : {};
     if (typeof s.brand.enabled !== 'boolean') s.brand.enabled = true;
-    if (typeof s.brand.text !== 'string' || !s.brand.text.trim()) s.brand.text = SB.Brand.DEFAULT;
+    // only a hand-edited house style is stored; the rest follow the app's
+    if (typeof s.brand.custom !== 'boolean') s.brand.custom = false;
+    if (!s.brand.custom) delete s.brand.text;
     if (typeof s.showImagePrompt !== 'boolean') s.showImagePrompt = false;
     if (typeof s.showVideoPrompt !== 'boolean') s.showVideoPrompt = false;
 
@@ -1483,6 +1708,7 @@ window.SB = window.SB || {};
         sh.description = sh.description || '';
         sh.comments = Array.isArray(sh.comments) ? sh.comments : [];
         sh.prompts = sh.prompts || {};
+        sh.personaIds = Array.isArray(sh.personaIds) ? sh.personaIds : [];
       });
     });
     return p;
@@ -2498,6 +2724,9 @@ window.SB = window.SB || {};
     /* --- frame --- */
     c.appendChild(frame(sh));
 
+    /* --- cast --- */
+    if (SB.Personas.all(P()).length) c.appendChild(castRow(sh));
+
     /* --- script box --- */
     const linked = !!sh.link;
     const lbl = SB.el('div', 'box-label');
@@ -2568,6 +2797,77 @@ window.SB = window.SB || {};
     }
 
     return c;
+  }
+
+  /* Who is in this shot. The order is the order their reference images are fed
+   * to the model, so it is shown. */
+  function castRow(sh) {
+    const row = SB.el('div', 'cast-row');
+    row.dataset.shot = sh.id;
+    const cast = SB.Personas.forShot(P(), sh);
+    cast.forEach(function (per) {
+      const chip = SB.el('span', 'cast-chip' + (per.image ? ' has-img' : ''),
+        (per.image ? '◉ ' : '') + (per.name || 'unnamed'));
+      chip.title = per.image
+        ? (per.name + ' — reference image supplied')
+        : (per.name + ' — no reference image, described in full');
+      row.appendChild(chip);
+    });
+    if (!cast.length) row.appendChild(SB.el('span', 'cast-empty', 'no cast'));
+
+    const b = SB.el('button', 'mini cast-edit', cast.length ? 'edit' : '+ cast');
+    b.onclick = function (ev) {
+      ev.stopPropagation();
+      castPicker(b, sh);
+    };
+    row.appendChild(b);
+    return row;
+  }
+
+  function castPicker(anchor, sh) {
+    const old = document.querySelector('.cast-pop');
+    if (old) old.remove();
+    const pop = SB.el('div', 'cast-pop');
+    SB.Personas.all(P()).forEach(function (per) {
+      const l = SB.el('label', 'cast-opt');
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = (sh.personaIds || []).indexOf(per.id) >= 0;
+      cb.onchange = function () {
+        SB.Personas.toggleOnShot(P(), sh, per.id);
+        SB.Store.touch();
+        refreshCast();
+      };
+      l.appendChild(cb);
+      l.appendChild(document.createTextNode(' ' + (per.name || 'unnamed')));
+      pop.appendChild(l);
+    });
+    const manage = SB.el('button', 'mini', 'manage personas…');
+    manage.onclick = function () { pop.remove(); SB.PersonaPanel.open(); };
+    pop.appendChild(manage);
+
+    document.body.appendChild(pop);
+    const r = anchor.getBoundingClientRect();
+    pop.style.left = Math.min(r.left, window.innerWidth - pop.offsetWidth - 8) + 'px';
+    pop.style.top = Math.min(r.bottom + 4, window.innerHeight - pop.offsetHeight - 8) + 'px';
+    setTimeout(function () {
+      document.addEventListener('mousedown', function away(ev) {
+        if (pop.contains(ev.target)) return;
+        pop.remove();
+        document.removeEventListener('mousedown', away);
+      });
+    }, 0);
+  }
+
+  /* Redraw just the cast rows — cheaper than rebuilding every card. */
+  function refreshCast() {
+    document.querySelectorAll('.cast-row').forEach(function (row) {
+      const f = SB.Model.findShot(P(), row.dataset.shot);
+      if (!f) return;
+      const fresh = castRow(f.shot);
+      row.parentNode.replaceChild(fresh, row);
+    });
+    SB.PersonaPanel.refresh();
   }
 
   /* a small popover of card colours that read on both themes */
@@ -2726,6 +3026,7 @@ window.SB = window.SB || {};
     render: render,
     renderSceneList: renderSceneList,
     renderScriptWindows: renderScriptWindows,
+    refreshCast: refreshCast,
     setImage: setImage,
     DND_SHOT: DND_SHOT
   };
@@ -3145,13 +3446,18 @@ window.SB = window.SB || {};
   function jobsFor(shot, im, vm, roles) {
     const jobs = [];
     const wantI = roles.image && im, wantV = roles.video && vm;
-    const sys = function (role) { return SB.Brand.systemFor(P(), shot, role); };
+    const sys = function (role, model) {
+      const parts = [SB.Brand.systemFor(P(), shot, role)];
+      const cast = SB.Personas.block(P(), shot, model);
+      if (cast) parts.push(cast);
+      return parts.filter(Boolean).join('\n\n');
+    };
     if (wantI && wantV && im.id === vm.id) {
       jobs.push({
         text: PREAMBLE + 'Return JSON with the keys "imagePrompt" and "videoPrompt".\n\n' +
           imageBlock(shot, im) + '\n' + videoBlock(shot, vm),
         keys: ['imagePrompt', 'videoPrompt'],
-        system: sys('both'),
+        system: sys('both', im),
         targets: [{ model: im, field: 'imagePrompt' }, { model: vm, field: 'videoPrompt' }]
       });
       return jobs;
@@ -3160,7 +3466,7 @@ window.SB = window.SB || {};
       jobs.push({
         text: PREAMBLE + 'Return JSON with the key "imagePrompt".\n\n' + imageBlock(shot, im),
         keys: ['imagePrompt'],
-        system: sys('image'),
+        system: sys('image', im),
         targets: [{ model: im, field: 'imagePrompt' }]
       });
     }
@@ -3168,7 +3474,7 @@ window.SB = window.SB || {};
       jobs.push({
         text: PREAMBLE + 'Return JSON with the key "videoPrompt".\n\n' + videoBlock(shot, vm),
         keys: ['videoPrompt'],
-        system: sys('video'),
+        system: sys('video', vm),
         targets: [{ model: vm, field: 'videoPrompt' }]
       });
     }
@@ -3209,12 +3515,11 @@ window.SB = window.SB || {};
   const NO_SCHEMA_HINT =
     '\n\nReply with ONLY the JSON object — start with { and end with }, no markdown fences.';
 
-  function callGemini(text, keys, system) {
+  /* One JSON-shaped question to the writer model. */
+  function ask(text, schema, system) {
     const key = SB.Store.getApiKey();
     if (!key) return Promise.reject(new Error('No Google API key. Add one in Settings → API.'));
     const mdl = P().settings.geminiModel || SB.GeminiModels.DEFAULT;
-    const props = {};
-    keys.forEach(function (k) { props[k] = { type: 'STRING' }; });
 
     /* Gemma takes neither a response schema nor a systemInstruction — it gets
      * both folded into the one user turn instead. */
@@ -3224,7 +3529,7 @@ window.SB = window.SB || {};
       const gen = { temperature: 0.8 };
       if (withSchema) {
         gen.responseMimeType = 'application/json';
-        gen.responseSchema = { type: 'OBJECT', properties: props, required: keys };
+        gen.responseSchema = schema;
       }
       let user = withSchema ? text : text + NO_SCHEMA_HINT;
       const body = { generationConfig: gen };
@@ -3259,6 +3564,12 @@ window.SB = window.SB || {};
         return JSON.parse(m[0]);
       }
     });
+  }
+
+  function callGemini(text, keys, system) {
+    const props = {};
+    keys.forEach(function (k) { props[k] = { type: 'STRING' }; });
+    return ask(text, { type: 'OBJECT', properties: props, required: keys }, system);
   }
 
   function store(shot, model, field, value, flagged) {
@@ -3366,7 +3677,7 @@ window.SB = window.SB || {};
 
   SB.Prompts = {
     generateFor: generateFor, allShots: allShots, sceneShots: sceneShots,
-    jobsFor: jobsFor, fill: fill
+    jobsFor: jobsFor, fill: fill, raw: ask
   };
 
 })(window.SB);
@@ -3606,6 +3917,269 @@ window.SB = window.SB || {};
 
 </script>
 <script>
+/* ===== js/personapanel.js ===== */
+/* personapanel.js — add, edit and maintain the people who recur on the board. */
+(function (SB) {
+  'use strict';
+
+  let panel, bodyEl, statusEl;
+
+  function P() { return SB.app.project; }
+
+  function init() {
+    panel = document.getElementById('personaPanel');
+    bodyEl = document.getElementById('personaBody');
+  }
+
+  function setStatus(txt, isErr) {
+    if (!statusEl) return;
+    statusEl.textContent = txt || '';
+    statusEl.classList.toggle('err', !!isErr);
+  }
+
+  function render() {
+    if (!panel || !P()) return;
+    const p = P();
+    bodyEl.innerHTML = '';
+
+    /* --- generate --- */
+    const gen = SB.el('div', 'pp-block');
+    gen.appendChild(SB.el('div', 't', 'generate from the script'));
+
+    const row = SB.el('div', 'pp-row');
+    row.appendChild(SB.el('label', null, 'How many'));
+    const count = document.createElement('select');
+    [1, 2, 3, 4, 5].forEach(function (n) {
+      const o = document.createElement('option');
+      o.value = n; o.textContent = n;
+      if (n === 2) o.selected = true;
+      count.appendChild(o);
+    });
+    row.appendChild(count);
+    gen.appendChild(row);
+
+    const note = document.createElement('input');
+    note.type = 'text';
+    note.placeholder = 'optional direction — “one on-site technician”';
+    const nRow = SB.el('div', 'pp-row');
+    nRow.appendChild(SB.el('label', null, 'Direction'));
+    nRow.appendChild(note);
+    gen.appendChild(nRow);
+
+    const acts = SB.el('div', 'pp-actions');
+    const bGen = SB.el('button', 'tb on', 'Generate');
+    bGen.onclick = function () {
+      bGen.disabled = true;
+      setStatus('reading the script…');
+      SB.Personas.generate(p, parseInt(count.value, 10) || 1, note.value.trim())
+        .then(function (made) {
+          bGen.disabled = false;
+          SB.app.changed(true);
+          render();
+          setStatus('added ' + made.length + ' — edit anything that is not right.');
+        })
+        .catch(function (e) {
+          bGen.disabled = false;
+          setStatus(e.message || String(e), true);
+        });
+    };
+    const bAdd = SB.el('button', 'tb', '+ Blank persona');
+    bAdd.onclick = function () {
+      SB.Personas.add(p, {});
+      SB.app.changed(true);
+      render();
+    };
+    acts.appendChild(bGen);
+    acts.appendChild(bAdd);
+    gen.appendChild(acts);
+
+    statusEl = SB.el('div', 'pp-status');
+    gen.appendChild(statusEl);
+    gen.appendChild(SB.el('div', 'pp-note',
+      'Descriptions carry the wardrobe. That text plus the reference image is what keeps ' +
+      'a person identical from shot to shot.'));
+    bodyEl.appendChild(gen);
+
+    /* --- the personas themselves --- */
+    const list = SB.Personas.all(p);
+    if (!list.length) {
+      bodyEl.appendChild(SB.el('div', 'pp-note', 'No personas yet.'));
+    }
+    list.forEach(function (per, i) { bodyEl.appendChild(card(per, i)); });
+  }
+
+  function card(per, idx) {
+    const p = P();
+    const wrap = SB.el('div', 'persona');
+
+    const head = SB.el('div', 'persona-head');
+    const name = document.createElement('input');
+    name.type = 'text';
+    name.className = 'persona-name';
+    name.value = per.name || '';
+    name.placeholder = 'Name';
+    name.addEventListener('input', function () {
+      per.name = name.value;
+      SB.Store.touch();
+      SB.Board.refreshCast();
+    });
+    head.appendChild(name);
+
+    const used = countShots(per.id);
+    head.appendChild(SB.el('span', 'persona-used', used + (used === 1 ? ' shot' : ' shots')));
+
+    const del = SB.el('button', 'mini danger', '✕');
+    del.title = 'Remove this persona and take it off every shot';
+    del.onclick = function () {
+      if (!confirm('Remove “' + (per.name || 'persona') + '”? It comes off ' + used + ' shot(s).')) return;
+      SB.Personas.remove(p, per.id);
+      SB.app.changed(true);
+      render();
+    };
+    head.appendChild(del);
+    wrap.appendChild(head);
+
+    /* reference frame */
+    const frame = SB.el('div', 'persona-frame');
+    if (per.image) {
+      const img = document.createElement('img');
+      img.src = per.image.data;
+      frame.appendChild(img);
+    } else {
+      frame.appendChild(SB.el('div', 'drop-hint', 'drop the reference frame here, or click to load'));
+    }
+    frame.onclick = function () {
+      SB.pickImageFile().then(function (f) { if (f) setImage(per, f); });
+    };
+    frame.addEventListener('dragover', function (ev) {
+      ev.preventDefault();
+      frame.classList.add('drag-over');
+    });
+    frame.addEventListener('dragleave', function () { frame.classList.remove('drag-over'); });
+    frame.addEventListener('drop', function (ev) {
+      ev.preventDefault();
+      frame.classList.remove('drag-over');
+      SB.imageFromTransfer(ev.dataTransfer).then(function (src) {
+        if (src) setImage(per, src);
+        else SB.toast('No image in that drop', true);
+      });
+    });
+    if (per.image) {
+      const rm = SB.el('button', 'mini danger persona-clear', 'remove image');
+      rm.onclick = function (ev) {
+        ev.stopPropagation();
+        per.image = null;
+        SB.app.changed(true);
+        render();
+      };
+      frame.appendChild(rm);
+    }
+    wrap.appendChild(frame);
+    wrap.appendChild(SB.el('div', 'pp-note',
+      per.image
+        ? 'Fed to the model as image ' + imageIndex(per) + ' wherever this persona appears.'
+        : 'No reference image — prompts will describe this person in full instead.'));
+
+    wrap.appendChild(SB.el('div', 'box-label', 'description + wardrobe'));
+    const d = document.createElement('textarea');
+    d.className = 'persona-text';
+    d.rows = 4;
+    d.value = per.description || '';
+    d.placeholder = 'Age range, build, hair, and the exact outfit — fabric and colour.';
+    d.addEventListener('input', function () { per.description = d.value; SB.Store.touch(); });
+    wrap.appendChild(d);
+
+    wrap.appendChild(SB.el('div', 'box-label', 'reference image prompt'));
+    const ip = document.createElement('textarea');
+    ip.className = 'persona-text';
+    ip.rows = 4;
+    ip.value = per.imagePrompt || '';
+    ip.placeholder = 'The prompt that makes this person’s reference frame.';
+    ip.addEventListener('input', function () { per.imagePrompt = ip.value; SB.Store.touch(); });
+    wrap.appendChild(ip);
+
+    const foot = SB.el('div', 'pp-actions');
+    const copy = SB.el('button', 'mini', 'copy prompt');
+    copy.onclick = function () {
+      navigator.clipboard.writeText(per.imagePrompt || '').then(function () {
+        SB.toast('Reference prompt copied');
+      }).catch(function () { SB.toast('Could not copy', true); });
+    };
+    foot.appendChild(copy);
+
+    const write = SB.el('button', 'mini', 'write it for me');
+    write.title = 'Ask the writer model for a reference-frame prompt from the description';
+    write.onclick = function () {
+      if (!(per.description || '').trim()) { SB.toast('Write a description first', true); return; }
+      write.disabled = true;
+      const m = SB.Model.imageModel(P());
+      const sys = SB.Brand.brandOf(P()).enabled
+        ? 'HOUSE STYLE — obey this.\n\n' + SB.Brand.brandOf(P()).text : '';
+      SB.Prompts.raw(
+        'Write one still-image prompt for ' + (m ? m.name : 'an image model') +
+        ' that produces a clean, front-facing reference frame of this person: plain background, ' +
+        'natural light, full wardrobe visible, neutral expression. No gendered language.\n\n' +
+        'PERSON:\n' + per.description,
+        { type: 'OBJECT', properties: { imagePrompt: { type: 'STRING' } }, required: ['imagePrompt'] },
+        sys
+      ).then(function (out) {
+        per.imagePrompt = out.imagePrompt || '';
+        ip.value = per.imagePrompt;
+        write.disabled = false;
+        SB.app.changed(true);
+      }).catch(function (e) {
+        write.disabled = false;
+        SB.toast(e.message || String(e), true);
+      });
+    };
+    foot.appendChild(write);
+    wrap.appendChild(foot);
+
+    return wrap;
+  }
+
+  function imageIndex(per) {
+    const withImg = SB.Personas.all(P()).filter(function (x) { return !!x.image; });
+    return withImg.indexOf(per) + 1;
+  }
+
+  function countShots(id) {
+    let n = 0;
+    SB.Model.eachShot(P(), function (sh) {
+      if ((sh.personaIds || []).indexOf(id) >= 0) n++;
+    });
+    return n;
+  }
+
+  function setImage(per, src) {
+    return SB.downscaleImage(src).then(function (img) {
+      per.image = img;
+      SB.app.changed(true);
+      render();
+    }).catch(function (e) { SB.toast('Image failed: ' + e.message, true); });
+  }
+
+  function open() {
+    panel.classList.remove('hidden');
+    document.getElementById('btnPersonas').classList.add('on');
+    render();
+  }
+  function close() {
+    panel.classList.add('hidden');
+    document.getElementById('btnPersonas').classList.remove('on');
+  }
+  function toggle() { panel.classList.contains('hidden') ? open() : close(); }
+  function isOpen() { return panel && !panel.classList.contains('hidden'); }
+  function refresh() { if (isOpen()) render(); }
+
+  SB.PersonaPanel = {
+    init: init, open: open, close: close, toggle: toggle, isOpen: isOpen, refresh: refresh
+  };
+
+})(window.SB);
+
+</script>
+<script>
 /* ===== js/settings.js ===== */
 /* settings.js — tabbed: General · Models & templates · API. */
 (function (SB) {
@@ -3766,6 +4340,17 @@ window.SB = window.SB || {};
           tv.rows = 5; tv.value = m.videoTemplate;
           tv.oninput = function () { m.videoTemplate = tv.value; };
           row.appendChild(field('image→video template', tv));
+
+          const tr = document.createElement('textarea');
+          tr.rows = 3;
+          tr.value = m.referenceTemplate || SB.Personas.DEFAULT_REF_TEMPLATE;
+          tr.oninput = function () { m.referenceTemplate = tr.value; };
+          const trF = field('reference-image wording — how THIS model expects to be told about ' +
+            'persona references ({{N}} = image number, {{NAME}} = names)', tr);
+          row.appendChild(trF);
+          const trHint = SB.el('div', 'pp-note',
+            'Only used on shots that have cast. Leave blank for a model that takes no references.');
+          row.appendChild(trHint);
         }
         listHost.appendChild(row);
       });
@@ -3842,10 +4427,10 @@ window.SB = window.SB || {};
             const t = types.value.split('\n').map(function (s) { return s.trim(); })
               .filter(function (s) { return s; });
             p.settings.shotTypes = t.length ? t : SB.Model.DEFAULT_SHOT_TYPES.slice();
-            p.settings.brand = {
-              enabled: bChk.checked,
-              text: bText.value.trim() || SB.Brand.DEFAULT
-            };
+            const bTxt = bText.value.trim();
+            p.settings.brand = (bTxt && bTxt !== SB.Brand.DEFAULT.trim())
+              ? { enabled: bChk.checked, custom: true, text: bTxt }
+              : { enabled: bChk.checked, custom: false };
             p.settings.geminiModel = (chosenModel || '').trim() || SB.GeminiModels.DEFAULT;
             p.settings.models = working.filter(function (m) { return (m.name || '').trim(); })
               .map(function (m) { delete m.__open; return m; });
@@ -4141,6 +4726,7 @@ window.SB = window.SB || {};
     renderChrome();
     SB.ScriptMode.refresh();
     SB.PromptPanel.refresh();
+    SB.PersonaPanel.refresh();
   }
 
   /* ---------------- boot ---------------- */
@@ -4151,6 +4737,7 @@ window.SB = window.SB || {};
     }
     SB.ScriptMode.init();
     SB.PromptPanel.init();
+    SB.PersonaPanel.init();
     SB.Store.S.getProject = function () { return app.project; };
     SB.Store.S.onState = function (txt, cls) {
       const el = document.getElementById('saveState');
@@ -4231,6 +4818,8 @@ window.SB = window.SB || {};
       document.body.classList.toggle('comment-mode', app.commentMode);
       SB.Board.render();
     });
+
+    $('btnPersonas').addEventListener('click', function () { SB.PersonaPanel.toggle(); });
 
     $('btnPrompts').addEventListener('click', function () { SB.PromptPanel.toggle(); });
 

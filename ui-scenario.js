@@ -120,20 +120,61 @@
 
       SB.PromptPanel.close();
 
+      // personas
+      t('no cast row until personas exist',
+        document.querySelectorAll('.cast-row').length === 0, '');
+      var per1 = SB.Personas.add(P(), { name: 'Ops lead', description: 'Charcoal knit.' });
+      var per2 = SB.Personas.add(P(), { name: 'Technician', description: 'Navy work shirt.' });
+      per1.image = { data: 'data:image/gif;base64,R0lGODlhAQABAAAAACw=', w: 4, h: 3 };
+      SB.app.changed(true);
+      t('every card gains a cast row',
+        document.querySelectorAll('.cast-row').length === document.querySelectorAll('.card').length,
+        document.querySelectorAll('.cast-row').length);
+      SB.PersonaPanel.open();
+      t('persona panel opens', !document.getElementById('personaPanel').classList.contains('hidden'), '');
+      t('a card per persona', document.querySelectorAll('#personaBody .persona').length === 2,
+        document.querySelectorAll('#personaBody .persona').length);
+      t('description and image-prompt fields',
+        document.querySelectorAll('#personaBody .persona')[0].querySelectorAll('textarea').length === 2, '');
+      t('generate-from-script controls',
+        /Generate/.test(document.querySelector('#personaBody .pp-actions').textContent), '');
+
+      var castBtn = document.querySelector('.card .cast-row .cast-edit');
+      castBtn.click();
+      var castPop = document.querySelector('.cast-pop');
+      t('cast picker lists the personas',
+        castPop && castPop.querySelectorAll('input[type=checkbox]').length === 2,
+        castPop ? castPop.querySelectorAll('input[type=checkbox]').length : 'none');
+      castPop.querySelectorAll('input[type=checkbox]')[0].click();
+      var firstShot = SB.Model.findShot(P(), document.querySelector('.card').dataset.shot).shot;
+      t('casting a persona sticks', (firstShot.personaIds || []).length === 1, firstShot.personaIds);
+      t('the chip shows on the card',
+        /Ops lead/.test(document.querySelector('.card .cast-row').textContent), '');
+      castPop.remove();
+
+      var jobsCast = SB.Prompts.jobsFor(firstShot, SB.Model.imageModel(P()), SB.Model.videoModel(P()),
+        { image: true });
+      t('cast reaches the prompt request', /CAST/.test(jobsCast[0].system), '');
+      t('and carries the wardrobe', /Charcoal knit/.test(jobsCast[0].system), '');
+      t('and the reference-image numbering', /image 1 = Ops lead/.test(jobsCast[0].system), '');
+      SB.PersonaPanel.close();
+
       // the house style actually rides along on the request
       var im = SB.Model.imageModel(P()), vm = SB.Model.videoModel(P());
       var jobs = SB.Prompts.jobsFor(P().scenes[0].shots[0], im, vm, { image: true, video: true });
       t('separate models -> two jobs', jobs.length === 2, jobs.length);
       t('image job carries the house style', /HOUSE STYLE/.test(jobs[0].system), '');
-      t('image job carries scene continuity', /SCENE CONTINUITY/.test(jobs[0].system), '');
+      t('image job carries scene context', /SCENE CONTEXT/.test(jobs[0].system), '');
       t('video job gets the motion rules', /MOTION/.test(jobs[1].system), '');
       t('image job does not', !/MOTION/.test(jobs[0].system), '');
       var same = SB.Prompts.jobsFor(P().scenes[0].shots[0], im, im, { image: true, video: true });
       t('one model -> one job with both rulesets',
         same.length === 1 && /MOTION/.test(same[0].system) && /HOUSE STYLE/.test(same[0].system), same.length);
       P().settings.brand.enabled = false;
-      t('switching the house style off empties the system instruction',
-        SB.Prompts.jobsFor(P().scenes[0].shots[0], im, vm, { image: true })[0].system === '', '');
+      var offSys = SB.Prompts.jobsFor(P().scenes[0].shots[0], im, vm, { image: true })[0].system;
+      t('switching the house style off drops it from the request',
+        offSys.indexOf('HOUSE STYLE') < 0, offSys.slice(0, 40));
+      t('but the cast still travels', /CAST/.test(offSys), '');
       P().settings.brand.enabled = true;
 
       // theme
@@ -165,7 +206,7 @@
         document.querySelectorAll('.modal .tab-panel.on textarea').length);
       document.querySelectorAll('.modal .tab')[1].click();
       t('brand tab holds the house style',
-        /HOUSE STYLE|CREATIVE CONSTRAINTS/.test(
+        /CONSTRAINTS[\s\S]*STYLE & TONE/.test(
           document.querySelector('.modal .tab-panel.on textarea').value), '');
       t('house style can be switched off',
         document.querySelectorAll('.modal .tab-panel.on input[type=checkbox]').length === 1, '');
@@ -184,7 +225,7 @@
       document.querySelectorAll('.modal .tab')[2].click();
       document.querySelectorAll('.modal .model-row .mini')[0].click();
       t('templates open per model',
-        document.querySelectorAll('.modal .tab-panel.on textarea').length === 2,
+        document.querySelectorAll('.modal .tab-panel.on textarea').length === 3,
         document.querySelectorAll('.modal .tab-panel.on textarea').length);
       document.querySelector('.modal .foot .tb').click();
       SB.Versions.open();

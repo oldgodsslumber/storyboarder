@@ -48,13 +48,18 @@
   function jobsFor(shot, im, vm, roles) {
     const jobs = [];
     const wantI = roles.image && im, wantV = roles.video && vm;
-    const sys = function (role) { return SB.Brand.systemFor(P(), shot, role); };
+    const sys = function (role, model) {
+      const parts = [SB.Brand.systemFor(P(), shot, role)];
+      const cast = SB.Personas.block(P(), shot, model);
+      if (cast) parts.push(cast);
+      return parts.filter(Boolean).join('\n\n');
+    };
     if (wantI && wantV && im.id === vm.id) {
       jobs.push({
         text: PREAMBLE + 'Return JSON with the keys "imagePrompt" and "videoPrompt".\n\n' +
           imageBlock(shot, im) + '\n' + videoBlock(shot, vm),
         keys: ['imagePrompt', 'videoPrompt'],
-        system: sys('both'),
+        system: sys('both', im),
         targets: [{ model: im, field: 'imagePrompt' }, { model: vm, field: 'videoPrompt' }]
       });
       return jobs;
@@ -63,7 +68,7 @@
       jobs.push({
         text: PREAMBLE + 'Return JSON with the key "imagePrompt".\n\n' + imageBlock(shot, im),
         keys: ['imagePrompt'],
-        system: sys('image'),
+        system: sys('image', im),
         targets: [{ model: im, field: 'imagePrompt' }]
       });
     }
@@ -71,7 +76,7 @@
       jobs.push({
         text: PREAMBLE + 'Return JSON with the key "videoPrompt".\n\n' + videoBlock(shot, vm),
         keys: ['videoPrompt'],
-        system: sys('video'),
+        system: sys('video', vm),
         targets: [{ model: vm, field: 'videoPrompt' }]
       });
     }
@@ -112,12 +117,11 @@
   const NO_SCHEMA_HINT =
     '\n\nReply with ONLY the JSON object — start with { and end with }, no markdown fences.';
 
-  function callGemini(text, keys, system) {
+  /* One JSON-shaped question to the writer model. */
+  function ask(text, schema, system) {
     const key = SB.Store.getApiKey();
     if (!key) return Promise.reject(new Error('No Google API key. Add one in Settings → API.'));
     const mdl = P().settings.geminiModel || SB.GeminiModels.DEFAULT;
-    const props = {};
-    keys.forEach(function (k) { props[k] = { type: 'STRING' }; });
 
     /* Gemma takes neither a response schema nor a systemInstruction — it gets
      * both folded into the one user turn instead. */
@@ -127,7 +131,7 @@
       const gen = { temperature: 0.8 };
       if (withSchema) {
         gen.responseMimeType = 'application/json';
-        gen.responseSchema = { type: 'OBJECT', properties: props, required: keys };
+        gen.responseSchema = schema;
       }
       let user = withSchema ? text : text + NO_SCHEMA_HINT;
       const body = { generationConfig: gen };
@@ -162,6 +166,12 @@
         return JSON.parse(m[0]);
       }
     });
+  }
+
+  function callGemini(text, keys, system) {
+    const props = {};
+    keys.forEach(function (k) { props[k] = { type: 'STRING' }; });
+    return ask(text, { type: 'OBJECT', properties: props, required: keys }, system);
   }
 
   function store(shot, model, field, value, flagged) {
@@ -269,7 +279,7 @@
 
   SB.Prompts = {
     generateFor: generateFor, allShots: allShots, sceneShots: sceneShots,
-    jobsFor: jobsFor, fill: fill
+    jobsFor: jobsFor, fill: fill, raw: ask
   };
 
 })(window.SB);

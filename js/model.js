@@ -24,7 +24,11 @@
     'SHOT DESCRIPTION:\n{{DESCRIPTION}}';
 
   function model(name, kind) {
-    return { id: SB.uid('m'), name: name, kind: kind, imageTemplate: IMG_TPL, videoTemplate: VID_TPL };
+    return {
+      id: SB.uid('m'), name: name, kind: kind,
+      imageTemplate: IMG_TPL, videoTemplate: VID_TPL,
+      referenceTemplate: SB.Personas.DEFAULT_REF_TEMPLATE
+    };
   }
 
   function defaultModels() {
@@ -61,6 +65,7 @@
       color: opts.color || CARD_COLORS[0],
       link: opts.link || null,          // {from,to} into master, or null = freestanding
       local: opts.link ? null : SB.Doc.make(opts.text || ''),
+      personaIds: [],                   // who appears in this shot
       broken: false,
       description: '',
       image: null,                      // {data,w,h}
@@ -87,6 +92,7 @@
       createdAt: Date.now(),
       updatedAt: Date.now(),
       master: SB.Doc.make(''),
+      personas: [],
       scenes: [newScene('Scene one')],
       versionNumber: 1,
       versionName: 'v1',
@@ -97,7 +103,7 @@
         imageModelId: null,
         videoModelId: null,
         geminiModel: SB.GeminiModels.DEFAULT,
-        brand: { enabled: true, text: SB.Brand.DEFAULT },
+        brand: { enabled: true, custom: false },
         // prompt boxes stay off the cards until the user asks for them
         showImagePrompt: false,
         showVideoPrompt: false
@@ -119,6 +125,13 @@
     p.master = p.master && typeof p.master.text === 'string' ? p.master : SB.Doc.make('');
     p.master.marks = p.master.marks || { b: [], i: [], u: [] };
     ['b', 'i', 'u'].forEach(function (t) { p.master.marks[t] = p.master.marks[t] || []; });
+    p.personas = Array.isArray(p.personas) ? p.personas : [];
+    p.personas.forEach(function (x) {
+      x.id = x.id || SB.uid('per');
+      x.name = x.name || 'Persona';
+      x.description = x.description || '';
+      x.imagePrompt = x.imagePrompt || '';
+    });
     p.scenes = Array.isArray(p.scenes) ? p.scenes : [];
     if (!p.scenes.length) p.scenes.push(newScene('Scene one'));
     p.versionNumber = p.versionNumber || 1;
@@ -132,6 +145,9 @@
       m.kind = m.kind || 'video';
       m.imageTemplate = m.imageTemplate || IMG_TPL;
       m.videoTemplate = m.videoTemplate || VID_TPL;
+      if (typeof m.referenceTemplate !== 'string') {
+        m.referenceTemplate = SB.Personas.DEFAULT_REF_TEMPLATE;
+      }
     });
     const has = function (id) { return s.models.some(function (m) { return m.id === id; }); };
     // older files carried a single activeModelId
@@ -147,7 +163,9 @@
     s.geminiModel = SB.GeminiModels.normalize(s.geminiModel);
     s.brand = (s.brand && typeof s.brand === 'object') ? s.brand : {};
     if (typeof s.brand.enabled !== 'boolean') s.brand.enabled = true;
-    if (typeof s.brand.text !== 'string' || !s.brand.text.trim()) s.brand.text = SB.Brand.DEFAULT;
+    // only a hand-edited house style is stored; the rest follow the app's
+    if (typeof s.brand.custom !== 'boolean') s.brand.custom = false;
+    if (!s.brand.custom) delete s.brand.text;
     if (typeof s.showImagePrompt !== 'boolean') s.showImagePrompt = false;
     if (typeof s.showVideoPrompt !== 'boolean') s.showVideoPrompt = false;
 
@@ -174,6 +192,7 @@
         sh.description = sh.description || '';
         sh.comments = Array.isArray(sh.comments) ? sh.comments : [];
         sh.prompts = sh.prompts || {};
+        sh.personaIds = Array.isArray(sh.personaIds) ? sh.personaIds : [];
       });
     });
     return p;

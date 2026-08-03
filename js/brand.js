@@ -12,19 +12,11 @@
   'use strict';
 
   const DEFAULT_BRAND = [
-    'CREATIVE CONSTRAINTS',
-    '- Story sequence: the frames of a scene are consecutive beats in one narrative — a clear progression of action and moment.',
-    '- Consistent subject: the subject stays identical across every frame of the scene (matches the reference 100%).',
-    '- Consistent wardrobe: the subject stays in the same clothes across every frame of the scene (matches the reference 100%).',
-    '- Consistent environment + style: same location, same lighting mood, same overall aesthetic across the whole scene.',
+    'CONSTRAINTS',
     '- No gender references: do not mention or imply gender. Avoid gendered nouns, adjectives, titles and pronouns. Use only neutral language — "the subject", "the person", "they" — or omit pronouns entirely.',
     '- Cinematic + technical: maintain professional photographic detail — focal length, aperture, distance/angle, depth of field, and lighting notes for the frame.',
-    '',
-    'STYLE GUIDANCE',
-    '- Keep framing mostly tight (close-ups, partial crops, hands and face details), with a few wider shots for rhythm.',
-    '- Every scene needs one true wide angle that also works as a reference photo later.',
-    '- Vary angles subtly (slight high/low tilt, over-shoulder, profile, foreground obstructions) while staying coherent.',
-    '- Include tactile props or environmental elements that support the story (fabric, glass, rain, reflections, paper, steam) without changing location.',
+    '- Vary angles subtly (slight high/low tilt, over-shoulder, profile, foreground obstructions) while staying coherent with the rest of the scene.',
+    '- Include tactile props or environmental elements that support the story (fabric, glass, rain, reflections, paper, steam).',
     '- Finishing: "Capture RAW", "muted professional grade", "smooth tonal rolloff", "subtle cinematic grain", "controlled contrast".',
     '',
     'STYLE & TONE',
@@ -67,7 +59,7 @@
    * the frame starts moving. */
   const VIDEO_RIDER = [
     'MOTION',
-    '- The subject, the wardrobe and the location must not change during the shot.',
+    '- Wardrobe and location must not change during the shot.',
     '- Camera moves are restrained and motivated — no flourishes the scene has not earned.',
     '- Movement is documentary-real: the pace of an actual moment, not choreography.',
     '- Hold the natural-light look and the clean exposure through the whole move.'
@@ -101,32 +93,36 @@
     return out;
   }
 
+  /* A board only stores the house style once someone has edited it. Boards on
+   * the stock text follow the app, so a correction here reaches them. */
   function brandOf(p) {
     const b = (p.settings && p.settings.brand) || {};
+    const custom = !!(b.custom && typeof b.text === 'string' && b.text.trim());
     return {
       enabled: b.enabled !== false,
-      text: typeof b.text === 'string' && b.text.trim() ? b.text : DEFAULT_BRAND
+      custom: custom,
+      text: custom ? b.text : DEFAULT_BRAND
     };
   }
 
-  /* Everything the writer needs to keep this frame consistent with its
-   * neighbours: where the beat sits, and what the other beats are. */
+  /* Where this frame sits in its scene, so the writer isn't composing in a
+   * vacuum. Who is in it — and what they look like and wear — is the personas
+   * layer's job, not this one's. */
   function sequenceBlock(p, shot) {
     const f = SB.Model.findShot(p, shot.id);
     if (!f) return '';
     const scene = f.scene;
     const beats = scene.shots.filter(function (s) { return !s.noShot; });
     const pos = beats.indexOf(shot) + 1;
-    const wide = beats.filter(function (s) { return /wide|establish/i.test(s.type || ''); });
     const lines = [];
 
-    lines.push('SCENE CONTINUITY — this frame is one beat of a sequence, not a standalone image.');
+    lines.push('SCENE CONTEXT');
     lines.push('Scene ' + (f.sceneIdx + 1) + ': ' + (scene.heading || '(untitled)'));
     if (scene.description) lines.push('Scene note: ' + scene.description);
-    if (pos > 0) lines.push('This is beat ' + pos + ' of ' + beats.length + ' (shot ' + f.code + ').');
+    lines.push('This is shot ' + f.code + (pos > 0 ? ' (beat ' + pos + ' of ' + beats.length + ')' : '') + '.');
 
     if (beats.length > 1) {
-      lines.push('The full beat list, in order — keep the subject, the wardrobe, the location and the grade identical across all of them:');
+      lines.push('The other beats in this scene, in order:');
       beats.forEach(function (s, i) {
         const sf = SB.Model.findShot(p, s.id);
         const d = (s.description || '').replace(/\s+/g, ' ').trim();
@@ -134,19 +130,7 @@
           (d ? (d.length > 160 ? d.slice(0, 157) + '…' : d) : '(no description yet)') +
           (s.id === shot.id ? '   <-- the frame you are writing' : ''));
       });
-    }
-
-    if (wide.length) {
-      const codes = wide.map(function (s) {
-        const sf = SB.Model.findShot(p, s.id);
-        return sf ? sf.code : '?';
-      }).join(', ');
-      lines.push('The wide/reference frame for this scene is ' + codes +
-        (wide.indexOf(shot) >= 0
-          ? ' — this one. Make it work as a standalone reference photo of the subject and the location.'
-          : '. Stay consistent with it.'));
-    } else {
-      lines.push('No wide frame exists in this scene yet. If this is the widest beat, compose it so it can double as a reference photo of the subject and the location.');
+      lines.push('Keep the location, the lighting mood and the grade coherent across these beats.');
     }
     return lines.join('\n');
   }
