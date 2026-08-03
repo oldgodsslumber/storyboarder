@@ -168,6 +168,10 @@ console.log('\n— gemini model list —');
   eq(G.normalize('gemini-flash-latest'), G.DEFAULT, 'retired alias falls back too');
   eq(G.normalize('gemini-2.5-pro'), 'gemini-2.5-pro', 'a live id is left alone');
   eq(G.normalize('some-custom-id'), 'some-custom-id', 'a custom id is left alone');
+  eq(G.LIST.some(m => m.id === 'gemma-4-31b-it'), true, 'Gemma 4 31B is offered');
+  eq(G.isGemma('gemma-4-31b-it'), true, 'gemma is recognised (it has no JSON mode)');
+  eq(G.isGemma('gemini-3.6-flash'), false, 'gemini is not treated as gemma');
+  eq(G.limit('gemma-4-31b-it'), 1500, 'gemma ships with its larger free quota');
 
   const p = SB.Model.newProject();
   eq(p.settings.geminiModel, G.DEFAULT, 'new projects start on the default');

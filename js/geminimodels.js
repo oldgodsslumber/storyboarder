@@ -23,8 +23,14 @@
     { id: 'gemini-3-flash-preview', label: 'Gemini 3 Flash (preview)' },
     { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash — older price/performance' },
     { id: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash-Lite — older, budget' },
-    { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro — older, deep reasoning' }
+    { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro — older, deep reasoning' },
+    { id: 'gemma-4-31b-it', label: 'Gemma 4 31B — open model, large free quota' }
   ];
+
+  /* Gemma is served through the same endpoint but is not a Gemini model: it
+   * has no JSON mode, so prompts.js asks it for JSON in words instead of
+   * sending a responseSchema. */
+  function isGemma(id) { return /^gemma/i.test(String(id || '')); }
 
   /* ids Google has shut down — anything pointing at these gets moved to DEFAULT */
   const RETIRED = [
@@ -40,7 +46,10 @@
    */
   const USAGE_KEY = 'sb.geminiUsage';
   const LIMITS_KEY = 'sb.geminiLimits';
-  const DEFAULT_LIMITS = { 'gemini-2.5-flash': 20, 'gemini-2.5-flash-lite': 20 };
+  const DEFAULT_LIMITS = {
+    'gemini-2.5-flash': 20, 'gemini-2.5-flash-lite': 20,
+    'gemma-4-31b-it': 1500
+  };
 
   function today() {
     const d = new Date();
@@ -227,7 +236,7 @@
 
   SB.GeminiModels = {
     DEFAULT: DEFAULT, LIST: LIST, RETIRED: RETIRED,
-    options: options, isRetired: isRetired, normalize: normalize,
+    options: options, isRetired: isRetired, normalize: normalize, isGemma: isGemma,
     fetchAvailable: fetchAvailable, clearCache: clearCache, picker: picker,
     bump: bump, count: count, markExhausted: markExhausted,
     limit: limit, setLimit: setLimit, remaining: remaining, usageText: usageText

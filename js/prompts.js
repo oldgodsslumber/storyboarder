@@ -74,20 +74,7 @@
     return jobs;
   }
 
-  function callGemini(text, keys) {
-    const key = SB.Store.getApiKey();
-    if (!key) return Promise.reject(new Error('No Google API key. Add one in Settings → API.'));
-    const mdl = P().settings.geminiModel || SB.GeminiModels.DEFAULT;
-    const props = {};
-    keys.forEach(function (k) { props[k] = { type: 'STRING' }; });
-    const body = {
-      contents: [{ role: 'user', parts: [{ text: text }] }],
-      generationConfig: {
-        temperature: 0.8,
-        responseMimeType: 'application/json',
-        responseSchema: { type: 'OBJECT', properties: props, required: keys }
-      }
-    };
+  function request(mdl, key, body) {
     return fetch(ENDPOINT + encodeURIComponent(mdl) + ':generateContent?key=' + encodeURIComponent(key), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -97,20 +84,60 @@
         if (!r.ok) {
           let msg = t;
           try { msg = JSON.parse(t).error.message; } catch (e) { }
+          let err;
           if (r.status === 429) {
             SB.GeminiModels.markExhausted(mdl);
-            throw new Error('Gemini 429 — daily/rate limit reached for ' + mdl +
+            err = new Error('Gemini 429 — daily/rate limit reached for ' + mdl +
               '. Pick another model in the Prompts panel. (' + msg + ')');
-          }
-          if (r.status === 404) {
-            throw new Error('Gemini 404 — "' + mdl + '" is not available to this key. ' +
+          } else if (r.status === 404) {
+            err = new Error('Gemini 404 — "' + mdl + '" is not available to this key. ' +
               'Settings → API → refresh the model list. (' + msg + ')');
+          } else {
+            err = new Error('Gemini ' + r.status + ': ' + msg);
           }
-          throw new Error('Gemini ' + r.status + ': ' + msg);
+          err.status = r.status;
+          err.raw = msg;
+          throw err;
         }
         SB.GeminiModels.bump(mdl);
         return JSON.parse(t);
       });
+    });
+  }
+
+  const NO_SCHEMA_HINT =
+    '\n\nReply with ONLY the JSON object — start with { and end with }, no markdown fences.';
+
+  function callGemini(text, keys) {
+    const key = SB.Store.getApiKey();
+    if (!key) return Promise.reject(new Error('No Google API key. Add one in Settings → API.'));
+    const mdl = P().settings.geminiModel || SB.GeminiModels.DEFAULT;
+    const props = {};
+    keys.forEach(function (k) { props[k] = { type: 'STRING' }; });
+
+    function build(withSchema) {
+      const gen = { temperature: 0.8 };
+      if (withSchema) {
+        gen.responseMimeType = 'application/json';
+        gen.responseSchema = { type: 'OBJECT', properties: props, required: keys };
+      }
+      return {
+        contents: [{ role: 'user', parts: [{ text: withSchema ? text : text + NO_SCHEMA_HINT }] }],
+        generationConfig: gen
+      };
+    }
+
+    /* Gemma runs on the same endpoint but has no JSON mode — ask it in words.
+     * Any other model that rejects the schema gets the same treatment on retry. */
+    const useSchema = !SB.GeminiModels.isGemma(mdl);
+
+    return request(mdl, key, build(useSchema)).catch(function (e) {
+      const schemaProblem = /schema|json|mime|not supported|unsupported|invalid argument/i
+        .test(String(e.raw || e.message || ''));
+      if (useSchema && e.status === 400 && schemaProblem) {
+        return request(mdl, key, build(false));
+      }
+      throw e;
     }).then(function (data) {
       const cand = data.candidates && data.candidates[0];
       const part = cand && cand.content && cand.content.parts && cand.content.parts[0];
