@@ -315,6 +315,59 @@ button,input,select,textarea{font:inherit;color:inherit}
 .draw-tools .sw{width:20px;height:20px;border-radius:50%;border:2px solid transparent;cursor:pointer}
 .draw-tools .sw.on{border-color:#fff}
 
+/* ---------- data readout ---------- */
+.size-state{
+  background:none;border:1px solid transparent;border-radius:4px;padding:2px 6px;
+  color:var(--fg-dim);font-size:11px;cursor:pointer;font-variant-numeric:tabular-nums;
+}
+.size-state:hover{border-color:var(--line);color:var(--fg)}
+.size-state.over{color:var(--danger);font-weight:600}
+
+.usage .stat-row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px}
+.stat-tile{
+  flex:1 1 160px;border:1px solid var(--line);border-radius:8px;
+  background:var(--bg3);padding:10px 12px;
+}
+.stat-label{font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--fg-dim)}
+.stat-value{font-size:22px;font-weight:700;line-height:1.2;margin:2px 0;font-variant-numeric:tabular-nums}
+.stat-note{font-size:11px;color:var(--fg-dim)}
+
+.usage-h{font-size:12px;text-transform:uppercase;letter-spacing:.6px;color:var(--fg-dim);margin:18px 0 8px}
+.usage-bar{
+  display:flex;gap:2px;height:22px;border-radius:4px;overflow:hidden;background:var(--bg);
+}
+.usage-seg{display:block;min-width:3px}
+.usage-table{width:100%;border-collapse:collapse;margin-top:10px;font-size:12px}
+.usage-table th{
+  text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.5px;
+  color:var(--fg-dim);font-weight:600;padding:4px 6px;border-bottom:1px solid var(--line);
+}
+.usage-table td{padding:4px 6px;border-bottom:1px solid var(--line)}
+.usage-table td.num,.usage-table th:nth-child(3),.usage-table th:nth-child(4){
+  text-align:right;font-variant-numeric:tabular-nums;
+}
+.usage-table td:first-child{width:18px}
+.usage-dot{display:inline-block;width:10px;height:10px;border-radius:3px}
+.usage-heavy{font-size:12px}
+.usage-heavy-row{
+  display:flex;justify-content:space-between;gap:10px;padding:3px 6px;
+  border-bottom:1px dotted var(--line);
+}
+.usage-heavy-row .num{font-variant-numeric:tabular-nums;color:var(--fg-dim)}
+.usage-verdict{
+  border-left:3px solid var(--ok);padding:8px 10px;background:var(--bg3);
+  border-radius:0 6px 6px 0;font-size:12.5px;
+}
+.usage-verdict.bad{border-left-color:var(--danger)}
+.usage-verdict.warn{border-left-color:var(--accent2)}
+.usage-check.warn .usage-mark{color:var(--accent2)}
+.usage-checks{margin-top:10px;display:flex;flex-direction:column;gap:8px}
+.usage-check{display:flex;gap:8px;align-items:flex-start;font-size:12px}
+.usage-mark{color:var(--ok);font-weight:700;flex:0 0 14px}
+.usage-check.bad .usage-mark{color:var(--danger)}
+.usage-check-label{font-weight:600}
+.usage-check-detail{color:var(--fg-dim);font-size:11.5px}
+
 /* ---------- toast ---------- */
 #toastRoot{position:fixed;bottom:14px;left:50%;transform:translateX(-50%);z-index:80;display:flex;flex-direction:column;gap:6px;align-items:center}
 .toast{
@@ -463,6 +516,7 @@ body.comment-mode .frame{cursor:crosshair}
       <button id="btnSaveAs" class="tb">Save as…</button>
       <button id="btnCopy" class="tb" title="Download a standalone copy of this board">Copy</button>
       <span id="saveState" class="save-state">no file</span>
+      <button id="sizeState" class="size-state" title="Data in this project">—</button>
     </div>
 
     <div class="tb-sep"></div>
@@ -1928,7 +1982,10 @@ window.SB = window.SB || {};
     writing: false,
     lastSaved: 0,
     onState: null,
-    getProject: null   // set by app: () => project
+    getProject: null,  // set by app: () => project
+    /* what this session has actually pushed to disk — the numbers a backend
+     * would have to carry */
+    stats: { writes: 0, bytes: 0, since: Date.now(), lastBytes: 0 }
   };
 
   const hasFS = typeof window.showSaveFilePicker === 'function';
@@ -2048,7 +2105,11 @@ window.SB = window.SB || {};
       S.dirty = false;
       S.lastSaved = Date.now();
       S.lastGood = text;                     // the rescue copy
+      S.stats.writes++;
+      S.stats.lastBytes = (SB.Usage ? SB.Usage.bytes(text) : text.length);
+      S.stats.bytes += S.stats.lastBytes;
       state('saved ' + new Date().toLocaleTimeString(), 'saved');
+      if (S.onSaved) S.onSaved(S.stats);
       if (S.pending) { S.pending = false; return writeNow(); }
     }).catch(function (e) {
       S.writing = false;
@@ -2155,6 +2216,14 @@ window.SB = window.SB || {};
     return true;
   }
 
+  /* Saves per day at the rate this session has been going. Needs a few
+   * minutes of real work before it means anything. */
+  function saveRate() {
+    const mins = (Date.now() - S.stats.since) / 60000;
+    if (S.stats.writes < 3 || mins < 1) return null;
+    return { perHour: S.stats.writes / (mins / 60), perDay: (S.stats.writes / (mins / 60)) * 8 };
+  }
+
   /* Does this context have a working IndexedDB? On file:// it hangs rather
    * than failing, so "remember the last project" quietly cannot work there. */
   function storageUsable() {
@@ -2175,7 +2244,182 @@ window.SB = window.SB || {};
     setApiKey: setApiKey,
     serialize: serialize,
     downloadCopy: downloadCopy,
-    storageUsable: storageUsable
+    storageUsable: storageUsable,
+    saveRate: saveRate
+  };
+
+})(window.SB);
+
+</script>
+<script>
+/* ===== js/usage.js ===== */
+/* usage.js — how much data a board is, and what it would cost to sync.
+ *
+ * Everything here is measured, not estimated: the byte counts come from the
+ * exact string the app writes to disk, so what you see is what a backend would
+ * have to store and move.
+ */
+(function (SB) {
+  'use strict';
+
+  const enc = (typeof TextEncoder === 'function') ? new TextEncoder() : null;
+
+  function bytes(s) {
+    if (!s) return 0;
+    return enc ? enc.encode(s).length : String(s).length;
+  }
+
+  function fmt(n) {
+    if (n < 1024) return n + ' B';
+    if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+    if (n < 1024 * 1024 * 1024) return (n / (1024 * 1024)).toFixed(2) + ' MB';
+    return (n / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+  }
+
+  /* Fixed order, validated for colour-vision deficiency against both the light
+   * and the dark board surface. Never reorder or cycle these. */
+  const SECTION_COLORS = ['#3b82f6', '#d97706', '#0d9488', '#c026d3', '#65a30d'];
+  const OTHER_COLOR = '#8b93a3';
+
+  function measure(p) {
+    const total = bytes(SB.Store.serialize(p));
+
+    let frames = 0, framesN = 0, ink = 0, inkN = 0;
+    SB.Model.eachShot(p, function (sh) {
+      if (sh.image && sh.image.data) { frames += bytes(sh.image.data); framesN++; }
+      if (sh.annotation) { ink += bytes(sh.annotation); inkN++; }
+    });
+
+    let refs = 0, refsN = 0;
+    (p.personas || []).forEach(function (per) {
+      if (per.image && per.image.data) { refs += bytes(per.image.data); refsN++; }
+    });
+
+    const versions = (p.versions && p.versions.length) ? bytes(JSON.stringify(p.versions)) : 0;
+    const rest = Math.max(0, total - frames - refs - ink - versions);
+
+    let shots = 0;
+    SB.Model.eachShot(p, function () { shots++; });
+
+    const sections = [
+      { key: 'frames', label: 'Shot frames', n: framesN, b: frames, color: SECTION_COLORS[0] },
+      { key: 'refs', label: 'Persona references', n: refsN, b: refs, color: SECTION_COLORS[1] },
+      { key: 'ink', label: 'Comment ink', n: inkN, b: ink, color: SECTION_COLORS[2] },
+      { key: 'versions', label: 'Saved versions', n: (p.versions || []).length, b: versions, color: SECTION_COLORS[3] },
+      { key: 'text', label: 'Script, prompts, structure', n: shots, b: rest, color: SECTION_COLORS[4] }
+    ].filter(function (s) { return s.b > 0; });
+
+    /* the individual images worth knowing about */
+    const heavy = [];
+    SB.Model.eachShot(p, function (sh, sc, i, j) {
+      if (sh.image && sh.image.data) {
+        heavy.push({ label: SB.Model.code(i, j) + ' frame', b: bytes(sh.image.data) });
+      }
+      if (sh.annotation) heavy.push({ label: SB.Model.code(i, j) + ' ink', b: bytes(sh.annotation) });
+    });
+    (p.personas || []).forEach(function (per) {
+      if (per.image && per.image.data) {
+        heavy.push({ label: (per.name || 'persona') + ' reference', b: bytes(per.image.data) });
+      }
+    });
+    heavy.sort(function (a, b) { return b.b - a.b; });
+
+    return {
+      total: total,
+      sections: sections,
+      heaviest: heavy.slice(0, 6),
+      imageBytes: frames + refs + ink,
+      textBytes: total - frames - refs - ink - versions,
+      versionBytes: versions,
+      counts: {
+        scenes: p.scenes.length, shots: shots, personas: (p.personas || []).length,
+        versions: (p.versions || []).length, images: framesN + refsN + inkN,
+        scriptChars: p.master.text.length
+      }
+    };
+  }
+
+  /* ---- what this would mean on Firebase ----
+   * Figures checked against Google's docs, Aug 2026:
+   *   Firestore document ceiling ....... 1 MiB (1,048,576 bytes), hard
+   *   Spark (free) Firestore ........... 1 GiB stored, 20k writes/day,
+   *                                      50k reads/day, 20k deletes/day
+   *   Cloud Storage .................... not on Spark — needs Blaze
+   */
+  const FS_DOC_LIMIT = 1048576;
+  const SPARK_STORE = 1024 * 1024 * 1024;
+  const SPARK_WRITES = 20000;
+  const SPARK_READS = 50000;
+
+  function firebase(m, stats) {
+    const perDay = stats && stats.perDay ? stats.perDay : null;
+    const checks = [];
+
+    const pct = Math.round(m.total / FS_DOC_LIMIT * 100);
+    checks.push({
+      ok: m.total <= FS_DOC_LIMIT,
+      warn: m.total <= FS_DOC_LIMIT && pct >= 75,
+      label: 'Fits in one Firestore document',
+      detail: fmt(m.total) + ' of the hard 1 MiB ceiling' +
+        (m.total > FS_DOC_LIMIT
+          ? ' — over by ' + fmt(m.total - FS_DOC_LIMIT) + '. A board this size cannot be one document at any price.'
+          : ' (' + pct + '% used)' + (pct >= 75 ? ' — a few more frames and it stops fitting.' : '.'))
+    });
+
+    const textOnly = m.textBytes + m.versionBytes;
+    checks.push({
+      ok: textOnly <= FS_DOC_LIMIT,
+      label: 'Fits if the images live elsewhere',
+      detail: 'Without images the board is ' + fmt(textOnly) + ' — ' +
+        (textOnly <= FS_DOC_LIMIT
+          ? 'comfortably inside one document.'
+          : 'still over the 1 MiB ceiling; it would have to be split per scene.')
+    });
+
+    const boards = m.total > 0 ? Math.floor(SPARK_STORE / m.total) : 0;
+    checks.push({
+      ok: boards >= 20,
+      label: 'Boards inside the free 1 GiB',
+      detail: '≈ ' + boards.toLocaleString() + ' boards this size' +
+        (boards < 20 ? ' — the free tier fills up fast at this weight.' : '.')
+    });
+
+    checks.push({
+      ok: perDay === null || perDay <= SPARK_WRITES,
+      label: 'Autosave writes inside 20,000/day',
+      detail: perDay === null
+        ? 'No save activity measured yet in this session.'
+        : '≈ ' + Math.round(perDay).toLocaleString() + ' writes/day at the rate you have been working' +
+        (perDay > SPARK_WRITES
+          ? ' — over the free ceiling on its own.'
+          : ' (' + Math.round(perDay / SPARK_WRITES * 100) + '% of it, one editor).')
+    });
+
+    const dailyBytes = perDay ? perDay * m.total : 0;
+    checks.push({
+      ok: true,
+      label: 'Data moved per day, one editor',
+      detail: perDay
+        ? '≈ ' + fmt(dailyBytes) + ' uploaded — every autosave sends the whole board unless writes are made incremental.'
+        : 'Nothing measured yet.'
+    });
+
+    const verdict = (m.total <= FS_DOC_LIMIT && pct >= 75)
+      ? 'It fits today, at ' + pct + '% of the 1 MiB document ceiling — but frames are ' +
+      Math.round(m.imageBytes / Math.max(1, m.total) * 100) + '% of this board, so the next few shots break it.'
+      : m.total > FS_DOC_LIMIT
+      ? 'Not as one document. The images are what break it — Firestore\'s 1 MiB ceiling is hard, and Cloud Storage (the natural home for the frames) is not on the free Spark plan at all.'
+      : (perDay && perDay > SPARK_WRITES
+        ? 'Storage fits, but autosave-per-pause would burn through the 20,000 free writes a day.'
+        : 'This board would fit the free tier as a single document — keep an eye on it as frames get added.');
+
+    return { checks: checks, verdict: verdict, docLimit: FS_DOC_LIMIT, sparkWrites: SPARK_WRITES, sparkReads: SPARK_READS };
+  }
+
+  SB.Usage = {
+    measure: measure, firebase: firebase, fmt: fmt, bytes: bytes,
+    SECTION_COLORS: SECTION_COLORS, OTHER_COLOR: OTHER_COLOR,
+    FS_DOC_LIMIT: FS_DOC_LIMIT, SPARK_STORE: SPARK_STORE, SPARK_WRITES: SPARK_WRITES
   };
 
 })(window.SB);
@@ -4338,6 +4582,172 @@ window.SB = window.SB || {};
 
 </script>
 <script>
+/* ===== js/usagepanel.js ===== */
+/* usagepanel.js — the size readout: what this board weighs, what it moves,
+ * and whether it could live on Firebase's free tier. */
+(function (SB) {
+  'use strict';
+
+  const fmt = function (n) { return SB.Usage.fmt(n); };
+
+  function P() { return SB.app.project; }
+
+  /* the small always-on readout in the top bar */
+  function refreshBadge() {
+    const el = document.getElementById('sizeState');
+    if (!el || !P()) return;
+    let m;
+    try { m = SB.Usage.measure(P()); } catch (e) { return; }
+    el.textContent = fmt(m.total);
+    el.title = 'This board is ' + fmt(m.total) + ' — ' +
+      Math.round(m.imageBytes / Math.max(1, m.total) * 100) + '% images. Click for the breakdown.';
+    el.classList.toggle('over', m.total > SB.Usage.FS_DOC_LIMIT);
+  }
+
+  function tile(label, value, note) {
+    const d = SB.el('div', 'stat-tile');
+    d.appendChild(SB.el('div', 'stat-label', label));
+    d.appendChild(SB.el('div', 'stat-value', value));
+    if (note) d.appendChild(SB.el('div', 'stat-note', note));
+    return d;
+  }
+
+  function open() {
+    const p = P();
+    const m = SB.Usage.measure(p);
+    const rate = SB.Store.saveRate();
+    const stats = SB.Store.S.stats;
+    const fb = SB.Usage.firebase(m, rate);
+
+    const body = SB.el('div', 'usage');
+
+    /* ---- headline numbers ---- */
+    const tiles = SB.el('div', 'stat-row');
+    tiles.appendChild(tile('This board', fmt(m.total),
+      m.counts.shots + ' shots · ' + m.counts.scenes + ' scenes · ' + m.counts.images + ' images'));
+    tiles.appendChild(tile('Images are', Math.round(m.imageBytes / Math.max(1, m.total) * 100) + '%',
+      fmt(m.imageBytes) + ' of the file'));
+    tiles.appendChild(tile('Saved this session', stats.writes.toLocaleString() + '×',
+      fmt(stats.bytes) + ' written' + (rate ? ' · ≈' + Math.round(rate.perHour) + '/hour' : '')));
+    body.appendChild(tiles);
+
+    /* ---- the breakdown ---- */
+    body.appendChild(SB.el('h3', 'usage-h', 'Where the bytes are'));
+    const bar = SB.el('div', 'usage-bar');
+    m.sections.forEach(function (s) {
+      const seg = SB.el('span', 'usage-seg');
+      seg.style.background = s.color;
+      seg.style.flexGrow = String(Math.max(0.4, s.b / Math.max(1, m.total) * 100));
+      seg.title = s.label + ' — ' + fmt(s.b);
+      bar.appendChild(seg);
+    });
+    body.appendChild(bar);
+
+    /* the same numbers as text, because colour alone is never the encoding */
+    const table = SB.el('table', 'usage-table');
+    const thead = SB.el('tr');
+    ['', 'Part of the board', 'Size', 'Share'].forEach(function (h) {
+      thead.appendChild(SB.el('th', null, h));
+    });
+    table.appendChild(thead);
+    m.sections.forEach(function (s) {
+      const tr = SB.el('tr');
+      const sw = SB.el('td');
+      const dot = SB.el('span', 'usage-dot');
+      dot.style.background = s.color;
+      sw.appendChild(dot);
+      tr.appendChild(sw);
+      tr.appendChild(SB.el('td', null, s.label + (s.n ? ' (' + s.n + ')' : '')));
+      tr.appendChild(SB.el('td', 'num', fmt(s.b)));
+      tr.appendChild(SB.el('td', 'num', Math.round(s.b / Math.max(1, m.total) * 100) + '%'));
+      table.appendChild(tr);
+    });
+    body.appendChild(table);
+
+    if (m.heaviest.length) {
+      body.appendChild(SB.el('h3', 'usage-h', 'Heaviest single items'));
+      const h = SB.el('div', 'usage-heavy');
+      m.heaviest.forEach(function (x) {
+        const row = SB.el('div', 'usage-heavy-row');
+        row.appendChild(SB.el('span', null, x.label));
+        row.appendChild(SB.el('span', 'num', fmt(x.b)));
+        h.appendChild(row);
+      });
+      body.appendChild(h);
+    }
+
+    /* ---- firebase ---- */
+    body.appendChild(SB.el('h3', 'usage-h', 'On Firebase’s free (Spark) plan'));
+    const tight = fb.checks[0] && fb.checks[0].warn;
+    const verdict = SB.el('div', 'usage-verdict' +
+      (m.total > SB.Usage.FS_DOC_LIMIT ? ' bad' : (tight ? ' warn' : ' good')), fb.verdict);
+    body.appendChild(verdict);
+
+    const checks = SB.el('div', 'usage-checks');
+    fb.checks.forEach(function (c) {
+      const row = SB.el('div', 'usage-check' + (c.ok ? (c.warn ? ' warn' : '') : ' bad'));
+      row.appendChild(SB.el('span', 'usage-mark', c.ok ? (c.warn ? '!' : '✓') : '✕'));
+      const txt = SB.el('div');
+      txt.appendChild(SB.el('div', 'usage-check-label', c.label));
+      txt.appendChild(SB.el('div', 'usage-check-detail', c.detail));
+      row.appendChild(txt);
+      checks.appendChild(row);
+    });
+    body.appendChild(checks);
+
+    body.appendChild(SB.el('div', 'pp-note',
+      'Limits as published Aug 2026: a Firestore document is capped at 1 MiB (hard, not a quota); ' +
+      'Spark gives 1 GiB stored, 20,000 writes and 50,000 reads a day; Cloud Storage — where image ' +
+      'files would normally go — is not on Spark at all and needs the Blaze plan. ' +
+      'Rates here are measured from this session, extrapolated over an 8-hour day for one editor.'));
+
+    SB.modal({
+      title: 'Data in this project',
+      width: '760px',
+      body: body,
+      buttons: [
+        {
+          label: 'Copy report', onClick: function (close) {
+            navigator.clipboard.writeText(report(m, fb, stats, rate))
+              .then(function () { SB.toast('Report copied'); })
+              .catch(function () { SB.toast('Could not copy', true); });
+          }
+        },
+        { label: 'Close', primary: true }
+      ]
+    });
+  }
+
+  function report(m, fb, stats, rate) {
+    const lines = [];
+    lines.push('Storyboarder — data report for “' + P().name + '”');
+    lines.push('Total board: ' + fmt(m.total));
+    m.sections.forEach(function (s) {
+      lines.push('  ' + s.label + ': ' + fmt(s.b) +
+        ' (' + Math.round(s.b / Math.max(1, m.total) * 100) + '%)');
+    });
+    lines.push('Images: ' + fmt(m.imageBytes) + ' · text and structure: ' + fmt(m.textBytes));
+    lines.push('Saved ' + stats.writes + '× this session, ' + fmt(stats.bytes) + ' written' +
+      (rate ? ' (≈' + Math.round(rate.perHour) + '/hour, ≈' + Math.round(rate.perDay) + '/day)' : ''));
+    lines.push('');
+    lines.push('Firebase Spark:');
+    fb.checks.forEach(function (c) {
+      lines.push('  [' + (c.ok ? 'ok' : 'NO') + '] ' + c.label + ' — ' + c.detail);
+    });
+    lines.push('Verdict: ' + fb.verdict);
+    return lines.join('\n');
+  }
+
+  /* Measuring re-serialises the whole board, so the badge is never recomputed
+   * on the keystroke itself. */
+  const debouncedBadge = SB.debounce(refreshBadge, 1200);
+
+  SB.UsagePanel = { open: open, refreshBadge: refreshBadge, badgeSoon: debouncedBadge };
+
+})(window.SB);
+
+</script>
+<script>
 /* ===== js/settings.js ===== */
 /* settings.js — tabbed: General · Models & templates · API. */
 (function (SB) {
@@ -4859,6 +5269,7 @@ window.SB = window.SB || {};
       SB.Board.renderSceneList();
     }
     SB.Store.touch();
+    SB.UsagePanel.badgeSoon();
   };
 
   /* A change to shared script text: refresh every window onto the master. */
@@ -4885,6 +5296,7 @@ window.SB = window.SB || {};
     SB.ScriptMode.refresh();
     SB.PromptPanel.refresh();
     SB.PersonaPanel.refresh();
+    SB.UsagePanel.refreshBadge();
   }
 
   /* ---------------- boot ---------------- */
@@ -4897,6 +5309,7 @@ window.SB = window.SB || {};
     SB.PromptPanel.init();
     SB.PersonaPanel.init();
     SB.Store.S.getProject = function () { return app.project; };
+    SB.Store.S.onSaved = function () { SB.UsagePanel.refreshBadge(); };
     SB.Store.S.onState = function (txt, cls) {
       const el = document.getElementById('saveState');
       el.textContent = txt;
@@ -5026,6 +5439,7 @@ window.SB = window.SB || {};
     $('btnCopy').addEventListener('click', function () {
       if (!SB.Store.downloadCopy(app.project)) SB.toast('Nothing to copy yet', true);
     });
+    $('sizeState').addEventListener('click', function () { SB.UsagePanel.open(); });
 
     $('btnScript').addEventListener('click', function () { SB.ScriptMode.toggle(); });
 

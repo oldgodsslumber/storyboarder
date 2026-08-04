@@ -25,13 +25,13 @@ const sandbox = {
       removeItem: k => m.delete(k)
     };
   })(),
-  Uint8Array
+  Uint8Array, TextEncoder
 };
 sandbox.window = sandbox;
 vm.createContext(sandbox);
 
 for (const f of ['js/util.js', 'js/doc.js', 'js/geminimodels.js', 'js/brand.js',
-  'js/personas.js', 'js/model.js']) {
+  'js/personas.js', 'js/model.js', 'js/store.js', 'js/usage.js']) {
   vm.runInContext(readFileSync(join(root, f), 'utf8'), sandbox, { filename: f });
 }
 const SB = sandbox.SB;
@@ -318,9 +318,56 @@ console.log('\n— gendered language detector —');
   eq(g(''), [], 'empty text is fine');
 }
 
+console.log('\n— data usage tracker —');
+{
+  const U = SB.Usage;
+  eq(U.fmt(512), '512 B', 'bytes');
+  eq(U.fmt(2048), '2.0 KB', 'kilobytes');
+  eq(U.fmt(5 * 1024 * 1024), '5.00 MB', 'megabytes');
+  eq(U.bytes('abc'), 3, 'ascii byte count');
+  eq(U.bytes('é'), 2, 'utf-8 is counted in bytes, not characters');
+  eq(U.FS_DOC_LIMIT, 1048576, 'the Firestore document ceiling is 1 MiB');
+
+  const p = SB.Model.newProject();
+  const sc = p.scenes[0];
+  sc.shots = [];
+  const a = SB.Model.addShot(p, sc.id, {});
+  a.description = 'x'.repeat(500);
+  const img = 'data:image/jpeg;base64,' + 'A'.repeat(40000);
+  a.image = { data: img, w: 854, h: 480 };
+  a.annotation = 'data:image/png;base64,' + 'B'.repeat(8000);
+  SB.Personas.add(p, { name: 'Lead', image: { data: img, w: 854, h: 480 } });
+
+  const m = U.measure(p);
+  eq(m.total > 88000, true, 'total measures the real serialised board');
+  const sum = m.sections.reduce((n, s) => n + s.b, 0);
+  eq(sum, m.total, 'the breakdown adds up to the whole file exactly');
+  eq(m.counts.images, 3, 'frames, ink and references are all counted');
+  eq(m.sections.map(s => s.key).join(','), 'frames,refs,ink,text',
+    'sections keep their fixed order, empty ones dropped');
+  eq(m.heaviest[0].b >= m.heaviest[1].b, true, 'heaviest items are sorted');
+  eq(m.imageBytes > m.textBytes, true, 'images dominate a board with frames');
+
+  const fb = U.firebase(m, { perDay: 500 });
+  eq(fb.checks[0].ok, true, '90 KB fits in one Firestore document');
+  eq(fb.checks[3].ok, true, '500 writes/day is inside the free 20,000');
+
+  // a board that has outgrown a document (~40 KB a frame)
+  for (let i = 0; i < 30; i++) {
+    const s = SB.Model.addShot(p, sc.id, {});
+    s.image = { data: img, w: 854, h: 480 };
+  }
+  const big = U.measure(p);
+  eq(big.total > U.FS_DOC_LIMIT, true, 'a 31-frame board passes 1 MiB');
+  const fb2 = U.firebase(big, { perDay: 30000 });
+  eq(fb2.checks[0].ok, false, 'and is reported as not fitting a document');
+  eq(fb2.checks[1].ok, true, 'while the text-only board still would');
+  eq(fb2.checks[3].ok, false, '30,000 writes/day is over the free ceiling');
+  eq(/cannot be one document/.test(fb2.checks[0].detail), true, 'and it says so plainly');
+}
+
 console.log('\n— the API key never reaches the file —');
 {
-  vm.runInContext(readFileSync(join(root, 'js/store.js'), 'utf8'), sandbox, { filename: 'js/store.js' });
   const p = SB.Model.newProject();
   p.settings.geminiApiKey = 'AIzaSECRET';   // even if something stashed it there
   const written = JSON.parse(SB.Store.serialize(p));

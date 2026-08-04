@@ -18,7 +18,10 @@
     writing: false,
     lastSaved: 0,
     onState: null,
-    getProject: null   // set by app: () => project
+    getProject: null,  // set by app: () => project
+    /* what this session has actually pushed to disk — the numbers a backend
+     * would have to carry */
+    stats: { writes: 0, bytes: 0, since: Date.now(), lastBytes: 0 }
   };
 
   const hasFS = typeof window.showSaveFilePicker === 'function';
@@ -138,7 +141,11 @@
       S.dirty = false;
       S.lastSaved = Date.now();
       S.lastGood = text;                     // the rescue copy
+      S.stats.writes++;
+      S.stats.lastBytes = (SB.Usage ? SB.Usage.bytes(text) : text.length);
+      S.stats.bytes += S.stats.lastBytes;
       state('saved ' + new Date().toLocaleTimeString(), 'saved');
+      if (S.onSaved) S.onSaved(S.stats);
       if (S.pending) { S.pending = false; return writeNow(); }
     }).catch(function (e) {
       S.writing = false;
@@ -245,6 +252,14 @@
     return true;
   }
 
+  /* Saves per day at the rate this session has been going. Needs a few
+   * minutes of real work before it means anything. */
+  function saveRate() {
+    const mins = (Date.now() - S.stats.since) / 60000;
+    if (S.stats.writes < 3 || mins < 1) return null;
+    return { perHour: S.stats.writes / (mins / 60), perDay: (S.stats.writes / (mins / 60)) * 8 };
+  }
+
   /* Does this context have a working IndexedDB? On file:// it hangs rather
    * than failing, so "remember the last project" quietly cannot work there. */
   function storageUsable() {
@@ -265,7 +280,8 @@
     setApiKey: setApiKey,
     serialize: serialize,
     downloadCopy: downloadCopy,
-    storageUsable: storageUsable
+    storageUsable: storageUsable,
+    saveRate: saveRate
   };
 
 })(window.SB);

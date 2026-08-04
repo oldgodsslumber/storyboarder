@@ -219,6 +219,37 @@ written into the project file.
 shot code, scene heading, shot type, script and description. Comments, ink and “no shot”
 fragments are excluded. Print → *Save as PDF*.
 
+## Data tracker
+
+The top bar shows what the board currently weighs. Click it for the breakdown:
+
+- **Headline** — total size, what share of it is images, and how many times this session has
+  saved plus how many bytes that moved.
+- **Where the bytes are** — frames, persona references, comment ink, saved versions, and
+  script/prompts/structure. The parts add up to the file exactly (they're measured from the
+  string the app actually writes, not estimated), and every part is written out as text as
+  well as colour.
+- **Heaviest single items** — usually the frames, so you can see which ones.
+- **On Firebase's free (Spark) plan** — measured against the published limits, with a
+  verdict.
+
+Figures used, checked Aug 2026:
+
+| Limit | Value |
+|---|---|
+| Firestore document ceiling | **1 MiB (1,048,576 bytes)** — hard, not a quota |
+| Spark Firestore storage | 1 GiB |
+| Spark writes / reads per day | 20,000 / 50,000 |
+| Cloud Storage on Spark | **not available** — needs the Blaze plan |
+
+Sources: [Firestore quotas](https://firebase.google.com/docs/firestore/quotas),
+[Firebase pricing](https://firebase.google.com/pricing).
+
+Two things the tracker will tell you that matter for that decision: **saved versions and
+frames are nearly all of a board's weight**, and every autosave currently rewrites the whole
+board — so a naive "one project = one Firestore document" sync hits the 1 MiB wall long
+before it hits any quota.
+
 ## Premiere Pro panel
 
 `premiere-plugin/` is a UXP panel that builds a `.storyboard` file straight from a
@@ -250,6 +281,8 @@ js/doc.js         Doc + position transforms (the anchoring core)
 js/geminimodels.js writer model list, ListModels refresh, daily call counter
 js/model.js       project schema, numbering, all mutations
 js/store.js       File System Access autosave, API key in localStorage
+js/usage.js       size measurement + Firebase free-tier maths
+js/usagepanel.js  the data readout
 js/history.js     undo/redo for script text
 js/editor.js      contenteditable window onto a Doc slice
 js/board.js       scenes, cards, drag & drop

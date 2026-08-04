@@ -305,6 +305,30 @@
         })(), P().scenes.map(function (s) { return s.heading; }).join(','));
       })();
 
+      // data tracker
+      SB.UsagePanel.refreshBadge();
+      var badge = document.getElementById('sizeState');
+      t('the top bar shows the board size', /KB|MB|B$/.test(badge.textContent), badge.textContent);
+      var m0 = SB.Usage.measure(P());
+      P().scenes[0].shots[0].image = { data: 'data:image/jpeg;base64,' + 'A'.repeat(30000), w: 8, h: 6 };
+      var m1 = SB.Usage.measure(P());
+      t('adding a frame is reflected in the measurement', m1.total > m0.total + 29000,
+        m1.total - m0.total);
+      t('the breakdown adds up to the file', m1.sections.reduce(function (n, s) { return n + s.b; }, 0)
+        === m1.total, 'off by ' + (m1.total - m1.sections.reduce(function (n, s) { return n + s.b; }, 0)));
+      SB.UsagePanel.open();
+      t('the data panel opens', document.querySelectorAll('.usage').length === 1, '');
+      t('a segment per section',
+        document.querySelectorAll('.usage-seg').length === m1.sections.length,
+        document.querySelectorAll('.usage-seg').length + ' vs ' + m1.sections.length);
+      t('every section is also written out as text, not colour alone',
+        document.querySelectorAll('.usage-table tr').length === m1.sections.length + 1, '');
+      t('the Firebase verdict is shown',
+        document.querySelectorAll('.usage-check').length === 5, '');
+      t('it names the 1 MiB document ceiling',
+        /1 MiB/.test(document.querySelector('.usage-checks').textContent), '');
+      document.querySelector('.modal .foot .tb.on').click();
+
       // comment mode
       app.commentMode = true;
       SB.Board.render();
