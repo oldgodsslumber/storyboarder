@@ -68,6 +68,7 @@
       personaIds: [],                   // who appears in this shot
       broken: false,
       description: '',
+      fields: {},                       // extra text boxes, keyed by field id
       image: null,                      // {ref,w,h} into project.blobs
       annotation: null,                 // {ref} — transparent PNG overlay
       comments: [],
@@ -100,6 +101,7 @@
       versions: [],
       settings: {
         shotTypes: DEFAULT_SHOT_TYPES.slice(),
+        fields: SB.Fields.defaults(),
         models: defaultModels(),
         imageModelId: null,
         videoModelId: null,
@@ -158,6 +160,7 @@
     });
     const s = p.settings = p.settings || {};
     s.shotTypes = (s.shotTypes && s.shotTypes.length) ? s.shotTypes : DEFAULT_SHOT_TYPES.slice();
+    SB.Fields.migrate(p);
     s.models = (s.models && s.models.length) ? s.models : defaultModels();
     s.models.forEach(function (m) {
       m.id = m.id || SB.uid('m');
@@ -209,6 +212,7 @@
         }
         sh.broken = !!sh.broken;
         sh.description = sh.description || '';
+        sh.fields = (sh.fields && typeof sh.fields === 'object') ? sh.fields : {};
         sh.comments = Array.isArray(sh.comments) ? sh.comments : [];
         sh.prompts = sh.prompts || {};
         sh.personaIds = Array.isArray(sh.personaIds) ? sh.personaIds : [];

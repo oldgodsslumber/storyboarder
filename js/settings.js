@@ -17,7 +17,7 @@
 
     const tabs = SB.el('div', 'tabs');
     const panels = {};
-    const order = [['general', 'General'], ['brand', 'Brand style'],
+    const order = [['general', 'General'], ['fields', 'Card fields'], ['brand', 'Brand style'],
     ['models', 'Models & templates'], ['api', 'API']];
     order.forEach(function (t) {
       const b = SB.el('button', 'tab', t[1]);
@@ -51,6 +51,68 @@
     });
     themeSel.onchange = function () { SB.Theme.set(themeSel.value); };
     panels.general.appendChild(field('Appearance', themeSel));
+
+    /* ---------------- Card fields ---------------- */
+    panels.fields.appendChild(SB.el('div', 'pp-note',
+      'Extra text boxes under each card’s description, chosen per project. Anything filled ' +
+      'in is handed to the prompt writer too, and each one is available in a model template ' +
+      'as a placeholder.'));
+
+    const fieldHost = SB.el('div');
+    fieldHost.style.marginTop = '10px';
+    panels.fields.appendChild(fieldHost);
+
+    function drawFields() {
+      fieldHost.innerHTML = '';
+      SB.Fields.all(p).forEach(function (f) {
+        const row = SB.el('div', 'field-row');
+
+        const on = document.createElement('input');
+        on.type = 'checkbox';
+        on.checked = !!f.enabled;
+        on.title = 'Show this box on every card';
+        on.onchange = function () { f.enabled = on.checked; };
+        row.appendChild(on);
+
+        const name = document.createElement('input');
+        name.type = 'text';
+        name.value = f.label;
+        name.className = 'field-name';
+        name.oninput = function () {
+          f.label = name.value;
+          tag.textContent = '{{' + SB.Fields.placeholder(f) + '}}';
+        };
+        if (f.builtin) name.readOnly = true;
+        row.appendChild(name);
+
+        const tag = SB.el('code', 'field-tag', '{{' + SB.Fields.placeholder(f) + '}}');
+        row.appendChild(tag);
+
+        if (f.builtin) {
+          row.appendChild(SB.el('span', 'vmeta', 'built in'));
+        } else {
+          const del = SB.el('button', 'mini danger', 'remove');
+          del.onclick = function () {
+            let used = 0;
+            SB.Model.eachShot(p, function (sh) { if (SB.Fields.value(sh, f.id).trim()) used++; });
+            if (used && !confirm('Remove “' + f.label + '”? Text in it on ' + used +
+              ' card(s) is deleted with it.')) return;
+            SB.Fields.remove(p, f.id);
+            drawFields();
+          };
+          row.appendChild(del);
+        }
+        fieldHost.appendChild(row);
+      });
+
+      const add = SB.el('button', 'tb', '+ Add a field');
+      add.onclick = function () {
+        SB.Fields.add(p, 'New field');
+        drawFields();
+      };
+      fieldHost.appendChild(add);
+    }
+    drawFields();
 
     /* ---------------- Brand style ---------------- */
     const brand = SB.Brand.brandOf(p);
@@ -107,8 +169,12 @@
     panels.models.appendChild(SB.el('div', 'pp-note',
       'One entry per target model. The templates tell Gemini how to write for that model — ' +
       'Midjourney-style parameters, natural language, whatever it needs.'));
+    const fieldTags = SB.Fields.enabled(p).map(function (f) {
+      return '{{' + SB.Fields.placeholder(f) + '}}';
+    }).join(' ');
     const hint = SB.el('div', 'vmeta',
-      'Placeholders: {{MODEL}} {{SHOT_TYPE}} {{SCENE}} {{SCENE_DESC}} {{SCRIPT}} {{DESCRIPTION}} {{CODE}}');
+      'Placeholders: {{MODEL}} {{SHOT_TYPE}} {{SCENE}} {{SCENE_DESC}} {{SCRIPT}} {{DESCRIPTION}} {{CODE}}' +
+      (fieldTags ? ' · your fields: ' + fieldTags + ' (or {{FIELDS}} for all of them)' : ''));
     hint.style.margin = '6px 0 10px';
     panels.models.appendChild(hint);
 

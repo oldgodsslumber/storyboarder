@@ -31,7 +31,7 @@ sandbox.window = sandbox;
 vm.createContext(sandbox);
 
 for (const f of ['js/util.js', 'js/doc.js', 'js/blobs.js', 'js/geminimodels.js', 'js/brand.js',
-  'js/personas.js', 'js/model.js', 'js/store.js', 'js/usage.js']) {
+  'js/personas.js', 'js/fields.js', 'js/model.js', 'js/store.js', 'js/usage.js']) {
   vm.runInContext(readFileSync(join(root, f), 'utf8'), sandbox, { filename: f });
 }
 const SB = sandbox.SB;
@@ -402,6 +402,47 @@ console.log('\n— old boards migrate, and versions stop duplicating frames —'
   eq(B.has(p, junk), true, 'stored');
   B.gc(p);
   eq(B.has(p, junk), false, 'an image nothing points at is collected');
+}
+
+console.log('\n— per-project card fields —');
+{
+  const F = SB.Fields;
+  const p = SB.Model.newProject();
+  const shot = p.scenes[0].shots[0];
+
+  eq(F.all(p).map(f => f.id).join(','), 'artDirection,context,sfx', 'ships with the three asked for');
+  eq(F.enabled(p).length, 0, 'all off until wanted — cards stay as they were');
+  eq(F.placeholder(F.find(p, 'artDirection')), 'ART_DIRECTION', 'built-ins have stable placeholders');
+  eq(F.placeholder(F.find(p, 'sfx')), 'SFX', 'including SFX');
+
+  F.find(p, 'artDirection').enabled = true;
+  F.set(shot, 'artDirection', 'Warm practicals, no overheads.');
+  eq(F.enabled(p).length, 1, 'switching one on shows it');
+  eq(F.value(shot, 'artDirection'), 'Warm practicals, no overheads.', 'the text lives on the shot');
+  eq(/ART DIRECTION:\nWarm practicals/.test(F.promptBlock(p, shot)), true,
+    'and reaches the prompt writer');
+  eq(F.placeholders(p, shot).ART_DIRECTION, 'Warm practicals, no overheads.',
+    'usable as a template placeholder');
+
+  const custom = F.add(p, 'Client note');
+  eq(F.placeholder(custom), 'CLIENT_NOTE', 'a custom field gets a placeholder from its label');
+  F.set(shot, custom.id, 'They want the logo visible.');
+  eq(F.promptBlock(p, shot).indexOf('CLIENT NOTE:') > 0, true, 'custom fields travel too');
+
+  const p2 = SB.Model.migrate(SB.clone(p));
+  eq(p2.settings.fields.length, 4, 'the set is part of the project and survives a round trip');
+  eq(F.value(p2.scenes[0].shots[0], 'artDirection'), 'Warm practicals, no overheads.',
+    'so do the values');
+
+  F.remove(p, custom.id);
+  eq(F.all(p).length, 3, 'a custom field can be removed');
+  eq(F.value(shot, custom.id), '', 'and its text goes with it');
+
+  // an old file that predates fields entirely
+  const older = SB.Model.newProject();
+  delete older.settings.fields;
+  SB.Fields.migrate(older);
+  eq(older.settings.fields.length, 3, 'older projects gain the built-ins');
 }
 
 console.log('\n— data usage tracker —');

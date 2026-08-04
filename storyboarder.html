@@ -28,6 +28,9 @@
   --hl2:rgba(91,141,255,.36);
   --hl3:rgba(255,179,71,.42);
   --card-radius:8px;
+  /* how much of a card's colour shows through it */
+  --card-tint:20%;
+  --card-tint-strong:34%;
 }
 
 :root[data-theme="light"]{
@@ -50,6 +53,9 @@
   --hl1:rgba(37,99,235,.15);
   --hl2:rgba(37,99,235,.30);
   --hl3:rgba(180,83,9,.30);
+  /* the same hues sit heavier on a light surface, so less of them */
+  --card-tint:13%;
+  --card-tint-strong:24%;
 }
 
 *{box-sizing:border-box}
@@ -167,9 +173,13 @@ button,input,select,textarea{font:inherit;color:inherit}
 .scene-block.drag-over > .scene-head{border-color:var(--accent);background:var(--bg3)}
 
 /* ---------- shot card ---------- */
+/* A card's colour washes the whole card, not a stripe down its edge. The
+   inner text boxes keep their own surface so nothing loses contrast. */
 .card{
-  width:280px;background:var(--bg2);border:1px solid var(--line);
-  border-left:5px solid var(--line2);border-radius:var(--card-radius);
+  --card-color:var(--line2);
+  width:280px;border-radius:var(--card-radius);
+  background:color-mix(in srgb, var(--card-color) var(--card-tint), var(--bg2));
+  border:1px solid color-mix(in srgb, var(--card-color) 50%, var(--line));
   display:flex;flex-direction:column;overflow:hidden;
 }
 .card.sel{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
@@ -177,8 +187,9 @@ button,input,select,textarea{font:inherit;color:inherit}
 .card.drag-over{outline:2px dashed var(--accent2);outline-offset:2px}
 .card.dragging{opacity:.4}
 .card-head{
-  display:flex;align-items:center;gap:6px;padding:4px 6px;background:var(--bg3);
-  border-bottom:1px solid var(--line);cursor:grab;
+  display:flex;align-items:center;gap:6px;padding:4px 6px;cursor:grab;
+  background:color-mix(in srgb, var(--card-color) var(--card-tint-strong), var(--bg3));
+  border-bottom:1px solid color-mix(in srgb, var(--card-color) 35%, var(--line));
 }
 .card-head{flex-wrap:wrap}
 .card-head .code{font-weight:700;color:var(--accent);min-width:34px}
@@ -225,6 +236,7 @@ button,input,select,textarea{font:inherit;color:inherit}
 .script-box.broken{border-color:var(--danger);background:rgba(255,95,86,.07)}
 .script-box:empty::before{content:"(empty)";color:var(--fg-dim)}
 .desc-box{min-height:70px;max-height:260px;resize:vertical;width:calc(100% - 12px);font-size:12.5px}
+.desc-box.field-box{min-height:42px;font-size:12px}
 .script-box:focus,.desc-box:focus{outline:none;border-color:var(--accent)}
 
 .prompt-box{margin:0 6px 6px}
@@ -299,6 +311,17 @@ button,input,select,textarea{font:inherit;color:inherit}
 .modal textarea{resize:vertical;min-height:60px;font-size:12px}
 .modal input:focus,.modal textarea:focus,.modal select:focus{outline:none;border-color:var(--accent)}
 .model-row{border:1px solid var(--line);border-radius:6px;padding:8px;margin-bottom:8px;background:var(--bg3)}
+.field-row{
+  display:flex;align-items:center;gap:8px;padding:6px;margin-bottom:6px;
+  border:1px solid var(--line);border-radius:6px;background:var(--bg3);
+}
+.field-row input[type=checkbox]{margin:0;flex:0 0 auto}
+.field-row .field-name{flex:1;min-width:0}
+.field-row .field-name[readonly]{opacity:.75}
+.field-tag{
+  font-family:ui-monospace,Consolas,monospace;font-size:11px;color:var(--accent2);
+  background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:1px 5px;white-space:nowrap;
+}
 .model-row .top{display:flex;gap:6px;margin-bottom:6px}
 .model-row .top input{flex:1}
 .model-row .top select{width:96px}
@@ -1745,6 +1768,123 @@ window.SB = window.SB || {};
 
 </script>
 <script>
+/* ===== js/fields.js ===== */
+/* fields.js — the extra text boxes a card carries, chosen per project.
+ *
+ * Every board wants something different under the description: art direction
+ * on one, SFX on another, a client's own column on a third. The set lives in
+ * the project, so it travels with the board, and the values live on the shot.
+ *
+ * Anything filled in is handed to the prompt writer as well — art direction
+ * that only the storyboard can see is not much use.
+ */
+(function (SB) {
+  'use strict';
+
+  /* Ship the ones asked for, switched off until wanted. */
+  function defaults() {
+    return [
+      { id: 'artDirection', label: 'Art direction', enabled: false, builtin: true },
+      { id: 'context', label: 'Context', enabled: false, builtin: true },
+      { id: 'sfx', label: 'SFX', enabled: false, builtin: true }
+    ];
+  }
+
+  function all(p) {
+    const s = p.settings || {};
+    if (!Array.isArray(s.fields) || !s.fields.length) s.fields = defaults();
+    return s.fields;
+  }
+
+  function enabled(p) {
+    return all(p).filter(function (f) { return f.enabled; });
+  }
+
+  function find(p, id) {
+    return all(p).filter(function (f) { return f.id === id; })[0] || null;
+  }
+
+  function add(p, label) {
+    const f = {
+      id: SB.uid('fld'),
+      label: (label || 'New field').trim() || 'New field',
+      enabled: true,
+      builtin: false
+    };
+    all(p).push(f);
+    return f;
+  }
+
+  /* Removing a field takes its text with it — the caller confirms first. */
+  function remove(p, id) {
+    p.settings.fields = all(p).filter(function (f) { return f.id !== id; });
+    SB.Model.eachShot(p, function (sh) {
+      if (sh.fields) delete sh.fields[id];
+    });
+  }
+
+  function value(shot, id) {
+    return (shot.fields && shot.fields[id]) || '';
+  }
+
+  function set(shot, id, text) {
+    shot.fields = shot.fields || {};
+    if (text) shot.fields[id] = text;
+    else delete shot.fields[id];
+  }
+
+  /* ART_DIRECTION, SFX, MY_OWN_FIELD — usable in a model template. */
+  function placeholder(f) {
+    if (f.id === 'artDirection') return 'ART_DIRECTION';
+    if (f.id === 'context') return 'CONTEXT';
+    if (f.id === 'sfx') return 'SFX';
+    return String(f.label || 'FIELD').toUpperCase()
+      .replace(/[^A-Z0-9]+/g, '_').replace(/^_|_$/g, '') || 'FIELD';
+  }
+
+  function placeholders(p, shot) {
+    const out = {};
+    enabled(p).forEach(function (f) { out[placeholder(f)] = value(shot, f.id); });
+    return out;
+  }
+
+  /* What gets appended to a prompt request for this shot. */
+  function promptBlock(p, shot) {
+    const filled = enabled(p).filter(function (f) { return value(shot, f.id).trim(); });
+    if (!filled.length) return '';
+    return filled.map(function (f) {
+      return f.label.toUpperCase() + ':\n' + value(shot, f.id).trim();
+    }).join('\n\n');
+  }
+
+  function migrate(p) {
+    const s = p.settings;
+    if (!Array.isArray(s.fields)) s.fields = defaults();
+    s.fields = s.fields.filter(function (f) { return f && f.id; }).map(function (f) {
+      return {
+        id: f.id,
+        label: f.label || f.id,
+        enabled: !!f.enabled,
+        builtin: !!f.builtin
+      };
+    });
+    // make sure the shipped three are always offered, even in an older file
+    defaults().forEach(function (d) {
+      if (!s.fields.some(function (f) { return f.id === d.id; })) s.fields.push(d);
+    });
+  }
+
+  SB.Fields = {
+    defaults: defaults, all: all, enabled: enabled, find: find,
+    add: add, remove: remove, value: value, set: set,
+    placeholder: placeholder, placeholders: placeholders,
+    promptBlock: promptBlock, migrate: migrate
+  };
+
+})(window.SB);
+
+</script>
+<script>
 /* ===== js/model.js ===== */
 /* model.js — project schema, numbering, and all structural mutations. */
 (function (SB) {
@@ -1816,6 +1956,7 @@ window.SB = window.SB || {};
       personaIds: [],                   // who appears in this shot
       broken: false,
       description: '',
+      fields: {},                       // extra text boxes, keyed by field id
       image: null,                      // {ref,w,h} into project.blobs
       annotation: null,                 // {ref} — transparent PNG overlay
       comments: [],
@@ -1848,6 +1989,7 @@ window.SB = window.SB || {};
       versions: [],
       settings: {
         shotTypes: DEFAULT_SHOT_TYPES.slice(),
+        fields: SB.Fields.defaults(),
         models: defaultModels(),
         imageModelId: null,
         videoModelId: null,
@@ -1906,6 +2048,7 @@ window.SB = window.SB || {};
     });
     const s = p.settings = p.settings || {};
     s.shotTypes = (s.shotTypes && s.shotTypes.length) ? s.shotTypes : DEFAULT_SHOT_TYPES.slice();
+    SB.Fields.migrate(p);
     s.models = (s.models && s.models.length) ? s.models : defaultModels();
     s.models.forEach(function (m) {
       m.id = m.id || SB.uid('m');
@@ -1957,6 +2100,7 @@ window.SB = window.SB || {};
         }
         sh.broken = !!sh.broken;
         sh.description = sh.description || '';
+        sh.fields = (sh.fields && typeof sh.fields === 'object') ? sh.fields : {};
         sh.comments = Array.isArray(sh.comments) ? sh.comments : [];
         sh.prompts = sh.prompts || {};
         sh.personaIds = Array.isArray(sh.personaIds) ? sh.personaIds : [];
@@ -3250,7 +3394,7 @@ window.SB = window.SB || {};
     const c = SB.el('div', 'card' + (sh.noShot ? ' noshot' : '') +
       (SB.app.selectedShotId === sh.id ? ' sel' : ''));
     c.dataset.shot = sh.id;
-    c.style.borderLeftColor = sh.color;
+    c.style.setProperty('--card-color', sh.color);
 
     c.addEventListener('dragover', function (ev) {
       if (ev.dataTransfer.types.indexOf(DND_SHOT) < 0) return;
@@ -3313,7 +3457,7 @@ window.SB = window.SB || {};
       palette(col, sh.color, function (hex) {
         sh.color = hex;
         col.style.background = hex;
-        c.style.borderLeftColor = hex;
+        c.style.setProperty('--card-color', hex);
         SB.app.changed(false);
       });
     };
@@ -3393,6 +3537,23 @@ window.SB = window.SB || {};
     desc.placeholder = 'What we see. This is what the prompt writer reads.';
     desc.addEventListener('input', function () { sh.description = desc.value; SB.app.changed(false); });
     c.appendChild(desc);
+
+    /* --- the project's own extra fields --- */
+    SB.Fields.enabled(P()).forEach(function (f) {
+      const lbl = SB.el('div', 'box-label');
+      lbl.appendChild(SB.el('span', null, f.label));
+      c.appendChild(lbl);
+      const ta = document.createElement('textarea');
+      ta.className = 'desc-box field-box';
+      ta.dataset.field = f.id;
+      ta.value = SB.Fields.value(sh, f.id);
+      ta.placeholder = f.label;
+      ta.addEventListener('input', function () {
+        SB.Fields.set(sh, f.id, ta.value);
+        SB.app.changed(false);
+      });
+      c.appendChild(ta);
+    });
 
     /* --- prompts (hidden until asked for, in the Prompts panel) --- */
     const st = P().settings;
@@ -4035,27 +4196,48 @@ window.SB = window.SB || {};
   function contextFor(shot) {
     const f = SB.Model.findShot(P(), shot.id);
     const w = SB.Model.windowFor(P(), shot);
-    return {
+    const ctx = {
       MODEL: '',
       CODE: f ? f.code : '',
       SHOT_TYPE: shot.type || 'unspecified',
       SCENE: f ? (f.scene.heading || '') : '',
       SCENE_DESC: f ? (f.scene.description || '') : '',
       SCRIPT: w.doc.text.slice(w.from, w.to),
-      DESCRIPTION: shot.description || ''
+      DESCRIPTION: shot.description || '',
+      FIELDS: SB.Fields.promptBlock(P(), shot)
     };
+    /* the project's own boxes, each usable on its own: {{ART_DIRECTION}} etc. */
+    const extra = SB.Fields.placeholders(P(), shot);
+    Object.keys(extra).forEach(function (k) { if (!(k in ctx)) ctx[k] = extra[k]; });
+    return ctx;
   }
 
   const PREAMBLE = 'You write prompts for generative media models. Follow the instruction ' +
     'block(s) below exactly. Return the prompts themselves only — no commentary, no markdown fences.\n\n';
 
+  /* A template that never mentions the project's own fields would silently
+   * drop them, so anything filled in is appended unless the template already
+   * places it itself. */
+  function extras(shot, tpl) {
+    const block = SB.Fields.promptBlock(P(), shot);
+    if (!block) return '';
+    if (/\{\{FIELDS\}\}/.test(tpl || '')) return '';
+    const placed = SB.Fields.enabled(P()).every(function (f) {
+      return !SB.Fields.value(shot, f.id).trim() ||
+        new RegExp('\\{\\{' + SB.Fields.placeholder(f) + '\\}\\}').test(tpl || '');
+    });
+    return placed ? '' : '\n\n' + block;
+  }
+
   function imageBlock(shot, m) {
     const ctx = contextFor(shot); ctx.MODEL = m.name;
-    return '=== FIRST-FRAME IMAGE PROMPT — INSTRUCTIONS ===\n' + fill(m.imageTemplate, ctx) + '\n';
+    return '=== FIRST-FRAME IMAGE PROMPT — INSTRUCTIONS ===\n' +
+      fill(m.imageTemplate, ctx) + extras(shot, m.imageTemplate) + '\n';
   }
   function videoBlock(shot, m) {
     const ctx = contextFor(shot); ctx.MODEL = m.name;
-    return '=== IMAGE-TO-VIDEO PROMPT — INSTRUCTIONS ===\n' + fill(m.videoTemplate, ctx) + '\n';
+    return '=== IMAGE-TO-VIDEO PROMPT — INSTRUCTIONS ===\n' +
+      fill(m.videoTemplate, ctx) + extras(shot, m.videoTemplate) + '\n';
   }
 
   /* Build the request list for one shot given the selected roles. */
@@ -4987,7 +5169,7 @@ window.SB = window.SB || {};
 
     const tabs = SB.el('div', 'tabs');
     const panels = {};
-    const order = [['general', 'General'], ['brand', 'Brand style'],
+    const order = [['general', 'General'], ['fields', 'Card fields'], ['brand', 'Brand style'],
     ['models', 'Models & templates'], ['api', 'API']];
     order.forEach(function (t) {
       const b = SB.el('button', 'tab', t[1]);
@@ -5021,6 +5203,68 @@ window.SB = window.SB || {};
     });
     themeSel.onchange = function () { SB.Theme.set(themeSel.value); };
     panels.general.appendChild(field('Appearance', themeSel));
+
+    /* ---------------- Card fields ---------------- */
+    panels.fields.appendChild(SB.el('div', 'pp-note',
+      'Extra text boxes under each card’s description, chosen per project. Anything filled ' +
+      'in is handed to the prompt writer too, and each one is available in a model template ' +
+      'as a placeholder.'));
+
+    const fieldHost = SB.el('div');
+    fieldHost.style.marginTop = '10px';
+    panels.fields.appendChild(fieldHost);
+
+    function drawFields() {
+      fieldHost.innerHTML = '';
+      SB.Fields.all(p).forEach(function (f) {
+        const row = SB.el('div', 'field-row');
+
+        const on = document.createElement('input');
+        on.type = 'checkbox';
+        on.checked = !!f.enabled;
+        on.title = 'Show this box on every card';
+        on.onchange = function () { f.enabled = on.checked; };
+        row.appendChild(on);
+
+        const name = document.createElement('input');
+        name.type = 'text';
+        name.value = f.label;
+        name.className = 'field-name';
+        name.oninput = function () {
+          f.label = name.value;
+          tag.textContent = '{{' + SB.Fields.placeholder(f) + '}}';
+        };
+        if (f.builtin) name.readOnly = true;
+        row.appendChild(name);
+
+        const tag = SB.el('code', 'field-tag', '{{' + SB.Fields.placeholder(f) + '}}');
+        row.appendChild(tag);
+
+        if (f.builtin) {
+          row.appendChild(SB.el('span', 'vmeta', 'built in'));
+        } else {
+          const del = SB.el('button', 'mini danger', 'remove');
+          del.onclick = function () {
+            let used = 0;
+            SB.Model.eachShot(p, function (sh) { if (SB.Fields.value(sh, f.id).trim()) used++; });
+            if (used && !confirm('Remove “' + f.label + '”? Text in it on ' + used +
+              ' card(s) is deleted with it.')) return;
+            SB.Fields.remove(p, f.id);
+            drawFields();
+          };
+          row.appendChild(del);
+        }
+        fieldHost.appendChild(row);
+      });
+
+      const add = SB.el('button', 'tb', '+ Add a field');
+      add.onclick = function () {
+        SB.Fields.add(p, 'New field');
+        drawFields();
+      };
+      fieldHost.appendChild(add);
+    }
+    drawFields();
 
     /* ---------------- Brand style ---------------- */
     const brand = SB.Brand.brandOf(p);
@@ -5077,8 +5321,12 @@ window.SB = window.SB || {};
     panels.models.appendChild(SB.el('div', 'pp-note',
       'One entry per target model. The templates tell Gemini how to write for that model — ' +
       'Midjourney-style parameters, natural language, whatever it needs.'));
+    const fieldTags = SB.Fields.enabled(p).map(function (f) {
+      return '{{' + SB.Fields.placeholder(f) + '}}';
+    }).join(' ');
     const hint = SB.el('div', 'vmeta',
-      'Placeholders: {{MODEL}} {{SHOT_TYPE}} {{SCENE}} {{SCENE_DESC}} {{SCRIPT}} {{DESCRIPTION}} {{CODE}}');
+      'Placeholders: {{MODEL}} {{SHOT_TYPE}} {{SCENE}} {{SCENE_DESC}} {{SCRIPT}} {{DESCRIPTION}} {{CODE}}' +
+      (fieldTags ? ' · your fields: ' + fieldTags + ' (or {{FIELDS}} for all of them)' : ''));
     hint.style.margin = '6px 0 10px';
     panels.models.appendChild(hint);
 

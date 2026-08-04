@@ -21,27 +21,48 @@
   function contextFor(shot) {
     const f = SB.Model.findShot(P(), shot.id);
     const w = SB.Model.windowFor(P(), shot);
-    return {
+    const ctx = {
       MODEL: '',
       CODE: f ? f.code : '',
       SHOT_TYPE: shot.type || 'unspecified',
       SCENE: f ? (f.scene.heading || '') : '',
       SCENE_DESC: f ? (f.scene.description || '') : '',
       SCRIPT: w.doc.text.slice(w.from, w.to),
-      DESCRIPTION: shot.description || ''
+      DESCRIPTION: shot.description || '',
+      FIELDS: SB.Fields.promptBlock(P(), shot)
     };
+    /* the project's own boxes, each usable on its own: {{ART_DIRECTION}} etc. */
+    const extra = SB.Fields.placeholders(P(), shot);
+    Object.keys(extra).forEach(function (k) { if (!(k in ctx)) ctx[k] = extra[k]; });
+    return ctx;
   }
 
   const PREAMBLE = 'You write prompts for generative media models. Follow the instruction ' +
     'block(s) below exactly. Return the prompts themselves only — no commentary, no markdown fences.\n\n';
 
+  /* A template that never mentions the project's own fields would silently
+   * drop them, so anything filled in is appended unless the template already
+   * places it itself. */
+  function extras(shot, tpl) {
+    const block = SB.Fields.promptBlock(P(), shot);
+    if (!block) return '';
+    if (/\{\{FIELDS\}\}/.test(tpl || '')) return '';
+    const placed = SB.Fields.enabled(P()).every(function (f) {
+      return !SB.Fields.value(shot, f.id).trim() ||
+        new RegExp('\\{\\{' + SB.Fields.placeholder(f) + '\\}\\}').test(tpl || '');
+    });
+    return placed ? '' : '\n\n' + block;
+  }
+
   function imageBlock(shot, m) {
     const ctx = contextFor(shot); ctx.MODEL = m.name;
-    return '=== FIRST-FRAME IMAGE PROMPT — INSTRUCTIONS ===\n' + fill(m.imageTemplate, ctx) + '\n';
+    return '=== FIRST-FRAME IMAGE PROMPT — INSTRUCTIONS ===\n' +
+      fill(m.imageTemplate, ctx) + extras(shot, m.imageTemplate) + '\n';
   }
   function videoBlock(shot, m) {
     const ctx = contextFor(shot); ctx.MODEL = m.name;
-    return '=== IMAGE-TO-VIDEO PROMPT — INSTRUCTIONS ===\n' + fill(m.videoTemplate, ctx) + '\n';
+    return '=== IMAGE-TO-VIDEO PROMPT — INSTRUCTIONS ===\n' +
+      fill(m.videoTemplate, ctx) + extras(shot, m.videoTemplate) + '\n';
   }
 
   /* Build the request list for one shot given the selected roles. */

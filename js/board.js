@@ -226,7 +226,7 @@
     const c = SB.el('div', 'card' + (sh.noShot ? ' noshot' : '') +
       (SB.app.selectedShotId === sh.id ? ' sel' : ''));
     c.dataset.shot = sh.id;
-    c.style.borderLeftColor = sh.color;
+    c.style.setProperty('--card-color', sh.color);
 
     c.addEventListener('dragover', function (ev) {
       if (ev.dataTransfer.types.indexOf(DND_SHOT) < 0) return;
@@ -289,7 +289,7 @@
       palette(col, sh.color, function (hex) {
         sh.color = hex;
         col.style.background = hex;
-        c.style.borderLeftColor = hex;
+        c.style.setProperty('--card-color', hex);
         SB.app.changed(false);
       });
     };
@@ -369,6 +369,23 @@
     desc.placeholder = 'What we see. This is what the prompt writer reads.';
     desc.addEventListener('input', function () { sh.description = desc.value; SB.app.changed(false); });
     c.appendChild(desc);
+
+    /* --- the project's own extra fields --- */
+    SB.Fields.enabled(P()).forEach(function (f) {
+      const lbl = SB.el('div', 'box-label');
+      lbl.appendChild(SB.el('span', null, f.label));
+      c.appendChild(lbl);
+      const ta = document.createElement('textarea');
+      ta.className = 'desc-box field-box';
+      ta.dataset.field = f.id;
+      ta.value = SB.Fields.value(sh, f.id);
+      ta.placeholder = f.label;
+      ta.addEventListener('input', function () {
+        SB.Fields.set(sh, f.id, ta.value);
+        SB.app.changed(false);
+      });
+      c.appendChild(ta);
+    });
 
     /* --- prompts (hidden until asked for, in the Prompts panel) --- */
     const st = P().settings;

@@ -22,6 +22,9 @@
   --hl2:rgba(91,141,255,.36);
   --hl3:rgba(255,179,71,.42);
   --card-radius:8px;
+  /* how much of a card's colour shows through it */
+  --card-tint:20%;
+  --card-tint-strong:34%;
 }
 
 :root[data-theme="light"]{
@@ -44,6 +47,9 @@
   --hl1:rgba(37,99,235,.15);
   --hl2:rgba(37,99,235,.30);
   --hl3:rgba(180,83,9,.30);
+  /* the same hues sit heavier on a light surface, so less of them */
+  --card-tint:13%;
+  --card-tint-strong:24%;
 }
 
 *{box-sizing:border-box}
@@ -161,9 +167,13 @@ button,input,select,textarea{font:inherit;color:inherit}
 .scene-block.drag-over > .scene-head{border-color:var(--accent);background:var(--bg3)}
 
 /* ---------- shot card ---------- */
+/* A card's colour washes the whole card, not a stripe down its edge. The
+   inner text boxes keep their own surface so nothing loses contrast. */
 .card{
-  width:280px;background:var(--bg2);border:1px solid var(--line);
-  border-left:5px solid var(--line2);border-radius:var(--card-radius);
+  --card-color:var(--line2);
+  width:280px;border-radius:var(--card-radius);
+  background:color-mix(in srgb, var(--card-color) var(--card-tint), var(--bg2));
+  border:1px solid color-mix(in srgb, var(--card-color) 50%, var(--line));
   display:flex;flex-direction:column;overflow:hidden;
 }
 .card.sel{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
@@ -171,8 +181,9 @@ button,input,select,textarea{font:inherit;color:inherit}
 .card.drag-over{outline:2px dashed var(--accent2);outline-offset:2px}
 .card.dragging{opacity:.4}
 .card-head{
-  display:flex;align-items:center;gap:6px;padding:4px 6px;background:var(--bg3);
-  border-bottom:1px solid var(--line);cursor:grab;
+  display:flex;align-items:center;gap:6px;padding:4px 6px;cursor:grab;
+  background:color-mix(in srgb, var(--card-color) var(--card-tint-strong), var(--bg3));
+  border-bottom:1px solid color-mix(in srgb, var(--card-color) 35%, var(--line));
 }
 .card-head{flex-wrap:wrap}
 .card-head .code{font-weight:700;color:var(--accent);min-width:34px}
@@ -219,6 +230,7 @@ button,input,select,textarea{font:inherit;color:inherit}
 .script-box.broken{border-color:var(--danger);background:rgba(255,95,86,.07)}
 .script-box:empty::before{content:"(empty)";color:var(--fg-dim)}
 .desc-box{min-height:70px;max-height:260px;resize:vertical;width:calc(100% - 12px);font-size:12.5px}
+.desc-box.field-box{min-height:42px;font-size:12px}
 .script-box:focus,.desc-box:focus{outline:none;border-color:var(--accent)}
 
 .prompt-box{margin:0 6px 6px}
@@ -293,6 +305,17 @@ button,input,select,textarea{font:inherit;color:inherit}
 .modal textarea{resize:vertical;min-height:60px;font-size:12px}
 .modal input:focus,.modal textarea:focus,.modal select:focus{outline:none;border-color:var(--accent)}
 .model-row{border:1px solid var(--line);border-radius:6px;padding:8px;margin-bottom:8px;background:var(--bg3)}
+.field-row{
+  display:flex;align-items:center;gap:8px;padding:6px;margin-bottom:6px;
+  border:1px solid var(--line);border-radius:6px;background:var(--bg3);
+}
+.field-row input[type=checkbox]{margin:0;flex:0 0 auto}
+.field-row .field-name{flex:1;min-width:0}
+.field-row .field-name[readonly]{opacity:.75}
+.field-tag{
+  font-family:ui-monospace,Consolas,monospace;font-size:11px;color:var(--accent2);
+  background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:1px 5px;white-space:nowrap;
+}
 .model-row .top{display:flex;gap:6px;margin-bottom:6px}
 .model-row .top input{flex:1}
 .model-row .top select{width:96px}

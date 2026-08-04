@@ -102,11 +102,29 @@ it will never make a card or scene reappear or vanish.
   reorder them. Everything renumbers automatically.
 - Images: drop, paste (with a card selected), or click the frame. Everything is downscaled
   to a ≤480p JPEG proxy and stored inline — no full-res copies anywhere.
-- Card colour is a fixed palette of ten mid-tone hues, each legible on the light and the
-  dark board. Click the swatch in a card's header.
+- Card colour washes the **whole card**, not a stripe down its edge. It's a fixed palette of
+  ten mid-tone hues, mixed into the card surface at a strength chosen per theme so text and
+  the text boxes keep their contrast. Click the swatch in a card's header.
 - Rich text in the script box is **Ctrl+B / Ctrl+I / Ctrl+U** only, by design — no toolbar.
 - **no shot** marks a fragment that stays on the board but is excluded from prompt
   generation and from the PDF.
+
+## Card fields
+
+Every board wants something different under the description, so the set of extra text boxes
+is **per project** and lives in the project file. **Settings → Card fields**:
+
+- Ships with **Art direction**, **Context** and **SFX**, all switched off — turn on what this
+  board needs.
+- **+ Add a field** for anything else; custom fields can be renamed and removed. Removing one
+  tells you how many cards have text in it before it goes.
+- Values live on the shot, so switching a field off hides it without losing what you wrote.
+
+Anything filled in is **handed to the prompt writer** — art direction only the storyboard can
+see isn't much use. Each field also gets a template placeholder shown next to it
+(`{{ART_DIRECTION}}`, `{{SFX}}`, `{{CLIENT_NOTE}}` from a field called "Client note"), plus
+`{{FIELDS}}` for all of them at once. If a model template doesn't place a field itself, the
+filled-in ones are appended to that request automatically rather than being dropped.
 
 ## Comment mode
 
@@ -222,9 +240,10 @@ per model so the list stays readable. They accept:
 
 ## Settings
 
-Four tabs: **General** (shot types, light/dark), **Brand style** (the house style every
-prompt obeys), **Models & templates** (the model list and its per-model image/video
-templates), **API** (Google key + the Gemini model used to write).
+Five tabs: **General** (shot types, light/dark), **Card fields** (the extra text boxes this
+project's cards carry), **Brand style** (the house style every prompt obeys),
+**Models & templates** (the model list and its per-model image/video templates),
+**API** (Google key + the Gemini model used to write).
 
 ## Light / dark
 
@@ -326,6 +345,7 @@ js/scriptmode.js  master script panel, capture, highlights
 js/comments.js    comment list + ink layer
 js/brand.js       house style, scene context, gendered-language check
 js/personas.js    recurring people + per-model reference-image wording
+js/fields.js      the extra card text boxes, per project
 js/personapanel.js the Personas panel
 js/prompts.js     Gemini prompt writing
 js/promptpanel.js the Prompts panel

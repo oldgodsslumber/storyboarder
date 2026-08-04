@@ -196,33 +196,56 @@
       t('colour applied', P().scenes[0].shots[0].color === SB.Model.CARD_COLORS[3],
         P().scenes[0].shots[0].color);
 
-      // settings tabs
+      // settings tabs — selected by name, so adding a tab never breaks this
       SB.Settings.open();
+      var tab = function (name) {
+        var b = Array.prototype.filter.call(document.querySelectorAll('.modal .tab'),
+          function (x) { return x.textContent === name; })[0];
+        if (b) b.click();
+        return !!b;
+      };
       t('settings modal', document.querySelectorAll('.modal').length === 1, '');
-      t('settings is tabbed', document.querySelectorAll('.modal .tab').length === 4,
+      t('settings is tabbed', document.querySelectorAll('.modal .tab').length === 5,
         document.querySelectorAll('.modal .tab').length);
       t('templates are not on the first tab',
         document.querySelectorAll('.modal .tab-panel.on textarea').length === 1,
         document.querySelectorAll('.modal .tab-panel.on textarea').length);
-      document.querySelectorAll('.modal .tab')[1].click();
+
+      t('there is a card-fields tab', tab('Card fields'), '');
+      t('it lists every field with a placeholder',
+        document.querySelectorAll('.modal .tab-panel.on .field-row').length ===
+        SB.Fields.all(P()).length,
+        document.querySelectorAll('.modal .tab-panel.on .field-row').length);
+      t('and shows the placeholder to use in a template',
+        /\{\{ART_DIRECTION\}\}/.test(document.querySelector('.modal .tab-panel.on').textContent), '');
+      var fieldsBefore = SB.Fields.all(P()).length;
+      Array.prototype.filter.call(document.querySelectorAll('.modal .tab-panel.on .tb'),
+        function (b) { return /Add a field/.test(b.textContent); })[0].click();
+      t('a custom field can be added',
+        SB.Fields.all(P()).length === fieldsBefore + 1, SB.Fields.all(P()).length);
+      Array.prototype.filter.call(document.querySelectorAll('.modal .tab-panel.on .mini.danger'),
+        function (b) { return /remove/.test(b.textContent); })[0].click();
+      t('and removed again', SB.Fields.all(P()).length === fieldsBefore, SB.Fields.all(P()).length);
+
+      tab('Brand style');
       t('brand tab holds the house style',
         /CONSTRAINTS[\s\S]*STYLE & TONE/.test(
           document.querySelector('.modal .tab-panel.on textarea').value), '');
       t('house style can be switched off',
         document.querySelectorAll('.modal .tab-panel.on input[type=checkbox]').length === 1, '');
 
-      document.querySelectorAll('.modal .tab')[2].click();
+      tab('Models & templates');
       t('models tab shows the model list',
         document.querySelectorAll('.modal .tab-panel.on .model-row').length === 15,
         document.querySelectorAll('.modal .tab-panel.on .model-row').length);
       t('templates collapsed until opened',
         document.querySelectorAll('.modal .tab-panel.on textarea').length === 0, '');
-      document.querySelectorAll('.modal .tab')[3].click();
+      tab('API');
       t('api tab has the model dropdown',
         document.querySelectorAll('.modal .tab-panel.on .gm-picker select').length === 1, '');
       t('api tab can refresh from the key',
         /Refresh list/.test(document.querySelector('.modal .tab-panel.on .pp-actions').textContent), '');
-      document.querySelectorAll('.modal .tab')[2].click();
+      tab('Models & templates');
       document.querySelectorAll('.modal .model-row .mini')[0].click();
       t('templates open per model',
         document.querySelectorAll('.modal .tab-panel.on textarea').length === 3,
@@ -304,6 +327,47 @@
           return P().scenes[0].id === s3.id;
         })(), P().scenes.map(function (s) { return s.heading; }).join(','));
       })();
+
+      // per-project card fields
+      t('no extra field boxes until switched on',
+        document.querySelectorAll('.field-box').length === 0, '');
+      SB.Fields.find(P(), 'artDirection').enabled = true;
+      SB.Fields.find(P(), 'sfx').enabled = true;
+      SB.app.changed(true);
+      var cards = document.querySelectorAll('.card').length;
+      t('switching two on adds two boxes per card',
+        document.querySelectorAll('.field-box').length === cards * 2,
+        document.querySelectorAll('.field-box').length + ' on ' + cards + ' cards');
+      t('each box is labelled',
+        /Art direction/.test(document.querySelector('.card').textContent) &&
+        /SFX/.test(document.querySelector('.card').textContent), '');
+      var fbox = document.querySelector('.card .field-box[data-field="artDirection"]');
+      fbox.value = 'Warm practicals only.';
+      fbox.dispatchEvent(new Event('input', { bubbles: true }));
+      var firstShot2 = SB.Model.findShot(P(), document.querySelector('.card').dataset.shot).shot;
+      t('typing in one stores it on the shot',
+        SB.Fields.value(firstShot2, 'artDirection') === 'Warm practicals only.',
+        JSON.stringify(firstShot2.fields));
+      firstShot2.description = 'A description so the job builds.';
+      var fjobs = SB.Prompts.jobsFor(firstShot2, SB.Model.imageModel(P()), null, { image: true });
+      t('the field reaches the prompt request',
+        /Warm practicals only\./.test(fjobs[0].text), '');
+      SB.Fields.find(P(), 'artDirection').enabled = false;
+      SB.Fields.find(P(), 'sfx').enabled = false;
+      SB.app.changed(true);
+      t('switching them off clears the boxes',
+        document.querySelectorAll('.field-box').length === 0, '');
+      t('but the text is kept', SB.Fields.value(firstShot2, 'artDirection') === 'Warm practicals only.', '');
+
+      // card colour covers the whole card
+      var cardEl = document.querySelector('.card');
+      SB.app.changed(true);
+      cardEl = document.querySelector('.card');
+      t('the card carries its colour as a variable',
+        !!cardEl.style.getPropertyValue('--card-color'), cardEl.style.cssText);
+      t('the whole card is tinted, not just an edge',
+        getComputedStyle(cardEl).backgroundColor !== getComputedStyle(document.body).backgroundColor,
+        getComputedStyle(cardEl).backgroundColor);
 
       // data tracker
       SB.UsagePanel.refreshBadge();
