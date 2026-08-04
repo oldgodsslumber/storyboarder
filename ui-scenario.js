@@ -74,6 +74,73 @@
         JSON.stringify(pdfCells.map(function (c) { return c.code; })));
       t('pdf html builds', SB.Pdf.html().indexOf('<section class="page">') > 0, '');
 
+      // the PDF sheet actually lays out — measured, not assumed
+      (function () {
+        var img16 = 'data:image/svg+xml;base64,' + btoa(
+          '<svg xmlns="http://www.w3.org/2000/svg" width="854" height="480"><rect width="100%" height="100%" fill="#333"/></svg>');
+        var imgTall = 'data:image/svg+xml;base64,' + btoa(
+          '<svg xmlns="http://www.w3.org/2000/svg" width="360" height="640"><rect width="100%" height="100%" fill="#333"/></svg>');
+        var sc = P().scenes[0];
+        sc.shots.forEach(function (sh, i) {
+          sh.noShot = false;
+          sh.image = SB.Blobs.image(P(), i % 2 ? imgTall : img16, 854, 480);
+          sh.description = 'A description long enough to overflow its cell. '.repeat(6);
+        });
+        while (sc.shots.length < 7) {
+          var extra = SB.Model.addShot(P(), sc.id, { type: 'Wide' });
+          extra.image = SB.Blobs.image(P(), img16, 854, 480);
+          extra.description = 'Another one. '.repeat(20);
+        }
+        SB.app.changed(true);
+
+        var n = SB.Pdf.cells().length;
+        var frame = document.createElement('iframe');
+        frame.style.cssText = 'position:fixed;left:-10000px;top:0;width:816px;height:1200px;border:0';
+        document.body.appendChild(frame);
+        var d = frame.contentDocument;
+        d.open(); d.write(SB.Pdf.html()); d.close();
+
+        var pages = d.querySelectorAll('.page');
+        t('one sheet per six shots', pages.length === Math.ceil(n / 6),
+          pages.length + ' sheets for ' + n + ' shots');
+
+        var overflowing = 0;
+        [].forEach.call(pages, function (pg) {
+          if (pg.scrollHeight > Math.ceil(pg.getBoundingClientRect().height) + 1) overflowing++;
+        });
+        t('no sheet overflows onto another page', overflowing === 0, overflowing + ' overflowing');
+
+        var cells = d.querySelectorAll('.cell');
+        var badCell = 0, narrow = 0, bigImg = 0;
+        [].forEach.call(cells, function (c) {
+          var r = c.getBoundingClientRect();
+          if (c.scrollHeight > Math.ceil(r.height) + 1) badCell++;
+          if (r.width < 300) narrow++;                     // figure's default margin
+          var im = c.querySelector('img'), fr = c.querySelector('.frame');
+          if (im && fr && im.getBoundingClientRect().height >
+            fr.getBoundingClientRect().height + 1) bigImg++;
+        });
+        t('no cell overflows its box', badCell === 0, badCell + ' of ' + cells.length);
+        t('cells fill their column', narrow === 0, narrow + ' too narrow');
+        t('no image escapes its frame', bigImg === 0, bigImg + ' oversized');
+
+        var heights = {};
+        [].forEach.call(d.querySelectorAll('.frame'), function (f) {
+          heights[Math.round(f.getBoundingClientRect().height)] = 1;
+        });
+        t('every frame is the same height regardless of image shape or text',
+          Object.keys(heights).length === 1, JSON.stringify(Object.keys(heights)));
+
+        t('long text is clamped, not spilled',
+          d.querySelector('.desc .clip') !== null &&
+          getComputedStyle(d.querySelector('.desc .clip')).webkitLineClamp !== 'none',
+          getComputedStyle(d.querySelector('.desc .clip')).webkitLineClamp);
+
+        frame.remove();
+        sc.shots.forEach(function (sh) { sh.image = null; sh.description = ''; });
+        SB.app.changed(true);
+      })();
+
       // prompt boxes stay off the cards until asked for
       t('prompt boxes hidden by default', document.querySelectorAll('.prompt-box').length === 0,
         document.querySelectorAll('.prompt-box').length);
@@ -88,8 +155,10 @@
         .querySelectorAll('input[type=checkbox]');
       showBoxes[0].click(); showBoxes[1].click();
       t('toggling reveals both prompt boxes',
-        document.querySelectorAll('.card:not(.noshot) .prompt-box').length === 4,
-        document.querySelectorAll('.prompt-box').length);
+        document.querySelectorAll('.card:not(.noshot) .prompt-box').length ===
+        document.querySelectorAll('.card:not(.noshot)').length * 2,
+        document.querySelectorAll('.prompt-box').length + ' boxes on ' +
+        document.querySelectorAll('.card:not(.noshot)').length + ' cards');
       const titles = Array.prototype.map.call(document.querySelectorAll('.prompt-box .ptitle span'),
         function (s) { return s.textContent; });
       t('each box names its own model',

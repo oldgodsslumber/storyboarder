@@ -257,6 +257,14 @@ written into the project file.
 shot code, scene heading, shot type, script and description. Comments, ink and “no shot”
 fragments are excluded. Print → *Save as PDF*.
 
+The sheet is sized to print whole on **both A4 and Letter** (186 × 251 mm inside 12 mm
+margins). Frames are a fixed height so every picture sits on the same baseline whatever its
+shape or the length of the text beneath it; any aspect ratio letterboxes inside. Script and
+description are clamped to two and three lines with an ellipsis rather than being cut
+mid-line, and printing waits for the frames to decode. `test-ui.mjs` renders the sheet into
+an iframe and measures it — page count, cell overflow, cell width, image containment,
+uniform frame height — so the layout can't quietly rot again.
+
 ## Data tracker
 
 The top bar shows what the board currently weighs. Click it for the breakdown:
