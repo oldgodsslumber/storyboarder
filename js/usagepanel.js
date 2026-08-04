@@ -44,6 +44,11 @@
       fmt(m.imageBytes) + ' of the file'));
     tiles.appendChild(tile('Saved this session', stats.writes.toLocaleString() + '×',
       fmt(stats.bytes) + ' written' + (rate ? ' · ≈' + Math.round(rate.perHour) + '/hour' : '')));
+    if (m.dedupe && m.dedupe.saved > 0) {
+      tiles.appendChild(tile('Saved by dedupe', fmt(m.dedupe.saved),
+        m.dedupe.refs + ' uses of ' + m.dedupe.unique + ' stored image' +
+        (m.dedupe.unique === 1 ? '' : 's')));
+    }
     body.appendChild(tiles);
 
     /* ---- the breakdown ---- */

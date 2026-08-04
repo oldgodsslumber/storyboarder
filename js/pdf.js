@@ -19,7 +19,7 @@
           code: SB.Model.code(si, sj),
           scene: sc.heading || '',
           type: sh.type || '',
-          img: sh.image ? sh.image.data : null,
+          img: sh.image ? SB.Blobs.src(p, sh.image) : null,
           script: SB.Doc.renderHTML(w.doc, w.from, w.to, null),
           desc: sh.description || ''
         });

@@ -123,7 +123,7 @@
     const frame = SB.el('div', 'persona-frame');
     if (per.image) {
       const img = document.createElement('img');
-      img.src = per.image.data;
+      img.src = SB.Blobs.src(P(), per.image);
       frame.appendChild(img);
     } else {
       frame.appendChild(SB.el('div', 'drop-hint', 'drop the reference frame here, or click to load'));
@@ -233,7 +233,7 @@
 
   function setImage(per, src) {
     return SB.downscaleImage(src).then(function (img) {
-      per.image = img;
+      per.image = SB.Blobs.image(P(), img.data, img.w, img.h);
       SB.app.changed(true);
       render();
     }).catch(function (e) { SB.toast('Image failed: ' + e.message, true); });

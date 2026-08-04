@@ -29,7 +29,7 @@
       name: opts.name || 'New persona',
       description: opts.description || '',
       imagePrompt: opts.imagePrompt || '',
-      image: opts.image || null      // {data,w,h} — the reference frame
+      image: opts.image || null      // {ref,w,h} — the reference frame
     };
   }
 

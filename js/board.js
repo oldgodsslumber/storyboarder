@@ -531,12 +531,12 @@
     if (sh.image) {
       const img = document.createElement('img');
       img.className = 'shot-img';
-      img.src = sh.image.data;
+      img.src = SB.Blobs.src(P(), sh.image);
       f.appendChild(img);
       if (sh.annotation) {
         const a = document.createElement('img');
         a.className = 'anno';
-        a.src = sh.annotation;
+        a.src = SB.Blobs.src(P(), sh.annotation);
         f.appendChild(a);
       }
     } else {
@@ -586,7 +586,7 @@
 
   function setImage(sh, src) {
     return SB.downscaleImage(src).then(function (img) {
-      sh.image = img;
+      sh.image = SB.Blobs.image(P(), img.data, img.w, img.h);
       SB.app.changed(true);
     }).catch(function (e) { SB.toast('Image failed: ' + e.message, true); });
   }

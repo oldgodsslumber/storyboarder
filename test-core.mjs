@@ -30,17 +30,18 @@ const sandbox = {
 sandbox.window = sandbox;
 vm.createContext(sandbox);
 
-for (const f of ['js/util.js', 'js/doc.js', 'js/geminimodels.js', 'js/brand.js',
+for (const f of ['js/util.js', 'js/doc.js', 'js/blobs.js', 'js/geminimodels.js', 'js/brand.js',
   'js/personas.js', 'js/model.js', 'js/store.js', 'js/usage.js']) {
   vm.runInContext(readFileSync(join(root, f), 'utf8'), sandbox, { filename: f });
 }
 const SB = sandbox.SB;
 
 let pass = 0, fail = 0;
+const cut = s => (s && s.length > 120) ? s.slice(0, 117) + '…(' + s.length + ' chars)' : s;
 function eq(actual, expected, label) {
   const a = JSON.stringify(actual), b = JSON.stringify(expected);
   if (a === b) { pass++; console.log('  ok   ' + label); }
-  else { fail++; console.log('  FAIL ' + label + '\n       got ' + a + '\n       want ' + b); }
+  else { fail++; console.log('  FAIL ' + label + '\n       got ' + cut(a) + '\n       want ' + cut(b)); }
 }
 
 function projectWith(text) {
@@ -318,6 +319,91 @@ console.log('\n— gendered language detector —');
   eq(g(''), [], 'empty text is fine');
 }
 
+console.log('\n— images are stored once, under a hash —');
+{
+  const B = SB.Blobs;
+  const p = SB.Model.newProject();
+  const jpg = 'data:image/jpeg;base64,' + 'A'.repeat(20000);
+  const png = 'data:image/png;base64,' + 'B'.repeat(5000);
+
+  const r1 = B.put(p, jpg);
+  const r2 = B.put(p, jpg);
+  eq(r1, r2, 'the same picture gets the same reference');
+  eq(Object.keys(B.map(p)).length, 1, 'and is stored only once');
+  eq(B.get(p, r1), jpg, 'the bytes come back');
+  const r3 = B.put(p, png);
+  eq(r3 === r1, false, 'different pictures get different references');
+
+  // a collision must never silently swap one picture for another
+  const fake = B.hash(jpg);
+  B.map(p)[fake] = 'data:image/jpeg;base64,SOMETHINGELSE';
+  const r4 = B.put(p, jpg);
+  eq(r4 !== fake && B.get(p, r4) === jpg, true, 'a hash clash stores separately, never overwrites');
+
+  eq(B.src(p, { ref: r4 }), jpg, 'src resolves a reference');
+  eq(B.src(p, { data: jpg }), jpg, 'src still resolves an old inline image');
+  eq(B.src(p, null), '', 'src copes with nothing');
+}
+
+console.log('\n— old boards migrate, and versions stop duplicating frames —');
+{
+  const B = SB.Blobs;
+  const frame = 'data:image/jpeg;base64,' + 'A'.repeat(50000);
+  const ink = 'data:image/png;base64,' + 'B'.repeat(9000);
+
+  /* a v1-shaped file: images inline everywhere, including inside the version */
+  const old = SB.Model.newProject();
+  old.scenes[0].shots = [];
+  const s1 = SB.Model.addShot(old, old.scenes[0].id, {});
+  s1.image = { data: frame, w: 854, h: 480 };
+  s1.annotation = ink;
+  old.personas = [{ id: 'p1', name: 'Lead', image: { data: frame, w: 854, h: 480 } }];
+  old.versions = [{
+    n: 1, name: 'v1', createdAt: 1,
+    snapshot: {
+      master: SB.Doc.make(''), versionNumber: 1, versionName: 'v1',
+      scenes: [{
+        id: 'sc', heading: '', description: '',
+        shots: [{ id: 'x', image: { data: frame, w: 854, h: 480 }, annotation: ink }]
+      }]
+    }
+  }];
+  const inlineTotal = JSON.stringify(old).length;
+
+  const p = SB.Model.migrate(old);
+  eq(!!(p.scenes[0].shots[0].image.ref), true, 'shot frames become references');
+  eq(!!(p.scenes[0].shots[0].annotation.ref), true, 'ink becomes a reference');
+  eq(!!(p.personas[0].image.ref), true, 'persona references migrate too');
+  eq(!!(p.versions[0].snapshot.scenes[0].shots[0].image.ref), true, 'so do frozen versions');
+  eq(Object.keys(p.blobs).length, 2,
+    'four copies of two pictures collapse to two stored blobs');
+  eq(B.src(p, p.scenes[0].shots[0].image), frame, 'and the picture still resolves');
+  eq(p.versions[0].snapshot.scenes[0].shots[0].image.ref, p.scenes[0].shots[0].image.ref,
+    'the version points at the same blob as the live board');
+
+  const after = JSON.stringify(p).length;
+  eq(after < inlineTotal * 0.6, true,
+    'the file shrinks (was ' + inlineTotal + ', now ' + after + ')');
+
+  /* cutting a version now costs references, not copies */
+  const before = JSON.stringify(p).length;
+  p.versions.push({ n: 2, name: 'v2', createdAt: 2, snapshot: { scenes: SB.clone(p.scenes) } });
+  const grew = JSON.stringify(p).length - before;
+  eq(grew < 2000, true, 'a new version adds ' + grew + ' bytes, not another 50 KB');
+
+  /* nothing collectable while a version still points at it */
+  const kept = Object.keys(p.blobs).length;
+  p.scenes[0].shots[0].image = null;
+  B.gc(p);
+  eq(Object.keys(p.blobs).length, kept, 'a frame a version still uses is not collected');
+
+  /* but an unreferenced one goes */
+  const junk = B.put(p, 'data:image/jpeg;base64,ZZZZ');
+  eq(B.has(p, junk), true, 'stored');
+  B.gc(p);
+  eq(B.has(p, junk), false, 'an image nothing points at is collected');
+}
+
 console.log('\n— data usage tracker —');
 {
   const U = SB.Usage;
@@ -334,9 +420,12 @@ console.log('\n— data usage tracker —');
   const a = SB.Model.addShot(p, sc.id, {});
   a.description = 'x'.repeat(500);
   const img = 'data:image/jpeg;base64,' + 'A'.repeat(40000);
-  a.image = { data: img, w: 854, h: 480 };
-  a.annotation = 'data:image/png;base64,' + 'B'.repeat(8000);
-  SB.Personas.add(p, { name: 'Lead', image: { data: img, w: 854, h: 480 } });
+  a.image = SB.Blobs.image(p, img, 854, 480);
+  a.annotation = { ref: SB.Blobs.put(p, 'data:image/png;base64,' + 'B'.repeat(8000)) };
+  SB.Personas.add(p, {
+    name: 'Lead',
+    image: SB.Blobs.image(p, 'data:image/jpeg;base64,' + 'C'.repeat(40000), 854, 480)
+  });
 
   const m = U.measure(p);
   eq(m.total > 88000, true, 'total measures the real serialised board');
@@ -352,10 +441,10 @@ console.log('\n— data usage tracker —');
   eq(fb.checks[0].ok, true, '90 KB fits in one Firestore document');
   eq(fb.checks[3].ok, true, '500 writes/day is inside the free 20,000');
 
-  // a board that has outgrown a document (~40 KB a frame)
+  // a board that has outgrown a document (~40 KB a frame, each one different)
   for (let i = 0; i < 30; i++) {
     const s = SB.Model.addShot(p, sc.id, {});
-    s.image = { data: img, w: 854, h: 480 };
+    s.image = SB.Blobs.image(p, 'data:image/jpeg;base64,' + 'D'.repeat(40000) + i, 854, 480);
   }
   const big = U.measure(p);
   eq(big.total > U.FS_DOC_LIMIT, true, 'a 31-frame board passes 1 MiB');

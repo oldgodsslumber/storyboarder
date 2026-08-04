@@ -125,7 +125,7 @@
         document.querySelectorAll('.cast-row').length === 0, '');
       var per1 = SB.Personas.add(P(), { name: 'Ops lead', description: 'Charcoal knit.' });
       var per2 = SB.Personas.add(P(), { name: 'Technician', description: 'Navy work shirt.' });
-      per1.image = { data: 'data:image/gif;base64,R0lGODlhAQABAAAAACw=', w: 4, h: 3 };
+      per1.image = SB.Blobs.image(P(), 'data:image/gif;base64,R0lGODlhAQABAAAAACw=', 4, 3);
       SB.app.changed(true);
       t('every card gains a cast row',
         document.querySelectorAll('.cast-row').length === document.querySelectorAll('.card').length,
@@ -310,7 +310,8 @@
       var badge = document.getElementById('sizeState');
       t('the top bar shows the board size', /KB|MB|B$/.test(badge.textContent), badge.textContent);
       var m0 = SB.Usage.measure(P());
-      P().scenes[0].shots[0].image = { data: 'data:image/jpeg;base64,' + 'A'.repeat(30000), w: 8, h: 6 };
+      var bigJpg = 'data:image/jpeg;base64,' + 'A'.repeat(30000);
+      P().scenes[0].shots[0].image = SB.Blobs.image(P(), bigJpg, 8, 6);
       var m1 = SB.Usage.measure(P());
       t('adding a frame is reflected in the measurement', m1.total > m0.total + 29000,
         m1.total - m0.total);
@@ -328,6 +329,19 @@
       t('it names the 1 MiB document ceiling',
         /1 MiB/.test(document.querySelector('.usage-checks').textContent), '');
       document.querySelector('.modal .foot .tb.on').click();
+
+      // the same picture on a second shot costs nothing
+      var beforeDup = SB.Usage.measure(P()).total;
+      P().scenes[0].shots[1].image = SB.Blobs.image(P(), bigJpg, 8, 6);
+      var afterDup = SB.Usage.measure(P()).total;
+      t('reusing a picture adds almost nothing', afterDup - beforeDup < 200,
+        'grew by ' + (afterDup - beforeDup));
+      t('and both shots point at the same blob',
+        P().scenes[0].shots[0].image.ref === P().scenes[0].shots[1].image.ref, '');
+      t('the dedupe saving is reported', SB.Usage.measure(P()).dedupe.saved > 29000,
+        SB.Usage.measure(P()).dedupe.saved);
+      P().scenes[0].shots[1].image = null;
+      SB.app.changed(true);
 
       // comment mode
       app.commentMode = true;

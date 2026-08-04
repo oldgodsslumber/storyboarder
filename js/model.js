@@ -68,8 +68,8 @@
       personaIds: [],                   // who appears in this shot
       broken: false,
       description: '',
-      image: null,                      // {data,w,h}
-      annotation: null,                 // transparent PNG dataURL
+      image: null,                      // {ref,w,h} into project.blobs
+      annotation: null,                 // {ref} — transparent PNG overlay
       comments: [],
       prompts: {}                       // modelName -> {imagePrompt, videoPrompt}
     };
@@ -92,6 +92,7 @@
       createdAt: Date.now(),
       updatedAt: Date.now(),
       master: SB.Doc.make(''),
+      blobs: {},                        // hash -> data URL; images live here once
       personas: [],
       scenes: [newScene('Scene one')],
       versionNumber: 1,
@@ -125,18 +126,36 @@
     p.master = p.master && typeof p.master.text === 'string' ? p.master : SB.Doc.make('');
     p.master.marks = p.master.marks || { b: [], i: [], u: [] };
     ['b', 'i', 'u'].forEach(function (t) { p.master.marks[t] = p.master.marks[t] || []; });
+    /* Images used to sit inline on each shot, which meant every version froze
+     * its own copy of every frame. They are now stored once under a hash. */
+    p.blobs = (p.blobs && typeof p.blobs === 'object') ? p.blobs : {};
     p.personas = Array.isArray(p.personas) ? p.personas : [];
     p.personas.forEach(function (x) {
       x.id = x.id || SB.uid('per');
       x.name = x.name || 'Persona';
       x.description = x.description || '';
       x.imagePrompt = x.imagePrompt || '';
+      x.image = SB.Blobs.adopt(p, x.image);
     });
     p.scenes = Array.isArray(p.scenes) ? p.scenes : [];
     if (!p.scenes.length) p.scenes.push(newScene('Scene one'));
     p.versionNumber = p.versionNumber || 1;
     p.versionName = p.versionName || ('v' + p.versionNumber);
     p.versions = Array.isArray(p.versions) ? p.versions : [];
+    /* Frozen versions carried their own copy of every frame — the same bytes
+     * hash to the same reference, so migrating them collapses the duplicates. */
+    p.versions.forEach(function (v) {
+      if (!v || !v.snapshot) return;
+      (v.snapshot.scenes || []).forEach(function (sc) {
+        (sc.shots || []).forEach(function (sh) {
+          sh.image = SB.Blobs.adopt(p, sh.image);
+          sh.annotation = SB.Blobs.adopt(p, sh.annotation);
+        });
+      });
+      (v.snapshot.personas || []).forEach(function (per) {
+        per.image = SB.Blobs.adopt(p, per.image);
+      });
+    });
     const s = p.settings = p.settings || {};
     s.shotTypes = (s.shotTypes && s.shotTypes.length) ? s.shotTypes : DEFAULT_SHOT_TYPES.slice();
     s.models = (s.models && s.models.length) ? s.models : defaultModels();
@@ -193,6 +212,8 @@
         sh.comments = Array.isArray(sh.comments) ? sh.comments : [];
         sh.prompts = sh.prompts || {};
         sh.personaIds = Array.isArray(sh.personaIds) ? sh.personaIds : [];
+        sh.image = SB.Blobs.adopt(p, sh.image);
+        sh.annotation = SB.Blobs.adopt(p, sh.annotation);
       });
     });
     return p;

@@ -51,7 +51,7 @@
     const body = SB.el('div');
     const wrap = SB.el('div', 'draw-wrap');
     const img = document.createElement('img');
-    img.src = sh.image.data;
+    img.src = SB.Blobs.src(P(), sh.image);
     const cv = document.createElement('canvas');
     cv.width = sh.image.w; cv.height = sh.image.h;
     wrap.appendChild(img); wrap.appendChild(cv);
@@ -92,7 +92,7 @@
     if (sh.annotation) {
       const prev = new Image();
       prev.onload = function () { ctx.drawImage(prev, 0, 0, cv.width, cv.height); };
-      prev.src = sh.annotation;
+      prev.src = SB.Blobs.src(P(), sh.annotation);
     }
 
     let drawing = false, last = null;
@@ -137,7 +137,9 @@
             const data = ctx.getImageData(0, 0, cv.width, cv.height).data;
             let any = false;
             for (let i = 3; i < data.length; i += 4) { if (data[i] !== 0) { any = true; break; } }
-            sh.annotation = any ? cv.toDataURL('image/png') : null;
+            sh.annotation = any
+              ? { ref: SB.Blobs.put(P(), cv.toDataURL('image/png')) }
+              : null;
             close();
             SB.app.changed(true);
           }

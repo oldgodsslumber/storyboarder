@@ -28,17 +28,32 @@
 
   function measure(p) {
     const total = bytes(SB.Store.serialize(p));
+    const blobs = SB.Blobs.map(p);
 
-    let frames = 0, framesN = 0, ink = 0, inkN = 0;
+    /* Images are stored once and pointed at, so the honest way to attribute
+     * them is by what is STORED, not by how many places use them. A blob is
+     * charged to the kind of thing that first refers to it. */
+    const kindOf = {};
     SB.Model.eachShot(p, function (sh) {
-      if (sh.image && sh.image.data) { frames += bytes(sh.image.data); framesN++; }
-      if (sh.annotation) { ink += bytes(sh.annotation); inkN++; }
+      if (sh.image && sh.image.ref && !kindOf[sh.image.ref]) kindOf[sh.image.ref] = 'frames';
+      if (sh.annotation && sh.annotation.ref && !kindOf[sh.annotation.ref]) {
+        kindOf[sh.annotation.ref] = 'ink';
+      }
+    });
+    (p.personas || []).forEach(function (per) {
+      if (per.image && per.image.ref && !kindOf[per.image.ref]) kindOf[per.image.ref] = 'refs';
     });
 
-    let refs = 0, refsN = 0;
-    (p.personas || []).forEach(function (per) {
-      if (per.image && per.image.data) { refs += bytes(per.image.data); refsN++; }
+    let frames = 0, framesN = 0, ink = 0, inkN = 0, refs = 0, refsN = 0, orphan = 0;
+    Object.keys(blobs).forEach(function (k) {
+      const b = bytes(blobs[k]);
+      const kind = kindOf[k];
+      if (kind === 'frames') { frames += b; framesN++; }
+      else if (kind === 'ink') { ink += b; inkN++; }
+      else if (kind === 'refs') { refs += b; refsN++; }
+      else { orphan += b; }        // only reachable from a frozen version
     });
+    frames += orphan;              // charge history's images to the frames line
 
     const versions = (p.versions && p.versions.length) ? bytes(JSON.stringify(p.versions)) : 0;
     const rest = Math.max(0, total - frames - refs - ink - versions);
@@ -56,18 +71,26 @@
 
     /* the individual images worth knowing about */
     const heavy = [];
+    const named = {};
     SB.Model.eachShot(p, function (sh, sc, i, j) {
-      if (sh.image && sh.image.data) {
-        heavy.push({ label: SB.Model.code(i, j) + ' frame', b: bytes(sh.image.data) });
+      if (sh.image && sh.image.ref && !named[sh.image.ref]) {
+        named[sh.image.ref] = SB.Model.code(i, j) + ' frame';
       }
-      if (sh.annotation) heavy.push({ label: SB.Model.code(i, j) + ' ink', b: bytes(sh.annotation) });
+      if (sh.annotation && sh.annotation.ref && !named[sh.annotation.ref]) {
+        named[sh.annotation.ref] = SB.Model.code(i, j) + ' ink';
+      }
     });
     (p.personas || []).forEach(function (per) {
-      if (per.image && per.image.data) {
-        heavy.push({ label: (per.name || 'persona') + ' reference', b: bytes(per.image.data) });
+      if (per.image && per.image.ref && !named[per.image.ref]) {
+        named[per.image.ref] = (per.name || 'persona') + ' reference';
       }
     });
+    Object.keys(blobs).forEach(function (k) {
+      heavy.push({ label: named[k] || 'kept for an older version', b: bytes(blobs[k]) });
+    });
     heavy.sort(function (a, b) { return b.b - a.b; });
+
+    const dedupe = SB.Blobs.stats(p);
 
     return {
       total: total,
@@ -76,6 +99,7 @@
       imageBytes: frames + refs + ink,
       textBytes: total - frames - refs - ink - versions,
       versionBytes: versions,
+      dedupe: dedupe,
       counts: {
         scenes: p.scenes.length, shots: shots, personas: (p.personas || []).length,
         versions: (p.versions || []).length, images: framesN + refsN + inkN,

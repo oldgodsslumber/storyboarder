@@ -140,6 +140,47 @@
       t('a missing project never overwrites the file', window.__disk.data === good, 'file changed');
       SB.Store.S.getProject = function () { return P(); };
 
+      /* ---- an old inline-image file opens, shrinks, and still shows ---- */
+      const frame = 'data:image/jpeg;base64,' + 'A'.repeat(50000);
+      const legacy = {
+        fileVersion: 1, name: 'Old board', master: { text: 'Wide of the office.', marks: {} },
+        scenes: [{
+          id: 'sc1', heading: 'One', description: '', shots: [
+            { id: 's1', type: 'Wide', image: { data: frame, w: 854, h: 480 }, link: { from: 0, to: 19 } },
+            { id: 's2', type: 'Close-up', image: { data: frame, w: 854, h: 480 } }
+          ]
+        }],
+        personas: [{ id: 'p1', name: 'Lead', image: { data: frame, w: 854, h: 480 } }],
+        versions: [{
+          n: 1, name: 'v1', createdAt: 1, snapshot: {
+            master: { text: 'Wide of the office.', marks: {} }, versionNumber: 1, versionName: 'v1',
+            scenes: [{ id: 'sc1', shots: [{ id: 's1', image: { data: frame, w: 854, h: 480 } }] }]
+          }
+        }]
+      };
+      const legacyJson = JSON.stringify(legacy);
+      window.__disk.data = legacyJson;
+      const opened = await SB.Store.loadFromHandle(window.__handle, false);
+      t('an old inline-image board still opens', !!opened && opened.scenes[0].shots.length === 2, '');
+      t('its images became references',
+        !!(opened.scenes[0].shots[0].image && opened.scenes[0].shots[0].image.ref), '');
+      t('four copies of one frame became one blob',
+        Object.keys(opened.blobs).length === 1, Object.keys(opened.blobs).length);
+      const reserialised = SB.Store.serialize(opened);
+      t('and the file shrinks by more than half',
+        reserialised.length < legacyJson.length * 0.5,
+        legacyJson.length + ' -> ' + reserialised.length);
+      t('the picture still resolves for display',
+        SB.Blobs.src(opened, opened.scenes[0].shots[0].image) === frame, '');
+      t('the frozen version resolves too',
+        SB.Blobs.src(opened, opened.versions[0].snapshot.scenes[0].shots[0].image) === frame, '');
+      t('a re-opened migrated file is stable',
+        (function () {
+          const again = SB.Model.migrate(JSON.parse(reserialised));
+          return Object.keys(again.blobs).length === 1 &&
+            SB.Blobs.src(again, again.scenes[0].shots[0].image) === frame;
+        })(), '');
+
       t('no page errors', (window.__err || []).length === 0, JSON.stringify(window.__err));
     } catch (e) {
       out.push('FAIL exception :: ' + (e && e.stack || e));

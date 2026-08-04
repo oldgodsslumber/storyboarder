@@ -13,6 +13,9 @@
   /* Any change at all. structural = the card layout must be rebuilt. */
   app.changed = function (structural) {
     if (structural) {
+      /* only a structural change can orphan an image (a deleted shot, a
+       * replaced frame, a dropped version) */
+      SB.Blobs.gc(app.project);
       SB.Board.render();
       renderChrome();
     } else {

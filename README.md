@@ -33,6 +33,25 @@ unaffected — it works normally as soon as a file is open.
 
 Serve the folder over http (any static server) and the reopen-last-project prompt returns.
 
+### How images are stored
+
+Every image — shot frames, persona references, comment ink — is stored **once**, under a
+hash of its bytes, in a `blobs` map on the project. Shots and personas hold a short
+reference. The map lives inside the `.storyboard` file, so a board is still one thing you
+can hand to someone.
+
+Two consequences:
+
+- **Cutting a version is nearly free.** A version snapshot used to deep-copy every frame it
+  froze — on a measured board that was 47% of the file. It now copies references: a new
+  version costs a few hundred bytes instead of hundreds of kilobytes.
+- **The same picture used twice costs once.** A persona reference frame on ten shots is
+  stored once.
+
+Old files migrate on open, and identical bytes collapse automatically — a test board went
+from 182 KB to 74 KB with nothing else changed. Nothing above this layer knows where the
+bytes live, so when a board goes online those same references become object-store keys.
+
 ### How the file is protected
 
 - Writes go through a swap file opened with `keepExistingData`, then truncate to length, so
@@ -223,8 +242,8 @@ fragments are excluded. Print → *Save as PDF*.
 
 The top bar shows what the board currently weighs. Click it for the breakdown:
 
-- **Headline** — total size, what share of it is images, and how many times this session has
-  saved plus how many bytes that moved.
+- **Headline** — total size, what share of it is images, how many times this session has
+  saved plus how many bytes that moved, and what deduplication is saving.
 - **Where the bytes are** — frames, persona references, comment ink, saved versions, and
   script/prompts/structure. The parts add up to the file exactly (they're measured from the
   string the app actually writes, not estimated), and every part is written out as text as
@@ -245,10 +264,26 @@ Figures used, checked Aug 2026:
 Sources: [Firestore quotas](https://firebase.google.com/docs/firestore/quotas),
 [Firebase pricing](https://firebase.google.com/pricing).
 
-Two things the tracker will tell you that matter for that decision: **saved versions and
-frames are nearly all of a board's weight**, and every autosave currently rewrites the whole
-board — so a naive "one project = one Firestore document" sync hits the 1 MiB wall long
-before it hits any quota.
+### If this ever goes online
+
+Storing each image once (above) was step one, and it is the one that matters: without it a
+board's frozen versions duplicate every frame, and nothing fits anywhere. With it, the plan
+that fits the free tier is:
+
+| Piece | Where | Size |
+|---|---|---|
+| script, structure, prompts | `boards/{id}` | tens of KB — nowhere near 1 MiB |
+| each image, by hash | `boards/{id}/blobs/{hash}` | ~45 KB each, each well under the ceiling |
+| edits | `boards/{id}/ops/{seq}` | ~100 bytes each |
+
+That sidesteps Cloud Storage, which Spark does not include. Blobs dedupe across versions and
+across boards.
+
+**Still to do (step two):** every autosave rewrites the whole board — ~500 KB a write, ~100 MB
+in a working session. Every text edit already funnels through one primitive,
+`replace(start, end, text)`, with anchors transformed through it, so an append-only op log is
+a small step from here and would cut writes to ~100 bytes each. Worth doing when sync is
+actually wanted; it buys nothing offline.
 
 ## Premiere Pro panel
 
@@ -278,6 +313,7 @@ css/app.css
 js/theme.js       light / dark
 js/util.js        helpers, image downscale, modal
 js/doc.js         Doc + position transforms (the anchoring core)
+js/blobs.js       content-addressed image store (one copy per picture)
 js/geminimodels.js writer model list, ListModels refresh, daily call counter
 js/model.js       project schema, numbering, all mutations
 js/store.js       File System Access autosave, API key in localStorage
