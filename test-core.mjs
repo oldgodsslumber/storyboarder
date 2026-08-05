@@ -404,6 +404,121 @@ console.log('\n— old boards migrate, and versions stop duplicating frames —'
   eq(B.has(p, junk), false, 'an image nothing points at is collected');
 }
 
+console.log('\n— boards saved by older builds still open —');
+{
+  /* The exact shape the very first build wrote: images inline on the shot,
+     annotation as a bare data URL, a single activeModelId, no personas, no
+     brand, no card fields, no script comments, no blob store. */
+  const frame = 'data:image/jpeg;base64,' + 'A'.repeat(2000);
+  const ink = 'data:image/png;base64,' + 'B'.repeat(500);
+  const v1 = {
+    fileVersion: 1,
+    id: 'prj_old', name: 'Last autumn’s board',
+    createdAt: 1700000000000, updatedAt: 1700000000000,
+    master: { text: 'Wide of the office. Then a close-up of the laptop.', marks: { b: [[0, 4]], i: [], u: [] } },
+    scenes: [{
+      id: 'sc_1', heading: 'Opening', description: 'Client office.',
+      shots: [
+        {
+          id: 'sh_1', type: 'Wide', noShot: false, color: '#454c5c',
+          link: { from: 0, to: 19 }, local: null, broken: false,
+          description: 'Open-plan office.',
+          image: { data: frame, w: 854, h: 480 },
+          annotation: ink,
+          comments: [{ id: 'cm_1', text: 'Needs more light', at: 1700000001000 }],
+          prompts: { m_old: { imagePrompt: 'a room', videoPrompt: 'a push in', modelName: 'Wan' } }
+        },
+        {
+          id: 'sh_2', type: 'Insert', noShot: true, color: '#5b8dff',
+          link: null, local: { text: 'hand-written note', marks: { b: [], i: [], u: [] } },
+          broken: false, description: '', image: null, annotation: null,
+          comments: [], prompts: {}
+        }
+      ]
+    }],
+    versionNumber: 2, versionName: 'v2',
+    versions: [{
+      n: 1, name: 'v1', createdAt: 1700000002000,
+      snapshot: {
+        master: { text: 'Wide of the office. Then a close-up of the laptop.', marks: { b: [], i: [], u: [] } },
+        versionNumber: 1, versionName: 'v1',
+        scenes: [{
+          id: 'sc_1', heading: 'Opening', description: '',
+          shots: [{ id: 'sh_1', type: 'Wide', link: { from: 0, to: 19 }, broken: false,
+            description: '', image: { data: frame, w: 854, h: 480 }, annotation: null,
+            comments: [{ id: 'cm_0', text: 'from v1', at: 1700000002000 }], prompts: {} }]
+        }]
+      }
+    }],
+    settings: {
+      shotTypes: ['Wide', 'Insert'],
+      models: [{ id: 'm_old', name: 'Wan', kind: 'video', imageTemplate: 'IMG', videoTemplate: 'VID' }],
+      activeModelId: 'm_old',
+      geminiModel: 'gemini-2.5-flash',
+      showImagePrompt: true, showVideoPrompt: true
+    }
+  };
+
+  const raw = JSON.stringify(v1);
+  let p = null, threw = '';
+  try { p = SB.Model.migrate(JSON.parse(raw)); } catch (e) { threw = e.message; }
+  eq(!!p, true, 'a first-build file opens without throwing' + (threw ? ' (' + threw + ')' : ''));
+
+  eq(p.name, 'Last autumn’s board', 'the name survives');
+  eq(p.scenes[0].shots.length, 2, 'the shots survive');
+  eq(SB.Model.findShot(p, 'sh_1').code, '1A', 'numbering still works');
+  eq(win(p, p.scenes[0].shots[0]), 'Wide of the office.', 'a linked shot still shows its slice');
+  eq(win(p, p.scenes[0].shots[1]), 'hand-written note', 'a freestanding shot keeps its own text');
+  eq(p.master.marks.b, [[0, 4]], 'bold marks survive');
+  eq(p.scenes[0].shots[1].noShot, true, '“no shot” survives');
+  eq(p.scenes[0].shots[0].comments[0].text, 'Needs more light', 'card comments survive');
+  eq(p.scenes[0].shots[0].prompts.m_old.imagePrompt, 'a room', 'prompts survive, keyed by the same model');
+
+  eq(SB.Blobs.src(p, p.scenes[0].shots[0].image), frame, 'the frame still resolves');
+  eq(SB.Blobs.src(p, p.scenes[0].shots[0].annotation), ink, 'the ink overlay still resolves');
+  eq(SB.Blobs.src(p, p.versions[0].snapshot.scenes[0].shots[0].image), frame,
+    'and so does the frame frozen in v1');
+  eq(Object.keys(p.blobs).length, 2, 'the duplicate frame collapsed to one blob');
+  eq(p.versions[0].snapshot.scenes[0].shots[0].comments[0].text, 'from v1',
+    'the old version keeps its comments');
+
+  eq(p.settings.imageModelId && p.settings.videoModelId ? 'set' : 'missing', 'set',
+    'the single active model became an image and a video model');
+  eq(p.settings.models[0].referenceTemplate.length > 0, true,
+    'the old model gained reference-image wording');
+  eq(p.settings.models[0].imageTemplate, 'IMG', 'its own templates are untouched');
+  eq(p.settings.geminiModel, 'gemini-2.5-flash', 'a writer model that still exists is left alone');
+  eq(p.settings.shotTypes, ['Wide', 'Insert'], 'the shot-type list is untouched');
+  eq(SB.Fields.all(p).length, 3, 'card fields are added, switched off');
+  eq(SB.Fields.enabled(p).length, 0, 'so nothing changes on the cards');
+  eq(p.personas, [], 'personas start empty');
+  eq(p.scriptComments, [], 'script comments start empty');
+  eq(SB.Brand.brandOf(p).enabled, true, 'the house style is available');
+
+  eq(JSON.parse(raw).scenes[0].shots[0].image.data, frame, 'the file on disk was not mutated');
+
+  /* re-saving and re-opening has to be stable */
+  const saved = SB.Store.serialize(p);
+  const again = SB.Model.migrate(JSON.parse(saved));
+  eq(win(again, again.scenes[0].shots[0]), 'Wide of the office.', 'a re-saved board reopens intact');
+  eq(SB.Blobs.src(again, again.scenes[0].shots[0].image), frame, 'with its images');
+  eq(Object.keys(again.blobs).length, 2, 'and no blob duplication on the round trip');
+
+  /* an interim file: personas and brand, but before fields and blobs */
+  const v3 = JSON.parse(raw);
+  v3.personas = [{ id: 'p1', name: 'Lead', description: 'Knit', image: { data: frame, w: 4, h: 3 } }];
+  v3.scenes[0].shots[0].personaIds = ['p1'];
+  v3.settings.brand = { enabled: true, text: 'OLD 9-frame grid text' };
+  delete v3.settings.activeModelId;
+  v3.settings.imageModelId = 'm_old';
+  v3.settings.videoModelId = 'm_old';
+  const p3 = SB.Model.migrate(v3);
+  eq(SB.Blobs.src(p3, p3.personas[0].image), frame, 'a persona reference image migrates');
+  eq(p3.scenes[0].shots[0].personaIds, ['p1'], 'cast assignments survive');
+  eq(SB.Brand.brandOf(p3).text === SB.Brand.DEFAULT, true,
+    'an unedited old house style is replaced by the current one');
+}
+
 console.log('\n— comments anchored to the script —');
 {
   const p = projectWith('Wide of the office. Then a close-up of the laptop.');

@@ -181,6 +181,62 @@
             SB.Blobs.src(again, again.scenes[0].shots[0].image) === frame;
         })(), '');
 
+      /* ---- the real Open… flow, on a board written by the first build ---- */
+      const oldFrame = 'data:image/gif;base64,R0lGODlhAQABAAAAACw=';
+      window.__disk.data = JSON.stringify({
+        fileVersion: 1, id: 'prj_v1', name: 'First build board',
+        master: { text: 'Wide of the office. Then a close-up.', marks: { b: [], i: [], u: [] } },
+        scenes: [{
+          id: 'sc1', heading: 'Opening', description: '',
+          shots: [
+            { id: 's1', type: 'Wide', link: { from: 0, to: 19 }, broken: false,
+              description: 'Open-plan office.', image: { data: oldFrame, w: 4, h: 3 },
+              annotation: null, comments: [], prompts: {}, color: '#454c5c' },
+            { id: 's2', type: 'Close-up', link: { from: 20, to: 36 }, broken: false,
+              description: 'The laptop.', image: null, annotation: null,
+              comments: [], prompts: {}, color: '#454c5c' }
+          ]
+        }],
+        versionNumber: 1, versionName: 'v1', versions: [],
+        settings: {
+          shotTypes: ['Wide', 'Close-up'],
+          models: [{ id: 'm1', name: 'Wan', kind: 'video', imageTemplate: 'I', videoTemplate: 'V' }],
+          activeModelId: 'm1', geminiModel: 'gemini-2.5-flash',
+          showImagePrompt: true, showVideoPrompt: true
+        }
+      });
+
+      let openErr = '';
+      document.getElementById('btnOpen').click();     // the button the user presses
+      await wait(700);
+      openErr = document.querySelectorAll('.modal h2').length
+        ? document.querySelector('.modal h2').textContent : '';
+      t('Open… on a first-build board raises no error', !openErr, openErr);
+      t('the old board is now the open project', P().name === 'First build board', P().name);
+      t('its shots are on screen',
+        document.querySelectorAll('.card').length === 2,
+        document.querySelectorAll('.card').length);
+      t('its script windows still resolve',
+        document.querySelector('.card .script-box').textContent === 'Wide of the office.',
+        document.querySelector('.card .script-box').textContent);
+      t('its image renders from the blob store',
+        (document.querySelector('.card .frame img') || {}).src === oldFrame,
+        (document.querySelector('.card .frame img') || {}).src);
+      t('the file it is connected to is the one that was opened',
+        SB.Store.S.fileName === 'board.storyboard', SB.Store.S.fileName);
+
+      /* and editing it writes back to that same file */
+      P().name = 'First build board (edited)';
+      SB.Store.touch();
+      await wait(900);
+      t('editing an old board saves back to its file',
+        /First build board \(edited\)/.test(window.__disk.data), window.__disk.data.slice(0, 60));
+      t('and the saved file is readable again',
+        (function () {
+          try { return SB.Model.migrate(JSON.parse(window.__disk.data)).scenes[0].shots.length === 2; }
+          catch (e) { return false; }
+        })(), '');
+
       t('no page errors', (window.__err || []).length === 0, JSON.stringify(window.__err));
     } catch (e) {
       out.push('FAIL exception :: ' + (e && e.stack || e));
