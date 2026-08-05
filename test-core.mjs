@@ -404,6 +404,29 @@ console.log('\n— old boards migrate, and versions stop duplicating frames —'
   eq(B.has(p, junk), false, 'an image nothing points at is collected');
 }
 
+console.log('\n— a model added to the app reaches existing boards —');
+{
+  const fresh = SB.Model.newProject();
+  eq(fresh.settings.models.some(m => m.name === 'Flux 3' && m.kind === 'video'), true,
+    'Flux 3 ships as a video model');
+
+  /* a board made before Flux 3 existed */
+  const old = SB.Model.newProject();
+  old.settings.models = old.settings.models.filter(m => m.name !== 'Flux 3');
+  delete old.settings.modelSeeds;
+  const migrated = SB.Model.migrate(old);
+  eq(migrated.settings.models.some(m => m.name === 'Flux 3'), true,
+    'an existing board is offered it once');
+
+  /* and a model deliberately removed stays removed */
+  migrated.settings.models = migrated.settings.models.filter(m => m.name !== 'Flux 3');
+  const again = SB.Model.migrate(migrated);
+  eq(again.settings.models.some(m => m.name === 'Flux 3'), false,
+    'deleting it afterwards sticks');
+  eq(again.settings.models.some(m => m.name === 'Kling'), true,
+    'the models it keeps are untouched');
+}
+
 console.log('\n— boards saved by older builds still open —');
 {
   /* The exact shape the very first build wrote: images inline on the shot,

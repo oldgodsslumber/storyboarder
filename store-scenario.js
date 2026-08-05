@@ -26,7 +26,7 @@
         (out.length ? out[out.length - 1] : 'nothing'));
       report();
     }
-  }, 35000);   /* headless runs on virtual time, which races ahead of the work */
+  }, 100000);   /* headless runs on virtual time, which races ahead of the work */
 
   /* a board worth losing — the name and script carry the em-dashes and smart
    * quotes that real boards are full of, because a byte-vs-character bug only

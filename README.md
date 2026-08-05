@@ -119,6 +119,8 @@ is **per project** and lives in the project file. **Settings → Card fields**:
 - **+ Add a field** for anything else; custom fields can be renamed and removed. Removing one
   tells you how many cards have text in it before it goes.
 - Values live on the shot, so switching a field off hides it without losing what you wrote.
+- Turning one on or off does not move the board under you — the card you were looking at
+  stays where it is on screen, even though every card changes height.
 
 Anything filled in is **handed to the prompt writer** — art direction only the storyboard can
 see isn't much use. Each field also gets a template placeholder shown next to it
@@ -258,6 +260,10 @@ A persona with no reference image is described in full instead, so it still stay
 
 **Preview what a shot sends** in the Brand style tab shows the exact system instruction for
 the selected shot, continuity block included.
+
+The starter model list is user-extensible in Settings. A model added to the app later — such
+as **Flux 3** — is offered once to boards that predate it; delete it there and it stays
+deleted.
 
 Prompts are stored **per model**, all at once — switching target models only changes what is
 displayed; every model's prompts stay saved. Each card's prompt box names the model it came

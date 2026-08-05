@@ -36,6 +36,7 @@
       model('Wan', 'video'), model('LTX (LTXV 2.3)', 'video'), model('Veo', 'video'),
       model('Kling', 'video'), model('Sora', 'video'), model('Runway', 'video'),
       model('Hailuo (MiniMax)', 'video'), model('Seedance', 'video'),
+      model('Flux 3', 'video'),
       model('Nano Banana (Gemini Image)', 'image'), model('Qwen-Image', 'image'),
       model('FLUX', 'image'), model('GPT Image', 'image'), model('Imagen', 'image'),
       model('Ideogram', 'image'), model('Midjourney', 'image')
@@ -183,6 +184,16 @@
         m.referenceTemplate = SB.Personas.DEFAULT_REF_TEMPLATE;
       }
     });
+    /* A board keeps its own model list, so a model added to the app later
+     * would never reach an existing project. Offer each shipped model once:
+     * after that it is recorded, so one you delete stays deleted. */
+    s.modelSeeds = Array.isArray(s.modelSeeds) ? s.modelSeeds : [];
+    defaultModels().forEach(function (d) {
+      if (s.modelSeeds.indexOf(d.name) >= 0) return;
+      s.modelSeeds.push(d.name);
+      if (!s.models.some(function (m) { return m.name === d.name; })) s.models.push(d);
+    });
+
     const has = function (id) { return s.models.some(function (m) { return m.id === id; }); };
     // older files carried a single activeModelId
     if (s.activeModelId && has(s.activeModelId)) {

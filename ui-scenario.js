@@ -305,8 +305,12 @@
 
       tab('Models & templates');
       t('models tab shows the model list',
-        document.querySelectorAll('.modal .tab-panel.on .model-row').length === 15,
-        document.querySelectorAll('.modal .tab-panel.on .model-row').length);
+        document.querySelectorAll('.modal .tab-panel.on .model-row').length ===
+        P().settings.models.length,
+        document.querySelectorAll('.modal .tab-panel.on .model-row').length +
+        ' rows for ' + P().settings.models.length + ' models');
+      t('Flux 3 is among them',
+        P().settings.models.some(function (m) { return m.name === 'Flux 3'; }), '');
       t('templates collapsed until opened',
         document.querySelectorAll('.modal .tab-panel.on textarea').length === 0, '');
       tab('API');
@@ -427,6 +431,55 @@
       t('switching them off clears the boxes',
         document.querySelectorAll('.field-box').length === 0, '');
       t('but the text is kept', SB.Fields.value(firstShot2, 'artDirection') === 'Warm practicals only.', '');
+
+      // turning a field on must not move the board under you
+      (function () {
+        const panel = document.getElementById('boardPanel');
+        const sc = P().scenes[0];
+        while (sc.shots.length < 10) SB.Model.addShot(P(), sc.id, { type: 'Wide' });
+        SB.app.changed(true);
+
+        panel.scrollTop = Math.floor(panel.scrollHeight / 2);
+        const before = panel.scrollTop;
+        t('the board is long enough to scroll', before > 40, 'scrollTop ' + before);
+
+        const cards = document.querySelectorAll('#board .card');
+        const top = panel.getBoundingClientRect().top;
+        let watched = null;
+        for (let i = 0; i < cards.length; i++) {
+          if (cards[i].getBoundingClientRect().bottom > top + 4) { watched = cards[i]; break; }
+        }
+        const id = watched.dataset.shot;
+        const wasAt = watched.getBoundingClientRect().top;
+
+        SB.Fields.find(P(), 'artDirection').enabled = true;
+        SB.app.changed(true);
+        const after = document.querySelector('.card[data-shot="' + id + '"]');
+        t('adding a field leaves the card you were looking at where it was',
+          !!after && Math.abs(after.getBoundingClientRect().top - wasAt) <= 2,
+          after ? (wasAt + ' -> ' + after.getBoundingClientRect().top) : 'card gone');
+        t('and the board did not jump to the top', panel.scrollTop > 40, panel.scrollTop);
+
+        const wasAt2 = after.getBoundingClientRect().top;
+        SB.Fields.find(P(), 'artDirection').enabled = false;
+        SB.app.changed(true);
+        const after2 = document.querySelector('.card[data-shot="' + id + '"]');
+        t('removing a field does not move it either',
+          !!after2 && Math.abs(after2.getBoundingClientRect().top - wasAt2) <= 2,
+          after2 ? (wasAt2 + ' -> ' + after2.getBoundingClientRect().top) : 'card gone');
+
+        /* the same protection for anything else that rebuilds the board */
+        const wasAt3 = after2.getBoundingClientRect().top;
+        P().settings.showImagePrompt = true;
+        SB.app.changed(true);
+        const after3 = document.querySelector('.card[data-shot="' + id + '"]');
+        t('showing the prompt boxes holds your place too',
+          !!after3 && Math.abs(after3.getBoundingClientRect().top - wasAt3) <= 2,
+          after3 ? (wasAt3 + ' -> ' + after3.getBoundingClientRect().top) : 'card gone');
+        P().settings.showImagePrompt = false;
+        panel.scrollTop = 0;
+        SB.app.changed(true);
+      })();
 
       // card colour covers the whole card
       var cardEl = document.querySelector('.card');

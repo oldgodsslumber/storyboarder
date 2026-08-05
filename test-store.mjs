@@ -100,7 +100,7 @@ const tmp = join(root, '_storetest_' + Date.now() + '.html');
 writeFileSync(tmp, html, 'utf8');
 
 const dom = execFileSync(CHROME, [
-  '--headless=new', '--disable-gpu', '--virtual-time-budget=40000',
+  '--headless=new', '--disable-gpu', '--virtual-time-budget=120000',
   '--dump-dom', 'file:///' + tmp.replace(/\\/g, '/')
 ], { maxBuffer: 64 * 1024 * 1024, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
 

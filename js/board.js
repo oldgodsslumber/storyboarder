@@ -108,8 +108,34 @@
     });
   }
 
+  /* Rebuilding the board throws the scroll position away, so anything that
+   * changes every card — switching a field on, changing the target model —
+   * used to fling you back to the top and away from the card you were on.
+   * Hold the position, and if a card was selected, hold IT still: the cards
+   * change height, so the same scrollTop is not the same place. */
   function render() {
     armAutoScroll();
+    const panel = document.getElementById('boardPanel');
+    const prevTop = panel ? panel.scrollTop : 0;
+    let anchorId = null, anchorOffset = null;
+    if (panel) {
+      const top = panel.getBoundingClientRect().top;
+      /* the selected card if it is on screen, otherwise the topmost card that is */
+      const sel = SB.app.selectedShotId
+        ? document.querySelector('.card[data-shot="' + SB.app.selectedShotId + '"]') : null;
+      let anchor = (sel && sel.getBoundingClientRect().bottom > top) ? sel : null;
+      if (!anchor) {
+        const cards = document.querySelectorAll('#board .card');
+        for (let i = 0; i < cards.length; i++) {
+          if (cards[i].getBoundingClientRect().bottom > top + 4) { anchor = cards[i]; break; }
+        }
+      }
+      if (anchor) {
+        anchorId = anchor.dataset.shot;
+        anchorOffset = anchor.getBoundingClientRect().top;
+      }
+    }
+
     B.scriptEditors = {};
     B.scriptEls = {};
     const board = document.getElementById('board');
@@ -117,6 +143,17 @@
     P().scenes.forEach(function (sc, si) { board.appendChild(sceneBlock(sc, si)); });
     renderSceneList();
     SB.ScriptMode.refresh();
+
+    if (!panel) return;
+    panel.scrollTop = prevTop;
+    if (anchorId) {
+      const now = document.querySelector('.card[data-shot="' + anchorId + '"]');
+      if (now) {
+        /* put that card back under the same point on screen */
+        const delta = now.getBoundingClientRect().top - anchorOffset;
+        if (delta) panel.scrollTop = prevTop + delta;
+      }
+    }
   }
 
   function sceneBlock(sc, si) {
