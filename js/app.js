@@ -210,6 +210,8 @@
       this.classList.toggle('on', app.commentMode);
       document.body.classList.toggle('comment-mode', app.commentMode);
       SB.Board.render();
+      /* commenting on the script needs the script in front of you */
+      if (app.commentMode && !SB.ScriptMode.isOpen()) SB.ScriptMode.open();
     });
 
     $('btnPersonas').addEventListener('click', function () { SB.PersonaPanel.toggle(); });

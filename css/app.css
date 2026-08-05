@@ -273,6 +273,50 @@ button,input,select,textarea{font:inherit;color:inherit}
 .master-script .h2{background:var(--hl2);border-radius:2px}
 .master-script .h3{background:var(--hl3);border-radius:2px}
 .master-script .hactive{box-shadow:inset 0 -2px 0 var(--accent2)}
+/* a commented phrase is underlined, so it still reads under a capture wash */
+.master-script .cmt{
+  text-decoration:underline;
+  text-decoration-color:var(--accent2);
+  text-decoration-thickness:2px;
+  text-underline-offset:3px;
+  text-decoration-skip-ink:none;
+}
+.master-script .cmt-on{
+  background:rgba(255,179,71,.22);
+  text-decoration-style:double;
+}
+body.comment-mode .master-script .cmt{cursor:pointer}
+
+/* ---------- script comments ---------- */
+.note-list{
+  flex:0 0 auto;max-height:42%;overflow:auto;border-top:1px solid var(--line);
+  background:var(--bg2);padding:6px 8px 10px;
+}
+.note-head{
+  font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--fg-dim);
+  font-weight:600;padding:2px 0 6px;position:sticky;top:0;background:var(--bg2);
+}
+.note-empty{color:var(--fg-dim);font-size:11.5px;line-height:1.5}
+.note{
+  border:1px solid var(--line);border-left:3px solid var(--accent2);border-radius:5px;
+  background:var(--bg3);padding:6px 8px;margin-bottom:6px;cursor:pointer;
+}
+.note:hover{border-color:var(--line2)}
+.note.on{border-color:var(--accent2);box-shadow:0 0 0 1px var(--accent2)}
+.note.broken{border-left-color:var(--danger);opacity:.85}
+.note-quote{
+  font-size:11px;color:var(--fg-dim);font-style:italic;margin-bottom:3px;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+}
+.note.broken .note-quote{color:var(--danger)}
+.note-text{font-size:12.5px;white-space:pre-wrap}
+.note-foot{display:flex;align-items:center;gap:6px;margin-top:4px}
+.note-when{font-size:10px;color:var(--fg-dim);flex:1}
+.note-input{
+  width:100%;background:var(--input-bg);color:var(--fg);border:1px solid var(--line);
+  border-radius:4px;padding:5px 6px;font-size:12.5px;resize:vertical;
+}
+.note-input:focus{outline:none;border-color:var(--accent)}
 .capture-form{
   border-top:1px solid var(--line);padding:8px;background:var(--bg3);
   display:flex;flex-direction:column;gap:6px;

@@ -10,6 +10,7 @@
     return {
       master: SB.clone(p.master),
       scenes: SB.clone(p.scenes),
+      scriptComments: SB.clone(p.scriptComments || []),
       versionNumber: p.versionNumber,
       versionName: p.versionName
     };
@@ -32,7 +33,7 @@
         if (sh.annotation) ink++;
       });
     });
-    return { comments: n, ink: ink };
+    return { comments: n, ink: ink, script: (snap.scriptComments || []).length };
   }
 
   function newVersion() {
@@ -45,6 +46,7 @@
     p.versionName = (name || '').trim() || suggested;
     // fresh start: comments and drawings stay with the version they were made in
     SB.Model.eachShot(p, function (sh) { sh.comments = []; sh.annotation = null; });
+    p.scriptComments = [];
     SB.app.changed(true);
     SB.toast('Now working in ' + p.versionName + ' — comments and ink start clean');
   }
@@ -55,6 +57,7 @@
     freeze(p, 'before restoring ' + v.name);
     p.master = SB.clone(v.snapshot.master);
     p.scenes = SB.clone(v.snapshot.scenes);
+    p.scriptComments = SB.clone(v.snapshot.scriptComments || []);
     p.versionNumber = p.versions.reduce(function (a, x) { return Math.max(a, x.n); }, p.versionNumber) + 1;
     p.versionName = v.name + ' (restored)';
     SB.app.selectedShotId = null;
@@ -65,6 +68,23 @@
   function viewComments(v) {
     const body = SB.el('div');
     let any = false;
+
+    const notes = v.snapshot.scriptComments || [];
+    if (notes.length) {
+      any = true;
+      const h = SB.el('div', 'ver-row');
+      h.appendChild(SB.el('b', null, 'On the script'));
+      body.appendChild(h);
+      notes.forEach(function (c) {
+        const r = SB.el('div', 'comment');
+        r.appendChild(SB.el('span', 'when', SB.fmtDate(c.at)));
+        const txt = SB.el('span', 'txt');
+        txt.appendChild(SB.el('div', 'note-quote', '“' + (c.quote || '') + '”'));
+        txt.appendChild(document.createTextNode(c.text));
+        r.appendChild(txt);
+        body.appendChild(r);
+      });
+    }
     (v.snapshot.scenes || []).forEach(function (sc, si) {
       sc.shots.forEach(function (sh, sj) {
         if (!(sh.comments || []).length && !sh.annotation) return;
@@ -92,7 +112,7 @@
     const cur = SB.el('div', 'ver-row current');
     const c = countComments(p);
     cur.appendChild(SB.el('span', 'vname', p.versionName + '  (working)'));
-    cur.appendChild(SB.el('span', 'vmeta', c.comments + ' comments · ' + c.ink + ' inked'));
+    cur.appendChild(SB.el('span', 'vmeta', c.comments + ' card · ' + c.script + ' script · ' + c.ink + ' inked'));
     const nv = SB.el('button', 'mini primary', 'New version…');
     nv.onclick = function () { m.close(); newVersion(); };
     cur.appendChild(nv);
@@ -103,7 +123,7 @@
       const row = SB.el('div', 'ver-row');
       row.appendChild(SB.el('span', 'vname', v.name));
       row.appendChild(SB.el('span', 'vmeta', SB.fmtDate(v.createdAt) + ' · ' +
-        cc.comments + ' comments · ' + cc.ink + ' inked'));
+        cc.comments + ' card · ' + cc.script + ' script · ' + cc.ink + ' inked'));
       const bc = SB.el('button', 'mini', 'comments');
       bc.onclick = function () { viewComments(v); };
       const br = SB.el('button', 'mini', 'restore');

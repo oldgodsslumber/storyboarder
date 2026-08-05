@@ -404,6 +404,56 @@ console.log('\n— old boards migrate, and versions stop duplicating frames —'
   eq(B.has(p, junk), false, 'an image nothing points at is collected');
 }
 
+console.log('\n— comments anchored to the script —');
+{
+  const p = projectWith('Wide of the office. Then a close-up of the laptop.');
+  const c = SB.Model.addScriptComment(p, 5, 18, 'Too static — give them something to do.');
+  eq(!!c, true, 'a comment is made from a selection');
+  eq(c.quote, 'of the office', 'it keeps what it was written about');
+  eq(p.master.text.slice(c.from, c.to), 'of the office', 'and points at that text');
+
+  // text inserted before it drags it along
+  SB.Model.applyMasterEdit(p, 0, 0, 'SCENE ONE. ', null);
+  eq(p.master.text.slice(c.from, c.to), 'of the office', 'an edit before it moves it');
+
+  // typing right at either edge must not swallow into the comment
+  SB.Model.applyMasterEdit(p, c.to, c.to, 'XX', null);
+  eq(p.master.text.slice(c.from, c.to), 'of the office', 'typing at its end stays outside');
+  SB.Model.applyMasterEdit(p, c.from, c.from, 'YY', null);
+  eq(p.master.text.slice(c.from, c.to), 'of the office', 'typing at its start stays outside');
+
+  // an edit inside it keeps the comment on the edited phrase
+  const inside = c.from + 3;
+  SB.Model.applyMasterEdit(p, inside, inside, 'very ', null);
+  eq(p.master.text.slice(c.from, c.to), 'of very the office', 'an edit inside grows it');
+  eq(c.broken, false, 'still healthy');
+
+  // deleting the phrase orphans the note rather than losing it
+  SB.Model.applyMasterEdit(p, c.from, c.to, '', null);
+  eq(c.broken, true, 'deleting the text flags the comment');
+  eq(SB.Model.scriptComments(p).length, 1, 'the comment itself is kept');
+  eq(SB.Model.scriptComments(p)[0].quote, 'of the office', 'so you can still read what it meant');
+
+  // two comments, ordered by position, and coverage for the underline
+  const p2 = projectWith('ONE two THREE four');
+  const a = SB.Model.addScriptComment(p2, 8, 13, 'louder');
+  const b = SB.Model.addScriptComment(p2, 0, 3, 'earlier');
+  eq(SB.Model.scriptComments(p2).map(x => x.text).join(','), 'earlier,louder',
+    'listed in script order, not the order written');
+  eq(Array.from(SB.Model.commentCoverage(p2)).join(''), '111000001111100000',
+    'coverage marks exactly the commented characters');
+  eq(a.id !== b.id, true, 'each has its own id');
+
+  SB.Model.deleteScriptComment(p2, a.id);
+  eq(SB.Model.scriptComments(p2).length, 1, 'a comment can be deleted');
+
+  // a comment on a shot's captured text does not disturb the shot
+  const p3 = projectWith('Wide of the office. Close on the laptop.');
+  const shot = addLinked(p3, 0, 19);
+  SB.Model.addScriptComment(p3, 5, 11, 'note');
+  eq(win(p3, shot), 'Wide of the office.', 'the shot window is untouched by a comment');
+}
+
 console.log('\n— per-project card fields —');
 {
   const F = SB.Fields;

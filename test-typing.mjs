@@ -307,6 +307,88 @@ try {
     /\ntw$/.test(await evaluate('return SB.app.project.master.text;')),
     JSON.stringify(await evaluate('return SB.app.project.master.text.slice(-8);')));
 
+  /* ---------------- commenting on the script ---------------- */
+  await evaluate('SB.app.commentMode=false;document.getElementById("btnComment").click();return 1;');
+  await sleep(200);
+  t('comment mode opens the script for you',
+    await evaluate('return SB.ScriptMode.isOpen();'), '');
+  t('the comment button appears only in comment mode',
+    await evaluate('return !document.getElementById("btnScriptNote").classList.contains("hidden");'), '');
+
+  box = await boxOf('#masterScript');
+  await clickAt(box.x + 40, box.y + 20);
+  await sleep(60);
+  await evaluate('var el=document.getElementById("masterScript");el.focus();SB.Editor.setSel(el,0,12);' +
+    'document.dispatchEvent(new Event("selectionchange"));return 1;');
+  await sleep(150);
+  t('selecting text enables the comment button',
+    await evaluate('return !document.getElementById("btnScriptNote").disabled;'), '');
+
+  const noteBtn = await boxOf('#btnScriptNote');
+  await clickAt(noteBtn.x + noteBtn.w / 2, noteBtn.y + noteBtn.h / 2);
+  await sleep(200);
+  t('the comment form opens with the quoted text',
+    await evaluate('var f=document.getElementById("noteForm");' +
+      'return !f.classList.contains("hidden") && f.querySelector(".preview").textContent.length > 0;'),
+    await evaluate('var f=document.getElementById("noteForm");return f.className;'));
+
+  const ta = await boxOf('#noteForm .note-input');
+  await clickAt(ta.x + 40, ta.y + 12);
+  await sleep(60);
+  await typeText('Punch this up');
+  await sleep(120);
+  const addBtn = await boxOf('#noteForm .mini.primary');
+  await clickAt(addBtn.x + addBtn.w / 2, addBtn.y + addBtn.h / 2);
+  await sleep(250);
+
+  t('the comment is stored against the script',
+    await evaluate('return SB.Model.scriptComments(SB.app.project).length;') === 1,
+    await evaluate('return SB.Model.scriptComments(SB.app.project).length;'));
+  t('with the text that was typed',
+    await evaluate('return SB.Model.scriptComments(SB.app.project)[0].text;') === 'Punch this up',
+    await evaluate('return JSON.stringify(SB.Model.scriptComments(SB.app.project)[0]);'));
+  t('it is listed in the panel',
+    await evaluate('return document.querySelectorAll("#noteList .note").length;') === 1, '');
+  t('the commented phrase is underlined in the script',
+    await evaluate('return document.querySelectorAll("#masterScript .cmt").length > 0;'), '');
+
+  /* editing the script ahead of it must carry the comment along */
+  const quoted = await evaluate(
+    'var c=SB.Model.scriptComments(SB.app.project)[0];' +
+    'return SB.app.project.master.text.slice(c.from,c.to);');
+  await evaluate('var el=document.getElementById("masterScript");el.focus();SB.Editor.setSel(el,0,0);return 1;');
+  await typeText('NEW ');
+  await sleep(250);
+  t('a comment follows its words when the script is edited',
+    await evaluate('var c=SB.Model.scriptComments(SB.app.project)[0];' +
+      'return SB.app.project.master.text.slice(c.from,c.to);') === quoted,
+    quoted + ' -> ' + await evaluate('var c=SB.Model.scriptComments(SB.app.project)[0];' +
+      'return SB.app.project.master.text.slice(c.from,c.to);'));
+
+  /* undo has to take the comment back with the text */
+  await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'z', code: 'KeyZ', windowsVirtualKeyCode: 90, modifiers: 2 });
+  await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'z', code: 'KeyZ', windowsVirtualKeyCode: 90, modifiers: 2 });
+  await sleep(250);
+  t('undo restores the comment anchor too',
+    await evaluate('var c=SB.Model.scriptComments(SB.app.project)[0];' +
+      'return SB.app.project.master.text.slice(c.from,c.to);') === quoted,
+    await evaluate('var c=SB.Model.scriptComments(SB.app.project)[0];' +
+      'return SB.app.project.master.text.slice(c.from,c.to);'));
+
+  /* deleting the words it points at flags it rather than losing it */
+  await evaluate('var c=SB.Model.scriptComments(SB.app.project)[0];' +
+    'SB.Model.applyMasterEdit(SB.app.project,c.from,c.to,"",null);SB.app.scriptChanged();return 1;');
+  await sleep(200);
+  t('deleting the words marks the comment broken, not gone',
+    await evaluate('return SB.Model.scriptComments(SB.app.project)[0].broken;') === true &&
+    await evaluate('return document.querySelectorAll("#noteList .note.broken").length;') === 1,
+    await evaluate('return document.querySelectorAll("#noteList .note").length + " notes";'));
+
+  await evaluate('var b=document.querySelector("#noteList .note .mini.danger");b.click();return 1;');
+  await sleep(200);
+  t('a comment can be deleted from the list',
+    await evaluate('return SB.Model.scriptComments(SB.app.project).length;') === 0, '');
+
   errors.push(...(await evaluate('return window.__err;')));
   t('no page errors', errors.length === 0, errors);
 } catch (e) {

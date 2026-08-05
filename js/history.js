@@ -28,12 +28,19 @@
         local: s.local ? SB.clone(s.local) : null
       });
     });
-    return { text: p.master.text, marks: SB.clone(p.master.marks), shots: shots };
+    return {
+      text: p.master.text,
+      marks: SB.clone(p.master.marks),
+      shots: shots,
+      /* notes are anchored into the same text, so they have to move back with it */
+      notes: SB.clone(p.scriptComments || [])
+    };
   }
 
   function apply(p, s) {
     p.master.text = s.text;
     p.master.marks = SB.clone(s.marks);
+    if (s.notes) p.scriptComments = SB.clone(s.notes);
     const byId = {};
     s.shots.forEach(function (x) { byId[x.id] = x; });
     SB.Model.eachShot(p, function (sh) {

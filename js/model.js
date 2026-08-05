@@ -94,6 +94,7 @@
       updatedAt: Date.now(),
       master: SB.Doc.make(''),
       blobs: {},                        // hash -> data URL; images live here once
+      scriptComments: [],               // notes anchored to ranges of the master
       personas: [],
       scenes: [newScene('Scene one')],
       versionNumber: 1,
@@ -131,6 +132,17 @@
     /* Images used to sit inline on each shot, which meant every version froze
      * its own copy of every frame. They are now stored once under a hash. */
     p.blobs = (p.blobs && typeof p.blobs === 'object') ? p.blobs : {};
+
+    p.scriptComments = Array.isArray(p.scriptComments) ? p.scriptComments : [];
+    p.scriptComments.forEach(function (c) {
+      c.id = c.id || SB.uid('sc');
+      c.from = SB.clamp(c.from | 0, 0, p.master.text.length);
+      c.to = SB.clamp(c.to | 0, c.from, p.master.text.length);
+      c.text = c.text || '';
+      c.quote = c.quote || '';
+      c.at = c.at || Date.now();
+      c.broken = !!c.broken || c.to <= c.from;
+    });
     p.personas = Array.isArray(p.personas) ? p.personas : [];
     p.personas.forEach(function (x) {
       x.id = x.id || SB.uid('per');
@@ -284,6 +296,18 @@
       else if (sh.broken && sh.link.to > sh.link.from) sh.broken = false;
     });
 
+    /* A note on a phrase should not swallow text typed against its edges, so
+     * neither end grows; if the phrase itself is deleted the note is flagged
+     * rather than vanishing with it. */
+    (p.scriptComments || []).forEach(function (c) {
+      const nf = SB.Doc.mapPos(c.from, start, end, op.len, false);
+      const nt = SB.Doc.mapPos(c.to, start, end, op.len, true);
+      c.from = Math.min(nf, nt);
+      c.to = Math.max(nf, nt);
+      if (c.to <= c.from) c.broken = true;
+      else if (c.broken) c.broken = false;
+    });
+
     SB.Doc.replace(p.master, start, end, text);
     p.updatedAt = Date.now();
     return op;
@@ -311,6 +335,48 @@
     shot.link = null;
     shot.broken = false;
     p.updatedAt = Date.now();
+  }
+
+  /* ---------- notes on the script ---------- */
+
+  function addScriptComment(p, from, to, text) {
+    from = SB.clamp(from | 0, 0, p.master.text.length);
+    to = SB.clamp(to | 0, from, p.master.text.length);
+    if (to <= from) return null;
+    const c = {
+      id: SB.uid('scm'),
+      from: from, to: to,
+      quote: p.master.text.slice(from, to),
+      text: text || '',
+      at: Date.now(),
+      broken: false
+    };
+    p.scriptComments = p.scriptComments || [];
+    p.scriptComments.push(c);
+    p.updatedAt = Date.now();
+    return c;
+  }
+
+  function deleteScriptComment(p, id) {
+    p.scriptComments = (p.scriptComments || []).filter(function (c) { return c.id !== id; });
+    p.updatedAt = Date.now();
+  }
+
+  function scriptComments(p) {
+    return (p.scriptComments || []).slice().sort(function (a, b) {
+      return a.from - b.from || a.at - b.at;
+    });
+  }
+
+  /* how many notes cover each master character (for the underline layer) */
+  function commentCoverage(p) {
+    const n = p.master.text.length;
+    const d = new Uint8Array(n);
+    (p.scriptComments || []).forEach(function (c) {
+      if (c.broken) return;
+      for (let i = c.from; i < c.to && i < n; i++) if (d[i] < 250) d[i]++;
+    });
+    return d;
   }
 
   /* how many shots cover each master character (for the highlight underlay) */
@@ -396,6 +462,8 @@
     eachShot: eachShot, code: code, findShot: findShot, findScene: findScene,
     windowFor: windowFor, applyMasterEdit: applyMasterEdit, applyShotEdit: applyShotEdit,
     breakLink: breakLink, coverage: coverage,
+    addScriptComment: addScriptComment, deleteScriptComment: deleteScriptComment,
+    scriptComments: scriptComments, commentCoverage: commentCoverage,
     addScene: addScene, deleteScene: deleteScene, addShot: addShot, deleteShot: deleteShot,
     moveShot: moveShot, moveScene: moveScene,
     modelById: modelById, imageModel: imageModel, videoModel: videoModel, firstOfKind: firstOfKind

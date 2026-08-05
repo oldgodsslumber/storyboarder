@@ -132,6 +132,23 @@ Toggle **Comment mode** to add comments under a card and to draw over a frame. I
 as a transparent PNG layer on top of the image, never baked into it. Comments and ink
 belong to the current version.
 
+### Comments on the script
+
+Comment mode also opens the script. Select any part of it and press **+ Comment**:
+
+- Commented phrases are **underlined** in the script — captures are a background wash, so a
+  line that is both still reads as both. Click a phrase to jump to its note, or a note to
+  highlight its phrase.
+- A comment is **anchored to the words**, not to a character position. Edit the script above
+  it, or inside it, and the comment stays on the phrase it was written about — the same
+  anchoring the shot links use, and undo takes the anchors back with the text.
+- Typing against either edge of a commented phrase stays outside it, so a note never quietly
+  swallows the next sentence.
+- If the words a comment points at are **deleted**, the comment is flagged rather than
+  disappearing, and still shows what it was written about.
+- Script comments belong to the current version, freeze into it, and are listed alongside
+  card comments in **Versions → comments**.
+
 ## Versions
 
 **Versions → New version…** freezes the whole project (including that version's comments

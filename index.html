@@ -62,6 +62,7 @@
         <span class="spacer"></span>
         <button id="btnUndo" class="mini" title="Undo script edit (Ctrl+Z)">↶</button>
         <button id="btnRedo" class="mini" title="Redo script edit (Ctrl+Shift+Z)">↷</button>
+        <button id="btnScriptNote" class="mini hidden" disabled title="Select some text in the script first">+ Comment</button>
         <button id="btnCapture" class="mini primary" disabled title="Select some text in the script first">Capture shot</button>
       </div>
       <div class="script-hint">
@@ -69,6 +70,8 @@
       </div>
       <div id="masterScript" class="master-script" contenteditable="true" spellcheck="true"></div>
       <div id="captureForm" class="capture-form hidden"></div>
+      <div id="noteForm" class="capture-form hidden"></div>
+      <div id="noteList" class="note-list hidden"></div>
     </aside>
 
     <aside id="personaPanel" class="hidden">

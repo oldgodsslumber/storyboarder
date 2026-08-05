@@ -3,8 +3,11 @@
   'use strict';
 
   let masterEl, editor, capBtn, form, panel;
-  let cover = null;          // Uint8Array coverage over master text
+  let noteBtn, noteForm, noteListEl;
+  let cover = null;          // Uint8Array shot coverage over master text
+  let notes = null;          // Uint8Array comment coverage
   let activeRange = null;    // selected shot's range, drawn with an underline
+  let activeNote = null;     // the note being looked at
   let pendingSel = null;     // range captured when the user clicked "Capture shot"
   let lastSel = null;        // last real selection made in the master script
 
@@ -15,6 +18,31 @@
     masterEl = document.getElementById('masterScript');
     capBtn = document.getElementById('btnCapture');
     form = document.getElementById('captureForm');
+    noteBtn = document.getElementById('btnScriptNote');
+    noteForm = document.getElementById('noteForm');
+    noteListEl = document.getElementById('noteList');
+
+    noteBtn.addEventListener('mousedown', function (ev) { ev.preventDefault(); });
+    noteBtn.addEventListener('click', function () {
+      const live = SB.Editor.getSel(masterEl);
+      const s = (live && live.end > live.start) ? { from: live.start, to: live.end } : lastSel;
+      if (!s || s.to <= s.from) {
+        SB.toast('Select the part of the script you want to comment on', true);
+        return;
+      }
+      showNoteForm(s);
+    });
+
+    /* clicking a commented phrase in the script opens that note */
+    masterEl.addEventListener('click', function (ev) {
+      if (!SB.app.commentMode) return;
+      const sel = SB.Editor.getSel(masterEl);
+      if (!sel || sel.end !== sel.start) return;
+      const hit = SB.Model.scriptComments(P()).filter(function (c) {
+        return !c.broken && sel.start >= c.from && sel.start < c.to;
+      })[0];
+      if (hit) selectNote(hit.id);
+    });
 
     editor = SB.Editor.attach(masterEl, {
       get: function () {
@@ -69,6 +97,13 @@
     capBtn.title = ok
       ? 'Make a shot from the selected text'
       : 'Select some text in the script first';
+    if (noteBtn) {
+      noteBtn.classList.toggle('hidden', !SB.app.commentMode);
+      noteBtn.disabled = !ok;
+      noteBtn.title = ok
+        ? 'Comment on the selected text'
+        : 'Select some text in the script first';
+    }
   }
 
   /* Any edit moves the text under a remembered selection — drop it. */
@@ -78,22 +113,34 @@
     syncCaptureBtn();
   }
 
+  /* Captures are a background wash, notes are an underline — so a phrase that
+   * is both still reads as both. */
   function extraClass(i) {
     let c = '';
     if (cover && i < cover.length && cover[i] > 0) c = 'h' + Math.min(3, cover[i]);
     if (activeRange && i >= activeRange.from && i < activeRange.to) c += (c ? ' ' : '') + 'hactive';
+    if (notes && i < notes.length && notes[i] > 0) c += (c ? ' ' : '') + 'cmt';
+    if (activeNote && i >= activeNote.from && i < activeNote.to) c += (c ? ' ' : '') + 'cmt-on';
     return c;
   }
 
   function refresh() {
     if (!masterEl || !P()) return;
     cover = SB.Model.coverage(P());
+    notes = SB.Model.commentCoverage(P());
     activeRange = null;
     if (SB.app.selectedShotId) {
       const f = SB.Model.findShot(P(), SB.app.selectedShotId);
       if (f && f.shot.link) activeRange = { from: f.shot.link.from, to: f.shot.link.to };
     }
+    if (activeNote) {
+      activeNote = SB.Model.scriptComments(P()).filter(function (c) {
+        return c.id === activeNote.id;
+      })[0] || null;
+    }
     editor.render();
+    renderNotes();
+    syncCaptureBtn();
   }
 
   function open() {
@@ -183,6 +230,114 @@
     tsel.focus();
   }
 
+  /* ---------- notes on the script ---------- */
+
+  function showNoteForm(range) {
+    const p = P();
+    noteForm.innerHTML = '';
+    noteForm.classList.remove('hidden');
+
+    noteForm.appendChild(SB.el('div', 'preview', p.master.text.slice(range.from, range.to)));
+
+    const ta = document.createElement('textarea');
+    ta.className = 'note-input';
+    ta.rows = 3;
+    ta.placeholder = 'What needs saying about this line?';
+    noteForm.appendChild(ta);
+
+    const row = SB.el('div', 'row');
+    row.appendChild(SB.el('span', 'spacer'));
+    const cancel = SB.el('button', 'mini', 'Cancel');
+    cancel.onclick = hideNoteForm;
+    const add = SB.el('button', 'mini primary', 'Add comment');
+    function submit() {
+      const txt = ta.value.trim();
+      if (!txt) { ta.focus(); return; }
+      const c = SB.Model.addScriptComment(P(), range.from, range.to, txt);
+      hideNoteForm();
+      lastSel = null;
+      if (c) {
+        activeNote = c;
+        SB.app.changed(false);
+        refresh();
+        SB.toast('Comment added to the script');
+      }
+    }
+    add.onclick = submit;
+    ta.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); submit(); }
+      if (e.key === 'Escape') { e.preventDefault(); hideNoteForm(); }
+    });
+    row.appendChild(cancel);
+    row.appendChild(add);
+    noteForm.appendChild(row);
+    ta.focus();
+  }
+
+  function hideNoteForm() {
+    noteForm.classList.add('hidden');
+    noteForm.innerHTML = '';
+    syncCaptureBtn();
+  }
+
+  function selectNote(id) {
+    const c = SB.Model.scriptComments(P()).filter(function (x) { return x.id === id; })[0];
+    activeNote = c || null;
+    refresh();
+    const row = noteListEl.querySelector('.note[data-id="' + id + '"]');
+    if (row) row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    const span = masterEl.querySelector('.cmt-on');
+    if (span) span.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  function renderNotes() {
+    if (!noteListEl) return;
+    const list = SB.Model.scriptComments(P());
+    const show = SB.app.commentMode || list.length > 0;
+    noteListEl.classList.toggle('hidden', !show);
+    if (!show) { noteListEl.innerHTML = ''; return; }
+
+    noteListEl.innerHTML = '';
+    const head = SB.el('div', 'note-head');
+    head.appendChild(SB.el('span', null, 'Script comments' + (list.length ? ' (' + list.length + ')' : '')));
+    noteListEl.appendChild(head);
+
+    if (!list.length) {
+      noteListEl.appendChild(SB.el('div', 'note-empty',
+        'Select any part of the script and press + Comment.'));
+      return;
+    }
+
+    list.forEach(function (c) {
+      const row = SB.el('div', 'note' +
+        (activeNote && activeNote.id === c.id ? ' on' : '') + (c.broken ? ' broken' : ''));
+      row.dataset.id = c.id;
+
+      const quote = SB.el('div', 'note-quote',
+        c.broken ? '“' + c.quote + '” — this text is gone from the script'
+          : '“' + P().master.text.slice(c.from, c.to) + '”');
+      row.appendChild(quote);
+      row.appendChild(SB.el('div', 'note-text', c.text));
+
+      const foot = SB.el('div', 'note-foot');
+      foot.appendChild(SB.el('span', 'note-when', SB.fmtDate(c.at)));
+      const del = SB.el('button', 'mini danger', '✕');
+      del.title = 'Delete this comment';
+      del.onclick = function (ev) {
+        ev.stopPropagation();
+        SB.Model.deleteScriptComment(P(), c.id);
+        if (activeNote && activeNote.id === c.id) activeNote = null;
+        SB.app.changed(false);
+        refresh();
+      };
+      foot.appendChild(del);
+      row.appendChild(foot);
+
+      row.onclick = function () { selectNote(c.id); };
+      noteListEl.appendChild(row);
+    });
+  }
+
   function hideForm() {
     form.classList.add('hidden');
     form.innerHTML = '';
@@ -195,7 +350,8 @@
     init: init, refresh: refresh, open: open, close: close, toggle: toggle,
     isOpen: isOpen, scrollTo: scrollTo,
     invalidateSelection: invalidateSelection, syncCaptureBtn: syncCaptureBtn,
-    lastSelection: function () { return lastSel; }
+    lastSelection: function () { return lastSel; },
+    selectNote: selectNote, showNoteForm: showNoteForm
   };
 
 })(window.SB);

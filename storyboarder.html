@@ -279,6 +279,50 @@ button,input,select,textarea{font:inherit;color:inherit}
 .master-script .h2{background:var(--hl2);border-radius:2px}
 .master-script .h3{background:var(--hl3);border-radius:2px}
 .master-script .hactive{box-shadow:inset 0 -2px 0 var(--accent2)}
+/* a commented phrase is underlined, so it still reads under a capture wash */
+.master-script .cmt{
+  text-decoration:underline;
+  text-decoration-color:var(--accent2);
+  text-decoration-thickness:2px;
+  text-underline-offset:3px;
+  text-decoration-skip-ink:none;
+}
+.master-script .cmt-on{
+  background:rgba(255,179,71,.22);
+  text-decoration-style:double;
+}
+body.comment-mode .master-script .cmt{cursor:pointer}
+
+/* ---------- script comments ---------- */
+.note-list{
+  flex:0 0 auto;max-height:42%;overflow:auto;border-top:1px solid var(--line);
+  background:var(--bg2);padding:6px 8px 10px;
+}
+.note-head{
+  font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--fg-dim);
+  font-weight:600;padding:2px 0 6px;position:sticky;top:0;background:var(--bg2);
+}
+.note-empty{color:var(--fg-dim);font-size:11.5px;line-height:1.5}
+.note{
+  border:1px solid var(--line);border-left:3px solid var(--accent2);border-radius:5px;
+  background:var(--bg3);padding:6px 8px;margin-bottom:6px;cursor:pointer;
+}
+.note:hover{border-color:var(--line2)}
+.note.on{border-color:var(--accent2);box-shadow:0 0 0 1px var(--accent2)}
+.note.broken{border-left-color:var(--danger);opacity:.85}
+.note-quote{
+  font-size:11px;color:var(--fg-dim);font-style:italic;margin-bottom:3px;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+}
+.note.broken .note-quote{color:var(--danger)}
+.note-text{font-size:12.5px;white-space:pre-wrap}
+.note-foot{display:flex;align-items:center;gap:6px;margin-top:4px}
+.note-when{font-size:10px;color:var(--fg-dim);flex:1}
+.note-input{
+  width:100%;background:var(--input-bg);color:var(--fg);border:1px solid var(--line);
+  border-radius:4px;padding:5px 6px;font-size:12.5px;resize:vertical;
+}
+.note-input:focus{outline:none;border-color:var(--accent)}
 .capture-form{
   border-top:1px solid var(--line);padding:8px;background:var(--bg3);
   display:flex;flex-direction:column;gap:6px;
@@ -581,6 +625,7 @@ body.comment-mode .frame{cursor:crosshair}
         <span class="spacer"></span>
         <button id="btnUndo" class="mini" title="Undo script edit (Ctrl+Z)">↶</button>
         <button id="btnRedo" class="mini" title="Redo script edit (Ctrl+Shift+Z)">↷</button>
+        <button id="btnScriptNote" class="mini hidden" disabled title="Select some text in the script first">+ Comment</button>
         <button id="btnCapture" class="mini primary" disabled title="Select some text in the script first">Capture shot</button>
       </div>
       <div class="script-hint">
@@ -588,6 +633,8 @@ body.comment-mode .frame{cursor:crosshair}
       </div>
       <div id="masterScript" class="master-script" contenteditable="true" spellcheck="true"></div>
       <div id="captureForm" class="capture-form hidden"></div>
+      <div id="noteForm" class="capture-form hidden"></div>
+      <div id="noteList" class="note-list hidden"></div>
     </aside>
 
     <aside id="personaPanel" class="hidden">
@@ -1982,6 +2029,7 @@ window.SB = window.SB || {};
       updatedAt: Date.now(),
       master: SB.Doc.make(''),
       blobs: {},                        // hash -> data URL; images live here once
+      scriptComments: [],               // notes anchored to ranges of the master
       personas: [],
       scenes: [newScene('Scene one')],
       versionNumber: 1,
@@ -2019,6 +2067,17 @@ window.SB = window.SB || {};
     /* Images used to sit inline on each shot, which meant every version froze
      * its own copy of every frame. They are now stored once under a hash. */
     p.blobs = (p.blobs && typeof p.blobs === 'object') ? p.blobs : {};
+
+    p.scriptComments = Array.isArray(p.scriptComments) ? p.scriptComments : [];
+    p.scriptComments.forEach(function (c) {
+      c.id = c.id || SB.uid('sc');
+      c.from = SB.clamp(c.from | 0, 0, p.master.text.length);
+      c.to = SB.clamp(c.to | 0, c.from, p.master.text.length);
+      c.text = c.text || '';
+      c.quote = c.quote || '';
+      c.at = c.at || Date.now();
+      c.broken = !!c.broken || c.to <= c.from;
+    });
     p.personas = Array.isArray(p.personas) ? p.personas : [];
     p.personas.forEach(function (x) {
       x.id = x.id || SB.uid('per');
@@ -2172,6 +2231,18 @@ window.SB = window.SB || {};
       else if (sh.broken && sh.link.to > sh.link.from) sh.broken = false;
     });
 
+    /* A note on a phrase should not swallow text typed against its edges, so
+     * neither end grows; if the phrase itself is deleted the note is flagged
+     * rather than vanishing with it. */
+    (p.scriptComments || []).forEach(function (c) {
+      const nf = SB.Doc.mapPos(c.from, start, end, op.len, false);
+      const nt = SB.Doc.mapPos(c.to, start, end, op.len, true);
+      c.from = Math.min(nf, nt);
+      c.to = Math.max(nf, nt);
+      if (c.to <= c.from) c.broken = true;
+      else if (c.broken) c.broken = false;
+    });
+
     SB.Doc.replace(p.master, start, end, text);
     p.updatedAt = Date.now();
     return op;
@@ -2199,6 +2270,48 @@ window.SB = window.SB || {};
     shot.link = null;
     shot.broken = false;
     p.updatedAt = Date.now();
+  }
+
+  /* ---------- notes on the script ---------- */
+
+  function addScriptComment(p, from, to, text) {
+    from = SB.clamp(from | 0, 0, p.master.text.length);
+    to = SB.clamp(to | 0, from, p.master.text.length);
+    if (to <= from) return null;
+    const c = {
+      id: SB.uid('scm'),
+      from: from, to: to,
+      quote: p.master.text.slice(from, to),
+      text: text || '',
+      at: Date.now(),
+      broken: false
+    };
+    p.scriptComments = p.scriptComments || [];
+    p.scriptComments.push(c);
+    p.updatedAt = Date.now();
+    return c;
+  }
+
+  function deleteScriptComment(p, id) {
+    p.scriptComments = (p.scriptComments || []).filter(function (c) { return c.id !== id; });
+    p.updatedAt = Date.now();
+  }
+
+  function scriptComments(p) {
+    return (p.scriptComments || []).slice().sort(function (a, b) {
+      return a.from - b.from || a.at - b.at;
+    });
+  }
+
+  /* how many notes cover each master character (for the underline layer) */
+  function commentCoverage(p) {
+    const n = p.master.text.length;
+    const d = new Uint8Array(n);
+    (p.scriptComments || []).forEach(function (c) {
+      if (c.broken) return;
+      for (let i = c.from; i < c.to && i < n; i++) if (d[i] < 250) d[i]++;
+    });
+    return d;
   }
 
   /* how many shots cover each master character (for the highlight underlay) */
@@ -2284,6 +2397,8 @@ window.SB = window.SB || {};
     eachShot: eachShot, code: code, findShot: findShot, findScene: findScene,
     windowFor: windowFor, applyMasterEdit: applyMasterEdit, applyShotEdit: applyShotEdit,
     breakLink: breakLink, coverage: coverage,
+    addScriptComment: addScriptComment, deleteScriptComment: deleteScriptComment,
+    scriptComments: scriptComments, commentCoverage: commentCoverage,
     addScene: addScene, deleteScene: deleteScene, addShot: addShot, deleteShot: deleteShot,
     moveShot: moveShot, moveScene: moveScene,
     modelById: modelById, imageModel: imageModel, videoModel: videoModel, firstOfKind: firstOfKind
@@ -2813,12 +2928,19 @@ window.SB = window.SB || {};
         local: s.local ? SB.clone(s.local) : null
       });
     });
-    return { text: p.master.text, marks: SB.clone(p.master.marks), shots: shots };
+    return {
+      text: p.master.text,
+      marks: SB.clone(p.master.marks),
+      shots: shots,
+      /* notes are anchored into the same text, so they have to move back with it */
+      notes: SB.clone(p.scriptComments || [])
+    };
   }
 
   function apply(p, s) {
     p.master.text = s.text;
     p.master.marks = SB.clone(s.marks);
+    if (s.notes) p.scriptComments = SB.clone(s.notes);
     const byId = {};
     s.shots.forEach(function (x) { byId[x.id] = x; });
     SB.Model.eachShot(p, function (sh) {
@@ -3816,8 +3938,11 @@ window.SB = window.SB || {};
   'use strict';
 
   let masterEl, editor, capBtn, form, panel;
-  let cover = null;          // Uint8Array coverage over master text
+  let noteBtn, noteForm, noteListEl;
+  let cover = null;          // Uint8Array shot coverage over master text
+  let notes = null;          // Uint8Array comment coverage
   let activeRange = null;    // selected shot's range, drawn with an underline
+  let activeNote = null;     // the note being looked at
   let pendingSel = null;     // range captured when the user clicked "Capture shot"
   let lastSel = null;        // last real selection made in the master script
 
@@ -3828,6 +3953,31 @@ window.SB = window.SB || {};
     masterEl = document.getElementById('masterScript');
     capBtn = document.getElementById('btnCapture');
     form = document.getElementById('captureForm');
+    noteBtn = document.getElementById('btnScriptNote');
+    noteForm = document.getElementById('noteForm');
+    noteListEl = document.getElementById('noteList');
+
+    noteBtn.addEventListener('mousedown', function (ev) { ev.preventDefault(); });
+    noteBtn.addEventListener('click', function () {
+      const live = SB.Editor.getSel(masterEl);
+      const s = (live && live.end > live.start) ? { from: live.start, to: live.end } : lastSel;
+      if (!s || s.to <= s.from) {
+        SB.toast('Select the part of the script you want to comment on', true);
+        return;
+      }
+      showNoteForm(s);
+    });
+
+    /* clicking a commented phrase in the script opens that note */
+    masterEl.addEventListener('click', function (ev) {
+      if (!SB.app.commentMode) return;
+      const sel = SB.Editor.getSel(masterEl);
+      if (!sel || sel.end !== sel.start) return;
+      const hit = SB.Model.scriptComments(P()).filter(function (c) {
+        return !c.broken && sel.start >= c.from && sel.start < c.to;
+      })[0];
+      if (hit) selectNote(hit.id);
+    });
 
     editor = SB.Editor.attach(masterEl, {
       get: function () {
@@ -3882,6 +4032,13 @@ window.SB = window.SB || {};
     capBtn.title = ok
       ? 'Make a shot from the selected text'
       : 'Select some text in the script first';
+    if (noteBtn) {
+      noteBtn.classList.toggle('hidden', !SB.app.commentMode);
+      noteBtn.disabled = !ok;
+      noteBtn.title = ok
+        ? 'Comment on the selected text'
+        : 'Select some text in the script first';
+    }
   }
 
   /* Any edit moves the text under a remembered selection — drop it. */
@@ -3891,22 +4048,34 @@ window.SB = window.SB || {};
     syncCaptureBtn();
   }
 
+  /* Captures are a background wash, notes are an underline — so a phrase that
+   * is both still reads as both. */
   function extraClass(i) {
     let c = '';
     if (cover && i < cover.length && cover[i] > 0) c = 'h' + Math.min(3, cover[i]);
     if (activeRange && i >= activeRange.from && i < activeRange.to) c += (c ? ' ' : '') + 'hactive';
+    if (notes && i < notes.length && notes[i] > 0) c += (c ? ' ' : '') + 'cmt';
+    if (activeNote && i >= activeNote.from && i < activeNote.to) c += (c ? ' ' : '') + 'cmt-on';
     return c;
   }
 
   function refresh() {
     if (!masterEl || !P()) return;
     cover = SB.Model.coverage(P());
+    notes = SB.Model.commentCoverage(P());
     activeRange = null;
     if (SB.app.selectedShotId) {
       const f = SB.Model.findShot(P(), SB.app.selectedShotId);
       if (f && f.shot.link) activeRange = { from: f.shot.link.from, to: f.shot.link.to };
     }
+    if (activeNote) {
+      activeNote = SB.Model.scriptComments(P()).filter(function (c) {
+        return c.id === activeNote.id;
+      })[0] || null;
+    }
     editor.render();
+    renderNotes();
+    syncCaptureBtn();
   }
 
   function open() {
@@ -3996,6 +4165,114 @@ window.SB = window.SB || {};
     tsel.focus();
   }
 
+  /* ---------- notes on the script ---------- */
+
+  function showNoteForm(range) {
+    const p = P();
+    noteForm.innerHTML = '';
+    noteForm.classList.remove('hidden');
+
+    noteForm.appendChild(SB.el('div', 'preview', p.master.text.slice(range.from, range.to)));
+
+    const ta = document.createElement('textarea');
+    ta.className = 'note-input';
+    ta.rows = 3;
+    ta.placeholder = 'What needs saying about this line?';
+    noteForm.appendChild(ta);
+
+    const row = SB.el('div', 'row');
+    row.appendChild(SB.el('span', 'spacer'));
+    const cancel = SB.el('button', 'mini', 'Cancel');
+    cancel.onclick = hideNoteForm;
+    const add = SB.el('button', 'mini primary', 'Add comment');
+    function submit() {
+      const txt = ta.value.trim();
+      if (!txt) { ta.focus(); return; }
+      const c = SB.Model.addScriptComment(P(), range.from, range.to, txt);
+      hideNoteForm();
+      lastSel = null;
+      if (c) {
+        activeNote = c;
+        SB.app.changed(false);
+        refresh();
+        SB.toast('Comment added to the script');
+      }
+    }
+    add.onclick = submit;
+    ta.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); submit(); }
+      if (e.key === 'Escape') { e.preventDefault(); hideNoteForm(); }
+    });
+    row.appendChild(cancel);
+    row.appendChild(add);
+    noteForm.appendChild(row);
+    ta.focus();
+  }
+
+  function hideNoteForm() {
+    noteForm.classList.add('hidden');
+    noteForm.innerHTML = '';
+    syncCaptureBtn();
+  }
+
+  function selectNote(id) {
+    const c = SB.Model.scriptComments(P()).filter(function (x) { return x.id === id; })[0];
+    activeNote = c || null;
+    refresh();
+    const row = noteListEl.querySelector('.note[data-id="' + id + '"]');
+    if (row) row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    const span = masterEl.querySelector('.cmt-on');
+    if (span) span.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  function renderNotes() {
+    if (!noteListEl) return;
+    const list = SB.Model.scriptComments(P());
+    const show = SB.app.commentMode || list.length > 0;
+    noteListEl.classList.toggle('hidden', !show);
+    if (!show) { noteListEl.innerHTML = ''; return; }
+
+    noteListEl.innerHTML = '';
+    const head = SB.el('div', 'note-head');
+    head.appendChild(SB.el('span', null, 'Script comments' + (list.length ? ' (' + list.length + ')' : '')));
+    noteListEl.appendChild(head);
+
+    if (!list.length) {
+      noteListEl.appendChild(SB.el('div', 'note-empty',
+        'Select any part of the script and press + Comment.'));
+      return;
+    }
+
+    list.forEach(function (c) {
+      const row = SB.el('div', 'note' +
+        (activeNote && activeNote.id === c.id ? ' on' : '') + (c.broken ? ' broken' : ''));
+      row.dataset.id = c.id;
+
+      const quote = SB.el('div', 'note-quote',
+        c.broken ? '“' + c.quote + '” — this text is gone from the script'
+          : '“' + P().master.text.slice(c.from, c.to) + '”');
+      row.appendChild(quote);
+      row.appendChild(SB.el('div', 'note-text', c.text));
+
+      const foot = SB.el('div', 'note-foot');
+      foot.appendChild(SB.el('span', 'note-when', SB.fmtDate(c.at)));
+      const del = SB.el('button', 'mini danger', '✕');
+      del.title = 'Delete this comment';
+      del.onclick = function (ev) {
+        ev.stopPropagation();
+        SB.Model.deleteScriptComment(P(), c.id);
+        if (activeNote && activeNote.id === c.id) activeNote = null;
+        SB.app.changed(false);
+        refresh();
+      };
+      foot.appendChild(del);
+      row.appendChild(foot);
+
+      row.onclick = function () { selectNote(c.id); };
+      noteListEl.appendChild(row);
+    });
+  }
+
   function hideForm() {
     form.classList.add('hidden');
     form.innerHTML = '';
@@ -4008,7 +4285,8 @@ window.SB = window.SB || {};
     init: init, refresh: refresh, open: open, close: close, toggle: toggle,
     isOpen: isOpen, scrollTo: scrollTo,
     invalidateSelection: invalidateSelection, syncCaptureBtn: syncCaptureBtn,
-    lastSelection: function () { return lastSel; }
+    lastSelection: function () { return lastSel; },
+    selectNote: selectNote, showNoteForm: showNoteForm
   };
 
 })(window.SB);
@@ -5509,6 +5787,7 @@ window.SB = window.SB || {};
     return {
       master: SB.clone(p.master),
       scenes: SB.clone(p.scenes),
+      scriptComments: SB.clone(p.scriptComments || []),
       versionNumber: p.versionNumber,
       versionName: p.versionName
     };
@@ -5531,7 +5810,7 @@ window.SB = window.SB || {};
         if (sh.annotation) ink++;
       });
     });
-    return { comments: n, ink: ink };
+    return { comments: n, ink: ink, script: (snap.scriptComments || []).length };
   }
 
   function newVersion() {
@@ -5544,6 +5823,7 @@ window.SB = window.SB || {};
     p.versionName = (name || '').trim() || suggested;
     // fresh start: comments and drawings stay with the version they were made in
     SB.Model.eachShot(p, function (sh) { sh.comments = []; sh.annotation = null; });
+    p.scriptComments = [];
     SB.app.changed(true);
     SB.toast('Now working in ' + p.versionName + ' — comments and ink start clean');
   }
@@ -5554,6 +5834,7 @@ window.SB = window.SB || {};
     freeze(p, 'before restoring ' + v.name);
     p.master = SB.clone(v.snapshot.master);
     p.scenes = SB.clone(v.snapshot.scenes);
+    p.scriptComments = SB.clone(v.snapshot.scriptComments || []);
     p.versionNumber = p.versions.reduce(function (a, x) { return Math.max(a, x.n); }, p.versionNumber) + 1;
     p.versionName = v.name + ' (restored)';
     SB.app.selectedShotId = null;
@@ -5564,6 +5845,23 @@ window.SB = window.SB || {};
   function viewComments(v) {
     const body = SB.el('div');
     let any = false;
+
+    const notes = v.snapshot.scriptComments || [];
+    if (notes.length) {
+      any = true;
+      const h = SB.el('div', 'ver-row');
+      h.appendChild(SB.el('b', null, 'On the script'));
+      body.appendChild(h);
+      notes.forEach(function (c) {
+        const r = SB.el('div', 'comment');
+        r.appendChild(SB.el('span', 'when', SB.fmtDate(c.at)));
+        const txt = SB.el('span', 'txt');
+        txt.appendChild(SB.el('div', 'note-quote', '“' + (c.quote || '') + '”'));
+        txt.appendChild(document.createTextNode(c.text));
+        r.appendChild(txt);
+        body.appendChild(r);
+      });
+    }
     (v.snapshot.scenes || []).forEach(function (sc, si) {
       sc.shots.forEach(function (sh, sj) {
         if (!(sh.comments || []).length && !sh.annotation) return;
@@ -5591,7 +5889,7 @@ window.SB = window.SB || {};
     const cur = SB.el('div', 'ver-row current');
     const c = countComments(p);
     cur.appendChild(SB.el('span', 'vname', p.versionName + '  (working)'));
-    cur.appendChild(SB.el('span', 'vmeta', c.comments + ' comments · ' + c.ink + ' inked'));
+    cur.appendChild(SB.el('span', 'vmeta', c.comments + ' card · ' + c.script + ' script · ' + c.ink + ' inked'));
     const nv = SB.el('button', 'mini primary', 'New version…');
     nv.onclick = function () { m.close(); newVersion(); };
     cur.appendChild(nv);
@@ -5602,7 +5900,7 @@ window.SB = window.SB || {};
       const row = SB.el('div', 'ver-row');
       row.appendChild(SB.el('span', 'vname', v.name));
       row.appendChild(SB.el('span', 'vmeta', SB.fmtDate(v.createdAt) + ' · ' +
-        cc.comments + ' comments · ' + cc.ink + ' inked'));
+        cc.comments + ' card · ' + cc.script + ' script · ' + cc.ink + ' inked'));
       const bc = SB.el('button', 'mini', 'comments');
       bc.onclick = function () { viewComments(v); };
       const br = SB.el('button', 'mini', 'restore');
@@ -5978,6 +6276,8 @@ window.SB = window.SB || {};
       this.classList.toggle('on', app.commentMode);
       document.body.classList.toggle('comment-mode', app.commentMode);
       SB.Board.render();
+      /* commenting on the script needs the script in front of you */
+      if (app.commentMode && !SB.ScriptMode.isOpen()) SB.ScriptMode.open();
     });
 
     $('btnPersonas').addEventListener('click', function () { SB.PersonaPanel.toggle(); });
