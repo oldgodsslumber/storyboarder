@@ -201,10 +201,26 @@
       if (roles.image && r.done) s.showImagePrompt = true;
       if (roles.video && r.done) s.showVideoPrompt = true;
       SB.app.changed(true);
-      setStatus('done — ' + r.done + ' of ' + r.total + (r.failed ? ' · ' + r.failed + ' failed' : ''), !!r.failed);
+      setStatus(r.failed
+        ? r.done + ' of ' + r.total + ' written · ' + r.failed + ' failed: ' + (r.error || 'unknown')
+        : 'done — ' + r.done + ' of ' + r.total,
+        !!r.failed);
     }).catch(function (e) {
       btn.disabled = false;
-      setStatus(e.message || String(e), true);
+      const msg = e.message || String(e);
+      setStatus(msg, true);
+      /* "that model is not available to this key" is answerable on the spot:
+       * ask the key what it can reach and put those in the picker. */
+      if (/\b404\b/.test(msg)) {
+        setStatus(msg + ' — checking what your key can reach…', true);
+        SB.GeminiModels.fetchAvailable().then(function (models) {
+          render();
+          setStatus('“' + P().settings.geminiModel + '” is not available to this key. ' +
+            'The writer list now shows the ' + models.length + ' models it can reach — pick one.', true);
+        }).catch(function () {
+          setStatus(msg, true);
+        });
+      }
     });
   }
 

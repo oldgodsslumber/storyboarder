@@ -1,0 +1,263 @@
+/* prompt-scenario.js — driven by test-prompts.mjs against the stubbed endpoint. */
+(function () {
+  const out = [];
+  const t = function (name, cond, extra) {
+    out.push((cond ? 'ok   ' : 'FAIL ') + name + (cond ? '' : ' :: ' + extra));
+  };
+  const wait = ms => new Promise(r => setTimeout(r, ms));
+  const SB = window.SB;
+  const P = () => SB.app.project;
+  const MARK = 'RES' + 'ULT';
+
+  function seed() {
+    const p = P();
+    p.name = 'Prompt check';
+    SB.Model.applyMasterEdit(p, 0, 0, 'Wide of the office floor. The subject turns to camera.', null);
+    const sc = p.scenes[0];
+    sc.heading = 'Opening';
+    sc.description = 'Client office, late morning.';
+    sc.shots = [];
+    const a = SB.Model.addShot(p, sc.id, { type: 'Wide', link: { from: 0, to: 25 } });
+    a.description = 'Open-plan office, the subject mid-stride toward camera.';
+    const b = SB.Model.addShot(p, sc.id, { type: 'Close-up', link: { from: 26, to: 53 } });
+    b.description = 'Hands settling on a laptop.';
+    SB.app.changed(true);
+    return { a: a, b: b };
+  }
+
+  setTimeout(async function () {
+    try {
+      const shots = seed();
+      SB.Store.setApiKey('AIza-test-key');
+
+      /* ---------- the plain case: one image prompt for one shot ---------- */
+      window.__calls = [];
+      let err = '';
+      const res = await SB.Prompts.generateFor([shots.a], { roles: { image: true } })
+        .catch(function (e) { err = e.message || String(e); return null; });
+
+      t('an image prompt can be generated', !!res && res.done === 1 && !err,
+        err || JSON.stringify(res));
+      t('exactly one request went out', window.__calls.length === 1, window.__calls.length);
+
+      const im = SB.Model.imageModel(P());
+      const stored = shots.a.prompts[im.id];
+      t('the prompt is stored against the image model', !!stored && !!stored.imagePrompt,
+        JSON.stringify(shots.a.prompts));
+      t('and no video prompt was invented', !stored.videoPrompt, stored && stored.videoPrompt);
+
+      const call = window.__calls[0];
+      t('it went to the chosen writer model',
+        call.url.indexOf(P().settings.geminiModel) > 0, call.url.split('/').pop());
+      t('the key is on the request', /key=AIza-test-key/.test(call.url), '');
+      const userText = call.body.contents[0].parts[0].text;
+      t('the shot description is in the request',
+        userText.indexOf('the subject mid-stride') > 0, userText.slice(0, 120));
+      t('the target model is named', userText.indexOf(im.name) > 0, im.name);
+      t('a JSON schema is asked for',
+        !!call.body.generationConfig.responseSchema &&
+        call.body.generationConfig.responseSchema.required.join() === 'imagePrompt',
+        JSON.stringify(call.body.generationConfig.responseSchema));
+      const sys = call.body.systemInstruction &&
+        call.body.systemInstruction.parts[0].text;
+      t('the house style rides along', !!sys && /HOUSE STYLE/.test(sys), String(sys).slice(0, 80));
+      t('so does the scene context', !!sys && /SCENE CONTEXT/.test(sys), '');
+      t('no motion rules on an image-only job', !!sys && !/MOTION/.test(sys), '');
+
+      /* ---------- card fields travel ---------- */
+      SB.Fields.find(P(), 'artDirection').enabled = true;
+      SB.Fields.set(shots.a, 'artDirection', 'Warm practicals only.');
+      window.__calls = [];
+      await SB.Prompts.generateFor([shots.a], { roles: { image: true } });
+      t('an enabled card field reaches the request',
+        window.__calls[0].contents === undefined &&
+        window.__calls[0].body.contents[0].parts[0].text.indexOf('Warm practicals only.') > 0,
+        window.__calls[0].body.contents[0].parts[0].text.slice(-160));
+
+      /* ---------- cast ---------- */
+      const per = SB.Personas.add(P(), { name: 'Ops lead', description: 'Charcoal knit.' });
+      per.image = SB.Blobs.image(P(), 'data:image/gif;base64,R0lGODlhAQABAAAAACw=', 4, 3);
+      shots.a.personaIds = [per.id];
+      window.__calls = [];
+      await SB.Prompts.generateFor([shots.a], { roles: { image: true } });
+      const sys2 = window.__calls[0].body.systemInstruction.parts[0].text;
+      t('the cast reaches the request', /CAST/.test(sys2) && /Ops lead/.test(sys2), '');
+      t('with the reference-image numbering', /image 1 = Ops lead/.test(sys2), '');
+
+      /* ---------- both prompts, one model, one call ---------- */
+      P().settings.videoModelId = P().settings.imageModelId;
+      window.__calls = [];
+      await SB.Prompts.generateFor([shots.b], { roles: { image: true, video: true } });
+      t('one model for both prompts means one call', window.__calls.length === 1,
+        window.__calls.length);
+      t('and both come back stored',
+        !!shots.b.prompts[im.id].imagePrompt && !!shots.b.prompts[im.id].videoPrompt, '');
+      t('the motion rules are included then',
+        /MOTION/.test(window.__calls[0].body.systemInstruction.parts[0].text), '');
+
+      /* ---------- gemma: no schema, no systemInstruction ---------- */
+      P().settings.geminiModel = 'gemma-4-31b-it';
+      window.__calls = [];
+      await SB.Prompts.generateFor([shots.a], { roles: { image: true } });
+      const g = window.__calls[0];
+      t('gemma is sent no response schema',
+        !g.body.generationConfig.responseSchema, JSON.stringify(g.body.generationConfig));
+      t('gemma is sent no systemInstruction', !g.body.systemInstruction, '');
+      t('the house style is folded into gemma’s single turn',
+        /HOUSE STYLE/.test(g.body.contents[0].parts[0].text), '');
+      P().settings.geminiModel = SB.GeminiModels.DEFAULT;
+
+      /* ---------- a model that rejects the schema is retried without it ---------- */
+      window.__calls = [];
+      window.__reply = function (n) {
+        if (n === 1) {
+          return { ok: false, status: 400, text: JSON.stringify(
+            { error: { message: 'Invalid JSON payload: response_mime_type is not supported' } }) };
+        }
+        return null;
+      };
+      const r2 = await SB.Prompts.generateFor([shots.a], { roles: { image: true } })
+        .catch(function (e) { return { done: 0, err: e.message }; });
+      t('a schema rejection is retried without the schema',
+        r2 && r2.done === 1 && window.__calls.length === 2,
+        JSON.stringify(r2) + ' calls=' + window.__calls.length);
+      t('the retry drops the schema',
+        window.__calls.length === 2 && !window.__calls[1].body.generationConfig.responseSchema, '');
+      window.__reply = null;
+
+      /* ---------- gendered language is rewritten, then flagged ---------- */
+      window.__calls = [];
+      window.__reply = function (n) {
+        return { ok: true, status: 200, text: JSON.stringify({
+          candidates: [{ content: { parts: [{ text: JSON.stringify({
+            imagePrompt: n === 1
+              ? 'A businessman adjusts his tie by the window.'
+              : 'The subject adjusts a collar by the window.' }) }] } }] }) };
+      };
+      await SB.Prompts.generateFor([shots.a], { roles: { image: true } });
+      t('a gendered draft triggers one rewrite', window.__calls.length === 2,
+        window.__calls.length);
+      t('and the clean rewrite is what gets stored',
+        shots.a.prompts[im.id].imagePrompt.indexOf('businessman') < 0,
+        shots.a.prompts[im.id].imagePrompt);
+      t('the rewrite request names the offending words',
+        /businessman/.test(window.__calls[1].body.contents[0].parts[0].text), '');
+      t('nothing is flagged when the rewrite works',
+        !(shots.a.prompts[im.id].flagged || {}).imagePrompt, '');
+
+      window.__calls = [];
+      window.__reply = function () {
+        return { ok: true, status: 200, text: JSON.stringify({
+          candidates: [{ content: { parts: [{ text: JSON.stringify({
+            imagePrompt: 'He stands by the window.' }) }] } }] }) };
+      };
+      await SB.Prompts.generateFor([shots.a], { roles: { image: true } });
+      t('a draft that stays gendered is flagged for the user',
+        (shots.a.prompts[im.id].flagged || {}).imagePrompt &&
+        shots.a.prompts[im.id].flagged.imagePrompt.indexOf('he') >= 0,
+        JSON.stringify(shots.a.prompts[im.id].flagged));
+      window.__reply = null;
+
+      /* ---------- the failure paths say what to do ---------- */
+      window.__reply = function () {
+        return { ok: false, status: 404, text: JSON.stringify(
+          { error: { message: 'models/x is not found' } }) };
+      };
+      let msg404 = '';
+      window.__calls = [];
+      await SB.Prompts.generateFor([shots.b], { roles: { image: true } })
+        .catch(function (e) { msg404 = e.message; });
+      t('a run that writes nothing rejects rather than reporting success',
+        !!msg404, 'it resolved quietly');
+      t('a 404 tells you to refresh the model list', /refresh the model list/i.test(msg404), msg404);
+
+      window.__reply = function () {
+        return { ok: false, status: 429, text: JSON.stringify(
+          { error: { message: 'Quota exceeded' } }) };
+      };
+      window.__calls = [];
+      const before = SB.GeminiModels.count(P().settings.geminiModel);
+      let msg429 = '';
+      await SB.Prompts.generateFor([shots.b], { roles: { image: true } })
+        .catch(function (e) { msg429 = e.message; });
+      t('a 429 says which model ran out and what to do',
+        /daily\/rate limit/i.test(msg429) && /Prompts panel/.test(msg429), msg429);
+      t('a 429 marks the model spent for the day',
+        SB.GeminiModels.count(P().settings.geminiModel) > before,
+        before + ' -> ' + SB.GeminiModels.count(P().settings.geminiModel));
+      window.__reply = null;
+
+      /* ---------- refusals to start ---------- */
+      SB.Store.setApiKey('');
+      let noKey = '';
+      await SB.Prompts.generateFor([shots.a], { roles: { image: true } })
+        .catch(function (e) { noKey = e.message; });
+      t('no key gives a clear message', /API key/i.test(noKey), noKey);
+      SB.Store.setApiKey('AIza-test-key');
+
+      let empty = '';
+      const blank = SB.Model.addShot(P(), P().scenes[0].id, {});
+      await SB.Prompts.generateFor([blank], { roles: { image: true } })
+        .catch(function (e) { empty = e.message; });
+      t('a shot with no description is skipped with a reason',
+        /description/i.test(empty), empty);
+
+      const ns = SB.Model.addShot(P(), P().scenes[0].id, {});
+      ns.description = 'Something';
+      ns.noShot = true;
+      let noShot = '';
+      await SB.Prompts.generateFor([ns], { roles: { image: true } })
+        .catch(function (e) { noShot = e.message; });
+      t('a “no shot” card is never generated for', /no shot/i.test(noShot), noShot);
+
+      /* ---------- a 404 in the panel offers the models the key can reach ---------- */
+      window.__reply = function (n, body) {
+        return { ok: false, status: 404, text: JSON.stringify(
+          { error: { message: 'models/gemini-3.6-flash is not found' } }) };
+      };
+      SB.PromptPanel.open();
+      await wait(150);
+      const genBtn = Array.prototype.filter.call(
+        document.querySelectorAll('#promptBody .tb'),
+        function (b) { return b.textContent === 'Generate'; })[0];
+      /* ListModels answers even though generateContent 404s */
+      const realFetch = window.fetch;
+      window.fetch = function (url, opts) {
+        if (String(url).indexOf('/models?') > 0) {
+          return Promise.resolve({
+            ok: true, status: 200,
+            text: function () {
+              return Promise.resolve(JSON.stringify({ models: [
+                { name: 'models/gemini-2.5-flash', displayName: 'Gemini 2.5 Flash',
+                  supportedGenerationMethods: ['generateContent'] },
+                { name: 'models/gemma-4-31b-it', displayName: 'Gemma 4 31B',
+                  supportedGenerationMethods: ['generateContent'] }
+              ] }));
+            }
+          });
+        }
+        return realFetch(url, opts);
+      };
+      genBtn.click();
+      await wait(900);
+      const status = document.querySelector('#promptBody .pp-status').textContent;
+      t('a 404 sends the app to ask the key what it can reach',
+        /not available to this key/.test(status) && /pick one/.test(status), status);
+      const opts = document.querySelector('#promptBody .gm-picker select').options;
+      t('and the picker is rebuilt from that answer',
+        opts.length === 4 &&                     // 2 reachable + the current one + Custom…
+        /gemini-2\.5-flash/.test(opts[1].value + opts[2].value),
+        Array.prototype.map.call(opts, function (o) { return o.value; }).join(','));
+      t('the unavailable model stays visible, marked as such',
+        /not in list/.test(opts[0].textContent), opts[0].textContent);
+      window.fetch = realFetch;
+      window.__reply = null;
+      SB.GeminiModels.clearCache();
+
+      t('no page errors', (window.__err || []).length === 0, JSON.stringify(window.__err));
+    } catch (e) {
+      out.push('FAIL exception :: ' + (e && e.stack || e));
+    }
+    document.getElementById('toastRoot').textContent = MARK + '>>' + out.join(' | ') + '<<' + MARK;
+  }, 500);
+})();

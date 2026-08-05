@@ -195,6 +195,18 @@ Google retires model ids on its own schedule, so:
   next to the counter is yours to set from your AI Studio rate-limit page — leave it blank
   and you just get a running count. A 429 marks that model spent for the day.
 
+### When a prompt run fails
+
+A run that writes nothing reports **why**, in the panel, instead of "0 of 1 done":
+
+- **No API key** — stops before sending anything and says so.
+- **404, the writer model isn't available to your key** — the app then asks your key what it
+  *can* reach and rebuilds the writer dropdown from the answer, leaving the unavailable one
+  visible and marked. Pick one from the list and run again.
+- **429** — names the model that ran out and marks it spent for the day.
+- Shots with no description, and "no shot" cards, are skipped with a reason rather than
+  silently producing nothing.
+
 ### Brand style
 
 The house style lives in **Settings → Brand style** and rides along with every prompt the
@@ -343,6 +355,7 @@ node test-core.mjs     # the anchored-range engine, numbering, key-never-in-file
 node test-ui.mjs       # boots the built file in headless Chrome, drives the UI
 node test-typing.mjs   # real mouse + keyboard over the DevTools protocol
 node test-store.mjs    # autosave/open against a stubbed File System Access API
+node test-prompts.mjs  # the prompt pipeline against a stubbed Gemini endpoint
 ```
 
 `test-typing.mjs` exists because `test-ui.mjs` dispatches synthetic `beforeinput` events,

@@ -4699,6 +4699,11 @@ window.SB = window.SB || {};
     if ((!roles.image || !im) && (!roles.video || !vm)) {
       return Promise.reject(new Error('Pick a target model first'));
     }
+    /* Check up front rather than letting every job fail one at a time — the
+     * reason is what the user needs, not a count of failures. */
+    if (!SB.Store.getApiKey()) {
+      return Promise.reject(new Error('No Google API key yet — add one in Settings → API.'));
+    }
 
     const jobs = [];
     shots.forEach(function (s) {
@@ -4710,7 +4715,7 @@ window.SB = window.SB || {};
       return Promise.reject(new Error('Nothing to generate — “no shot” cards and empty descriptions are skipped.'));
     }
 
-    let done = 0, failed = 0;
+    let done = 0, failed = 0, lastError = null;
     const total = jobs.length;
     const tick = function () { if (opts.onProgress) opts.onProgress(done, total, failed); };
     tick();
@@ -4728,6 +4733,7 @@ window.SB = window.SB || {};
         done++;
       }).catch(function (e) {
         failed++;
+        lastError = e;
         console.error('[storyboarder] prompt failed', e);
         if (failed === 1) SB.toast(e.message, true);
       }).then(function () { tick(); return worker(); });
@@ -4736,7 +4742,12 @@ window.SB = window.SB || {};
     for (let i = 0; i < Math.min(3, jobs.length); i++) lanes.push(worker());
     return Promise.all(lanes).then(function () {
       SB.app.changed(true);
-      return { done: done, failed: failed, total: total };
+      /* Nothing written at all is a failure, not a result — say why. */
+      if (!done && lastError) throw lastError;
+      return {
+        done: done, failed: failed, total: total,
+        error: lastError ? lastError.message : null
+      };
     });
   }
 
@@ -4964,10 +4975,26 @@ window.SB = window.SB || {};
       if (roles.image && r.done) s.showImagePrompt = true;
       if (roles.video && r.done) s.showVideoPrompt = true;
       SB.app.changed(true);
-      setStatus('done — ' + r.done + ' of ' + r.total + (r.failed ? ' · ' + r.failed + ' failed' : ''), !!r.failed);
+      setStatus(r.failed
+        ? r.done + ' of ' + r.total + ' written · ' + r.failed + ' failed: ' + (r.error || 'unknown')
+        : 'done — ' + r.done + ' of ' + r.total,
+        !!r.failed);
     }).catch(function (e) {
       btn.disabled = false;
-      setStatus(e.message || String(e), true);
+      const msg = e.message || String(e);
+      setStatus(msg, true);
+      /* "that model is not available to this key" is answerable on the spot:
+       * ask the key what it can reach and put those in the picker. */
+      if (/\b404\b/.test(msg)) {
+        setStatus(msg + ' — checking what your key can reach…', true);
+        SB.GeminiModels.fetchAvailable().then(function (models) {
+          render();
+          setStatus('“' + P().settings.geminiModel + '” is not available to this key. ' +
+            'The writer list now shows the ' + models.length + ' models it can reach — pick one.', true);
+        }).catch(function () {
+          setStatus(msg, true);
+        });
+      }
     });
   }
 

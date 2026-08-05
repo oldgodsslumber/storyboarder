@@ -246,6 +246,11 @@
     if ((!roles.image || !im) && (!roles.video || !vm)) {
       return Promise.reject(new Error('Pick a target model first'));
     }
+    /* Check up front rather than letting every job fail one at a time — the
+     * reason is what the user needs, not a count of failures. */
+    if (!SB.Store.getApiKey()) {
+      return Promise.reject(new Error('No Google API key yet — add one in Settings → API.'));
+    }
 
     const jobs = [];
     shots.forEach(function (s) {
@@ -257,7 +262,7 @@
       return Promise.reject(new Error('Nothing to generate — “no shot” cards and empty descriptions are skipped.'));
     }
 
-    let done = 0, failed = 0;
+    let done = 0, failed = 0, lastError = null;
     const total = jobs.length;
     const tick = function () { if (opts.onProgress) opts.onProgress(done, total, failed); };
     tick();
@@ -275,6 +280,7 @@
         done++;
       }).catch(function (e) {
         failed++;
+        lastError = e;
         console.error('[storyboarder] prompt failed', e);
         if (failed === 1) SB.toast(e.message, true);
       }).then(function () { tick(); return worker(); });
@@ -283,7 +289,12 @@
     for (let i = 0; i < Math.min(3, jobs.length); i++) lanes.push(worker());
     return Promise.all(lanes).then(function () {
       SB.app.changed(true);
-      return { done: done, failed: failed, total: total };
+      /* Nothing written at all is a failure, not a result — say why. */
+      if (!done && lastError) throw lastError;
+      return {
+        done: done, failed: failed, total: total,
+        error: lastError ? lastError.message : null
+      };
     });
   }
 
