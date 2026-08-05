@@ -476,7 +476,91 @@
         t('showing the prompt boxes holds your place too',
           !!after3 && Math.abs(after3.getBoundingClientRect().top - wasAt3) <= 2,
           after3 ? (wasAt3 + ' -> ' + after3.getBoundingClientRect().top) : 'card gone');
+
+        /* Hiding is the harder direction: the board gets shorter, so the
+         * scroller clamps and a naive correction lands somewhere else. */
+        function holds(label, mutate) {
+          const cards2 = document.querySelectorAll('#board .card');
+          const top2 = panel.getBoundingClientRect().top;
+          let w = null;
+          for (let i = 0; i < cards2.length; i++) {
+            if (cards2[i].getBoundingClientRect().bottom > top2 + 4) { w = cards2[i]; break; }
+          }
+          const wid = w.dataset.shot, at = w.getBoundingClientRect().top;
+          const room = panel.scrollHeight - panel.clientHeight - panel.scrollTop;
+          mutate();
+          SB.app.changed(true);
+          const nowEl = document.querySelector('.card[data-shot="' + wid + '"]');
+          const moved = nowEl ? Math.abs(nowEl.getBoundingClientRect().top - at) : 9999;
+          /* if the board shrank past what the scroller can hold, the best it can
+             do is bottom out — allow that, but only that */
+          t(label, !!nowEl && (moved <= 2 || panel.scrollTop >= panel.scrollHeight - panel.clientHeight - 2),
+            'moved ' + moved + 'px (room below was ' + Math.round(room) + ')');
+        }
+
+        panel.scrollTop = Math.floor(panel.scrollHeight / 2);
+        holds('hiding the image→video prompt holds your place', function () {
+          P().settings.showVideoPrompt = false;
+        });
+        panel.scrollTop = Math.floor(panel.scrollHeight / 2);
+        holds('showing the image→video prompt holds your place', function () {
+          P().settings.showVideoPrompt = true;
+        });
+        panel.scrollTop = Math.floor(panel.scrollHeight / 2);
+        holds('hiding both prompt boxes at once holds your place', function () {
+          P().settings.showImagePrompt = false;
+          P().settings.showVideoPrompt = false;
+        });
+
+        /* the card being typed in is "the one you were on", wherever it sits */
+        P().settings.showVideoPrompt = true;
+        SB.app.changed(true);
+        panel.scrollTop = Math.floor(panel.scrollHeight / 2);
+        (function () {
+          const pr = panel.getBoundingClientRect();
+          const vis = [];
+          document.querySelectorAll('#board .card').forEach(function (c) {
+            const r = c.getBoundingClientRect();
+            if (r.bottom > pr.top + 4 && r.top < pr.bottom) vis.push(c);
+          });
+          const target = vis[Math.min(1, vis.length - 1)];   // not the topmost one
+          const tid = target.dataset.shot;
+          const box = target.querySelector('.desc-box');
+          box.focus();
+          const was = target.getBoundingClientRect().top;
+          P().settings.showVideoPrompt = false;
+          SB.app.changed(true);
+          const el = document.querySelector('.card[data-shot="' + tid + '"]');
+          const r2 = el.getBoundingClientRect();
+          t('the card you are typing in is the one held still',
+            Math.abs(r2.top - was) <= 2, was + ' -> ' + r2.top);
+          t('and it is still on screen',
+            r2.bottom > pr.top && r2.top < pr.bottom, JSON.stringify({ top: r2.top, panel: pr.top }));
+        })();
+
+        /* even bottomed out, where the scroller cannot give the space back */
+        P().settings.showVideoPrompt = true;
+        SB.app.changed(true);
+        panel.scrollTop = panel.scrollHeight;
+        (function () {
+          const pr = panel.getBoundingClientRect();
+          let last = null;
+          document.querySelectorAll('#board .card').forEach(function (c) {
+            const r = c.getBoundingClientRect();
+            if (r.bottom > pr.top + 4 && r.top < pr.bottom) last = c;
+          });
+          const lid = last.dataset.shot;
+          P().settings.showVideoPrompt = false;
+          SB.app.changed(true);
+          const el = document.querySelector('.card[data-shot="' + lid + '"]');
+          const r2 = el.getBoundingClientRect();
+          t('a card at the very bottom stays on screen when the board shrinks',
+            r2.bottom > pr.top && r2.top < pr.bottom,
+            JSON.stringify({ top: Math.round(r2.top), bottom: Math.round(r2.bottom) }));
+        })();
+
         P().settings.showImagePrompt = false;
+        P().settings.showVideoPrompt = false;
         panel.scrollTop = 0;
         SB.app.changed(true);
       })();

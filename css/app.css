@@ -71,7 +71,8 @@ button,input,select,textarea{font:inherit;color:inherit}
   background:var(--bg2);border-bottom:1px solid var(--line);flex:0 0 auto;
   flex-wrap:wrap;
 }
-.brand{font-weight:700;letter-spacing:.4px;color:var(--accent);margin-right:4px}
+.brand{font-weight:700;letter-spacing:.4px;color:var(--accent);margin-right:4px;display:flex;align-items:baseline;gap:5px}
+.build-stamp{font-weight:400;font-size:9.5px;letter-spacing:0;color:var(--fg-dim);opacity:.75}
 .proj-name{
   background:transparent;border:1px solid transparent;border-radius:4px;
   padding:3px 6px;width:190px;

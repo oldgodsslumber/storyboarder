@@ -120,10 +120,16 @@
     let anchorId = null, anchorOffset = null;
     if (panel) {
       const top = panel.getBoundingClientRect().top;
-      /* the selected card if it is on screen, otherwise the topmost card that is */
-      const sel = SB.app.selectedShotId
-        ? document.querySelector('.card[data-shot="' + SB.app.selectedShotId + '"]') : null;
-      let anchor = (sel && sel.getBoundingClientRect().bottom > top) ? sel : null;
+      /* "the one you were on", in order of how sure we can be:
+       * the card you are typing in, then the selected one, then the topmost
+       * card on screen. */
+      let anchor = null;
+      const focused = document.activeElement;
+      if (focused && focused.closest) anchor = focused.closest('#board .card');
+      if (!anchor && SB.app.selectedShotId) {
+        const sel = document.querySelector('.card[data-shot="' + SB.app.selectedShotId + '"]');
+        if (sel && sel.getBoundingClientRect().bottom > top) anchor = sel;
+      }
       if (!anchor) {
         const cards = document.querySelectorAll('#board .card');
         for (let i = 0; i < cards.length; i++) {
@@ -146,13 +152,28 @@
 
     if (!panel) return;
     panel.scrollTop = prevTop;
-    if (anchorId) {
-      const now = document.querySelector('.card[data-shot="' + anchorId + '"]');
-      if (now) {
-        /* put that card back under the same point on screen */
-        const delta = now.getBoundingClientRect().top - anchorOffset;
-        if (delta) panel.scrollTop = prevTop + delta;
-      }
+    if (!anchorId) return;
+    const now = document.querySelector('.card[data-shot="' + anchorId + '"]');
+    if (!now) return;
+    /* Correct from where the scroller ACTUALLY is, not from where we asked it
+     * to go: hiding the prompt boxes shortens the board, the browser clamps
+     * scrollTop to the new maximum, and correcting against the pre-clamp value
+     * left the card somewhere else entirely. Two passes, because moving the
+     * scroller can itself change what is clamped. */
+    for (let i = 0; i < 2; i++) {
+      const at = panel.scrollTop;
+      const delta = now.getBoundingClientRect().top - anchorOffset;
+      if (!delta) break;
+      panel.scrollTop = at + delta;
+      if (panel.scrollTop === at) break;          // already as close as it can get
+    }
+
+    /* If the board shrank past what the scroller can give back, the card can
+     * still end up off screen. Whatever else happens, keep it in view. */
+    const pr = panel.getBoundingClientRect();
+    const cr = now.getBoundingClientRect();
+    if (cr.bottom <= pr.top + 8 || cr.top >= pr.bottom - 8) {
+      panel.scrollTop += cr.top - pr.top - 12;
     }
   }
 

@@ -33,6 +33,16 @@
     SB.Store.touch();
   };
 
+  /* Which build is this? Shown on the brand, so a stale copy of the single
+   * file can be spotted instead of argued about. */
+  function stampBuild() {
+    const b = document.querySelector('.brand');
+    if (!b) return;
+    const build = window.SB_BUILD || 'source';
+    b.title = 'Storyboarder — build ' + build;
+    b.appendChild(SB.el('span', 'build-stamp', build));
+  }
+
   function renderChrome() {
     const p = app.project;
     document.getElementById('projName').value = p.name || '';
@@ -94,6 +104,7 @@
       });
     };
 
+    stampBuild();
     setProject(SB.Model.newProject());
     wire();
 
