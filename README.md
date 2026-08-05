@@ -18,7 +18,11 @@ Built from [storyboard_app_spec.md](storyboard_app_spec.md).
    autosaves to that file (~500 ms after you stop typing). There is no Save button.
    **Copy** downloads a standalone duplicate at any time — the escape hatch if a file
    ever becomes unwritable.
-2. **Settings** → paste your Google (Gemini) API key. It is stored in this browser only
+2. **Settings → API** → get a key and paste it in. That tab now carries the five steps end
+   to end: open [aistudio.google.com](https://aistudio.google.com/), accept the terms
+   (which is also what unblocks the API on the Pega network), **Get API key → Create API
+   key** against a Google Cloud project of your own, paste the `AIza…` string in, then
+   **Refresh list from my key** to prove it works. The key is stored in this browser only
    and is **never** written into the project file, so a board can be shared safely.
 3. Re-opening the app offers to reopen the last project — click the file name in the
    top bar (Chrome requires a click to re-grant file permission).
@@ -269,6 +273,29 @@ A run that writes nothing reports **why**, in the panel, instead of "0 of 1 done
 - **429** — names the model that ran out and marks it spent for the day.
 - Shots with no description, and "no shot" cards, are skipped with a reason rather than
   silently producing nothing.
+- **"Google's API is being blocked"** — see below.
+
+### When the API is blocked
+
+On a locked-down network the request never leaves the browser: `fetch` rejects with a
+`TypeError`, there is no status and no body, and the raw error is the useless string
+*"Failed to fetch"*. On the Pega network this means one thing — Google's API stays blocked
+until **aistudio.google.com** has been opened once in this browser and the terms accepted.
+
+So the app names it instead. Any prompt run, rewrite, persona or model refresh that hits it
+opens a dialog with the explanation, an **Open AI Studio** link (a real new tab), and a
+**Try again** button that re-runs exactly the thing that failed — accept in the other tab,
+come back, click it. It appears **every time** it happens: the fix is one click, and hiding
+it behind "don't show again" only moves the confusion later.
+
+Two details that matter in practice:
+
+- A block that would fail every job **stops after the first request**. The first job of a run
+  goes out alone as a canary; the rest only follow once it proves the network is there. A
+  wall costs one failed request and one message, not one per shot.
+- The detection is deliberately narrow. A rejected `fetch` or a proxy's own HTML error page
+  reads as blocked; a genuine `403 API key not valid` from Google still reports itself as
+  that. Offline gets its own wording — no point blaming the proxy for dropped wifi.
 
 ### Brand style
 

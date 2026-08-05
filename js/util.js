@@ -58,6 +58,118 @@ window.SB = window.SB || {};
     setTimeout(function () { el.remove(); }, isErr ? 6000 : 2600);
   };
 
+  /* ---- the request that never left the browser ----
+   *
+   * A corporate proxy blocking generativelanguage.googleapis.com looks nothing
+   * like a Gemini error: fetch rejects with a TypeError, no status, no body,
+   * and the user gets "Failed to fetch" — which explains nothing and suggests
+   * no fix. On this network the fix is always the same one click, so the
+   * failure is classified here and answered with it.
+   */
+  SB.AISTUDIO_URL = 'https://aistudio.google.com/';
+
+  const BLOCKED_MSG = 'Google’s API could not be reached — the request was blocked before it ' +
+    'left the browser. On the Pega network this happens until AI Studio has been opened once ' +
+    'in this browser and accepted.';
+  const OFFLINE_MSG = 'No network — the request never left the browser. Reconnect, then try again.';
+
+  /* 'blocked' | 'offline' | null (an ordinary error, handle it normally) */
+  SB.netKind = function (e) {
+    if (!e) return null;
+    if (e.blocked) return e.netKind || 'blocked';
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return 'offline';
+    /* fetch itself rejecting — CORS, a proxy, DNS. No response ever arrived. */
+    if (typeof TypeError !== 'undefined' && e instanceof TypeError) return 'blocked';
+    if (/failed to fetch|networkerror|load failed|network request failed/i.test(String(e.message || e))) {
+      return 'blocked';
+    }
+    /* An interception page answering with HTML where JSON was due. Kept narrow:
+     * a real "API key not valid" 403 is JSON and must keep reporting itself. */
+    if (e.interception) return 'blocked';
+    return null;
+  };
+
+  /* Does this response body look like a proxy's own page rather than Google's? */
+  SB.isInterception = function (status, body) {
+    if ([403, 407, 451, 502].indexOf(status) < 0) return false;
+    const t = String(body || '').trim();
+    if (!t) return false;
+    if (/^[[{]/.test(t)) return false;                 // JSON — Google answered
+    return /^<|<html|<!doctype/i.test(t);
+  };
+
+  SB.netError = function (kind) {
+    const err = new Error(kind === 'offline' ? OFFLINE_MSG : BLOCKED_MSG);
+    err.blocked = true;
+    err.netKind = kind === 'offline' ? 'offline' : 'blocked';
+    return err;
+  };
+
+  /* Show the way out and offer to run the failed thing again. Returns false for
+   * anything that is not a network block, so callers keep their own handling:
+   *
+   *   .catch(function (e) { if (SB.apiBlocked(e, again)) return; failed(e); });
+   *
+   * Shown every time it happens — the fix is one click, and hiding it behind
+   * "don't show again" would just move the confusion later.
+   */
+  let openBlock = null;
+
+  SB.apiBlocked = function (err, retry) {
+    const kind = SB.netKind(err);
+    if (!kind) return false;
+    /* Already on screen: keep the newer way back rather than stacking dialogs. */
+    if (openBlock) { openBlock.retry = retry || openBlock.retry; return true; }
+
+    const state = { retry: retry || null };
+    const body = SB.el('div', 'blocked-body');
+    body.appendChild(SB.el('p', null, kind === 'offline' ? OFFLINE_MSG : BLOCKED_MSG));
+
+    if (kind !== 'offline') {
+      const a = document.createElement('a');
+      a.className = 'blocked-link';
+      a.href = SB.AISTUDIO_URL;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      a.textContent = 'Open AI Studio ↗';
+      body.appendChild(a);
+      body.appendChild(SB.el('p', 'pp-note',
+        'It opens in a new tab. Accept there, come back, and try again — it only has to be ' +
+        'done once in this browser.'));
+
+      const help = SB.el('p', 'pp-note');
+      help.appendChild(document.createTextNode('No key yet? '));
+      const link = SB.el('button', 'linkish', 'Settings → API');
+      link.onclick = function () {
+        if (openBlock) openBlock.close();
+        SB.Settings.open('api');
+      };
+      help.appendChild(link);
+      help.appendChild(document.createTextNode(' walks through making one.'));
+      body.appendChild(help);
+    }
+
+    const m = SB.modal({
+      title: kind === 'offline' ? 'No network' : 'Google’s API is being blocked',
+      width: '460px',
+      body: body,
+      buttons: [
+        { label: 'Close' },
+        {
+          label: 'Try again', primary: true, onClick: function (close) {
+            const again = state.retry;
+            close();
+            if (again) again();
+          }
+        }
+      ],
+      onClose: function () { openBlock = null; }
+    });
+    state.close = m.close;
+    openBlock = state;
+    return true;
+  };
+
   /* ---- images: downscale to <=480p proxy, base64 JPEG ---- */
   const MAX_W = 854, MAX_H = 480;
 

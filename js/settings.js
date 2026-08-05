@@ -249,7 +249,51 @@
     }
     drawModels();
 
-    /* ---------------- API ---------------- */
+    /* ---------------- API ----------------
+     * The key field on its own only helps someone who already has a key. The
+     * path from "no Google account set up" to a working key is five steps, and
+     * step 2 is also what clears the blocked-API dialog on this network, so it
+     * is spelled out here rather than left to be asked about.
+     */
+    const how = SB.el('div', 'setup');
+    how.appendChild(SB.el('div', 't', 'Getting a key'));
+    const steps = document.createElement('ol');
+    steps.className = 'setup-steps';
+
+    function step(parts) {
+      const li = document.createElement('li');
+      parts.forEach(function (x) {
+        li.appendChild(typeof x === 'string' ? document.createTextNode(x) : x);
+      });
+      steps.appendChild(li);
+      return li;
+    }
+    function mono(text) { return SB.el('code', 'setup-mono', text); }
+    function ext(href, text) {
+      const a = document.createElement('a');
+      a.href = href; a.target = '_blank'; a.rel = 'noopener';
+      a.textContent = text;
+      return a;
+    }
+
+    step(['Open ', ext(SB.AISTUDIO_URL, 'aistudio.google.com ↗'),
+      ' and sign in with the Google account this board should bill to.']);
+    const s2 = step(['Accept the terms when prompted. ']);
+    s2.appendChild(SB.el('span', 'dim',
+      'This is also the step that clears the “API is being blocked” dialog on the Pega ' +
+      'network — it only has to be done once in this browser.'));
+    step([mono('Get API key'), ' → ', mono('Create API key'),
+      '. Pick an existing Google Cloud project or let it make one. ']);
+    steps.lastChild.appendChild(SB.el('span', 'dim',
+      'The free-tier daily allowance is counted per project, so a project of your own keeps ' +
+      'your quota separate from anyone else’s.'));
+    step(['Copy the ', mono('AIza…'), ' string and paste it into the field below.']);
+    step(['Press ', mono('Refresh list from my key'),
+      ' — if it comes back with a model count, everything downstream works.']);
+
+    how.appendChild(steps);
+    panels.api.appendChild(how);
+
     const key = document.createElement('input');
     key.type = 'password';
     key.value = SB.Store.getApiKey();
@@ -257,6 +301,9 @@
     panels.api.appendChild(field('Google (Gemini) API key', key));
     panels.api.appendChild(SB.el('div', 'pp-note',
       'Stored in this browser only — never written into the .storyboard file, so a board can be shared without leaking the key.'));
+    panels.api.appendChild(SB.el('div', 'pp-note',
+      'The free tier is counted per Google Cloud project per day. What this browser has spent ' +
+      'today is shown as “Free calls” in the Prompts panel.'));
 
     let chosenModel = p.settings.geminiModel || SB.GeminiModels.DEFAULT;
     const pick = SB.GeminiModels.picker(chosenModel, function (id) { chosenModel = id; });
@@ -278,6 +325,11 @@
         refreshNote.textContent = models.length + ' models this key can reach.';
       }).catch(function (e) {
         refresh.disabled = false;
+        if (SB.apiBlocked(e, function () { refresh.onclick(); })) {
+          refreshNote.textContent = 'blocked — see the dialog';
+          refreshNote.classList.add('err');
+          return;
+        }
         refreshNote.textContent = e.message || String(e);
         refreshNote.classList.add('err');
       });

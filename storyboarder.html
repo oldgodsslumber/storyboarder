@@ -414,6 +414,31 @@ body.comment-mode .master-script .cmt{cursor:pointer}
 }
 .modal textarea{resize:vertical;min-height:60px;font-size:12px}
 .modal input:focus,.modal textarea:focus,.modal select:focus{outline:none;border-color:var(--accent)}
+/* the blocked-API dialog: one explanation, one link, one way to try again */
+.blocked-body p{margin:0 0 10px;font-size:13px;line-height:1.5}
+.blocked-body p.pp-note{font-size:11px}
+.blocked-link{
+  display:inline-block;margin:2px 0 12px;padding:6px 12px;border-radius:5px;
+  background:var(--accent);color:var(--on-accent);font-weight:600;font-size:13px;text-decoration:none;
+}
+.blocked-link:hover{filter:brightness(1.1)}
+button.linkish{
+  background:none;border:0;padding:0;cursor:pointer;font:inherit;
+  color:var(--accent);text-decoration:underline;
+}
+
+/* Settings -> API: how to get a key in the first place */
+.setup{border:1px solid var(--line);border-radius:6px;padding:10px 12px;margin-bottom:14px;background:var(--bg3)}
+.setup > .t{color:var(--fg-dim);font-size:11px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
+.setup-steps{margin:0;padding-left:20px;font-size:12px;line-height:1.6}
+.setup-steps li{margin-bottom:5px}
+.setup-steps a{color:var(--accent)}
+.setup-steps .dim{color:var(--fg-dim)}
+.setup-mono{
+  font-family:ui-monospace,Consolas,monospace;font-size:11px;
+  background:var(--bg);border:1px solid var(--line);border-radius:3px;padding:0 4px;
+}
+
 .model-row{border:1px solid var(--line);border-radius:6px;padding:8px;margin-bottom:8px;background:var(--bg3)}
 .field-row{
   display:flex;align-items:center;gap:8px;padding:6px;margin-bottom:6px;
@@ -641,7 +666,7 @@ body.comment-mode .frame{cursor:crosshair}
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-08-05 22:35 · 6cb266c+";</script>
+<script>window.SB_BUILD = "2026-08-05 23:41 · 7802ff9+";</script>
 
 <div id="app">
 
@@ -833,6 +858,118 @@ window.SB = window.SB || {};
     el.textContent = msg;
     root.appendChild(el);
     setTimeout(function () { el.remove(); }, isErr ? 6000 : 2600);
+  };
+
+  /* ---- the request that never left the browser ----
+   *
+   * A corporate proxy blocking generativelanguage.googleapis.com looks nothing
+   * like a Gemini error: fetch rejects with a TypeError, no status, no body,
+   * and the user gets "Failed to fetch" — which explains nothing and suggests
+   * no fix. On this network the fix is always the same one click, so the
+   * failure is classified here and answered with it.
+   */
+  SB.AISTUDIO_URL = 'https://aistudio.google.com/';
+
+  const BLOCKED_MSG = 'Google’s API could not be reached — the request was blocked before it ' +
+    'left the browser. On the Pega network this happens until AI Studio has been opened once ' +
+    'in this browser and accepted.';
+  const OFFLINE_MSG = 'No network — the request never left the browser. Reconnect, then try again.';
+
+  /* 'blocked' | 'offline' | null (an ordinary error, handle it normally) */
+  SB.netKind = function (e) {
+    if (!e) return null;
+    if (e.blocked) return e.netKind || 'blocked';
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return 'offline';
+    /* fetch itself rejecting — CORS, a proxy, DNS. No response ever arrived. */
+    if (typeof TypeError !== 'undefined' && e instanceof TypeError) return 'blocked';
+    if (/failed to fetch|networkerror|load failed|network request failed/i.test(String(e.message || e))) {
+      return 'blocked';
+    }
+    /* An interception page answering with HTML where JSON was due. Kept narrow:
+     * a real "API key not valid" 403 is JSON and must keep reporting itself. */
+    if (e.interception) return 'blocked';
+    return null;
+  };
+
+  /* Does this response body look like a proxy's own page rather than Google's? */
+  SB.isInterception = function (status, body) {
+    if ([403, 407, 451, 502].indexOf(status) < 0) return false;
+    const t = String(body || '').trim();
+    if (!t) return false;
+    if (/^[[{]/.test(t)) return false;                 // JSON — Google answered
+    return /^<|<html|<!doctype/i.test(t);
+  };
+
+  SB.netError = function (kind) {
+    const err = new Error(kind === 'offline' ? OFFLINE_MSG : BLOCKED_MSG);
+    err.blocked = true;
+    err.netKind = kind === 'offline' ? 'offline' : 'blocked';
+    return err;
+  };
+
+  /* Show the way out and offer to run the failed thing again. Returns false for
+   * anything that is not a network block, so callers keep their own handling:
+   *
+   *   .catch(function (e) { if (SB.apiBlocked(e, again)) return; failed(e); });
+   *
+   * Shown every time it happens — the fix is one click, and hiding it behind
+   * "don't show again" would just move the confusion later.
+   */
+  let openBlock = null;
+
+  SB.apiBlocked = function (err, retry) {
+    const kind = SB.netKind(err);
+    if (!kind) return false;
+    /* Already on screen: keep the newer way back rather than stacking dialogs. */
+    if (openBlock) { openBlock.retry = retry || openBlock.retry; return true; }
+
+    const state = { retry: retry || null };
+    const body = SB.el('div', 'blocked-body');
+    body.appendChild(SB.el('p', null, kind === 'offline' ? OFFLINE_MSG : BLOCKED_MSG));
+
+    if (kind !== 'offline') {
+      const a = document.createElement('a');
+      a.className = 'blocked-link';
+      a.href = SB.AISTUDIO_URL;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      a.textContent = 'Open AI Studio ↗';
+      body.appendChild(a);
+      body.appendChild(SB.el('p', 'pp-note',
+        'It opens in a new tab. Accept there, come back, and try again — it only has to be ' +
+        'done once in this browser.'));
+
+      const help = SB.el('p', 'pp-note');
+      help.appendChild(document.createTextNode('No key yet? '));
+      const link = SB.el('button', 'linkish', 'Settings → API');
+      link.onclick = function () {
+        if (openBlock) openBlock.close();
+        SB.Settings.open('api');
+      };
+      help.appendChild(link);
+      help.appendChild(document.createTextNode(' walks through making one.'));
+      body.appendChild(help);
+    }
+
+    const m = SB.modal({
+      title: kind === 'offline' ? 'No network' : 'Google’s API is being blocked',
+      width: '460px',
+      body: body,
+      buttons: [
+        { label: 'Close' },
+        {
+          label: 'Try again', primary: true, onClick: function (close) {
+            const again = state.retry;
+            close();
+            if (again) again();
+          }
+        }
+      ],
+      onClose: function () { openBlock = null; }
+    });
+    state.close = m.close;
+    openBlock = state;
+    return true;
   };
 
   /* ---- images: downscale to <=480p proxy, base64 JPEG ---- */
@@ -1446,9 +1583,15 @@ window.SB = window.SB || {};
     if (!key) return Promise.reject(new Error('Add your API key first, then refresh the list.'));
     return fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200&key=' +
       encodeURIComponent(key))
+      .catch(function (e) {
+        const kind = SB.netKind(e);
+        if (kind) throw SB.netError(kind);
+        throw e;
+      })
       .then(function (r) {
         return r.text().then(function (t) {
           if (!r.ok) {
+            if (SB.isInterception(r.status, t)) throw SB.netError('blocked');
             let msg = t;
             try { msg = JSON.parse(t).error.message; } catch (e) { }
             throw new Error('Gemini ' + r.status + ': ' + msg);
@@ -3907,7 +4050,10 @@ window.SB = window.SB || {};
       if (!on) { ai.status = msg || ''; ai.err = !!isErr; }
     }
 
-    function failed(e) {
+    /* A network block is answered by the dialog, with a way to run this again;
+     * everything else is said where it happened. */
+    function failed(e, again) {
+      if (SB.apiBlocked(e, again)) { busy(false, 'blocked — see the dialog', true); return; }
       const msg = e && e.message ? e.message : String(e);
       busy(false, msg, true);
       SB.toast(msg, true);
@@ -3925,7 +4071,7 @@ window.SB = window.SB || {};
         bRev.classList.remove('hidden');
         busy(false, 'rewritten');
         SB.app.changed(false);
-      }).catch(failed);
+      }).catch(function (e) { failed(e, bRw.onclick); });
     };
 
     bRev.onclick = function () {
@@ -3944,6 +4090,13 @@ window.SB = window.SB || {};
       const kept = sc.shots.filter(function (sh) { return !SB.Coverage.isBlank(p, sh); }).length;
       if (kept && !confirm('Add generated shots to the end of "' + (sc.heading || 'this scene') +
         '"? It already has ' + kept + ' shot' + (kept === 1 ? '' : 's') + '.')) return;
+      runGen();
+    };
+
+    /* Retry goes straight here: nothing was added, so asking again whether to
+     * add to a scene that already has shots would just be a second door. */
+    function runGen() {
+      const p = P();
       busy(true, 'boarding…');
       SB.Coverage.generate(p, sc.id, { count: ai.count | 0 }).then(function (r) {
         ai.ids = r.ids.slice();
@@ -3953,8 +4106,8 @@ window.SB = window.SB || {};
         SB.app.selection = [r.ids[0]];
         SB.app.changed(true);                 // rebuilds this row from ai state
         SB.toast(ai.status + (r.beats.length ? ' — ' + r.beats.join(' → ') : ''));
-      }).catch(failed);
-    };
+      }).catch(function (e) { failed(e, runGen); });
+    }
 
     bUndo.onclick = function () {
       if (!ai.ids || !ai.ids.length) return;
@@ -4517,8 +4670,9 @@ window.SB = window.SB || {};
       const roles = field === 'imagePrompt' ? { image: true } : { video: true };
       SB.Prompts.generateFor([sh], { roles: roles })
         .catch(function (e) {
-          SB.toast(e.message || String(e), true);
           gen.disabled = false; gen.textContent = 'generate';
+          if (SB.apiBlocked(e, function () { gen.onclick(); })) return;
+          SB.toast(e.message || String(e), true);
         });
     };
     t.appendChild(gen);
@@ -5273,9 +5427,15 @@ window.SB = window.SB || {};
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
+    }).catch(function (e) {
+      /* fetch rejected: nothing reached Google. Say which wall it hit. */
+      const kind = SB.netKind(e);
+      if (kind) throw SB.netError(kind);
+      throw e;
     }).then(function (r) {
       return r.text().then(function (t) {
         if (!r.ok) {
+          if (SB.isInterception(r.status, t)) throw SB.netError('blocked');
           let msg = t;
           try { msg = JSON.parse(t).error.message; } catch (e) { }
           let err;
@@ -5432,7 +5592,9 @@ window.SB = window.SB || {};
     tick();
 
     const queue = jobs.slice();
+    let stopped = false;
     function worker() {
+      if (stopped) return Promise.resolve();
       const j = queue.shift();
       if (!j) return Promise.resolve();
       return callGemini(j.text, j.keys, j.system).then(function (res) {
@@ -5446,12 +5608,22 @@ window.SB = window.SB || {};
         failed++;
         lastError = e;
         console.error('[storyboarder] prompt failed', e);
+        /* Blocked at the network: every remaining job would fail the same way.
+         * Stop, so one wall costs one failed request and one message. */
+        if (SB.netKind(e)) { stopped = true; queue.length = 0; return; }
         if (failed === 1) SB.toast(e.message, true);
       }).then(function () { tick(); return worker(); });
     }
-    const lanes = [];
-    for (let i = 0; i < Math.min(3, jobs.length); i++) lanes.push(worker());
-    return Promise.all(lanes).then(function () {
+
+    /* The first job goes alone. Three lanes opening at once would put three
+     * doomed requests on the wire before the first rejection came back, so the
+     * canary proves the network is there before the rest follow. */
+    return worker().then(function () {
+      if (stopped || !queue.length) return;
+      const lanes = [];
+      for (let i = 0; i < Math.min(2, queue.length); i++) lanes.push(worker());
+      return Promise.all(lanes);
+    }).then(function () {
       SB.app.changed(true);
       /* Nothing written at all is a failure, not a result — say why. */
       if (!done && lastError) throw lastError;
@@ -6078,6 +6250,10 @@ window.SB = window.SB || {};
         !!r.failed);
     }).catch(function (e) {
       btn.disabled = false;
+      if (SB.apiBlocked(e, function () { run(shots, roles, btn); })) {
+        setStatus('blocked — see the dialog', true);
+        return;
+      }
       const msg = e.message || String(e);
       setStatus(msg, true);
       /* "that model is not available to this key" is answerable on the spot:
@@ -6180,6 +6356,10 @@ window.SB = window.SB || {};
         })
         .catch(function (e) {
           bGen.disabled = false;
+          if (SB.apiBlocked(e, function () { bGen.onclick(); })) {
+            setStatus('blocked — see the dialog', true);
+            return;
+          }
           setStatus(e.message || String(e), true);
         });
     };
@@ -6329,6 +6509,7 @@ window.SB = window.SB || {};
         SB.app.changed(true);
       }).catch(function (e) {
         write.disabled = false;
+        if (SB.apiBlocked(e, function () { write.onclick(); })) return;
         SB.toast(e.message || String(e), true);
       });
     };
@@ -6803,7 +6984,51 @@ window.SB = window.SB || {};
     }
     drawModels();
 
-    /* ---------------- API ---------------- */
+    /* ---------------- API ----------------
+     * The key field on its own only helps someone who already has a key. The
+     * path from "no Google account set up" to a working key is five steps, and
+     * step 2 is also what clears the blocked-API dialog on this network, so it
+     * is spelled out here rather than left to be asked about.
+     */
+    const how = SB.el('div', 'setup');
+    how.appendChild(SB.el('div', 't', 'Getting a key'));
+    const steps = document.createElement('ol');
+    steps.className = 'setup-steps';
+
+    function step(parts) {
+      const li = document.createElement('li');
+      parts.forEach(function (x) {
+        li.appendChild(typeof x === 'string' ? document.createTextNode(x) : x);
+      });
+      steps.appendChild(li);
+      return li;
+    }
+    function mono(text) { return SB.el('code', 'setup-mono', text); }
+    function ext(href, text) {
+      const a = document.createElement('a');
+      a.href = href; a.target = '_blank'; a.rel = 'noopener';
+      a.textContent = text;
+      return a;
+    }
+
+    step(['Open ', ext(SB.AISTUDIO_URL, 'aistudio.google.com ↗'),
+      ' and sign in with the Google account this board should bill to.']);
+    const s2 = step(['Accept the terms when prompted. ']);
+    s2.appendChild(SB.el('span', 'dim',
+      'This is also the step that clears the “API is being blocked” dialog on the Pega ' +
+      'network — it only has to be done once in this browser.'));
+    step([mono('Get API key'), ' → ', mono('Create API key'),
+      '. Pick an existing Google Cloud project or let it make one. ']);
+    steps.lastChild.appendChild(SB.el('span', 'dim',
+      'The free-tier daily allowance is counted per project, so a project of your own keeps ' +
+      'your quota separate from anyone else’s.'));
+    step(['Copy the ', mono('AIza…'), ' string and paste it into the field below.']);
+    step(['Press ', mono('Refresh list from my key'),
+      ' — if it comes back with a model count, everything downstream works.']);
+
+    how.appendChild(steps);
+    panels.api.appendChild(how);
+
     const key = document.createElement('input');
     key.type = 'password';
     key.value = SB.Store.getApiKey();
@@ -6811,6 +7036,9 @@ window.SB = window.SB || {};
     panels.api.appendChild(field('Google (Gemini) API key', key));
     panels.api.appendChild(SB.el('div', 'pp-note',
       'Stored in this browser only — never written into the .storyboard file, so a board can be shared without leaking the key.'));
+    panels.api.appendChild(SB.el('div', 'pp-note',
+      'The free tier is counted per Google Cloud project per day. What this browser has spent ' +
+      'today is shown as “Free calls” in the Prompts panel.'));
 
     let chosenModel = p.settings.geminiModel || SB.GeminiModels.DEFAULT;
     const pick = SB.GeminiModels.picker(chosenModel, function (id) { chosenModel = id; });
@@ -6832,6 +7060,11 @@ window.SB = window.SB || {};
         refreshNote.textContent = models.length + ' models this key can reach.';
       }).catch(function (e) {
         refresh.disabled = false;
+        if (SB.apiBlocked(e, function () { refresh.onclick(); })) {
+          refreshNote.textContent = 'blocked — see the dialog';
+          refreshNote.classList.add('err');
+          return;
+        }
         refreshNote.textContent = e.message || String(e);
         refreshNote.classList.add('err');
       });

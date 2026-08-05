@@ -207,6 +207,10 @@
         !!r.failed);
     }).catch(function (e) {
       btn.disabled = false;
+      if (SB.apiBlocked(e, function () { run(shots, roles, btn); })) {
+        setStatus('blocked — see the dialog', true);
+        return;
+      }
       const msg = e.message || String(e);
       setStatus(msg, true);
       /* "that model is not available to this key" is answerable on the spot:

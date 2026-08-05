@@ -408,6 +408,31 @@ body.comment-mode .master-script .cmt{cursor:pointer}
 }
 .modal textarea{resize:vertical;min-height:60px;font-size:12px}
 .modal input:focus,.modal textarea:focus,.modal select:focus{outline:none;border-color:var(--accent)}
+/* the blocked-API dialog: one explanation, one link, one way to try again */
+.blocked-body p{margin:0 0 10px;font-size:13px;line-height:1.5}
+.blocked-body p.pp-note{font-size:11px}
+.blocked-link{
+  display:inline-block;margin:2px 0 12px;padding:6px 12px;border-radius:5px;
+  background:var(--accent);color:var(--on-accent);font-weight:600;font-size:13px;text-decoration:none;
+}
+.blocked-link:hover{filter:brightness(1.1)}
+button.linkish{
+  background:none;border:0;padding:0;cursor:pointer;font:inherit;
+  color:var(--accent);text-decoration:underline;
+}
+
+/* Settings -> API: how to get a key in the first place */
+.setup{border:1px solid var(--line);border-radius:6px;padding:10px 12px;margin-bottom:14px;background:var(--bg3)}
+.setup > .t{color:var(--fg-dim);font-size:11px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
+.setup-steps{margin:0;padding-left:20px;font-size:12px;line-height:1.6}
+.setup-steps li{margin-bottom:5px}
+.setup-steps a{color:var(--accent)}
+.setup-steps .dim{color:var(--fg-dim)}
+.setup-mono{
+  font-family:ui-monospace,Consolas,monospace;font-size:11px;
+  background:var(--bg);border:1px solid var(--line);border-radius:3px;padding:0 4px;
+}
+
 .model-row{border:1px solid var(--line);border-radius:6px;padding:8px;margin-bottom:8px;background:var(--bg3)}
 .field-row{
   display:flex;align-items:center;gap:8px;padding:6px;margin-bottom:6px;

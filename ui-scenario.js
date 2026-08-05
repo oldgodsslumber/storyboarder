@@ -1072,8 +1072,57 @@
           sc.description === 'A courier delivers a package to a warehouse door.',
           sc.description);
 
+        // blocked network: the dialog, then the same button's work resumed
+        SB.Prompts.raw = function () { return Promise.reject(new TypeError('Failed to fetch')); };
+        const bGen2 = Array.prototype.filter.call(document.querySelectorAll(sel + '.sc-ai .mini'),
+          function (b) { return /Generate/.test(b.textContent); })[0];
+        bGen2.click();
+        await settle();
+        const link = document.querySelector('.blocked-link');
+        t('a blocked call opens the way out', !!link, '');
+        t('the link goes to AI Studio in a new tab',
+          !!link && link.getAttribute('href') === 'https://aistudio.google.com/' &&
+          link.getAttribute('target') === '_blank',
+          link && link.getAttribute('href') + ' ' + link.getAttribute('target'));
+        t('the scene row points at the dialog',
+          /blocked/.test(document.querySelector(sel + '.sc-ai-status').textContent),
+          document.querySelector(sel + '.sc-ai-status').textContent);
+
+        SB.Prompts.raw = function () {
+          return Promise.resolve({
+            subject: 'A courier in a rust-orange weatherproof jacket.',
+            shots: [
+              { beat: 'arrives', type: 'WS', description: 'The courier reaches the door.' },
+              { beat: 'signed for', type: 'CU', description: 'A rust-orange sleeve, screen green.' }
+            ]
+          });
+        };
+        Array.prototype.filter.call(document.querySelectorAll('.modal .foot .tb'),
+          function (b) { return b.textContent === 'Try again'; })[0].click();
+        await settle();
+        t('try again boards the scene it failed on', sc.shots.length === 2, sc.shots.length);
+        t('and the dialog is gone', !document.querySelector('.blocked-link'), '');
+
         SB.Model.deleteScene(P(), sc.id);
         app.changed(true);
+      }
+
+      // Settings -> API says how to get a key in the first place
+      {
+        SB.Settings.open('api');
+        const steps = document.querySelectorAll('.modal .setup-steps li');
+        t('the API tab explains how to get a key', steps.length === 5, steps.length);
+        const first = document.querySelector('.modal .setup-steps a');
+        t('step one links to AI Studio in a new tab',
+          !!first && first.getAttribute('href') === 'https://aistudio.google.com/' &&
+          first.getAttribute('target') === '_blank',
+          first && first.getAttribute('href'));
+        t('the accept step is tied to the blocked dialog by name',
+          /being blocked/.test(steps[1].textContent), steps[1] && steps[1].textContent);
+        t('and the key field is still there under it',
+          !!document.querySelector('.modal input[type=password]'), '');
+        Array.prototype.filter.call(document.querySelectorAll('.modal .foot .tb'),
+          function (b) { return b.textContent === 'Cancel'; })[0].click();
       }
 
       // comment mode

@@ -109,9 +109,15 @@
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
+    }).catch(function (e) {
+      /* fetch rejected: nothing reached Google. Say which wall it hit. */
+      const kind = SB.netKind(e);
+      if (kind) throw SB.netError(kind);
+      throw e;
     }).then(function (r) {
       return r.text().then(function (t) {
         if (!r.ok) {
+          if (SB.isInterception(r.status, t)) throw SB.netError('blocked');
           let msg = t;
           try { msg = JSON.parse(t).error.message; } catch (e) { }
           let err;
@@ -268,7 +274,9 @@
     tick();
 
     const queue = jobs.slice();
+    let stopped = false;
     function worker() {
+      if (stopped) return Promise.resolve();
       const j = queue.shift();
       if (!j) return Promise.resolve();
       return callGemini(j.text, j.keys, j.system).then(function (res) {
@@ -282,12 +290,22 @@
         failed++;
         lastError = e;
         console.error('[storyboarder] prompt failed', e);
+        /* Blocked at the network: every remaining job would fail the same way.
+         * Stop, so one wall costs one failed request and one message. */
+        if (SB.netKind(e)) { stopped = true; queue.length = 0; return; }
         if (failed === 1) SB.toast(e.message, true);
       }).then(function () { tick(); return worker(); });
     }
-    const lanes = [];
-    for (let i = 0; i < Math.min(3, jobs.length); i++) lanes.push(worker());
-    return Promise.all(lanes).then(function () {
+
+    /* The first job goes alone. Three lanes opening at once would put three
+     * doomed requests on the wire before the first rejection came back, so the
+     * canary proves the network is there before the rest follow. */
+    return worker().then(function () {
+      if (stopped || !queue.length) return;
+      const lanes = [];
+      for (let i = 0; i < Math.min(2, queue.length); i++) lanes.push(worker());
+      return Promise.all(lanes);
+    }).then(function () {
       SB.app.changed(true);
       /* Nothing written at all is a failure, not a result — say why. */
       if (!done && lastError) throw lastError;

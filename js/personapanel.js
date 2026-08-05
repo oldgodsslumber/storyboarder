@@ -60,6 +60,10 @@
         })
         .catch(function (e) {
           bGen.disabled = false;
+          if (SB.apiBlocked(e, function () { bGen.onclick(); })) {
+            setStatus('blocked — see the dialog', true);
+            return;
+          }
           setStatus(e.message || String(e), true);
         });
     };
@@ -209,6 +213,7 @@
         SB.app.changed(true);
       }).catch(function (e) {
         write.disabled = false;
+        if (SB.apiBlocked(e, function () { write.onclick(); })) return;
         SB.toast(e.message || String(e), true);
       });
     };

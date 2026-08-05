@@ -142,9 +142,15 @@
     if (!key) return Promise.reject(new Error('Add your API key first, then refresh the list.'));
     return fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200&key=' +
       encodeURIComponent(key))
+      .catch(function (e) {
+        const kind = SB.netKind(e);
+        if (kind) throw SB.netError(kind);
+        throw e;
+      })
       .then(function (r) {
         return r.text().then(function (t) {
           if (!r.ok) {
+            if (SB.isInterception(r.status, t)) throw SB.netError('blocked');
             let msg = t;
             try { msg = JSON.parse(t).error.message; } catch (e) { }
             throw new Error('Gemini ' + r.status + ': ' + msg);

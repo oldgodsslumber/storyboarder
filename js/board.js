@@ -300,7 +300,10 @@
       if (!on) { ai.status = msg || ''; ai.err = !!isErr; }
     }
 
-    function failed(e) {
+    /* A network block is answered by the dialog, with a way to run this again;
+     * everything else is said where it happened. */
+    function failed(e, again) {
+      if (SB.apiBlocked(e, again)) { busy(false, 'blocked — see the dialog', true); return; }
       const msg = e && e.message ? e.message : String(e);
       busy(false, msg, true);
       SB.toast(msg, true);
@@ -318,7 +321,7 @@
         bRev.classList.remove('hidden');
         busy(false, 'rewritten');
         SB.app.changed(false);
-      }).catch(failed);
+      }).catch(function (e) { failed(e, bRw.onclick); });
     };
 
     bRev.onclick = function () {
@@ -337,6 +340,13 @@
       const kept = sc.shots.filter(function (sh) { return !SB.Coverage.isBlank(p, sh); }).length;
       if (kept && !confirm('Add generated shots to the end of "' + (sc.heading || 'this scene') +
         '"? It already has ' + kept + ' shot' + (kept === 1 ? '' : 's') + '.')) return;
+      runGen();
+    };
+
+    /* Retry goes straight here: nothing was added, so asking again whether to
+     * add to a scene that already has shots would just be a second door. */
+    function runGen() {
+      const p = P();
       busy(true, 'boarding…');
       SB.Coverage.generate(p, sc.id, { count: ai.count | 0 }).then(function (r) {
         ai.ids = r.ids.slice();
@@ -346,8 +356,8 @@
         SB.app.selection = [r.ids[0]];
         SB.app.changed(true);                 // rebuilds this row from ai state
         SB.toast(ai.status + (r.beats.length ? ' — ' + r.beats.join(' → ') : ''));
-      }).catch(failed);
-    };
+      }).catch(function (e) { failed(e, runGen); });
+    }
 
     bUndo.onclick = function () {
       if (!ai.ids || !ai.ids.length) return;
@@ -910,8 +920,9 @@
       const roles = field === 'imagePrompt' ? { image: true } : { video: true };
       SB.Prompts.generateFor([sh], { roles: roles })
         .catch(function (e) {
-          SB.toast(e.message || String(e), true);
           gen.disabled = false; gen.textContent = 'generate';
+          if (SB.apiBlocked(e, function () { gen.onclick(); })) return;
+          SB.toast(e.message || String(e), true);
         });
     };
     t.appendChild(gen);

@@ -254,6 +254,98 @@
       window.__reply = null;
       SB.GeminiModels.clearCache();
 
+      /* ---------- the request that never leaves the browser ---------- */
+      {
+        const realFetch2 = window.fetch;
+        let tries = 0;
+
+        // 1. fetch rejects outright — a CORS/proxy wall
+        window.fetch = function () { tries++; return Promise.reject(new TypeError('Failed to fetch')); };
+        let e1 = null;
+        await SB.Prompts.generateFor([shots.a], { roles: { image: true } }).catch(function (e) { e1 = e; });
+        t('a blocked request is recognised as one', !!e1 && e1.blocked === true,
+          e1 && e1.message);
+        t('and the message says how to fix it', !!e1 && /AI Studio/.test(e1.message),
+          e1 && e1.message);
+        t('“Failed to fetch” never reaches the user', !!e1 && !/failed to fetch/i.test(e1.message),
+          e1 && e1.message);
+
+        // 2. a whole board's worth of jobs still costs exactly one request
+        const many = [];
+        for (let i = 0; i < 6; i++) {
+          const s = SB.Model.addShot(P(), P().scenes[0].id, {});
+          s.description = 'beat number ' + i;
+          many.push(s);
+        }
+        tries = 0;
+        await SB.Prompts.generateFor(many, { roles: { image: true } }).catch(function () { });
+        t('one wall costs one request, not one per job', tries === 1, tries);
+        many.forEach(function (s) { SB.Model.deleteShot(P(), s.id); });
+
+        // 3. an interception page answering with HTML where JSON was due
+        window.fetch = function () {
+          tries++;
+          return Promise.resolve({
+            ok: false, status: 403,
+            text: function () { return Promise.resolve('<html><body>Access denied by policy</body></html>'); }
+          });
+        };
+        let e2 = null;
+        await SB.Prompts.generateFor([shots.a], { roles: { image: true } }).catch(function (e) { e2 = e; });
+        t('an HTML interception page reads as blocked too', !!e2 && e2.blocked === true,
+          e2 && e2.message);
+
+        // 4. ...but a real 403 from Google still reports itself
+        window.fetch = function () {
+          tries++;
+          return Promise.resolve({
+            ok: false, status: 403,
+            text: function () { return Promise.resolve(JSON.stringify({ error: { message: 'API key not valid' } })); }
+          });
+        };
+        let e3 = null;
+        await SB.Prompts.generateFor([shots.a], { roles: { image: true } }).catch(function (e) { e3 = e; });
+        t('a genuine 403 is not mistaken for the network', !!e3 && !e3.blocked &&
+          /API key not valid/.test(e3.message), e3 && e3.message);
+
+        // 5. the whole loop through the Prompts panel: block -> dialog -> try again
+        window.fetch = function () { return Promise.reject(new TypeError('Failed to fetch')); };
+        const scopeSel = document.querySelector('#promptBody select');
+        const genBtn2 = Array.prototype.filter.call(
+          document.querySelectorAll('#promptBody .tb'),
+          function (b) { return b.textContent === 'Generate'; })[0];
+        genBtn2.click();
+        await wait(300);
+
+        const link = document.querySelector('.blocked-link');
+        t('the dialog offers a way out', !!link, document.querySelectorAll('.modal h2').length);
+        t('the link points at AI Studio',
+          !!link && link.getAttribute('href') === 'https://aistudio.google.com/',
+          link && link.getAttribute('href'));
+        t('and opens in a new tab', !!link && link.getAttribute('target') === '_blank',
+          link && link.getAttribute('target'));
+        t('the panel points at the dialog rather than repeating it',
+          /blocked/.test(document.querySelector('#promptBody .pp-status').textContent),
+          document.querySelector('#promptBody .pp-status').textContent);
+
+        // accept happens in the other tab; here the network simply works again
+        window.fetch = realFetch2;
+        window.__reply = null;
+        window.__calls = [];
+        const tryAgain = Array.prototype.filter.call(
+          document.querySelectorAll('.modal .foot .tb'),
+          function (b) { return b.textContent === 'Try again'; })[0];
+        t('try again is offered', !!tryAgain, '');
+        tryAgain.click();
+        await wait(600);
+        t('the dialog closes when it is used', !document.querySelector('.blocked-link'), '');
+        t('try again re-runs the thing that failed',
+          /done —/.test(document.querySelector('#promptBody .pp-status').textContent) &&
+          window.__calls.length > 0,
+          document.querySelector('#promptBody .pp-status').textContent + ' / ' + window.__calls.length);
+        if (scopeSel) scopeSel.value = 'project';
+      }
+
       t('no page errors', (window.__err || []).length === 0, JSON.stringify(window.__err));
     } catch (e) {
       out.push('FAIL exception :: ' + (e && e.stack || e));
