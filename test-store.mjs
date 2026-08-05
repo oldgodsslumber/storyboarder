@@ -38,29 +38,45 @@ FakeHandle.prototype.getFile = function () {
   const d = window.__disk.data;
   return Promise.resolve({ text: function () { return Promise.resolve(d); } });
 };
-/* Chrome writes to a swap file and commits it on close(). With
-   keepExistingData the swap starts as a copy of the board; without it the swap
-   starts EMPTY — so a write that fails and still closes commits nothing. */
+/* Chrome writes to a swap file and commits it on close(). Everything here is
+   measured in BYTES, like the real thing — an earlier version of this stub
+   worked in JS characters, which is exactly why it could not catch a
+   truncate() call that had been given a character count. */
+const ENC = new TextEncoder(), DEC = new TextDecoder();
+function bytesOf(x) {
+  if (x instanceof Uint8Array) return x;
+  return ENC.encode(String(x));
+}
 FakeHandle.prototype.createWritable = function (opts) {
   const keep = !!(opts && opts.keepExistingData);
-  const state = { swap: keep ? window.__disk.data : '', open: true };
+  const state = { swap: keep ? bytesOf(window.__disk.data) : new Uint8Array(0), open: true };
   window.__lastKeepExisting = keep;
+  function splice(at, add) {
+    const end = Math.max(state.swap.length, at + add.length);
+    const out = new Uint8Array(end);
+    out.set(state.swap.subarray(0, Math.min(state.swap.length, end)), 0);
+    out.set(add, at);
+    state.swap = out;
+  }
   return Promise.resolve({
     write: function (chunk) {
       if (window.__failWrite) return Promise.reject(new Error('simulated write failure'));
-      if (typeof chunk === 'string') { state.swap = chunk; return Promise.resolve(); }
+      if (chunk && typeof chunk.arrayBuffer === 'function') {       // Blob
+        return chunk.arrayBuffer().then(function (ab) {
+          splice(0, new Uint8Array(ab));
+        });
+      }
       if (chunk && chunk.type === 'write') {
-        const at = chunk.position || 0;
-        state.swap = state.swap.slice(0, at) + chunk.data +
-          state.swap.slice(at + chunk.data.length);
+        splice(chunk.position || 0, bytesOf(chunk.data));
         return Promise.resolve();
       }
+      splice(0, bytesOf(chunk));
       return Promise.resolve();
     },
     truncate: function (n) { state.swap = state.swap.slice(0, n); return Promise.resolve(); },
     abort: function () { state.open = false; return Promise.resolve(); },
     close: function () {
-      if (state.open) window.__disk.data = state.swap;   // commit
+      if (state.open) window.__disk.data = DEC.decode(state.swap);   // commit
       state.open = false;
       return Promise.resolve();
     }
@@ -84,7 +100,7 @@ const tmp = join(root, '_storetest_' + Date.now() + '.html');
 writeFileSync(tmp, html, 'utf8');
 
 const dom = execFileSync(CHROME, [
-  '--headless=new', '--disable-gpu', '--virtual-time-budget=15000',
+  '--headless=new', '--disable-gpu', '--virtual-time-budget=40000',
   '--dump-dom', 'file:///' + tmp.replace(/\\/g, '/')
 ], { maxBuffer: 64 * 1024 * 1024, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
 

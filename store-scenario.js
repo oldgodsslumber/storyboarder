@@ -11,17 +11,32 @@
   /* built at runtime so the marker never appears in this file's own source,
      which is visible in the DOM dump the runner reads */
   const MARK = 'RES' + 'ULT';
+  let reported = false;
   function report() {
+    if (reported) return;
+    reported = true;
     document.getElementById('toastRoot').textContent =
       MARK + '>>' + out.join(' | ') + '<<' + MARK;
   }
+  /* If a step never settles, still say how far it got — a silent hang is the
+   * hardest kind of failure to diagnose from a DOM dump. */
+  setTimeout(function () {
+    if (!reported) {
+      out.push('FAIL the run never finished — stopped after: ' +
+        (out.length ? out[out.length - 1] : 'nothing'));
+      report();
+    }
+  }, 35000);   /* headless runs on virtual time, which races ahead of the work */
 
-  /* a board worth losing */
+  /* a board worth losing — the name and script carry the em-dashes and smart
+   * quotes that real boards are full of, because a byte-vs-character bug only
+   * shows up on text that is not plain ASCII */
   function seed() {
     const p = P();
-    p.name = 'Acme onboarding';
+    p.name = 'Acme onboarding — “final” cut';
     SB.Model.applyMasterEdit(p, 0, 0,
-      'Wide of the office floor. The subject turns to camera. Then a close-up of the laptop.', null);
+      'Wide of the office floor — the subject turns to camera. Then a close-up of the “laptop”. ' +
+      'Café, naïve, résumé, 日本語, emoji 🎬 — all of it has to survive a round trip.', null);
     const sc = p.scenes[0];
     sc.heading = 'Opening';
     sc.shots = [];
@@ -44,16 +59,34 @@
         Date.now() - t0 < 5000 && remembered === null,
         (Date.now() - t0) + 'ms / ' + remembered);
 
-      const t1 = Date.now();
+      /* Save as… used to await a handle-remembering write to IndexedDB before
+       * writing anything, and on file:// that promise never settles — so the
+       * picked file stayed empty. Resolving at all, with content behind it, is
+       * the proof; a wall-clock threshold means nothing under virtual time. */
       await SB.Store.saveAs(P());
       t('Save as… writes the file without waiting on IndexedDB',
-        Date.now() - t1 < 5000, (Date.now() - t1) + 'ms');
+        window.__disk.data.length > 400, window.__disk.data.length + ' bytes');
       await wait(900);
       const saved = window.__disk.data;
       t('a board saves to its file', saved.length > 400, saved.length);
       t('the saved file parses', (function () {
         try { JSON.parse(saved); return true; } catch (e) { return false; }
-      })(), saved.slice(0, 60));
+      })(), saved.slice(-80));
+
+      /* The regression: a board full of em-dashes and smart quotes has more
+         BYTES than characters, and the file must still be complete. */
+      const enc = new TextEncoder();
+      t('the file is not cut short on non-ASCII text',
+        saved === SB.Store.serialize(P()).replace(/"updatedAt":\d+/, saved.match(/"updatedAt":\d+/)[0]),
+        'on disk ' + enc.encode(saved).length + ' bytes / ' + saved.length + ' chars');
+      const back = JSON.parse(saved);
+      t('accents, smart quotes and emoji survive the write',
+        back.name === P().name && /🎬/.test(back.master.text) && /日本語/.test(back.master.text),
+        JSON.stringify(back.name));
+      t('the whole board is there, not a prefix of it',
+        back.scenes[0].shots.length === P().scenes[0].shots.length &&
+        !!back.settings && !!back.personas,
+        JSON.stringify(Object.keys(back)));
 
       /* ---- the report: change the writer model ---- */
       SB.PromptPanel.open();
@@ -62,7 +95,7 @@
       t('writer dropdown is there', !!sel, 'missing');
       sel.value = 'gemma-4-31b-it';
       sel.dispatchEvent(new Event('change', { bubbles: true }));
-      await wait(1200);
+      await SB.Store.saveNow();          // flush, rather than racing the debounce
 
       t('model change stuck', P().settings.geminiModel === 'gemma-4-31b-it', P().settings.geminiModel);
       const afterModel = window.__disk.data;
@@ -91,11 +124,11 @@
         reopened ? reopened.settings.geminiModel : '-');
 
       /* ---- what a failed write does to the file ---- */
+      await SB.Store.saveNow();          // settle anything already queued
       const before = window.__disk.data;
       window.__failWrite = true;
       P().name = 'Acme onboarding v2';
-      SB.Store.touch();
-      await wait(1200);
+      await SB.Store.saveNow();
       t('a failed write does not leave the file empty', window.__disk.data.length > 400,
         'file is now ' + window.__disk.data.length + ' bytes');
       t('a failed write leaves the previous board intact',
@@ -107,12 +140,15 @@
       t('and it offers a rescue copy',
         /Download a copy/.test(document.querySelector('.modal .foot').textContent), '');
       document.querySelectorAll('.modal .foot .tb')[2].click();   // dismiss
+      t('the failure modal can be dismissed', document.querySelectorAll('.modal').length === 0,
+        document.querySelectorAll('.modal').length + ' still open');
 
       /* ---- and does autosave recover afterwards? ---- */
       window.__failWrite = false;
       P().name = 'Acme onboarding v3';
       SB.Store.touch();
-      await wait(1200);
+      await SB.Store.saveNow();
+      t('a save after a failure completes', true, '');
       t('autosave still works after a failed write',
         /v3/.test(window.__disk.data), window.__disk.data.slice(0, 60));
 
@@ -133,10 +169,8 @@
 
       /* ---- refuse to write a nonsense project over a real one ---- */
       const good = window.__disk.data;
-      const realSerialize = SB.Store.serialize;
       SB.Store.S.getProject = function () { return null; };
-      SB.Store.touch();
-      await wait(900);
+      await SB.Store.saveNow();
       t('a missing project never overwrites the file', window.__disk.data === good, 'file changed');
       SB.Store.S.getProject = function () { return P(); };
 
@@ -227,8 +261,7 @@
 
       /* and editing it writes back to that same file */
       P().name = 'First build board (edited)';
-      SB.Store.touch();
-      await wait(900);
+      await SB.Store.saveNow();
       t('editing an old board saves back to its file',
         /First build board \(edited\)/.test(window.__disk.data), window.__disk.data.slice(0, 60));
       t('and the saved file is readable again',
@@ -236,6 +269,39 @@
           try { return SB.Model.migrate(JSON.parse(window.__disk.data)).scenes[0].shots.length === 2; }
           catch (e) { return false; }
         })(), '');
+
+      /* ---- a file cut short can be rescued ---- */
+      (function () {
+        const whole = SB.Store.serialize(P());
+        /* exactly the damage the truncate bug did: bytes lopped off the end */
+        const cut = whole.slice(0, whole.length - 40);
+        t('a truncated board does not parse', (function () {
+          try { JSON.parse(cut); return false; } catch (e) { return true; }
+        })(), '');
+        const r = SB.Store.repairReport(cut);
+        t('but it can be repaired', !!r, 'no repair possible');
+        if (r) {
+          const back = JSON.parse(r.text);
+          t('the repair keeps the script', back.master.text === P().master.text, '');
+          t('the repair keeps every shot',
+            back.scenes[0].shots.length === P().scenes[0].shots.length,
+            back.scenes[0].shots.length);
+          t('the repair keeps the images',
+            Object.keys(back.blobs || {}).length === Object.keys(P().blobs || {}).length, '');
+          t('and it migrates into a working project',
+            SB.Model.migrate(JSON.parse(r.text)).scenes[0].shots.length ===
+            P().scenes[0].shots.length, '');
+          t('the report says what was lost', r.lost > 0 && r.shots > 0,
+            JSON.stringify({ lost: r.lost, shots: r.shots }));
+        }
+        /* a file that is genuinely rubbish is not "repaired" into nonsense */
+        t('an empty file cannot be repaired', SB.Store.repair('') === null, '');
+        t('a non-storyboard JSON file is not accepted',
+          SB.Store.repair('{"hello":1,"there":2') === null, '');
+        t('a whole file needs no repair, and is unchanged if asked',
+          SB.Store.repair(whole) === null || JSON.parse(SB.Store.repair(whole)).scenes.length ===
+          P().scenes.length, '');
+      })();
 
       t('no page errors', (window.__err || []).length === 0, JSON.stringify(window.__err));
     } catch (e) {

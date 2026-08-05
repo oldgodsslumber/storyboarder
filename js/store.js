@@ -36,11 +36,19 @@
    * IndexedDB is restricted on file:// (which is how this app is normally
    * opened), and a request that neither succeeds nor errors must not be able
    * to wedge anything, so every call is time-boxed. */
+  let idbDead = false;      // proven unusable — stop paying the timeout each time
+
   function idb() {
+    if (idbDead) return Promise.reject(new Error('indexeddb unavailable'));
     return new Promise(function (resolve, reject) {
       let done = false;
-      const fail = function (why) { if (!done) { done = true; reject(new Error(why)); } };
-      setTimeout(function () { fail('indexeddb timeout'); }, 2000);
+      const fail = function (why) {
+        if (done) return;
+        done = true;
+        idbDead = true;       // it will not start working later in this session
+        reject(new Error(why));
+      };
+      setTimeout(function () { fail('indexeddb timeout'); }, 1500);
       let r;
       try { r = indexedDB.open(IDB_NAME, 1); }
       catch (e) { fail('indexeddb unavailable'); return; }
@@ -100,7 +108,9 @@
     const project = S.getProject && S.getProject();
     if (!project) return Promise.resolve();
     if (!S.handle) { state('no file', 'dirty'); return Promise.resolve(); }
-    if (S.writing) { S.pending = true; return Promise.resolve(); }
+    /* Hand back the write already running, so awaiting a save really waits for
+     * the bytes to land instead of resolving straight away. */
+    if (S.writing) { S.pending = true; return S.inflight || Promise.resolve(); }
 
     /* Serialising can throw (and once did leave the writing flag stuck on,
      * killing autosave for the rest of the session in silence). */
@@ -120,22 +130,29 @@
     S.writing = true;
     state('saving…', 'dirty');
 
-    return ensurePermission(S.handle, false).then(function (ok) {
+    const chain = ensurePermission(S.handle, false).then(function (ok) {
       if (!ok) { state('permission needed', 'dirty'); throw new Error('permission'); }
-      /* keepExistingData means the swap file starts as a copy of the board, so
-       * a write that fails part-way can never leave a 0-byte project file. */
-      return S.handle.createWritable({ keepExistingData: true });
+      /* The swap starts EMPTY and is committed by close(), so there is never a
+       * stale tail to trim. The safety against a half write is abort(), which
+       * throws the swap away and leaves the board on disk untouched.
+       *
+       * Do not reintroduce truncate() here: it counts BYTES while a JS string
+       * counts CHARACTERS, so on any board containing an em-dash or a smart
+       * quote it cut the file short and the next open failed with
+       * "Unexpected end of JSON input". */
+      return S.handle.createWritable();
     }).then(function (w) {
-      return Promise.resolve(w.write({ type: 'write', position: 0, data: text }))
-        .then(function () {
-          return w.truncate ? w.truncate(text.length) : null;
-        })
+      const blob = new Blob([text], { type: 'application/json' });
+      S.lastBytes = blob.size;
+      return Promise.resolve(w.write(blob))
         .then(function () { return w.close(); })
         .catch(function (e) {
           // leave the original alone rather than committing a half write
           if (w.abort) { try { w.abort(); } catch (x) { } }
           throw e;
         });
+    }).then(function () {
+      return confirmOnDisk(text);
     }).then(function () {
       S.writing = false;
       S.dirty = false;
@@ -152,6 +169,31 @@
       S.pending = false;
       if (String(e && e.message) === 'permission') return;
       saveFailed('the file could not be written', e);
+    }).then(function (r) {
+      if (S.inflight === chain) S.inflight = null;
+      return r;
+    });
+
+    S.inflight = chain;
+    return chain;
+  }
+
+  /* Read back what we just wrote. A save that reports success and leaves an
+   * unopenable file is the worst failure this app has, so it is checked rather
+   * than trusted. Cheap: the file is already in the OS cache. */
+  function confirmOnDisk(expected) {
+    if (!S.handle || !S.handle.getFile) return Promise.resolve();
+    return S.handle.getFile().then(function (f) {
+      return f.text();
+    }).then(function (onDisk) {
+      if (onDisk === expected) return;
+      const e = new Error('the file on disk does not match what was written (' +
+        onDisk.length + ' vs ' + expected.length + ' characters)');
+      e.mismatch = true;
+      throw e;
+    }).catch(function (e) {
+      if (e && e.mismatch) throw e;
+      /* couldn't re-read it — not proof of a bad write, so let it pass */
     });
   }
 
@@ -193,10 +235,16 @@
     });
   }
 
-  function openFile() {
+  /* Just the picker — the caller loads it, so a file that fails to parse can
+   * still be identified and offered for repair. */
+  function pick() {
     if (!hasFS) return Promise.reject(new Error('This browser has no File System Access API. Use Chrome or Edge.'));
     return window.showOpenFilePicker({ types: PICKER_TYPES, multiple: false })
-      .then(function (hs) { return loadFromHandle(hs[0], true); });
+      .then(function (hs) { return hs[0]; });
+  }
+
+  function openFile() {
+    return pick().then(function (h) { return loadFromHandle(h, true); });
   }
 
   function loadFromHandle(handle, interactive) {
@@ -229,6 +277,66 @@
 
   function getApiKey() { try { return localStorage.getItem(KEY_API) || ''; } catch (e) { return ''; } }
   function setApiKey(v) { try { v ? localStorage.setItem(KEY_API, v) : localStorage.removeItem(KEY_API); } catch (e) { } }
+
+  /* ---------- rescuing a truncated file ---------- */
+
+  /* A project file cut short at the end — an interrupted write, or the
+   * byte-vs-character truncate bug that shipped briefly — is still whole up to
+   * the point it stops. Keep every top-level property that closed cleanly and
+   * shut the object; migrate() fills in whatever was lost after that.
+   *
+   * Returns the repaired text, or null if there is nothing worth keeping. */
+  function repair(text) {
+    if (typeof text !== 'string' || text.length < 2) return null;
+    let inStr = false, esc = false, lastSafe = -1;
+    const stack = [];
+    for (let i = 0; i < text.length; i++) {
+      const ch = text.charAt(i);
+      if (inStr) {
+        if (esc) esc = false;
+        else if (ch === '\\') esc = true;
+        else if (ch === '"') inStr = false;
+        continue;
+      }
+      if (ch === '"') { inStr = true; continue; }
+      if (ch === '{' || ch === '[') { stack.push(ch); continue; }
+      if (ch === '}' || ch === ']') {
+        stack.pop();
+        if (stack.length === 1) lastSafe = i;          // a property's value just closed
+        continue;
+      }
+      if (ch === ',' && stack.length === 1) lastSafe = i - 1;  // ...or ended before a comma
+    }
+    if (lastSafe < 1) return null;
+    const patched = text.slice(0, lastSafe + 1) + '}';
+    try {
+      const obj = JSON.parse(patched);
+      if (!obj || !obj.scenes) return null;
+      return patched;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /* What a repair would cost, so the user can decide with the facts. */
+  function repairReport(text) {
+    const fixed = repair(text);
+    if (!fixed) return null;
+    let obj;
+    try { obj = JSON.parse(fixed); } catch (e) { return null; }
+    let shots = 0;
+    (obj.scenes || []).forEach(function (sc) { shots += (sc.shots || []).length; });
+    return {
+      text: fixed,
+      lost: text.length - fixed.length + 1,
+      scenes: (obj.scenes || []).length,
+      shots: shots,
+      images: Object.keys(obj.blobs || {}).length,
+      script: (obj.master && obj.master.text ? obj.master.text.length : 0),
+      versions: (obj.versions || []).length,
+      settings: !!obj.settings
+    };
+  }
 
   /* ---------- escape hatch ---------- */
 
@@ -270,9 +378,15 @@
     hasFS: hasFS,
     S: S,
     touch: touch,
-    saveNow: function () { debouncedWrite.flush ? debouncedWrite.flush() : null; return writeNow(); },
+    /* Flush any pending debounce, then hand back whatever write is running —
+     * awaiting this means the bytes are on disk. */
+    saveNow: function () {
+      if (debouncedWrite.flush) debouncedWrite.flush();
+      return S.inflight || writeNow();
+    },
     saveAs: saveAs,
     open: openFile,
+    pick: pick,
     loadFromHandle: loadFromHandle,
     lastHandle: lastHandle,
     detach: detach,
@@ -281,7 +395,12 @@
     serialize: serialize,
     downloadCopy: downloadCopy,
     storageUsable: storageUsable,
-    saveRate: saveRate
+    saveRate: saveRate,
+    repair: repair,
+    repairReport: repairReport,
+    readHandle: function (handle) {
+      return handle.getFile().then(function (f) { return f.text(); });
+    }
   };
 
 })(window.SB);

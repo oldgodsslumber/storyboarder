@@ -126,34 +126,65 @@
     }).catch(function () { });
   }
 
-  /* A project file that will not open must never look like a fresh start. */
+  /* A project file that will not open must never look like a fresh start —
+   * and if it is merely cut short, most of it is still in there. */
   function loadFailed(handle, err) {
     const el = document.getElementById('saveState');
     el.textContent = 'could not open ' + (handle && handle.name ? handle.name : 'the project');
     el.className = 'save-state dirty';
+
+    const name = (handle && handle.name) || 'the project file';
     const body = SB.el('div');
     body.appendChild(SB.el('p', null,
-      'Storyboarder could not read “' + (handle && handle.name || 'the project file') + '”: ' +
+      'Storyboarder could not read “' + name + '”: ' +
       (err && err.message ? err.message : String(err))));
     body.appendChild(SB.el('p', null,
       'The blank board on screen is NOT your project — nothing has overwritten your file, ' +
       'and it will not be saved over unless you choose that file again.'));
-    body.appendChild(SB.el('p', null,
-      'If the file is 0 bytes, an interrupted save emptied it. Otherwise try Open… again.'));
-    SB.modal({
-      title: 'That project would not open',
-      body: body,
-      buttons: [
-        { label: 'Open a different file…', primary: true, onClick: function (close) { close(); doOpen(); } },
-        { label: 'Dismiss' }
-      ]
-    });
+
+    const buttons = [
+      { label: 'Open a different file…', onClick: function (close) { close(); doOpen(); } },
+      { label: 'Dismiss' }
+    ];
+
+    /* offer the rescue only when there is genuinely something to rescue */
+    SB.Store.readHandle(handle).then(function (text) {
+      const r = SB.Store.repairReport(text);
+      if (!r) return;
+      body.appendChild(SB.el('p', null,
+        'It looks cut short rather than corrupt — the last ' + r.lost +
+        ' characters are missing. Everything before that is intact: ' +
+        r.scenes + ' scene' + (r.scenes === 1 ? '' : 's') + ', ' +
+        r.shots + ' shot' + (r.shots === 1 ? '' : 's') + ', ' +
+        r.images + ' image' + (r.images === 1 ? '' : 's') + ', ' +
+        r.script + ' characters of script' +
+        (r.settings ? '.' : ', and the settings will be rebuilt from defaults.')));
+      const foot = m.root.querySelector('.foot');
+      const fix = SB.el('button', 'tb on', 'Recover what is there');
+      fix.onclick = function () {
+        let p;
+        try { p = SB.Model.migrate(JSON.parse(r.text)); }
+        catch (e) { SB.toast('The repair did not hold: ' + e.message, true); return; }
+        m.close();
+        SB.Store.detach();          // do not write the repair over the damaged file
+        setProject(p);
+        SB.toast('Recovered — use “Save as…” to write it to a new file');
+      };
+      foot.insertBefore(fix, foot.firstChild);
+    }).catch(function () { /* nothing readable; the message above stands */ });
+
+    const m = SB.modal({ title: 'That project would not open', body: body, buttons: buttons });
   }
 
   function doOpen() {
-    SB.Store.open().then(setProject).catch(function (e) {
+    let picked = null;
+    SB.Store.pick().then(function (h) {
+      picked = h;
+      return SB.Store.loadFromHandle(h, true);
+    }).then(setProject).catch(function (e) {
       if (e && e.name === 'AbortError') return;
-      SB.toast(e.message || String(e), true);
+      if (picked) loadFailed(picked, e);       // offer the repair on a bad file
+      else SB.toast(e.message || String(e), true);
     });
   }
 

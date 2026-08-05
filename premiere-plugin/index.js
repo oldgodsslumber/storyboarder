@@ -22,6 +22,7 @@
   const B64 = globalThis.SBB64;
   const Cuts = globalThis.SBCuts;
   const Host = globalThis.SBHost;
+  const WriteJson = globalThis.SBWriteJson;
 
   const el = function (id) { return document.getElementById(id); };
 
@@ -697,10 +698,13 @@
         sceneHeading: state.sequence.name || 'Scene one'
       });
 
-      await outFile.write(JSON.stringify(project));
+      /* Written, read back and parsed before we claim it worked — a partial
+       * write here only shows up as "Unexpected end of JSON input" much later,
+       * when the board is opened. */
+      const written = await WriteJson.writeJson(outFile, project, formats, log);
 
       const withText = project.scenes[0].shots.filter(function (s) { return !!s.link; }).length;
-      log('Wrote ' + outFile.name, 'ok');
+      log('Wrote ' + outFile.name + ' — ' + Math.round(written.bytes / 1024) + ' KB, verified', 'ok');
       log(shots.length + ' cards · ' + withText + ' with script · ' +
         (shots.length - missed) + ' with a frame');
       log('Open it in Storyboarder with Open project…', 'muted');
