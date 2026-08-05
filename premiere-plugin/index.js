@@ -388,16 +388,26 @@
    * the entry can take a moment to appear — and listing the folder is what busts
    * UXP's cached view of it.
    *
-   * The name is never assumed: Premiere appends the extension a second time
-   * (Adobe's own sample logs "output.png.png *(We do double extension)*"), so
-   * whatever turned up under this basename is the frame. */
-  async function waitForFile(folder, prefix) {
+   * The name is never assumed. Premiere appends the extension a second time
+   * (Adobe's own sample logs "output.png.png *(We do double extension)*"), and
+   * it may sanitise the name besides — so anything that was NOT in the folder
+   * before this export counts, with the expected basename merely preferred.
+   * `before` is the listing taken immediately prior to the export call.
+   */
+  async function waitForFile(folder, prefix, before) {
+    const wasThere = {};
+    (before || []).forEach(function (n) { wasThere[n] = 1; });
+
     // A heavy frame — long-GOP source, stacked effects — can take seconds to
     // render. Waiting ~1s was enough for most and not for all, which is what an
     // occasional missing card looks like.
     let waited = 0;
-    for (let attempt = 0; attempt < 40 && waited < 15000; attempt++) {
-      const name = Host.matchExported(await entryNames(folder), prefix);
+    for (let attempt = 0; attempt < 40 && waited < 20000; attempt++) {
+      const names = await entryNames(folder);
+      const fresh = names.filter(function (n) { return !wasThere[n]; });
+      const name = Host.matchExported(fresh, prefix) ||
+        Host.matchExported(names, prefix) ||
+        (fresh.length === 1 ? fresh[0] : null);
       if (name) {
         try {
           const entry = await folder.getEntry(name);
@@ -411,10 +421,35 @@
     return null;
   }
 
+  /* Read only once the file has stopped growing. Premiere is still writing when
+   * the entry first appears, and a read that lands mid-write returns a truncated
+   * or empty buffer — which looked exactly like a failed export. */
+  async function readStable(entry) {
+    let last = -1;
+    for (let attempt = 0; attempt < 10; attempt++) {
+      let buf = null;
+      try {
+        buf = await entry.read({ format: formats.binary });
+      } catch (e) { /* still locked by the writer */ }
+      const size = buf ? buf.byteLength : 0;
+      if (size > 0 && size === last) return buf;      // two identical reads: done
+      last = size;
+      await wait(attempt < 4 ? 40 : 150);
+    }
+    // one last go, in case it settled on the final pass
+    try {
+      const buf = await entry.read({ format: formats.binary });
+      return (buf && buf.byteLength) ? buf : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
   const exportPlans = Host.exportPlans;
 
   async function attempt(seq, folder, plan, time) {
     await clearMatching(folder, plan.prefix);
+    const before = await entryNames(folder);
     let returned;
     try {
       returned = await ppro.Exporter.exportSequenceFrame(
@@ -422,7 +457,7 @@
     } catch (e) {
       return { ok: false, why: (e && e.message) ? e.message : String(e) };
     }
-    const entry = await waitForFile(folder, plan.prefix);
+    const entry = await waitForFile(folder, plan.prefix, before);
     if (!entry) {
       return { ok: false, why: returned === false ? 'returned false' : 'no file appeared' };
     }
@@ -494,7 +529,7 @@
   }
 
   async function readAndBin(entry, w, h, ext) {
-    const buf = await entry.read({ format: formats.binary });
+    const buf = await readStable(entry);
     try { await entry.delete(); } catch (e) { /* leftover is harmless */ }
     if (!buf || !buf.byteLength) return null;
     // the extension we asked for is not proof of what was written
@@ -510,8 +545,12 @@
     const p = exportPlans(dir, baseName, plan.ext, plan.w, plan.h, state.rawDir)
       .filter(function (x) { return x.label === plan.label; })[0];
 
-    const times = [grabTime(shot, offset, state.fps)]
-      .concat(Cuts.grabAlternatives(shot, offset, state.fps));
+    const primary = grabTime(shot, offset, state.fps);
+    const times = [primary].concat(Cuts.grabAlternatives(shot, offset, state.fps));
+    // A one-frame shot has no other frame to offer, so it used to get exactly one
+    // attempt — the shortest shots were the least likely to survive a transient
+    // failure. Everything gets at least three goes.
+    while (times.length < 3) times.push(primary);
 
     let why = 'no attempt made';
     for (let i = 0; i < times.length; i++) {
@@ -610,6 +649,37 @@
       if (retried) {
         log(retried + ' frame(s) needed a different frame from the same shot.', 'muted');
       }
+
+      /* A second sweep over whatever is still missing. Most of these failures are
+       * transient — Premiere busy, a frame slow to render — and simply asking
+       * again a moment later usually gets them. Cheap, because by now there are
+       * only a handful left. */
+      if (probe && failures.length) {
+        log('Retrying ' + failures.length + ' missing frame(s)…');
+        await wait(600);
+        const stillMissing = [];
+        for (let k = 0; k < failures.length; k++) {
+          const f = failures[k];
+          let res;
+          try {
+            res = await exportFrame(
+              state.sequence, folder, dir, f.i, f.shot, offset, probe.plan);
+          } catch (e) {
+            res = { image: null, why: (e && e.message) ? e.message : String(e) };
+          }
+          if (res.image) {
+            shots[f.i].image = res.image;
+          } else {
+            f.why = res.why;
+            stillMissing.push(f);
+          }
+        }
+        const recovered = failures.length - stillMissing.length;
+        if (recovered) log('  recovered ' + recovered + ' on the second pass.', 'ok');
+        failures.length = 0;
+        stillMissing.forEach(function (f) { failures.push(f); });
+      }
+
       if (failures.length) {
         log(failures.length + ' of ' + shots.length + ' frame(s) could not be exported — ' +
           'those cards come through empty:', 'warn');
@@ -624,7 +694,6 @@
       const project = Board.build(shots, state.words, {
         sequenceName: state.sequence.name,
         fps: state.fps,
-        tcOffset: state.zeroPoint,
         sceneHeading: state.sequence.name || 'Scene one'
       });
 

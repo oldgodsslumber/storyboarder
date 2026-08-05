@@ -170,13 +170,11 @@ eq('card 1 range', master.slice(cards[0].link.from, cards[0].link.to), 'one two 
 eq('card 2 range', master.slice(cards[1].link.from, cards[1].link.to), 'five six seven eight');
 eq('master joins with a blank line', master, 'one two three four\n\nfive six seven eight');
 ok('ranges do not overlap', cards[0].link.to <= cards[1].link.from);
-ok('description carries timecode', /Timecode: 00:00:00:00 – 00:00:04:00/.test(cards[0].description),
-  cards[0].description);
-/* source clip names are noise on a flat export, and the description is what the
- * prompt writer reads — so they are deliberately absent */
-ok('description omits the clip name', !/A\.mp4/.test(cards[0].description), cards[0].description);
-ok('description omits Clip:', !/Clip:/.test(cards[0].description));
-eq('description is timecode and duration only', cards[0].description.split('\n').length, 2);
+/* The description belongs to whoever is boarding — it is the box the prompt
+ * writer reads, so nothing is auto-filled into it. */
+eq('description is empty', cards[0].description, '');
+ok('no card gets a description', cards.every(c => c.description === ''));
+ok('clip names never leak in', !/A\.mp4/.test(JSON.stringify(cards)));
 
 /* a silent cut gets a freestanding empty box, not a broken link */
 const silent = Board.build(
@@ -372,9 +370,7 @@ const messy = Board.build(
   { sequenceName: 'Messy', fps: 30 }
 );
 eq('messy timeline builds three cards', messy.scenes[0].shots.length, 3);
-ok('no layer noise in description',
-  !/Layers:/.test(messy.scenes[0].shots[1].description),
-  messy.scenes[0].shots[1].description);
+ok('no layer noise anywhere', !/Layers:/.test(JSON.stringify(messy)));
 ok('cuts export a global', globalThis.SBCuts === Cuts);
 
 /* ---------- which frame gets grabbed ---------- */
@@ -412,6 +408,22 @@ ok('fallbacks are frame aligned', alts.every(t => Math.abs(t * 25 - Math.round(t
 const noAlts = Cuts.grabAlternatives({ start: 1, end: 1 + 1 / 30 }, 0, 30);
 eq('no duplicate fallbacks for a one-frame shot', noAlts.length, 0);
 
+/* ...which is why the caller pads to a minimum number of attempts. A shot with
+ * no alternative frame used to get exactly one go, so the shortest shots were
+ * the least likely to survive a transient failure. */
+function attemptTimes(shot, offset, fps, minimum) {
+  const primary = Cuts.grabTime(shot, offset, fps);
+  const times = [primary].concat(Cuts.grabAlternatives(shot, offset, fps));
+  while (times.length < minimum) times.push(primary);
+  return times;
+}
+eq('one-frame shot still gets three attempts',
+  attemptTimes({ start: 1, end: 1 + 1 / 30 }, 0, 30, 3).length, 3);
+eq('a normal shot gets its four distinct times',
+  attemptTimes({ start: 0, end: 4 }, 2, 25, 3).length, 4);
+ok('padded attempts reuse the primary frame',
+  attemptTimes({ start: 1, end: 1 + 1 / 30 }, 0, 30, 3).every(t => t === 1));
+
 /* ---------- regressions ---------- */
 
 /* both module systems get the library — an either/or left UXP with no global */
@@ -445,19 +457,14 @@ eq('real trailing number kept',
 throws('timed but wordless', () => T.parse('1\n00:00:00,000 --> 00:00:02,000\n\n', 'e.srt'),
   /no words/i);
 
-/* zero point shifts the displayed timecode but nothing else */
+/* nothing about the timeline leaks into the card text */
 const shifted = Board.build(
   [{ start: 0, end: 4, name: 'A' }],
   [{ text: 'hi', start: 0.5, end: 1 }],
   { sequenceName: 'S', fps: 25, tcOffset: 3600 }
 );
-ok('zero point shifts timecode',
-  /Timecode: 01:00:00:00 – 01:00:04:00/.test(shifted.scenes[0].shots[0].description),
-  shifted.scenes[0].shots[0].description);
-ok('zero point leaves duration alone',
-  /Duration: 4\.00s/.test(shifted.scenes[0].shots[0].description));
-ok('no offset still starts at zero',
-  /Timecode: 00:00:00:00/.test(project.scenes[0].shots[0].description));
+eq('no timecode written anywhere', /Timecode|Duration/.test(JSON.stringify(shifted)), false);
+eq('description still empty with an offset', shifted.scenes[0].shots[0].description, '');
 
 /* ---------- surviving differences between Premiere builds ---------- */
 

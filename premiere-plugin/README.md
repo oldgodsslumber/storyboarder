@@ -91,9 +91,13 @@ nearest card.
 |---|---|
 | Frame | JPEG exported from the sequence at the grab time, stored once in the project's blob map |
 | Script | The words spoken between this cut and the next, anchored into the master script |
-| Description | Timecode range and duration — feeds the prompt generator |
+| Description | **Left empty** — it is the box the prompt writer reads, and it belongs to whoever is boarding |
 | Shot type | Left blank for you to set |
 | Fields, personas | Left empty — a timeline says nothing about who is in shot |
+
+Nothing the panel happens to know — clip names, timecodes, track layout — is written into
+any text box. Anything auto-filled there would have to be cleared before the box could be
+used for what it is for.
 
 Timecodes in the description follow the timeline, so a sequence starting at `01:00:00:00`
 reads `01:00:…` — frame grabs stay zero-based underneath. Non-integer rates (29.97, 23.976)
@@ -206,10 +210,18 @@ of two:
 - *A slow frame.* Long-GOP source or a stack of effects can take seconds to render, and
   the panel used to stop looking after about one. It now waits up to 15 seconds per frame.
 
-If a frame still will not come, the panel tries three others from the same shot — its
-midpoint, its first frame, then its last — because another frame from the right shot beats
-an empty card. Anything that still fails is listed by **card code and timecode**, so you
-can find it on the board.
+- *A read landing mid-write.* Premiere is still writing when the file first appears, so a
+  read taken too early returns a truncated or empty buffer — indistinguishable from a
+  failed export. Frames are only read once two consecutive reads report the same size.
+- *An unexpected filename.* Rather than trusting the name it asked for, the panel snapshots
+  the folder before exporting and accepts whatever is new afterwards.
+
+If a frame still will not come, the panel tries others from the same shot — its midpoint,
+its first frame, then its last — because another frame from the right shot beats an empty
+card. Every shot gets at least three attempts even when it is a single frame long and has
+no alternative to offer. Anything still missing is swept a second time at the end, since
+most of these failures are transient. Whatever survives all of that is listed by **card
+code and timecode**, so you can find it on the board.
 
 `lib/board.js` writes a deliberately minimal project — Storyboarder's own `migrate()`
 supplies ids, settings, models, fields and templates when the file is opened. What the

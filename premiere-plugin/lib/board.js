@@ -34,27 +34,19 @@
     return words.map(function (w) { return w.text; }).join(' ').trim();
   }
 
-  /* Timecode and duration only. Source clip names are deliberately left out: on a
-   * scene-detected export every card names the same flat file, so it is pure
-   * noise — and the description is what the prompt writer reads.
+  /* The description is left empty, deliberately.
    *
-   * tcOffset = the sequence zero point. Clip times are zero-based, but a sequence
-   * that starts at 01:00:00:00 displays everything shifted by an hour, and the
-   * description has to match what the timeline shows. Frame grabs stay zero-based.
+   * It is the box the prompt writer reads, and it is where the shot's own
+   * description belongs — written by whoever is boarding, not filled with
+   * timecodes and file names the machine happened to know. Anything auto-filled
+   * here has to be cleared before the box can be used for what it is for.
    */
-  function describeShot(shot, fps, tcOffset) {
-    return 'Timecode: ' + T.secondsToTimecode(shot.start + tcOffset, fps) +
-      ' – ' + T.secondsToTimecode(shot.end + tcOffset, fps) + '\n' +
-      'Duration: ' + (shot.end - shot.start).toFixed(2) + 's';
-  }
 
   /* shots: [{start, end, name, image}]   words: [{text,start,end}]
    * opts:  {sequenceName, fps, sceneHeading}
    */
   function build(shots, words, opts) {
     opts = opts || {};
-    const fps = opts.fps || 30;
-    const tcOffset = opts.tcOffset || 0;
     const buckets = T.assignWordsToShots(words, shots);
     const blobs = {};
 
@@ -69,7 +61,7 @@
         type: '',
         noShot: false,
         broken: false,
-        description: describeShot(shot, fps, tcOffset),
+        description: '',
         fields: {},                     // per-project extra text boxes
         personaIds: [],                 // nobody identified from a timeline
         image: img,
