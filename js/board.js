@@ -289,19 +289,36 @@
     c.addEventListener('dragover', function (ev) {
       if (ev.dataTransfer.types.indexOf(DND_SHOT) < 0) return;
       ev.preventDefault(); ev.stopPropagation();
-      c.classList.add('drag-over');
+      /* Alt turns the drop from "move this card here" into "swap the two
+       * pictures over, leave both bits of dialogue where they are". */
+      c.classList.toggle('swap-target', !!ev.altKey);
+      c.classList.toggle('drag-over', !ev.altKey);
     });
-    c.addEventListener('dragleave', function () { c.classList.remove('drag-over'); });
+    c.addEventListener('dragleave', function () {
+      c.classList.remove('drag-over');
+      c.classList.remove('swap-target');
+    });
     c.addEventListener('drop', function (ev) {
       if (ev.dataTransfer.types.indexOf(DND_SHOT) < 0) return;
       ev.preventDefault(); ev.stopPropagation();
       c.classList.remove('drag-over');
+      c.classList.remove('swap-target');
       const id = ev.dataTransfer.getData(DND_SHOT);
       if (!id || id === sh.id) return;
+      if (ev.altKey) { doSwap(id, sh.id); return; }
       const r = c.getBoundingClientRect();
       const before = ev.clientX < r.left + r.width / 2;
       SB.Model.moveShot(P(), id, sc.id, sj + (before ? 0 : 1));
       SB.app.changed(true);
+    });
+
+    /* the two-click route, for when a modifier key is not on your mind */
+    if (B.swapFrom && B.swapFrom !== sh.id) c.classList.add('swap-pick');
+    if (B.swapFrom === sh.id) c.classList.add('swap-armed');
+    c.addEventListener('click', function (ev) {
+      if (!B.swapFrom || B.swapFrom === sh.id) return;
+      if (ev.target.closest('button, select, input, textarea, [contenteditable]')) return;
+      doSwap(B.swapFrom, sh.id);
     });
     c.addEventListener('mousedown', function () {
       if (SB.app.selectedShotId === sh.id) return;
@@ -357,6 +374,17 @@
     ns.title = 'Mark as “no shot” — stays on the board, excluded from prompts and PDF';
     ns.onclick = function () { sh.noShot = !sh.noShot; SB.app.changed(true); };
     acts.appendChild(ns);
+
+    const swap = SB.el('button', 'mini' + (B.swapFrom === sh.id ? ' primary' : ''), '⇄');
+    swap.title = B.swapFrom === sh.id
+      ? 'Now click the card to swap with (Esc to cancel)'
+      : 'Swap this shot with another — the dialogue stays where it is. ' +
+      'Alt-drag one card onto another does the same.';
+    swap.onclick = function (ev) {
+      ev.stopPropagation();
+      armSwap(B.swapFrom === sh.id ? null : sh.id);
+    };
+    acts.appendChild(swap);
 
     const del = SB.el('button', 'mini danger', '✕');
     del.title = 'Delete shot (script text stays in the master)';
@@ -462,6 +490,25 @@
     }
 
     return c;
+  }
+
+  /* ---------------- swapping two shots ---------------- */
+
+  /* Move the pictures, leave the dialogue. Announced afterwards, because doing
+   * it again puts everything back — that IS the undo. */
+  function doSwap(aId, bId) {
+    const r = SB.Model.swapShotContent(P(), aId, bId);
+    B.swapFrom = null;
+    if (!r) return;
+    SB.app.selectedShotId = bId;
+    SB.app.changed(true);
+    SB.toast('Swapped ' + r.a + ' and ' + r.b + ' — the script stayed put');
+  }
+
+  function armSwap(id) {
+    B.swapFrom = id || null;
+    SB.app.changed(true);
+    if (B.swapFrom) SB.toast('Click the card to swap with, or press Esc');
   }
 
   /* Who is in this shot. The order is the order their reference images are fed
@@ -693,6 +740,9 @@
     renderScriptWindows: renderScriptWindows,
     refreshCast: refreshCast,
     setImage: setImage,
+    swap: doSwap,
+    armSwap: armSwap,
+    swapArmed: function () { return B.swapFrom || null; },
     DND_SHOT: DND_SHOT
   };
 

@@ -404,6 +404,64 @@ console.log('\n— old boards migrate, and versions stop duplicating frames —'
   eq(B.has(p, junk), false, 'an image nothing points at is collected');
 }
 
+console.log('\n— swapping two shots keeps the dialogue in place —');
+{
+  const p = projectWith('Wide of the office. Then a close-up of the laptop.');
+  const sc = p.scenes[0];
+  sc.shots = [];
+  const a = SB.Model.addShot(p, sc.id, { type: 'Wide', link: { from: 0, to: 19 } });
+  const b = SB.Model.addShot(p, sc.id, { type: 'Close-up', link: { from: 20, to: 50 } });
+  a.description = 'Open-plan office.';
+  b.description = 'Hands on a laptop.';
+  a.color = '#3b82f6'; b.color = '#dc2626';
+  a.image = SB.Blobs.image(p, 'data:image/jpeg;base64,AAAA', 4, 3);
+  b.image = SB.Blobs.image(p, 'data:image/jpeg;base64,BBBB', 4, 3);
+  a.personaIds = ['p1']; b.personaIds = [];
+  a.comments = [{ id: 'c1', text: 'too dark', at: 1 }];
+  SB.Fields.find(p, 'artDirection').enabled = true;
+  SB.Fields.set(a, 'artDirection', 'Warm practicals.');
+  a.noShot = false; b.noShot = true;
+
+  const r = SB.Model.swapShotContent(p, a.id, b.id);
+  eq(r, { a: '1A', b: '1B' }, 'the swap reports which two cards');
+
+  eq(win(p, a), 'Wide of the office.', 'the first card keeps its dialogue');
+  eq(win(p, b), 'Then a close-up of the laptop.', 'and so does the second');
+  eq([a.link.from, a.link.to], [0, 19], 'the anchors themselves did not move');
+
+  eq(a.description, 'Hands on a laptop.', 'descriptions traded places');
+  eq(b.description, 'Open-plan office.', 'both ways');
+  eq(a.type, 'Close-up', 'shot type follows the picture');
+  eq(a.color, '#dc2626', 'so does the card colour');
+  eq(SB.Blobs.src(p, a.image), 'data:image/jpeg;base64,BBBB', 'so does the frame');
+  eq(b.personaIds, ['p1'], 'so does the cast');
+  eq(b.comments.length, 1, 'so do the comments about that picture');
+  eq(SB.Fields.value(b, 'artDirection'), 'Warm practicals.', 'so do the card fields');
+
+  eq(a.noShot, false, '“no shot” stays with the script fragment, not the picture');
+  eq(b.noShot, true, 'on both cards');
+
+  eq(SB.Model.findShot(p, a.id).code, '1A', 'nothing reordered — the codes are unchanged');
+  eq(SB.Model.findShot(p, b.id).code, '1B', 'for either card');
+
+  SB.Model.swapShotContent(p, a.id, b.id);
+  eq(a.description, 'Open-plan office.', 'swapping again puts everything back');
+  eq(win(p, a), 'Wide of the office.', 'with the dialogue still where it was');
+
+  eq(SB.Model.swapShotContent(p, a.id, a.id), null, 'a card cannot swap with itself');
+  eq(SB.Model.swapShotContent(p, a.id, 'nope'), null, 'an unknown card is refused');
+
+  /* across scenes, and with a freestanding card */
+  const sc2 = SB.Model.addScene(p);
+  const c = SB.Model.addShot(p, sc2.id, { type: 'Insert' });
+  c.description = 'A hand on a door.';
+  SB.Model.swapShotContent(p, a.id, c.id);
+  eq(a.description, 'A hand on a door.', 'shots in different scenes can swap');
+  eq(win(p, a), 'Wide of the office.', 'the linked card keeps its dialogue');
+  eq(c.link, null, 'and the freestanding card stays freestanding');
+  eq(win(p, c), '', 'with its own empty text');
+}
+
 console.log('\n— a model added to the app reaches existing boards —');
 {
   const fresh = SB.Model.newProject();

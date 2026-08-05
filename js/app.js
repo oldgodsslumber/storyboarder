@@ -288,6 +288,11 @@
     });
 
     document.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Escape' && SB.Board.swapArmed()) {
+        ev.preventDefault();
+        SB.Board.armSwap(null);
+        return;
+      }
       if (!(ev.ctrlKey || ev.metaKey) || ev.altKey) return;
       const k = ev.key.toLowerCase();
       if (k === 's') {

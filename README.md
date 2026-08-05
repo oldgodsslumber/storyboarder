@@ -109,6 +109,20 @@ it will never make a card or scene reappear or vanish.
 - **no shot** marks a fragment that stays on the board but is excluded from prompt
   generation and from the PDF.
 
+### Swapping two shots
+
+Dragging a card *moves* it, dialogue and all. To trade two shots over while each bit of
+dialogue stays where it is in the script, either:
+
+- **Alt-drag** one card onto another — the target says **⇄ swap pictures** instead of the
+  usual move outline; or
+- click **⇄** in a card's header, then click the card to swap with (Esc cancels).
+
+What moves is the picture and everything describing it: frame, ink, shot type, card colour,
+description, card fields, prompts, cast and comments. What stays is the **script window**
+(linked or freestanding), the card's position, and the **no shot** flag — those describe the
+fragment of script the card sits on, not the image. Swapping again puts it all back.
+
 ## Card fields
 
 Every board wants something different under the description, so the set of extra text boxes

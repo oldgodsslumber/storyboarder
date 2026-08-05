@@ -181,6 +181,18 @@ button,input,select,textarea{font:inherit;color:inherit}
 .card.noshot{opacity:.72}
 .card.drag-over{outline:2px dashed var(--accent2);outline-offset:2px}
 .card.dragging{opacity:.4}
+
+/* swapping two shots: the pictures trade places, the dialogue does not */
+.card.swap-target{outline:2px solid var(--accent2);outline-offset:2px;position:relative}
+.card.swap-target::after{
+  content:"⇄ swap pictures";
+  position:absolute;left:50%;top:8px;transform:translateX(-50%);
+  background:var(--accent2);color:var(--on-accent);font-size:10px;font-weight:700;
+  padding:2px 8px;border-radius:9px;letter-spacing:.4px;pointer-events:none;z-index:2;
+}
+.card.swap-armed{outline:2px solid var(--accent2);outline-offset:2px}
+.card.swap-pick{cursor:copy}
+.card.swap-pick:hover{outline:2px dashed var(--accent2);outline-offset:2px}
 .card-head{
   display:flex;align-items:center;gap:6px;padding:4px 6px;cursor:grab;
   background:color-mix(in srgb, var(--card-color) var(--card-tint-strong), var(--bg3));

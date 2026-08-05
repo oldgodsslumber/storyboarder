@@ -437,6 +437,28 @@
     p.updatedAt = Date.now();
   }
 
+  /* Everything that belongs to the PICTURE rather than to the place in the
+   * script. The script window, whether it is linked or freestanding, and the
+   * "no shot" flag all describe the fragment of script this card sits on, so
+   * they stay behind when the imagery moves. */
+  const CONTENT_KEYS = [
+    'type', 'color', 'image', 'annotation', 'description',
+    'fields', 'prompts', 'personaIds', 'comments'
+  ];
+
+  /* Swap two shots' contents, leaving each card's dialogue where it is. */
+  function swapShotContent(p, aId, bId) {
+    const fa = findShot(p, aId), fb = findShot(p, bId);
+    if (!fa || !fb || aId === bId) return null;
+    CONTENT_KEYS.forEach(function (k) {
+      const tmp = fa.shot[k];
+      fa.shot[k] = fb.shot[k];
+      fb.shot[k] = tmp;
+    });
+    p.updatedAt = Date.now();
+    return { a: fa.code, b: fb.code };
+  }
+
   function moveShot(p, shotId, toSceneId, toIdx) {
     const f = findShot(p, shotId);
     const t = findScene(p, toSceneId);
@@ -477,6 +499,7 @@
     scriptComments: scriptComments, commentCoverage: commentCoverage,
     addScene: addScene, deleteScene: deleteScene, addShot: addShot, deleteShot: deleteShot,
     moveShot: moveShot, moveScene: moveScene,
+    swapShotContent: swapShotContent, CONTENT_KEYS: CONTENT_KEYS,
     modelById: modelById, imageModel: imageModel, videoModel: videoModel, firstOfKind: firstOfKind
   };
 

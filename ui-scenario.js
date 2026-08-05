@@ -339,6 +339,83 @@
       t('scene reorder renumbers', SB.Model.findShot(P(), b.id).code === '1A',
         SB.Model.findShot(P(), b.id).code);
 
+      // swapping two shots without moving the dialogue
+      (function () {
+        const p = P();
+        p.scenes.forEach(function (s) { s.shots = []; });
+        SB.Model.applyMasterEdit(p, 0, p.master.text.length,
+          'Wide of the office. Then a close-up of the laptop.', null);
+        const sc = p.scenes[0];
+        const a = SB.Model.addShot(p, sc.id, { type: 'Wide', link: { from: 0, to: 19 } });
+        const b = SB.Model.addShot(p, sc.id, { type: 'Close-up', link: { from: 20, to: 50 } });
+        a.description = 'FIRST picture';
+        b.description = 'SECOND picture';
+        SB.app.changed(true);
+
+        /* the two-click route: ⇄ on one card, then click the other */
+        const swapBtn = Array.prototype.filter.call(
+          document.querySelectorAll('.card[data-shot="' + a.id + '"] .ch-actions .mini'),
+          function (x) { return x.textContent === '⇄'; })[0];
+        t('every card offers a swap button', !!swapBtn, 'missing');
+        swapBtn.click();
+        t('it arms the swap', SB.Board.swapArmed() === a.id, SB.Board.swapArmed());
+        t('and the other cards show they can be picked',
+          document.querySelectorAll('.card.swap-pick').length ===
+          document.querySelectorAll('.card').length - 1,
+          document.querySelectorAll('.card.swap-pick').length);
+        document.querySelector('.card[data-shot="' + b.id + '"] .frame').click();
+        t('clicking another card swaps the pictures',
+          a.description === 'SECOND picture' && b.description === 'FIRST picture',
+          a.description + ' / ' + b.description);
+        t('and the dialogue stayed on its own card',
+          document.querySelector('.script-box[data-shot="' + a.id + '"]').textContent ===
+          'Wide of the office.',
+          document.querySelector('.script-box[data-shot="' + a.id + '"]').textContent);
+        t('the swap disarms afterwards', SB.Board.swapArmed() === null, SB.Board.swapArmed());
+
+        /* Esc gets you out */
+        swapBtn.click();
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        t('Escape cancels an armed swap', SB.Board.swapArmed() === null, SB.Board.swapArmed());
+
+        /* the fast route: alt-drag one card onto another */
+        const dt = new DataTransfer();
+        const head = document.querySelector('.card[data-shot="' + a.id + '"] .card-head');
+        head.dispatchEvent(new DragEvent('dragstart',
+          { dataTransfer: dt, bubbles: true, cancelable: true }));
+        const target = document.querySelector('.card[data-shot="' + b.id + '"]');
+        target.dispatchEvent(new DragEvent('dragover',
+          { dataTransfer: dt, altKey: true, bubbles: true, cancelable: true }));
+        t('alt-dragging marks the target as a swap',
+          target.classList.contains('swap-target') && !target.classList.contains('drag-over'), '');
+        target.dispatchEvent(new DragEvent('drop',
+          { dataTransfer: dt, altKey: true, bubbles: true, cancelable: true }));
+        t('alt-drop swaps the pictures back',
+          a.description === 'FIRST picture' && b.description === 'SECOND picture',
+          a.description + ' / ' + b.description);
+        t('without reordering anything',
+          SB.Model.findShot(P(), a.id).code === '1A', SB.Model.findShot(P(), a.id).code);
+
+        /* a plain drag still moves the card, dialogue and all */
+        const dt2 = new DataTransfer();
+        document.querySelector('.card[data-shot="' + a.id + '"] .card-head')
+          .dispatchEvent(new DragEvent('dragstart', { dataTransfer: dt2, bubbles: true, cancelable: true }));
+        const t2 = document.querySelector('.card[data-shot="' + b.id + '"]');
+        t2.dispatchEvent(new DragEvent('dragover', { dataTransfer: dt2, bubbles: true, cancelable: true }));
+        t('a plain drag is still a move, not a swap',
+          t2.classList.contains('drag-over') && !t2.classList.contains('swap-target'), '');
+        const tr = t2.getBoundingClientRect();
+        t2.dispatchEvent(new DragEvent('drop', {
+          dataTransfer: dt2, bubbles: true, cancelable: true,
+          clientX: tr.left + tr.width - 4      // the right half means "after this one"
+        }));
+        t('and it reorders the cards',
+          SB.Model.findShot(P(), a.id).code === '1B', SB.Model.findShot(P(), a.id).code);
+        t('taking the dialogue with it',
+          document.querySelector('.script-box[data-shot="' + a.id + '"]').textContent ===
+          'Wide of the office.', '');
+      })();
+
       // moving a card between scenes — every target you might aim at
       (function () {
         var p = P();
