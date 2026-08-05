@@ -81,6 +81,24 @@
     return { id: SB.uid('sc'), heading: heading || 'New scene', description: '', shots: [] };
   }
 
+  /* How this board prints. Kept in the file rather than in localStorage so a
+   * board carries its own print setup wherever it is opened. The preset ids
+   * belong to SB.Pdf.PRESETS, but this default is spelled out here so model.js
+   * stays loadable without pdf.js (the node tests load neither). */
+  function defaultExport() {
+    return {
+      preset: 'sheet6',
+      showType: true,
+      showScript: true,
+      showDesc: true,
+      showSceneHeading: true,   // scene name on each card's meta line
+      sceneBanner: false,       // heading + description as a band where a scene starts
+      scenePageBreak: false,    // each scene starts a fresh sheet
+      color: 'accent',          // 'off' | 'accent' — carry shot.color onto paper
+      footer: true              // name · version · page N of M
+    };
+  }
+
   function firstOfKind(models, kind) {
     const m = models.filter(function (x) { return x.kind === kind; })[0] || models[0];
     return m ? m.id : null;
@@ -111,7 +129,8 @@
         brand: { enabled: true, custom: false },
         // prompt boxes stay off the cards until the user asks for them
         showImagePrompt: false,
-        showVideoPrompt: false
+        showVideoPrompt: false,
+        export: defaultExport()
       }
     };
     p.settings.imageModelId = firstOfKind(p.settings.models, 'image');
@@ -213,6 +232,14 @@
     if (!s.brand.custom) delete s.brand.text;
     if (typeof s.showImagePrompt !== 'boolean') s.showImagePrompt = false;
     if (typeof s.showVideoPrompt !== 'boolean') s.showVideoPrompt = false;
+    /* Fill each export key on its own: a file written by an older build has
+     * some of them, and replacing the whole object would throw away the
+     * preset the user chose. */
+    const dx = defaultExport();
+    s.export = (s.export && typeof s.export === 'object') ? s.export : {};
+    Object.keys(dx).forEach(function (k) {
+      if (typeof s.export[k] !== typeof dx[k]) s.export[k] = dx[k];
+    });
 
     p.scenes.forEach(function (sc) {
       sc.id = sc.id || SB.uid('sc');
@@ -553,7 +580,7 @@
     DEFAULT_SHOT_TYPES: DEFAULT_SHOT_TYPES,
     IMG_TPL: IMG_TPL, VID_TPL: VID_TPL,
     newProject: newProject, migrate: migrate, newShot: newShot, newScene: newScene,
-    defaultModels: defaultModels,
+    defaultModels: defaultModels, defaultExport: defaultExport,
     eachShot: eachShot, code: code, findShot: findShot, findScene: findScene,
     windowFor: windowFor, applyMasterEdit: applyMasterEdit, applyShotEdit: applyShotEdit,
     breakLink: breakLink, coverage: coverage,

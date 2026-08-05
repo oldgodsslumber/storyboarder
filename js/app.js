@@ -263,7 +263,7 @@
     $('btnTheme').addEventListener('click', function () { SB.Theme.toggle(); });
 
     $('btnVersions').addEventListener('click', function () { SB.Versions.open(); });
-    $('btnPdf').addEventListener('click', function () { SB.Pdf.exportPdf(); });
+    $('btnPdf').addEventListener('click', function () { SB.ExportOptions.open(); });
     $('btnSettings').addEventListener('click', function () { SB.Settings.open(); });
 
     $('btnAddScene').addEventListener('click', function () {

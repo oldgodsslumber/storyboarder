@@ -509,6 +509,18 @@ body.comment-mode .master-script .cmt{cursor:pointer}
 .pp-actions{display:flex;gap:6px;flex-wrap:wrap}
 .pp-status{font-size:11px;color:var(--fg-dim);min-height:15px}
 .pp-status.err{color:var(--danger)}
+/* PDF export dialog — controls on the left, a scaled-down real sheet on the right */
+.xp-body{display:flex;gap:18px;align-items:flex-start}
+.xp-left{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:8px}
+.xp-right{flex:0 0 300px}
+.xp-head{
+  font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--fg-dim);
+  margin-top:6px;padding-bottom:3px;border-bottom:1px solid var(--line);
+}
+.xp-count{font-size:11px;color:var(--fg-dim);padding:4px 0 6px}
+/* the iframe is the sheet at its true size in px; the stage crops the scaled copy */
+.xp-stage{width:300px;overflow:hidden;border:1px solid var(--line);border-radius:4px;background:#e9eaee}
+.xp-frame{border:0;display:block;transform-origin:top left}
 .pp-usage{flex:1;font-size:11px;color:var(--fg-dim)}
 .pp-usage.spent{color:var(--danger);font-weight:600}
 .pp-limit{

@@ -323,17 +323,45 @@ written into the project file.
 
 ## PDF
 
-**PDF** opens a print view: a contact sheet, 6 shots per page, each cell showing the frame,
-shot code, scene heading, shot type, script and description. Comments, ink and “no shot”
-fragments are excluded. Print → *Save as PDF*.
+**PDF** opens an export dialog with a live preview of the real sheet beside the controls.
+Print → *Save as PDF*. Comments, ink and “no shot” fragments are never printed.
 
-The sheet is sized to print whole on **both A4 and Letter** (186 × 251 mm inside 12 mm
-margins). Frames are a fixed height so every picture sits on the same baseline whatever its
-shape or the length of the text beneath it; any aspect ratio letterboxes inside. Script and
-description are clamped to two and three lines with an ellipsis rather than being cut
-mid-line, and printing waits for the frames to decode. `test-ui.mjs` renders the sheet into
-an iframe and measures it — page count, cell overflow, cell width, image containment,
-uniform frame height — so the layout can't quietly rot again.
+**Layout** is one of six named presets. Each fixes the orientation — the print dialog opens
+already turned the right way — along with the grid and how much text a card can hold:
+
+| Preset | Sheet | Cards | Shape |
+| --- | --- | --- | --- |
+| Contact sheet — 6 up | portrait | 6 | 2 × 3, frame above the words |
+| Index sheet — 12 up | portrait | 12 | 3 × 4, one line of text a box |
+| Script pass — 4 up | portrait | 4 | 1 × 4, frame *beside* the words |
+| Wide — 6 up | landscape | 6 | 3 × 2 |
+| Wide notes — 3 up | landscape | 3 | 3 × 1, room for a paragraph |
+| Presentation — 1 up | landscape | 1 | one card a sheet, text unclamped |
+
+**On each card** — shot type, script, description and scene name each switch off
+independently. Whichever text box comes last takes the leftover height, so turning
+description off doesn't leave a hole.
+
+**Scenes** — optionally band the scene heading and its description where a scene starts, and
+optionally start each scene on a fresh sheet. The band sits in the grid as a full-width item
+so the remaining rows keep their height rather than squeezing their text; on the 1-up preset
+it becomes its own title sheet.
+
+**Colour** — card colours reach the paper by default: the card edge and meta bar are tinted
+toward the colour rather than printed at full strength, and a solid stripe carries the colour
+itself so cards stay tellable apart on a greyscale printer. Set it to plain grey to drop it.
+
+The choices are stored on the board in `settings.export`, so a project carries its own print
+setup; a file written before this existed opens with the defaults.
+
+Each sheet is sized to print whole on **both A4 and Letter** — 186 × 251 mm portrait,
+255 × 186 mm landscape, inside 12 mm margins. Frames are a fixed size so every picture on a
+sheet sits on the same baseline whatever its shape or the length of the text beside it; any
+aspect ratio letterboxes inside. Text is clamped with an ellipsis rather than cut mid-line,
+and printing waits for the frames to decode. `test-ui.mjs` renders **every preset** into an
+iframe and measures it — page count, sheet overflow, cell overflow, cell width, image
+containment, uniform frame height — plus the scene, toggle and colour options, so the layouts
+can't quietly rot again.
 
 ## Data tracker
 

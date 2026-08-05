@@ -74,7 +74,7 @@
         JSON.stringify(pdfCells.map(function (c) { return c.code; })));
       t('pdf html builds', SB.Pdf.html().indexOf('<section class="page">') > 0, '');
 
-      // the PDF sheet actually lays out — measured, not assumed
+      // the PDF sheets actually lay out — measured, not assumed, for every preset
       (function () {
         var img16 = 'data:image/svg+xml;base64,' + btoa(
           '<svg xmlns="http://www.w3.org/2000/svg" width="854" height="480"><rect width="100%" height="100%" fill="#333"/></svg>');
@@ -91,54 +91,274 @@
           extra.image = SB.Blobs.image(P(), img16, 854, 480);
           extra.description = 'Another one. '.repeat(20);
         }
+        sc.description = 'The opening scene, described.';
+        // a second scene, so scene banners and scene page breaks have something to do
+        var sc2 = SB.Model.addScene(P());
+        sc2.heading = 'Scene two — the rooftop';
+        sc2.description = 'A long scene description that has to fit inside its band. '.repeat(4);
+        for (var k = 0; k < 3; k++) {
+          var s2 = SB.Model.addShot(P(), sc2.id, { type: 'Close' });
+          s2.image = SB.Blobs.image(P(), img16, 854, 480);
+          s2.description = 'Rooftop beat. '.repeat(12);
+        }
+        // give two cards different colours so the accent ink has something to differ on
+        sc.shots[0].color = SB.Model.CARD_COLORS[1];
+        sc2.shots[0].color = SB.Model.CARD_COLORS[7];
         SB.app.changed(true);
+
+        var MM = 96 / 25.4;
+
+        /* Render a sheet document offscreen at the preset's true size and hand
+         * back its document. `silent` keeps it from calling window.print(). */
+        function render(o) {
+          var info = SB.Pdf.layout(o);
+          var wide = info.preset.orient === 'landscape';
+          var frame = document.createElement('iframe');
+          frame.style.cssText = 'position:fixed;left:-10000px;top:0;border:0;width:' +
+            Math.round((wide ? 255 : 186) * MM + 80) + 'px;height:' +
+            Math.round((wide ? 186 : 251) * MM + 200) + 'px';
+          document.body.appendChild(frame);
+          var d = frame.contentDocument;
+          o.silent = true;
+          d.open(); d.write(SB.Pdf.html(o)); d.close();
+          return { doc: d, frame: frame, info: info };
+        }
+
+        /* The geometry guarantees, checked per sheet rather than per document:
+         * a card must not overflow its own box, must fill its share of the
+         * width, must contain its image, and every frame on one sheet must
+         * agree on a height whatever shape the picture or length the text. */
+        function measure(name, r, opts) {
+          opts = opts || {};
+          var d = r.doc, pr = r.info.preset;
+          var pages = d.querySelectorAll('.page');
+          var overflowing = 0;
+          [].forEach.call(pages, function (pg) {
+            if (pg.scrollHeight > Math.ceil(pg.getBoundingClientRect().height) + 1) overflowing++;
+          });
+          t(name + ': no sheet overflows onto another page', overflowing === 0,
+            overflowing + ' of ' + pages.length + ' overflowing');
+
+          var pageW = (pr.orient === 'landscape' ? 255 : 186) * MM;
+          var want = (pageW - 5 * MM * (pr.cols - 1)) / pr.cols;
+          var cells = d.querySelectorAll('.cell');
+          var badCell = 0, narrow = 0, bigImg = 0;
+          [].forEach.call(cells, function (c) {
+            var rect = c.getBoundingClientRect();
+            if (c.scrollHeight > Math.ceil(rect.height) + 1) badCell++;
+            if (rect.width < want - 4) narrow++;             // figure's default margin
+            var im = c.querySelector('img'), fr = c.querySelector('.frame');
+            if (im && fr && im.getBoundingClientRect().height >
+              fr.getBoundingClientRect().height + 1) bigImg++;
+          });
+          t(name + ': no cell overflows its box', badCell === 0, badCell + ' of ' + cells.length);
+          t(name + ': cells fill their column', narrow === 0,
+            narrow + ' narrower than ' + Math.round(want) + 'px');
+          t(name + ': no image escapes its frame', bigImg === 0, bigImg + ' oversized');
+
+          /* A 'fill' frame is elastic on purpose — it takes whatever the words
+           * leave — so only the fixed-frame presets owe a uniform height. */
+          if (pr.frame !== 'fill') {
+            var uneven = 0;
+            [].forEach.call(pages, function (pg) {
+              var hs = {};
+              [].forEach.call(pg.querySelectorAll('.frame'), function (f) {
+                hs[Math.round(f.getBoundingClientRect().height)] = 1;
+              });
+              if (Object.keys(hs).length > 1) uneven++;
+            });
+            t(name + ': every frame on a sheet is the same height', uneven === 0,
+              uneven + ' uneven sheets');
+          }
+          if (opts.after) opts.after(d, r.info);
+          r.frame.remove();
+        }
 
         var n = SB.Pdf.cells().length;
-        var frame = document.createElement('iframe');
-        frame.style.cssText = 'position:fixed;left:-10000px;top:0;width:816px;height:1200px;border:0';
-        document.body.appendChild(frame);
-        var d = frame.contentDocument;
-        d.open(); d.write(SB.Pdf.html()); d.close();
-
-        var pages = d.querySelectorAll('.page');
-        t('one sheet per six shots', pages.length === Math.ceil(n / 6),
-          pages.length + ' sheets for ' + n + ' shots');
-
-        var overflowing = 0;
-        [].forEach.call(pages, function (pg) {
-          if (pg.scrollHeight > Math.ceil(pg.getBoundingClientRect().height) + 1) overflowing++;
+        SB.Pdf.PRESETS.forEach(function (pr) {
+          var r = render({ preset: pr.id });
+          var perPage = pr.cols * pr.rows;
+          t(pr.id + ': one sheet per ' + perPage + ' cards',
+            r.doc.querySelectorAll('.page').length === Math.ceil(n / perPage),
+            r.doc.querySelectorAll('.page').length + ' sheets for ' + n + ' cards');
+          t(pr.id + ': asks the print dialog for ' + pr.orient,
+            SB.Pdf.html({ preset: pr.id, silent: true }).indexOf('size:' + pr.orient) > 0, '');
+          measure(pr.id, r, {
+            after: function (d) {
+              if (!pr.desc) return;                          // 0 means print the lot
+              var clip = d.querySelector('.desc .clip');
+              t(pr.id + ': long text is clamped, not spilled',
+                clip !== null && getComputedStyle(clip).webkitLineClamp !== 'none',
+                clip ? getComputedStyle(clip).webkitLineClamp : 'no .desc');
+            }
+          });
         });
-        t('no sheet overflows onto another page', overflowing === 0, overflowing + ' overflowing');
 
-        var cells = d.querySelectorAll('.cell');
-        var badCell = 0, narrow = 0, bigImg = 0;
-        [].forEach.call(cells, function (c) {
-          var r = c.getBoundingClientRect();
-          if (c.scrollHeight > Math.ceil(r.height) + 1) badCell++;
-          if (r.width < 300) narrow++;                     // figure's default margin
-          var im = c.querySelector('img'), fr = c.querySelector('.frame');
-          if (im && fr && im.getBoundingClientRect().height >
-            fr.getBoundingClientRect().height + 1) bigImg++;
-        });
-        t('no cell overflows its box', badCell === 0, badCell + ' of ' + cells.length);
-        t('cells fill their column', narrow === 0, narrow + ' too narrow');
-        t('no image escapes its frame', bigImg === 0, bigImg + ' oversized');
+        // scene page breaks: a sheet may never mix two scenes
+        (function () {
+          var r = render({ preset: 'sheet6', scenePageBreak: true });
+          var codes = SB.Pdf.cells();
+          var mixed = 0;
+          [].forEach.call(r.doc.querySelectorAll('.page'), function (pg) {
+            var scenes = {};
+            [].forEach.call(pg.querySelectorAll('.cell .code'), function (el) {
+              var c = codes.filter(function (x) { return x.code === el.textContent; })[0];
+              if (c) scenes[c.sceneIdx] = 1;
+            });
+            if (Object.keys(scenes).length > 1) mixed++;
+          });
+          t('scene page break: no sheet mixes two scenes', mixed === 0, mixed + ' mixed sheets');
+          measure('scene page break', r);
+        })();
 
-        var heights = {};
-        [].forEach.call(d.querySelectorAll('.frame'), function (f) {
-          heights[Math.round(f.getBoundingClientRect().height)] = 1;
-        });
-        t('every frame is the same height regardless of image shape or text',
-          Object.keys(heights).length === 1, JSON.stringify(Object.keys(heights)));
+        // scene banners: one per scene, and the sheet still fits
+        (function () {
+          var r = render({ preset: 'sheet6', sceneBanner: true });
+          var bands = r.doc.querySelectorAll('.banner');
+          t('scene banner: one band per scene', bands.length === P().scenes.length,
+            bands.length + ' bands for ' + P().scenes.length + ' scenes');
+          t('scene banner: carries the scene description',
+            bands.length > 0 && bands[0].querySelector('.bd') !== null, '');
+          measure('scene banner', r);
+        })();
 
-        t('long text is clamped, not spilled',
-          d.querySelector('.desc .clip') !== null &&
-          getComputedStyle(d.querySelector('.desc .clip')).webkitLineClamp !== 'none',
-          getComputedStyle(d.querySelector('.desc .clip')).webkitLineClamp);
+        // a 1-up sheet has no room for a band beside a card, so it gets its own
+        (function () {
+          var r = render({ preset: 'show1', sceneBanner: true });
+          var lone = 0;
+          [].forEach.call(r.doc.querySelectorAll('.page'), function (pg) {
+            if (pg.querySelector('.banner') && !pg.querySelector('.cell')) lone++;
+          });
+          t('1-up banner becomes its own title sheet', lone === P().scenes.length,
+            lone + ' title sheets');
+          measure('1-up banner', r);
+        })();
 
-        frame.remove();
+        // every content box can be switched off, and the card still fills its space
+        (function () {
+          var r = render({
+            preset: 'sheet6', showType: false, showScript: false,
+            showDesc: false, showSceneHeading: false, footer: false
+          });
+          var d = r.doc;
+          t('toggles off: no script box', d.querySelector('.script') === null, '');
+          t('toggles off: no description box', d.querySelector('.desc') === null, '');
+          t('toggles off: no shot type', d.querySelector('.type') === null, '');
+          t('toggles off: no footer', d.querySelector('footer') === null, '');
+          t('toggles off: the code still prints', d.querySelector('.code') !== null, '');
+          measure('toggles off', r);
+
+          // with description off the script must take the leftover height
+          var r2 = render({ preset: 'sheet6', showDesc: false });
+          var grown = r2.doc.querySelector('.script.grow');
+          t('script takes the leftover height when description is off', grown !== null, '');
+          measure('description off', r2);
+        })();
+
+        // card colour reaches the paper, and two colours read differently
+        (function () {
+          var on = render({ preset: 'sheet6', color: 'accent' });
+          var stripes = on.doc.querySelectorAll('.cell .stripe');
+          var seen = {};
+          [].forEach.call(stripes, function (s) { seen[s.style.background] = 1; });
+          t('accent ink: every card carries its colour', stripes.length > 0,
+            stripes.length + ' stripes');
+          t('accent ink: different card colours print differently',
+            Object.keys(seen).length > 1, JSON.stringify(Object.keys(seen)));
+          t('accent ink: the border is tinted, not raw',
+            on.doc.querySelector('.cell').style.borderColor !== '', '');
+          on.frame.remove();
+
+          var off = render({ preset: 'sheet6', color: 'off' });
+          t('plain ink: no colour reaches the sheet',
+            off.doc.querySelector('.stripe') === null &&
+            off.doc.querySelector('.cell').style.borderColor === '', '');
+          off.frame.remove();
+        })();
+
+        // the options a board prints with survive a save/load round trip
+        (function () {
+          P().settings.export.preset = 'wide6';
+          P().settings.export.sceneBanner = true;
+          var back = SB.Model.migrate(JSON.parse(JSON.stringify(P())));
+          t('export options survive a round trip',
+            back.settings.export.preset === 'wide6' && back.settings.export.sceneBanner === true,
+            JSON.stringify(back.settings.export));
+          // and an older file with no export block gets the defaults
+          var older = JSON.parse(JSON.stringify(P()));
+          delete older.settings.export;
+          var fixed = SB.Model.migrate(older);
+          t('a file with no export block gets the defaults',
+            fixed.settings.export.preset === 'sheet6' && fixed.settings.export.footer === true,
+            JSON.stringify(fixed.settings.export));
+          P().settings.export = SB.Model.defaultExport();
+        })();
+
+        SB.Model.deleteScene(P(), sc2.id);
         sc.shots.forEach(function (sh) { sh.image = null; sh.description = ''; });
         SB.app.changed(true);
+      })();
+
+      // the export dialog drives the real sheet and remembers what was chosen
+      (function () {
+        document.getElementById('btnPdf').click();
+        var back = document.querySelector('.modal-back');
+        t('the PDF button opens the export dialog', back !== null, '');
+        var sel = back.querySelector('.xp-left select');
+        t('the dialog offers every preset',
+          sel && sel.options.length === SB.Pdf.PRESETS.length,
+          sel ? sel.options.length : 'no picker');
+        var boxes = back.querySelectorAll('.xp-left .pp-toggle input');
+        t('the dialog opens showing what the board already prints',
+          boxes.length === 7 && [].every.call(boxes, function (b, i) {
+            return b.checked === (i < 4 || i === 6);      // the two scene options start off
+          }),
+          [].map.call(boxes, function (b) { return b.checked; }).join(','));
+        var pv = back.querySelector('.xp-frame');
+        t('the dialog previews an actual sheet',
+          pv.contentDocument.querySelector('.page') !== null, '');
+        /* the preview must never reach for the print dialog */
+        t('previewing does not start a print',
+          pv.contentDocument.documentElement.innerHTML.indexOf('window.print') < 0, '');
+
+        sel.value = 'wide3';
+        sel.onchange();
+        t('the preview follows the preset',
+          pv.contentDocument.querySelector('.grid').style.length === 0 &&
+          getComputedStyle(pv.contentDocument.querySelector('.grid')).gridTemplateColumns
+            .split(' ').length === 3,
+          getComputedStyle(pv.contentDocument.querySelector('.grid')).gridTemplateColumns);
+        t('the sheet count is reported',
+          /\d+ shots? → \d+ sheets?/.test(back.querySelector('.xp-count').textContent),
+          back.querySelector('.xp-count').textContent);
+
+        // Cancel has to leave the project exactly as it was
+        var was = JSON.stringify(P().settings.export);
+        [].filter.call(back.querySelectorAll('.foot .tb'), function (b) {
+          return b.textContent === 'Cancel';
+        })[0].click();
+        t('Cancel discards the choices', JSON.stringify(P().settings.export) === was,
+          JSON.stringify(P().settings.export));
+        t('Cancel closes the dialog', document.querySelector('.modal-back') === null, '');
+
+        // Export commits them, and hands them to the sheet
+        var realExport = SB.Pdf.exportPdf, handed = null;
+        SB.Pdf.exportPdf = function (o) { handed = o; };
+        document.getElementById('btnPdf').click();
+        var back2 = document.querySelector('.modal-back');
+        back2.querySelector('.xp-left select').value = 'notes4';
+        back2.querySelector('.xp-left select').onchange();
+        [].filter.call(back2.querySelectorAll('.foot .tb'), function (b) {
+          return b.textContent === 'Export';
+        })[0].click();
+        SB.Pdf.exportPdf = realExport;
+        t('Export remembers the layout on the board', P().settings.export.preset === 'notes4',
+          P().settings.export.preset);
+        t('Export prints with what was chosen', handed && handed.preset === 'notes4',
+          JSON.stringify(handed));
+        t('nothing but the options is stored', handed && handed.silent === undefined,
+          JSON.stringify(handed));
+        P().settings.export = SB.Model.defaultExport();
       })();
 
       // prompt boxes stay off the cards until asked for
