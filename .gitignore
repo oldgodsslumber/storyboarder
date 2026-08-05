@@ -6,3 +6,6 @@ _dump*
 
 # local project files — boards live wherever the user saved them
 *.storyboard
+
+# packaged builds of the Premiere panel
+premiere-plugin*.zip

@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body {
+      margin: 0;
+      padding: 12px;
+      font-family: "Adobe Clean", sans-serif;
+      font-size: 12px;
+      color: #d8d8d8;
+      background: #323232;
+    }
+    h1 { font-size: 13px; margin: 0 0 2px 0; }
+    .sub { color: #909090; margin: 0 0 14px 0; line-height: 1.4; }
+
+    section { border-top: 1px solid #444; padding: 12px 0 4px 0; }
+    section:first-of-type { border-top: none; padding-top: 0; }
+    .label { color: #909090; margin-bottom: 5px; }
+
+    .row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .row > .grow { flex: 1 1 auto; min-width: 0; }
+
+    button {
+      background: #4b4b4b; color: #e8e8e8; border: 1px solid #5f5f5f;
+      border-radius: 4px; padding: 5px 12px; font-size: 12px;
+    }
+    button:hover { background: #585858; }
+    button:disabled { opacity: .45; }
+    button.cta { background: #2680eb; border-color: #2680eb; color: #fff; }
+    button.cta:hover { background: #378ef0; }
+
+    select, input {
+      background: #262626; color: #e8e8e8; border: 1px solid #5f5f5f;
+      border-radius: 4px; padding: 4px 6px; font-size: 12px;
+    }
+    input[type=number] { width: 58px; }
+
+    .status { color: #b0b0b0; line-height: 1.5; }
+    .status b { color: #e8e8e8; font-weight: normal; }
+    .muted { color: #7a7a7a; }
+    .warn { color: #ec9a3c; }
+    .err { color: #ec5b62; }
+    .ok { color: #6bbf6b; }
+
+    #log {
+      margin-top: 10px; max-height: 190px; overflow-y: auto;
+      background: #262626; border: 1px solid #444; border-radius: 4px;
+      padding: 7px 8px; font-size: 11px; line-height: 1.5;
+    }
+    #log div { white-space: pre-wrap; word-break: break-word; }
+
+    #trackList {
+      max-height: 132px; overflow-y: auto; margin-bottom: 8px;
+      background: #262626; border: 1px solid #444; border-radius: 4px; padding: 4px 6px;
+    }
+    #trackList label { display: flex; align-items: center; gap: 6px; padding: 2px 0; }
+    #trackList label.off { color: #6f6f6f; }
+    #trackList .count { margin-left: auto; color: #808080; }
+    label { display: inline-flex; align-items: center; gap: 6px; }
+  </style>
+</head>
+<body>
+  <h1>Sequence → storyboard</h1>
+  <p class="sub">One card per cut on the chosen video track, with the spoken words
+    under each cut pulled from an exported transcript.</p>
+
+  <section>
+    <div class="row">
+      <div class="grow status" id="seqInfo">No sequence loaded.</div>
+      <button id="refresh">Refresh</button>
+    </div>
+    <div class="row">
+      <div class="label" style="margin:0">Cut on</div>
+      <select id="mode" class="grow">
+        <option value="track" selected>Every clip boundary on one track</option>
+        <option value="union">Any change across the ticked tracks</option>
+      </select>
+    </div>
+    <div id="trackList"></div>
+    <div class="row" id="minRow">
+      <span>Ignore anything under</span>
+      <input type="number" id="minDur" value="0.5" min="0" max="60" step="0.1">
+      <span class="muted">seconds</span>
+    </div>
+    <div class="row">
+      <label><input type="checkbox" id="ignoreAdj" checked> Skip adjustment layers</label>
+    </div>
+    <div class="status" id="cutInfo"></div>
+  </section>
+
+  <section>
+    <div class="label">Transcript &nbsp;<span class="muted">SRT, VTT or transcript JSON</span></div>
+    <div class="row">
+      <button id="pickTranscript">Choose file…</button>
+      <div class="grow status" id="transcriptInfo">None chosen.</div>
+    </div>
+  </section>
+
+  <section>
+    <div class="label">Frames</div>
+    <div class="row">
+      <span>Grab</span>
+      <input type="number" id="offset" value="2" min="0" max="120">
+      <span class="muted">frames into each shot</span>
+    </div>
+    <div class="row">
+      <span>Frames folder</span>
+      <button id="pickFolder">Choose…</button>
+      <div class="grow status" id="folderInfo">plugin temp</div>
+    </div>
+    <div class="row">
+      <span>Width</span>
+      <select id="width">
+        <option value="640">640 px</option>
+        <option value="854" selected>854 px (480p)</option>
+        <option value="1280">1280 px</option>
+      </select>
+      <span class="muted">stored inline as JPEG</span>
+    </div>
+  </section>
+
+  <section>
+    <div class="row">
+      <button id="build" class="cta grow">Build storyboard…</button>
+    </div>
+    <div id="log"><div class="muted">Ready.</div></div>
+  </section>
+
+  <script src="lib/b64.js"></script>
+  <script src="lib/host.js"></script>
+  <script src="lib/transcript.js"></script>
+  <script src="lib/cuts.js"></script>
+  <script src="lib/blobs.js"></script>
+  <script src="lib/board.js"></script>
+  <script src="index.js"></script>
+</body>
+</html>
