@@ -288,9 +288,20 @@
     });
 
     document.addEventListener('keydown', function (ev) {
-      if (ev.key === 'Escape' && SB.Board.swapArmed()) {
+      if (ev.key === 'Escape') {
+        if (SB.Board.swapArmed()) { ev.preventDefault(); SB.Board.armSwap(null); return; }
+        if (SB.Board.selection().length > 1) { ev.preventDefault(); SB.Board.clearSelection(); return; }
+      }
+      /* Ctrl+A over the board picks every card, not the page text */
+      if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'a') {
+        const t = ev.target;
+        if (t && (t.isContentEditable || t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return;
         ev.preventDefault();
-        SB.Board.armSwap(null);
+        const all = [];
+        SB.Model.eachShot(app.project, function (sh) { all.push(sh.id); });
+        app.selection = all;
+        app.selectedShotId = all[all.length - 1] || null;
+        SB.Board.render();
         return;
       }
       if (!(ev.ctrlKey || ev.metaKey) || ev.altKey) return;

@@ -12,6 +12,62 @@
 
   function P() { return SB.app.project; }
 
+  /* ---------------- selecting cards ---------------- */
+
+  function boardOrder() {
+    const ids = [];
+    SB.Model.eachShot(P(), function (sh) { ids.push(sh.id); });
+    return ids;
+  }
+
+  function selection() {
+    const app = SB.app;
+    if (!Array.isArray(app.selection)) app.selection = app.selectedShotId ? [app.selectedShotId] : [];
+    /* drop anything that has since been deleted */
+    const live = boardOrder();
+    app.selection = app.selection.filter(function (id) { return live.indexOf(id) >= 0; });
+    return app.selection;
+  }
+
+  function isSelected(id) { return selection().indexOf(id) >= 0; }
+
+  /* Plain click replaces, Ctrl/Cmd adds or removes, Shift takes the run
+   * between the last card and this one — the shortcuts everything else uses. */
+  function selectShot(id, ev) {
+    const app = SB.app;
+    const sel = selection();
+    if (ev && (ev.ctrlKey || ev.metaKey)) {
+      const i = sel.indexOf(id);
+      if (i >= 0) sel.splice(i, 1); else sel.push(id);
+      app.selectedShotId = sel.length ? sel[sel.length - 1] : null;
+    } else if (ev && ev.shiftKey && app.selectedShotId) {
+      const order = boardOrder();
+      const a = order.indexOf(app.selectedShotId), b = order.indexOf(id);
+      if (a < 0 || b < 0) { app.selection = [id]; app.selectedShotId = id; }
+      else {
+        app.selection = order.slice(Math.min(a, b), Math.max(a, b) + 1);
+        app.selectedShotId = id;
+      }
+    } else {
+      app.selection = [id];
+      app.selectedShotId = id;
+    }
+    render();
+  }
+
+  function clearSelection() {
+    SB.app.selection = [];
+    SB.app.selectedShotId = null;
+    render();
+  }
+
+  /* Which cards a drop should carry: the whole group if the dragged card is
+   * part of one, otherwise just the card. */
+  function dragged(id) {
+    if (B.dragging && B.dragging.indexOf(id) >= 0) return B.dragging.slice();
+    return [id];
+  }
+
   /* ---------------- scene navigator ---------------- */
 
   function renderSceneList() {
@@ -64,7 +120,7 @@
         const shotId = ev.dataTransfer.getData(DND_SHOT);
         if (shotId) {
           ev.preventDefault();
-          SB.Model.moveShot(P(), shotId, sc.id, sc.shots.length);
+          SB.Model.moveShots(P(), dragged(shotId), sc.id, sc.shots.length);
           SB.app.selectedSceneId = sc.id;
           SB.app.changed(true);
           const f = SB.Model.findShot(P(), shotId);
@@ -147,6 +203,16 @@
     const board = document.getElementById('board');
     board.innerHTML = '';
     P().scenes.forEach(function (sc, si) { board.appendChild(sceneBlock(sc, si)); });
+    /* clicking the empty space below the cards drops the selection */
+    board.onmousedown = function (ev) {
+      if (ev.target === board && selection().length) clearSelection();
+    };
+    const bar = document.getElementById('selBar');
+    if (bar) {
+      bar.innerHTML = '';
+      bar.appendChild(selectionBar());
+      bar.classList.toggle('hidden', selection().length < 2);
+    }
     renderSceneList();
     SB.ScriptMode.refresh();
 
@@ -223,7 +289,13 @@
 
     const shots = SB.el('div', 'shots');
     shots.dataset.scene = sc.id;
-    sc.shots.forEach(function (sh, sj) { shots.appendChild(card(sh, sc, si, sj)); });
+    sc.shots.forEach(function (sh, sj) {
+      /* A break between two cards: everything from the right-hand card on
+       * becomes a new scene. A Premiere import arrives as one long scene of
+       * cuts, and this is how it gets carved up. */
+      if (sj > 0) shots.appendChild(sceneBreak(sc, sj));
+      shots.appendChild(card(sh, sc, si, sj));
+    });
 
     const add = SB.el('button', 'add-shot', '+ Add shot');
     add.onclick = function () {
@@ -249,7 +321,7 @@
       shots.classList.remove('drag-over');
       const id = ev.dataTransfer.getData(DND_SHOT);
       if (!id) return;
-      SB.Model.moveShot(P(), id, sc.id, sc.shots.length);
+      SB.Model.moveShots(P(), dragged(id), sc.id, sc.shots.length);
       SB.app.changed(true);
     });
 
@@ -271,18 +343,100 @@
       blk.classList.remove('drag-over');
       const id = ev.dataTransfer.getData(DND_SHOT);
       if (!id) return;
-      SB.Model.moveShot(P(), id, sc.id, sc.shots.length);
+      SB.Model.moveShots(P(), dragged(id), sc.id, sc.shots.length);
       SB.app.changed(true);
     });
 
     return blk;
   }
 
+  /* ---------------- a scene break between two cards ---------------- */
+
+  function sceneBreak(sc, idx) {
+    const b = SB.el('div', 'scene-break');
+    b.title = 'Start a new scene here — this card and the ones after it move into it';
+    b.appendChild(SB.el('span', 'scene-break-label', 'new scene'));
+    b.onclick = function (ev) {
+      ev.stopPropagation();
+      const made = SB.Model.splitSceneAt(P(), sc.id, idx);
+      if (!made) return;
+      SB.app.selectedSceneId = made.id;
+      SB.app.changed(true);
+      SB.toast('Split into a new scene — ' + made.shots.length +
+        ' card' + (made.shots.length === 1 ? '' : 's') + ' moved');
+    };
+    return b;
+  }
+
+  /* ---------------- what you can do to a group ---------------- */
+
+  function selectionBar() {
+    const sel = selection();
+    const bar = SB.el('div', 'sel-bar' + (sel.length > 1 ? '' : ' hidden'));
+    if (sel.length < 2) return bar;
+
+    bar.appendChild(SB.el('span', 'sel-count', sel.length + ' shots selected'));
+
+    const scene = SB.el('button', 'mini', '⤓ New scene from these');
+    scene.title = 'Move them into a scene of their own';
+    scene.onclick = function () {
+      const made = SB.Model.sceneFromShots(P(), sel.slice());
+      if (!made) return;
+      SB.app.selectedSceneId = made.id;
+      SB.app.changed(true);
+      SB.toast('Moved ' + made.shots.length + ' cards into a new scene');
+    };
+    bar.appendChild(scene);
+
+    const colour = SB.el('button', 'mini', '◧ Colour');
+    colour.onclick = function (ev) {
+      ev.stopPropagation();
+      palette(colour, null, function (hex) {
+        sel.forEach(function (id) {
+          const f = SB.Model.findShot(P(), id);
+          if (f) f.shot.color = hex;
+        });
+        SB.app.changed(true);
+      });
+    };
+    bar.appendChild(colour);
+
+    const ns = SB.el('button', 'mini', 'Toggle “no shot”');
+    ns.onclick = function () {
+      const anyOn = sel.some(function (id) {
+        const f = SB.Model.findShot(P(), id);
+        return f && !f.shot.noShot;
+      });
+      sel.forEach(function (id) {
+        const f = SB.Model.findShot(P(), id);
+        if (f) f.shot.noShot = anyOn;
+      });
+      SB.app.changed(true);
+    };
+    bar.appendChild(ns);
+
+    const del = SB.el('button', 'mini danger', 'Delete');
+    del.onclick = function () {
+      if (!confirm('Delete ' + sel.length + ' shots? Their script text stays in the master script.')) return;
+      sel.slice().forEach(function (id) { SB.Model.deleteShot(P(), id); });
+      clearSelection();
+      SB.app.changed(true);
+    };
+    bar.appendChild(del);
+
+    const clear = SB.el('button', 'mini', 'Clear');
+    clear.onclick = clearSelection;
+    bar.appendChild(clear);
+
+    return bar;
+  }
+
   /* ---------------- one card ---------------- */
 
   function card(sh, sc, si, sj) {
     const c = SB.el('div', 'card' + (sh.noShot ? ' noshot' : '') +
-      (SB.app.selectedShotId === sh.id ? ' sel' : ''));
+      (isSelected(sh.id) ? ' sel' : '') +
+      (SB.app.selectedShotId === sh.id ? ' lead' : ''));
     c.dataset.shot = sh.id;
     c.style.setProperty('--card-color', sh.color);
 
@@ -308,7 +462,7 @@
       if (ev.altKey) { doSwap(id, sh.id); return; }
       const r = c.getBoundingClientRect();
       const before = ev.clientX < r.left + r.width / 2;
-      SB.Model.moveShot(P(), id, sc.id, sj + (before ? 0 : 1));
+      SB.Model.moveShots(P(), dragged(id), sc.id, sj + (before ? 0 : 1));
       SB.app.changed(true);
     });
 
@@ -320,12 +474,15 @@
       if (ev.target.closest('button, select, input, textarea, [contenteditable]')) return;
       doSwap(B.swapFrom, sh.id);
     });
-    c.addEventListener('mousedown', function () {
-      if (SB.app.selectedShotId === sh.id) return;
-      SB.app.selectedShotId = sh.id;
-      document.querySelectorAll('.card.sel').forEach(function (x) { x.classList.remove('sel'); });
-      c.classList.add('sel');
-      SB.ScriptMode.refresh();
+    c.addEventListener('mousedown', function (ev) {
+      if (ev.target.closest('button, select, input, textarea, [contenteditable]')) return;
+      if (ev.ctrlKey || ev.metaKey || ev.shiftKey) {
+        ev.preventDefault();                       // no text selection while picking
+        selectShot(sh.id, ev);
+        return;
+      }
+      if (isSelected(sh.id) && selection().length > 1) return;  // keep the group for a drag
+      selectShot(sh.id, ev);
     });
 
     /* --- head --- */
@@ -334,7 +491,12 @@
     head.addEventListener('dragstart', function (ev) {
       ev.dataTransfer.setData(DND_SHOT, sh.id);
       ev.dataTransfer.effectAllowed = 'move';
-      c.classList.add('dragging');
+      /* dragging one of a group takes the whole group */
+      B.dragging = isSelected(sh.id) ? selection().slice() : [sh.id];
+      B.dragging.forEach(function (id) {
+        const el = document.querySelector('.card[data-shot="' + id + '"]');
+        if (el) el.classList.add('dragging');
+      });
     });
     head.addEventListener('dragend', function () { c.classList.remove('dragging'); });
 
@@ -743,6 +905,9 @@
     swap: doSwap,
     armSwap: armSwap,
     swapArmed: function () { return B.swapFrom || null; },
+    select: selectShot,
+    selection: selection,
+    clearSelection: clearSelection,
     DND_SHOT: DND_SHOT
   };
 

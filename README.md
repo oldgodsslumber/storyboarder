@@ -109,6 +109,27 @@ it will never make a card or scene reappear or vanish.
 - **no shot** marks a fragment that stays on the board but is excluded from prompt
   generation and from the PDF.
 
+### Selecting several cards
+
+Click a card to select it; **Ctrl/Cmd-click** adds or removes one; **Shift-click** takes the
+whole run between the last card and that one; **Ctrl+A** takes every card on the board.
+**Esc**, or a click on empty board, clears it.
+
+With more than one selected, a bar appears at the foot of the board: **new scene from these**,
+**colour** them all at once, **toggle "no shot"**, **delete**, **clear**. Dragging any card in
+the group moves the whole group — into another scene, onto a scene in the left list, or to a
+new position — keeping the order they had on the board.
+
+### Starting a new scene between two cards
+
+Hover the gap between any two cards and a **new scene** marker appears; click it and that
+card and everything after it in the scene move into a fresh scene inserted straight after.
+Everything renumbers.
+
+This is the tool for a **Premiere import**, which arrives as one long scene of cuts: walk the
+board, click the gap wherever the scene changes. The alternative for scattered cards is to
+select them (above) and use **new scene from these**.
+
 ### Swapping two shots
 
 Dragging a card *moves* it, dialogue and all. To trade two shots over while each bit of

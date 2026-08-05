@@ -470,6 +470,68 @@
     p.updatedAt = Date.now();
   }
 
+  /* Move several shots at once, keeping the order they had on the board. */
+  function moveShots(p, ids, toSceneId, toIdx) {
+    const t = findScene(p, toSceneId);
+    if (!t || !ids || !ids.length) return;
+    const order = [];
+    eachShot(p, function (sh) { if (ids.indexOf(sh.id) >= 0) order.push(sh); });
+    if (!order.length) return;
+    /* how many of them sit before the drop point in the target scene */
+    let removedBefore = 0;
+    order.forEach(function (sh) {
+      const at = t.scene.shots.indexOf(sh);
+      if (at >= 0 && at < toIdx) removedBefore++;
+    });
+    order.forEach(function (sh) {
+      const f = findShot(p, sh.id);
+      if (f) f.scene.shots.splice(f.shotIdx, 1);
+    });
+    let at = SB.clamp(toIdx - removedBefore, 0, t.scene.shots.length);
+    order.forEach(function (sh) { t.scene.shots.splice(at++, 0, sh); });
+    p.updatedAt = Date.now();
+  }
+
+  /* Start a new scene at a card: that card and everything after it in the
+   * scene move into a fresh scene inserted straight after. This is how a
+   * Premiere import — one long scene of cuts — gets broken into scenes. */
+  function splitSceneAt(p, sceneId, idx) {
+    const f = findScene(p, sceneId);
+    if (!f) return null;
+    if (idx <= 0 || idx >= f.scene.shots.length) return null;   // nothing to move
+    const moved = f.scene.shots.splice(idx);
+    const sc = newScene('Scene ' + (f.idx + 2));
+    sc.shots = moved;
+    p.scenes.splice(f.idx + 1, 0, sc);
+    p.updatedAt = Date.now();
+    return sc;
+  }
+
+  /* Gather the given shots into a scene of their own, after the scene the
+   * first of them is in. */
+  function sceneFromShots(p, ids) {
+    if (!ids || !ids.length) return null;
+    const order = [];
+    eachShot(p, function (sh) { if (ids.indexOf(sh.id) >= 0) order.push(sh); });
+    if (!order.length) return null;
+    const first = findShot(p, order[0].id);
+    const afterIdx = first ? first.sceneIdx : p.scenes.length - 1;
+    order.forEach(function (sh) {
+      const f = findShot(p, sh.id);
+      if (f) f.scene.shots.splice(f.shotIdx, 1);
+    });
+    const sc = newScene('Scene ' + (afterIdx + 2));
+    sc.shots = order;
+    p.scenes.splice(afterIdx + 1, 0, sc);
+    /* a scene emptied by this is noise on the board */
+    p.scenes = p.scenes.filter(function (s, i) {
+      return s.shots.length || i === afterIdx + 1 || p.scenes.length === 1;
+    });
+    if (!p.scenes.length) p.scenes.push(sc);
+    p.updatedAt = Date.now();
+    return sc;
+  }
+
   function moveScene(p, sceneId, toIdx) {
     const f = findScene(p, sceneId);
     if (!f) return;
@@ -498,7 +560,8 @@
     addScriptComment: addScriptComment, deleteScriptComment: deleteScriptComment,
     scriptComments: scriptComments, commentCoverage: commentCoverage,
     addScene: addScene, deleteScene: deleteScene, addShot: addShot, deleteShot: deleteShot,
-    moveShot: moveShot, moveScene: moveScene,
+    moveShot: moveShot, moveShots: moveShots, moveScene: moveScene,
+    splitSceneAt: splitSceneAt, sceneFromShots: sceneFromShots,
     swapShotContent: swapShotContent, CONTENT_KEYS: CONTENT_KEYS,
     modelById: modelById, imageModel: imageModel, videoModel: videoModel, firstOfKind: firstOfKind
   };

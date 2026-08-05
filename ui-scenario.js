@@ -339,6 +339,104 @@
       t('scene reorder renumbers', SB.Model.findShot(P(), b.id).code === '1A',
         SB.Model.findShot(P(), b.id).code);
 
+      // selecting several cards, and carving a scene out of them
+      (function () {
+        const p = P();
+        p.scenes.forEach(function (s) { s.shots = []; });
+        while (p.scenes.length > 1) p.scenes.pop();
+        const sc = p.scenes[0];
+        sc.heading = 'Sequence';
+        const ids = [];
+        for (let i = 0; i < 6; i++) {
+          const s = SB.Model.addShot(p, sc.id, { type: 'Wide' });
+          s.description = 'cut ' + (i + 1);
+          ids.push(s.id);
+        }
+        SB.app.changed(true);
+
+        const cardOf = function (id) { return document.querySelector('.card[data-shot="' + id + '"]'); };
+        const down = function (id, opts) {
+          cardOf(id).querySelector('.frame')
+            .dispatchEvent(new MouseEvent('mousedown', Object.assign({ bubbles: true }, opts || {})));
+        };
+
+        down(ids[1]);
+        t('clicking a card selects just it', SB.Board.selection().join() === ids[1],
+          SB.Board.selection().join());
+
+        down(ids[3], { ctrlKey: true });
+        t('ctrl-click adds to the selection',
+          SB.Board.selection().length === 2 && SB.Board.selection().indexOf(ids[3]) >= 0,
+          SB.Board.selection().join());
+        down(ids[3], { ctrlKey: true });
+        t('ctrl-clicking again removes it', SB.Board.selection().length === 1,
+          SB.Board.selection().join());
+
+        down(ids[4], { shiftKey: true });
+        t('shift-click takes the run between them',
+          SB.Board.selection().length === 4 &&
+          SB.Board.selection()[0] === ids[1] && SB.Board.selection()[3] === ids[4],
+          SB.Board.selection().length + ' picked');
+        t('every one of them is marked on the board',
+          document.querySelectorAll('.card.sel').length === 4,
+          document.querySelectorAll('.card.sel').length);
+        t('a bar appears with what you can do to them',
+          !document.getElementById('selBar').classList.contains('hidden') &&
+          /4 shots selected/.test(document.getElementById('selBar').textContent),
+          document.getElementById('selBar').textContent.slice(0, 40));
+
+        /* colour the lot at once */
+        const before = SB.Model.findShot(P(), ids[1]).shot.color;
+        Array.prototype.filter.call(document.querySelectorAll('#selBar .mini'),
+          function (b) { return /Colour/.test(b.textContent); })[0].click();
+        document.querySelector('.pal-pop button:nth-child(5)').click();
+        t('the whole selection can be coloured in one go',
+          SB.Board.selection().every(function (id) {
+            return SB.Model.findShot(P(), id).shot.color !== before;
+          }), 'still ' + before);
+
+        /* and become their own scene */
+        Array.prototype.filter.call(document.querySelectorAll('#selBar .mini'),
+          function (b) { return /New scene from these/.test(b.textContent); })[0].click();
+        t('a selection can become a scene of its own', P().scenes.length === 2,
+          P().scenes.length + ' scenes');
+        t('holding exactly those cards', P().scenes[1].shots.length === 4,
+          P().scenes[1].shots.length);
+
+        SB.Board.clearSelection();
+        t('the bar goes away when nothing is selected',
+          document.getElementById('selBar').classList.contains('hidden'), '');
+
+        /* the break between two cards */
+        const breaks = document.querySelectorAll('.scene-block[data-scene="' +
+          P().scenes[1].id + '"] .scene-break');
+        t('there is a break between each pair of cards', breaks.length === 3, breaks.length);
+        breaks[1].click();
+        t('clicking one starts a new scene there', P().scenes.length === 3, P().scenes.length);
+        t('with the cards from that point on',
+          P().scenes[2].shots.length === 2 && P().scenes[1].shots.length === 2,
+          P().scenes.map(function (s) { return s.shots.length; }).join('/'));
+        t('and everything renumbers',
+          SB.Model.findShot(P(), P().scenes[2].shots[0].id).code === '3A',
+          SB.Model.findShot(P(), P().scenes[2].shots[0].id).code);
+
+        /* dragging one of a group takes the group */
+        const wasFirst = P().scenes[0].shots.length;
+        down(P().scenes[1].shots[0].id);
+        down(P().scenes[1].shots[1].id, { ctrlKey: true });
+        const dt = new DataTransfer();
+        cardOf(P().scenes[1].shots[0].id).querySelector('.card-head')
+          .dispatchEvent(new DragEvent('dragstart', { dataTransfer: dt, bubbles: true, cancelable: true }));
+        const target = document.querySelector('.shots[data-scene="' + P().scenes[0].id + '"]');
+        target.dispatchEvent(new DragEvent('dragover', { dataTransfer: dt, bubbles: true, cancelable: true }));
+        target.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
+        t('dragging one of a selected group moves them all',
+          P().scenes[0].shots.length === wasFirst + 2,
+          P().scenes.map(function (s) { return s.shots.length; }).join('/') +
+          ' (first scene had ' + wasFirst + ')');
+        SB.Board.clearSelection();
+      })();
+
       // swapping two shots without moving the dialogue
       (function () {
         const p = P();
