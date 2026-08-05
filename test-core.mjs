@@ -31,7 +31,8 @@ sandbox.window = sandbox;
 vm.createContext(sandbox);
 
 for (const f of ['js/util.js', 'js/doc.js', 'js/blobs.js', 'js/geminimodels.js', 'js/brand.js',
-  'js/personas.js', 'js/fields.js', 'js/model.js', 'js/store.js', 'js/usage.js']) {
+  'js/personas.js', 'js/fields.js', 'js/model.js', 'js/store.js', 'js/usage.js',
+  'js/coverage.js']) {
   vm.runInContext(readFileSync(join(root, f), 'utf8'), sandbox, { filename: f });
 }
 const SB = sandbox.SB;
@@ -827,6 +828,144 @@ console.log('\n— the API key never reaches the file —');
   const written = JSON.parse(SB.Store.serialize(p));
   eq(written.settings.geminiApiKey, undefined, 'serialize() strips the key from the project file');
   eq(written.master.text, '', 'serialize() keeps the master script');
+}
+
+console.log('\n— scene coverage: shot types land on the project list —');
+{
+  const p = SB.Model.newProject();
+  const C = SB.Coverage;
+  eq(C.matchType(p, 'Close-up'), 'Close-up', 'an exact type comes back as itself');
+  eq(C.matchType(p, 'ECU on the hands'), 'Extreme close-up', 'ECU reads as extreme close-up');
+  eq(C.matchType(p, 'OTS'), 'Over the shoulder', 'OTS reads as over the shoulder');
+  eq(C.matchType(p, 'establishing wide'), 'Wide', 'an establishing shot is the wide one');
+  eq(C.matchType(p, 'macro detail of the label'), 'Extreme close-up', 'macro detail goes tight');
+  eq(C.matchType(p, 'something nobody offers'), p.settings.shotTypes[0],
+    'an unknown type falls back to the first on the list, never an unselectable value');
+}
+
+console.log('\n— scene coverage: the subject survives into every description —');
+{
+  const C = SB.Coverage;
+  const subj = 'A warehouse worker in a faded olive canvas jacket and grey knit beanie.';
+  const carries = 'The warehouse worker, olive canvas jacket creased at the elbow, lifts the crate.';
+  eq(C.ensureSubject(carries, subj), carries, 'a description that already carries the subject is left alone');
+  const bare = 'Hands close around a strap and pull.';
+  eq(C.ensureSubject(bare, subj), bare + ' ' + subj,
+    'a description that dropped the subject gets it appended');
+  eq(C.ensureSubject('', subj), subj, 'an empty description becomes the subject line');
+  eq(C.ensureSubject(bare, ''), bare, 'no subject, no change');
+}
+
+console.log('\n— scene coverage: generate lands shots on the scene —');
+{
+  const C = SB.Coverage;
+  const canned = {
+    subject: 'A courier in a rust-orange weatherproof jacket and scuffed grey boots.',
+    shots: [
+      { beat: 'arrives at the door', type: 'WS establishing', description: 'The courier steps up to the loading door.' },
+      { beat: 'hands find the label', type: 'ECU', description: 'Fingers turn a crumpled label into the light.' },
+      { beat: 'the scan lands', type: 'CU', description: 'A rust-orange weatherproof shoulder fills the frame as the scanner blinks green.' }
+    ]
+  };
+  let asked = null;
+  SB.Prompts = { raw: (text, schema, system) => { asked = { text, schema, system }; return Promise.resolve(canned); } };
+  SB.Store.getApiKey = () => 'test-key';
+
+  const p = SB.Model.newProject();
+  const sc = p.scenes[0];
+  sc.heading = 'The drop';
+  sc.description = 'A courier delivers a package to a warehouse door and gets it signed for.';
+  eq(sc.shots.length, 1, 'a new scene starts with one empty card');
+
+  const r = await C.generate(p, sc.id, {});
+  eq(sc.shots.length, 3, 'three beats on the scene, not four — the empty starter card was reused');
+  eq(sc.shots[0].id, r.ids[0], 'the starter card is the first generated shot');
+  eq(sc.shots.map(s => s.type), ['Wide', 'Extreme close-up', 'Close-up'],
+    'every returned type landed on the project list');
+  eq(sc.shots.every(s => /rust-orange/.test(s.description)), true,
+    'the subject wording reaches all three descriptions');
+  eq(r.beats, ['arrives at the door', 'hands find the label', 'the scan lands'],
+    'the beats come back for the status line');
+  eq(/consecutive beats of ONE continuous moment/.test(asked.text), true,
+    'the request asks for consecutive beats');
+  eq(asked.text.indexOf(sc.description) > 0, true, 'and it sends the scene description');
+  eq(/Extreme close-up/.test(asked.text), true, "and this project's own shot-type list");
+
+  C.undo(p, r.ids);
+  eq(sc.shots.length, 0, 'undo removes exactly what generate created');
+}
+
+console.log('\n— scene coverage: a second run appends, and count is honoured —');
+{
+  const C = SB.Coverage;
+  const two = {
+    subject: 'A technician in a navy zip fleece.',
+    shots: [
+      { beat: 'reaches in', type: 'Insert', description: 'A navy zip fleece cuff brushes the rack rail.' },
+      { beat: 'it seats home', type: 'Close-up', description: 'The drive clicks into the bay.' },
+      { beat: 'spare beat', type: 'Wide', description: 'The aisle, seen end to end.' }
+    ]
+  };
+  SB.Prompts = { raw: () => Promise.resolve(two) };
+  SB.Store.getApiKey = () => 'test-key';
+
+  const p = SB.Model.newProject();
+  const sc = p.scenes[0];
+  sc.description = 'A technician swaps a failed drive in a server aisle.';
+  sc.shots[0].description = 'hand-written card the user already made';
+
+  const r = await C.generate(p, sc.id, { count: 2 });
+  eq(r.ids.length, 2, 'a count of 2 returns two shots');
+  eq(sc.shots.length, 3, 'they were appended after the authored card, not into it');
+  eq(sc.shots[0].description, 'hand-written card the user already made', 'the authored card is untouched');
+}
+
+console.log('\n— scene coverage: it refuses to guess —');
+{
+  const C = SB.Coverage;
+  SB.Prompts = { raw: () => Promise.resolve({ subject: 's', shots: [] }) };
+  SB.Store.getApiKey = () => 'test-key';
+  const p = SB.Model.newProject();
+  const sc = p.scenes[0];
+
+  let msg = '';
+  await C.generate(p, sc.id, {}).catch(e => { msg = e.message; });
+  eq(/description first/.test(msg), true, 'an empty scene description is refused with a reason');
+
+  sc.description = 'Something happens.';
+  msg = '';
+  await C.generate(p, sc.id, {}).catch(e => { msg = e.message; });
+  eq(/No shots came back/.test(msg), true, 'an empty answer is an error, not a silent no-op');
+  eq(sc.shots.length, 1, 'and nothing was added');
+
+  msg = '';
+  await C.rewrite(p, sc.id, '').catch(e => { msg = e.message; });
+  eq(/came back empty/.test(msg), true, 'an empty rewrite is refused too');
+
+  SB.Store.getApiKey = () => '';
+  msg = '';
+  await C.generate(p, sc.id, {}).catch(e => { msg = e.message; });
+  eq(/API key/.test(msg), true, 'no key is said plainly before any request is made');
+}
+
+console.log('\n— scene coverage: rewrite keeps the draft in play —');
+{
+  const C = SB.Coverage;
+  SB.Prompts = {
+    raw: (text) => Promise.resolve({
+      description: /DRAFT:\ncrappy first pass/.test(text)
+        ? 'A courier sets a scuffed parcel on the counter and waits, breath fogging in the cold doorway.'
+        : ''
+    })
+  };
+  SB.Store.getApiKey = () => 'test-key';
+  const p = SB.Model.newProject();
+  const sc = p.scenes[0];
+  sc.description = 'crappy first pass';
+  const next = await C.rewrite(p, sc.id, '');
+  eq(/scuffed parcel/.test(next), true, 'the rewrite comes back');
+  eq(sc.description, 'crappy first pass',
+    'and rewrite does not write it itself — the caller applies it, so revert stays possible');
 }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed\n');

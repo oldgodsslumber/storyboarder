@@ -1,6 +1,6 @@
 /* headless UI scenario — injected by test-ui.mjs, not part of the app */
 (function () {
-  setTimeout(function () {
+  setTimeout(async function () {
     const out = [];
     const t = function (name, cond, extra) {
       out.push((cond ? 'ok   ' : 'FAIL ') + name + (cond ? '' : ' :: ' + extra));
@@ -1007,6 +1007,74 @@
         SB.Usage.measure(P()).dedupe.saved);
       P().scenes[0].shots[1].image = null;
       SB.app.changed(true);
+
+      // generate shots + rewrite, driven through the actual scene buttons
+      {
+        const settle = function () { return new Promise(function (r) { setTimeout(r, 30); }); };
+        SB.Store.getApiKey = function () { return 'test-key'; };
+        const sc = SB.Model.addScene(P());
+        sc.heading = 'The drop';
+        sc.description = 'A courier delivers a package to a warehouse door.';
+        app.changed(true);
+
+        const sel = '.scene-block[data-scene="' + sc.id + '"] ';
+        const bGen = Array.prototype.filter.call(document.querySelectorAll(sel + '.sc-ai .mini'),
+          function (b) { return /Generate/.test(b.textContent); })[0];
+        t('generate button sits under the scene description', !!bGen, '');
+
+        SB.Prompts.raw = function () {
+          return Promise.resolve({
+            subject: 'A courier in a rust-orange weatherproof jacket.',
+            shots: [
+              { beat: 'arrives', type: 'WS', description: 'The courier reaches the loading door.' },
+              { beat: 'the label', type: 'ECU', description: 'Fingers turn a crumpled label to the light.' },
+              { beat: 'signed for', type: 'CU', description: 'A rust-orange sleeve as the screen blinks green.' }
+            ]
+          });
+        };
+        bGen.click();
+        await settle();
+        t('three shots landed on the scene', sc.shots.length === 3, sc.shots.length);
+        t('their types came from the project list',
+          sc.shots.map(function (s) { return s.type; }).join(',') === 'Wide,Extreme close-up,Close-up',
+          sc.shots.map(function (s) { return s.type; }).join(','));
+        t('the subject reaches every description',
+          sc.shots.every(function (s) { return /rust-orange/.test(s.description); }),
+          JSON.stringify(sc.shots.map(function (s) { return s.description; })));
+        t('the row reports what it did',
+          /3 shots added/.test(document.querySelector(sel + '.sc-ai-status').textContent),
+          document.querySelector(sel + '.sc-ai-status').textContent);
+
+        const bUndo = Array.prototype.filter.call(document.querySelectorAll(sel + '.sc-ai .mini'),
+          function (b) { return b.textContent === 'undo'; })[0];
+        t('undo is offered after generating', bUndo && !bUndo.classList.contains('hidden'), '');
+        bUndo.click();
+        await settle();
+        t('undo takes the generated shots back off', sc.shots.length === 0, sc.shots.length);
+
+        // rewrite, then revert
+        SB.Prompts.raw = function () {
+          return Promise.resolve({ description: 'A courier sets a scuffed parcel on the counter, breath fogging.' });
+        };
+        const bRw = Array.prototype.filter.call(document.querySelectorAll(sel + '.sc-ai .mini'),
+          function (b) { return /Rewrite/.test(b.textContent); })[0];
+        bRw.click();
+        await settle();
+        t('rewrite replaces the description',
+          /scuffed parcel/.test(sc.description), sc.description);
+        t('and the textarea shows it',
+          /scuffed parcel/.test(document.querySelector(sel + 'textarea.sh-desc').value), '');
+        const bRev = Array.prototype.filter.call(document.querySelectorAll(sel + '.sc-ai .mini'),
+          function (b) { return b.textContent === 'revert'; })[0];
+        t('revert is offered', bRev && !bRev.classList.contains('hidden'), '');
+        bRev.click();
+        t('revert puts the draft back',
+          sc.description === 'A courier delivers a package to a warehouse door.',
+          sc.description);
+
+        SB.Model.deleteScene(P(), sc.id);
+        app.changed(true);
+      }
 
       // comment mode
       app.commentMode = true;

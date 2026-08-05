@@ -163,6 +163,20 @@ button,input,select,textarea{font:inherit;color:inherit}
 .scene-head input:focus,.scene-head textarea:focus{outline:none;border-color:var(--accent);background:var(--bg)}
 .scene-actions{display:flex;gap:4px}
 
+/* writer-model actions on the scene description */
+.sc-ai{display:flex;align-items:center;gap:4px;flex-wrap:wrap;padding:0 5px 2px}
+.sc-ai .sc-ai-gap{width:8px}
+.sc-ai select.sc-ai-count{
+  background:var(--bg3);border:1px solid var(--line);border-radius:4px;
+  color:var(--fg);font-size:11px;padding:2px 3px;
+}
+.mini.link{background:none;border-color:transparent;color:var(--fg-dim);text-decoration:underline}
+.mini.link:hover{color:var(--fg);border-color:transparent}
+.mini:disabled{opacity:.4;cursor:default}
+.sc-ai-status{font-size:11px;color:var(--fg-dim)}
+.sc-ai-status.run{color:var(--accent)}
+.sc-ai-status.err{color:var(--danger)}
+
 .shots{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-start;min-height:60px;border-radius:6px}
 .shots.drag-over{outline:2px dashed var(--accent);outline-offset:4px;background:rgba(91,141,255,.06)}
 .scene-block.drag-over > .scene-head{border-color:var(--accent);background:var(--bg3)}

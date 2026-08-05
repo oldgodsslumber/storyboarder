@@ -109,6 +109,32 @@ it will never make a card or scene reappear or vanish.
 - **no shot** marks a fragment that stays on the board but is excluded from prompt
   generation and from the PDF.
 
+### Boarding a scene from its description
+
+Under every scene description sit two writer-model actions. Both need a Google API key
+(Settings → API) and both cost one call.
+
+- **✦ Rewrite** turns a rough draft into something shootable — same subject, same place,
+  same point, but concrete and visual, with the hedging cut. It swaps the text in place and
+  leaves a **revert** link next to the button until you edit the description yourself.
+- **✦ Generate shots** boards the description as a run of **consecutive beats of one
+  moment**: an entry into the action, the action, and the beat that lands it. Framing stays
+  mostly tight — close-ups, extreme close-ups, inserts on hands, faces, objects — with one
+  wider shot for rhythm when there are three or more. The dropdown next to it is **Auto**
+  (the writer picks 2 or 3, which is what these scenes usually want), or force 2, 3 or 4.
+
+Continuity is the point of the feature, so the subject is pinned down once and repeated in
+every description it writes — each shot's prompt is later written on its own and cannot see
+the others. If the scene's cards already have **personas** on them, those are the subject:
+they're described back verbatim and attached to every generated shot instead of a new one
+being invented.
+
+Generated shots land at the end of the scene (a brand-new scene's single empty card is
+filled first rather than left blank), take their type from **this project's** shot-type list,
+and get freestanding script boxes — capture from the master script separately if you want
+them linked. Script undo deliberately never removes cards, so the row offers its own
+**undo** for the shots it just made.
+
 ### Selecting several cards
 
 Click a card to select it; **Ctrl/Cmd-click** adds or removes one; **Shift-click** takes the
@@ -455,6 +481,7 @@ js/personas.js    recurring people + per-model reference-image wording
 js/fields.js      the extra card text boxes, per project
 js/personapanel.js the Personas panel
 js/prompts.js     Gemini prompt writing
+js/coverage.js    scene description -> shots, and the description rewrite
 js/promptpanel.js the Prompts panel
 js/settings.js    tabbed settings
 js/versions.js    whole-project versions

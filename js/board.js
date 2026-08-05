@@ -10,6 +10,13 @@
     scriptEls: {}        // shotId -> element
   };
 
+  /* Scene-level AI state, per scene id and only for this session: the text a
+   * rewrite replaced, the shots a generate created, and the line under the
+   * buttons. It lives outside the project so nothing here reaches the file, and
+   * outside the render so a re-render doesn't drop the way back. */
+  const AI = {};
+  function aiOf(id) { return AI[id] || (AI[id] = { prev: null, ids: null, status: '', err: false, count: 0 }); }
+
   function P() { return SB.app.project; }
 
   /* ---------------- selecting cards ---------------- */
@@ -243,6 +250,119 @@
     }
   }
 
+  /* The two writer-model actions that belong to the scene description itself:
+   * sharpen the draft, and turn it into a run of shots. */
+  function sceneAi(sc, descEl) {
+    const ai = aiOf(sc.id);
+    const row = SB.el('div', 'sc-ai');
+
+    const bRw = SB.el('button', 'mini', '✦ Rewrite');
+    bRw.title = 'Rewrite this description as something shootable — same facts, sharper';
+    const bRev = SB.el('button', 'mini link' + (ai.prev == null ? ' hidden' : ''), 'revert');
+    bRev.title = 'Put the previous description back';
+
+    const cnt = document.createElement('select');
+    cnt.className = 'sc-ai-count';
+    cnt.title = 'How many shots. Auto lets the writer pick 2 or 3.';
+    [['0', 'Auto'], ['2', '2'], ['3', '3'], ['4', '4']].forEach(function (o) {
+      const op = document.createElement('option');
+      op.value = o[0]; op.textContent = o[1];
+      cnt.appendChild(op);
+    });
+    cnt.value = String(ai.count || 0);
+    cnt.addEventListener('change', function () { ai.count = parseInt(cnt.value, 10) || 0; });
+
+    const bGen = SB.el('button', 'mini primary', '✦ Generate shots');
+    bGen.title = 'Board this description as consecutive beats of one moment';
+    const bUndo = SB.el('button', 'mini link' + (ai.ids && ai.ids.length ? '' : ' hidden'), 'undo');
+    bUndo.title = 'Remove the shots that were just generated';
+
+    const st = SB.el('span', 'sc-ai-status' + (ai.err ? ' err' : ''), ai.status || '');
+
+    row.appendChild(bRw); row.appendChild(bRev);
+    row.appendChild(SB.el('span', 'sc-ai-gap'));
+    row.appendChild(cnt); row.appendChild(bGen); row.appendChild(bUndo);
+    row.appendChild(st);
+
+    /* Editing by hand is the user taking the description back — the old text
+     * stops being something they can return to. */
+    descEl.addEventListener('input', function () {
+      if (ai.prev == null) return;
+      ai.prev = null;
+      bRev.classList.add('hidden');
+    });
+
+    function busy(on, msg, isErr) {
+      bRw.disabled = on; bGen.disabled = on; cnt.disabled = on;
+      st.textContent = msg || '';
+      st.classList.toggle('err', !!isErr);
+      st.classList.toggle('run', !!on);
+      if (!on) { ai.status = msg || ''; ai.err = !!isErr; }
+    }
+
+    function failed(e) {
+      const msg = e && e.message ? e.message : String(e);
+      busy(false, msg, true);
+      SB.toast(msg, true);
+    }
+
+    bRw.onclick = function () {
+      const prev = sc.description || '';
+      busy(true, 'rewriting…');
+      SB.Coverage.rewrite(P(), sc.id, '').then(function (next) {
+        const f = SB.Model.findScene(P(), sc.id);
+        if (!f) return;
+        f.scene.description = next;
+        descEl.value = next;
+        ai.prev = prev;
+        bRev.classList.remove('hidden');
+        busy(false, 'rewritten');
+        SB.app.changed(false);
+      }).catch(failed);
+    };
+
+    bRev.onclick = function () {
+      const f = SB.Model.findScene(P(), sc.id);
+      if (!f || ai.prev == null) return;
+      f.scene.description = ai.prev;
+      descEl.value = ai.prev;
+      ai.prev = null;
+      bRev.classList.add('hidden');
+      busy(false, '');
+      SB.app.changed(false);
+    };
+
+    bGen.onclick = function () {
+      const p = P();
+      const kept = sc.shots.filter(function (sh) { return !SB.Coverage.isBlank(p, sh); }).length;
+      if (kept && !confirm('Add generated shots to the end of "' + (sc.heading || 'this scene') +
+        '"? It already has ' + kept + ' shot' + (kept === 1 ? '' : 's') + '.')) return;
+      busy(true, 'boarding…');
+      SB.Coverage.generate(p, sc.id, { count: ai.count | 0 }).then(function (r) {
+        ai.ids = r.ids.slice();
+        ai.status = r.ids.length + ' shot' + (r.ids.length === 1 ? '' : 's') + ' added';
+        ai.err = false;
+        SB.app.selectedShotId = r.ids[0];
+        SB.app.selection = [r.ids[0]];
+        SB.app.changed(true);                 // rebuilds this row from ai state
+        SB.toast(ai.status + (r.beats.length ? ' — ' + r.beats.join(' → ') : ''));
+      }).catch(failed);
+    };
+
+    bUndo.onclick = function () {
+      if (!ai.ids || !ai.ids.length) return;
+      SB.Coverage.undo(P(), ai.ids);
+      ai.ids = null;
+      ai.status = 'generated shots removed';
+      ai.err = false;
+      SB.app.selectedShotId = null;
+      SB.app.selection = [];
+      SB.app.changed(true);
+    };
+
+    return row;
+  }
+
   function sceneBlock(sc, si) {
     const blk = SB.el('div', 'scene-block');
     blk.dataset.scene = sc.id;
@@ -265,6 +385,7 @@
     d.placeholder = 'Scene description';
     d.addEventListener('input', function () { sc.description = d.value; SB.app.changed(false); });
     fields.appendChild(h); fields.appendChild(d);
+    fields.appendChild(sceneAi(sc, d));
     head.appendChild(fields);
 
     const acts = SB.el('div', 'scene-actions');
