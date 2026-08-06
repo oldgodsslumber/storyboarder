@@ -675,10 +675,13 @@
     const armedHere = B.swapFrom === sh.id;
     const armedElsewhere = !!B.swapFrom && !armedHere;
     const swap = SB.el('button', 'mini' + (armedHere ? ' primary' : (armedElsewhere ? ' danger' : '')), '⇄');
+    /* findShot can come back empty if the armed card was deleted in between —
+     * and a throw here would take the whole board render down with it. */
+    const armedRef = armedElsewhere ? SB.Model.findShot(P(), B.swapFrom) : null;
     swap.title = armedHere
       ? 'Waiting — click the card to swap with, or press Esc'
       : armedElsewhere
-        ? 'Swap ' + SB.Model.findShot(P(), B.swapFrom).code + ' with this card'
+        ? 'Swap ' + (armedRef ? armedRef.code : 'the armed card') + ' with this card'
         : 'Swap this shot with another — picture, description and prompts move, ' +
         'the dialogue and the position stay. Alt-drag does the same.';
     swap.onclick = function (ev) {
@@ -803,7 +806,12 @@
   function doSwap(aId, bId) {
     const r = SB.Model.swapShotContent(P(), aId, bId);
     B.swapFrom = null;
-    if (!r) return;
+    if (!r) {
+      /* say so rather than looking like the click missed */
+      SB.app.changed(true);
+      SB.toast('Could not swap those two cards', true);
+      return;
+    }
     SB.app.selectedShotId = bId;
     SB.app.changed(true);
     SB.toast('Swapped ' + r.a + ' and ' + r.b + ' — the script stayed put');
