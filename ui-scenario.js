@@ -691,6 +691,34 @@
           document.querySelector('.script-box[data-shot="' + a.id + '"]').textContent);
         t('the swap disarms afterwards', SB.Board.swapArmed() === null, SB.Board.swapArmed());
 
+        /* ⇄ on one card then ⇄ on the other — the way it reads, and the way
+           it was actually being used */
+        const btnOf = function (id) {
+          return Array.prototype.filter.call(
+            document.querySelectorAll('.card[data-shot="' + id + '"] .ch-actions .mini'),
+            function (x) { return x.textContent === '⇄'; })[0];
+        };
+        let wasA = a.description, wasB = b.description;
+        btnOf(a.id).click();
+        t('arming shows on the other cards’ buttons too',
+          btnOf(b.id).classList.contains('danger'), btnOf(b.id).className);
+        btnOf(b.id).click();
+        t('pressing ⇄ on the second card completes the swap',
+          a.description === wasB && b.description === wasA,
+          a.description + ' / ' + b.description);
+        t('and the dialogue still did not move',
+          document.querySelector('.script-box[data-shot="' + a.id + '"]').textContent ===
+          'Wide of the office.', '');
+        t('nothing is left armed', SB.Board.swapArmed() === null, SB.Board.swapArmed());
+
+        /* picking the second card by its description box, not its frame */
+        wasA = a.description; wasB = b.description;
+        btnOf(a.id).click();
+        document.querySelector('.card[data-shot="' + b.id + '"] .desc-box').click();
+        t('clicking a text box on the second card also completes it',
+          a.description === wasB && b.description === wasA,
+          a.description + ' / ' + b.description);
+
         /* Esc gets you out */
         swapBtn.click();
         document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));

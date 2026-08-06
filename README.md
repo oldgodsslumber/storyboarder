@@ -167,7 +167,9 @@ dialogue stays where it is in the script, either:
 
 - **Alt-drag** one card onto another — the target says **⇄ swap pictures** instead of the
   usual move outline; or
-- click **⇄** in a card's header, then click the card to swap with (Esc cancels).
+- click **⇄** in a card's header, then either press **⇄ on the other card** or click that card
+  anywhere (Esc cancels). While one is armed, the other cards' ⇄ buttons light up as
+  "swap with this one".
 
 What moves is the picture and everything describing it: frame, ink, shot type, card colour,
 description, card fields, prompts, cast and comments. What stays is the **script window**

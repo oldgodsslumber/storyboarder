@@ -602,7 +602,11 @@
     if (B.swapFrom === sh.id) c.classList.add('swap-armed');
     c.addEventListener('click', function (ev) {
       if (!B.swapFrom || B.swapFrom === sh.id) return;
-      if (ev.target.closest('button, select, input, textarea, [contenteditable]')) return;
+      /* Once a swap is armed, a click anywhere on another card completes it.
+       * It used to ignore clicks that landed on a text box or a dropdown,
+       * which is most of a card — so picking the second card often did
+       * nothing at all. The ⇄ button has its own handler. */
+      if (ev.target.closest('.ch-actions')) return;
       doSwap(B.swapFrom, sh.id);
     });
     c.addEventListener('mousedown', function (ev) {
@@ -668,14 +672,21 @@
     ns.onclick = function () { sh.noShot = !sh.noShot; SB.app.changed(true); };
     acts.appendChild(ns);
 
-    const swap = SB.el('button', 'mini' + (B.swapFrom === sh.id ? ' primary' : ''), '⇄');
-    swap.title = B.swapFrom === sh.id
-      ? 'Now click the card to swap with (Esc to cancel)'
-      : 'Swap this shot with another — the dialogue stays where it is. ' +
-      'Alt-drag one card onto another does the same.';
+    const armedHere = B.swapFrom === sh.id;
+    const armedElsewhere = !!B.swapFrom && !armedHere;
+    const swap = SB.el('button', 'mini' + (armedHere ? ' primary' : (armedElsewhere ? ' danger' : '')), '⇄');
+    swap.title = armedHere
+      ? 'Waiting — click the card to swap with, or press Esc'
+      : armedElsewhere
+        ? 'Swap ' + SB.Model.findShot(P(), B.swapFrom).code + ' with this card'
+        : 'Swap this shot with another — picture, description and prompts move, ' +
+        'the dialogue and the position stay. Alt-drag does the same.';
     swap.onclick = function (ev) {
       ev.stopPropagation();
-      armSwap(B.swapFrom === sh.id ? null : sh.id);
+      /* Pressing ⇄ on a second card is the obvious way to finish the job, so
+       * do that rather than quietly re-arming and looking like nothing works. */
+      if (armedElsewhere) { doSwap(B.swapFrom, sh.id); return; }
+      armSwap(armedHere ? null : sh.id);
     };
     acts.appendChild(swap);
 
