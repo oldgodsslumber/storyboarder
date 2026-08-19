@@ -77,8 +77,21 @@
     };
   }
 
+  /* A scene can claim a stretch of the master script of its own — the loose,
+   * early pass, before anyone knows what the shots are. It is independent of
+   * whatever its shots point at: they may overlap it, or sit outside it, or not
+   * exist yet. Unlike a shot, a scene starts with NO script at all — an empty
+   * local doc here would have every scene claiming to have one. */
   function newScene(heading) {
-    return { id: SB.uid('sc'), heading: heading || 'New scene', description: '', shots: [] };
+    return {
+      id: SB.uid('sc'),
+      heading: heading || 'New scene',
+      description: '',
+      link: null,          // {from,to} into master
+      local: null,         // its own doc once the link is broken; null = untied
+      broken: false,
+      shots: []
+    };
   }
 
   /* How this board prints. Kept in the file rather than in localStorage so a
@@ -150,6 +163,11 @@
     const at = SB.Doc.foldEOL(core.master);
     if (at) {
       (core.scenes || []).forEach(function (sc) {
+        if (sc && sc.link && typeof sc.link.from === 'number') {
+          sc.link.from = at(sc.link.from);
+          sc.link.to = at(sc.link.to);
+          if (sc.link.to <= sc.link.from) sc.broken = true;
+        }
         (sc.shots || []).forEach(function (sh) {
           if (!sh || !sh.link || typeof sh.link.from !== 'number') return;
           sh.link.from = at(sh.link.from);
@@ -164,8 +182,9 @@
         if (c.to <= c.from) c.broken = true;
       });
     }
-    /* A freestanding card owns its own text, with no anchors into it. */
+    /* A freestanding card or scene owns its own text, with no anchors into it. */
     (core.scenes || []).forEach(function (sc) {
+      if (sc && !sc.link && sc.local) SB.Doc.foldEOL(sc.local);
       (sc.shots || []).forEach(function (sh) {
         if (sh && !sh.link && sh.local) SB.Doc.foldEOL(sh.local);
       });
@@ -278,6 +297,20 @@
       sc.id = sc.id || SB.uid('sc');
       sc.heading = sc.heading || '';
       sc.description = sc.description || '';
+      /* An older board has no section on any scene, and must not be given one:
+       * untied is the resting state, so only what is already there is kept. */
+      sc.link = sc.link && typeof sc.link.from === 'number' ? sc.link : null;
+      if (sc.link) {
+        sc.link.from = SB.clamp(sc.link.from, 0, p.master.text.length);
+        sc.link.to = SB.clamp(sc.link.to, sc.link.from, p.master.text.length);
+        sc.local = null;
+      } else if (sc.local && typeof sc.local.text === 'string') {
+        sc.local.marks = sc.local.marks || { b: [], i: [], u: [] };
+        ['b', 'i', 'u'].forEach(function (t) { sc.local.marks[t] = sc.local.marks[t] || []; });
+      } else {
+        sc.local = null;
+      }
+      sc.broken = !!sc.broken;
       sc.shots = Array.isArray(sc.shots) ? sc.shots : [];
       sc.shots.forEach(function (sh) {
         sh.id = sh.id || SB.uid('sh');
@@ -342,10 +375,22 @@
     return { doc: shot.local, from: 0, to: shot.local.text.length, linked: false };
   }
 
+  /* The same for a scene — null when it has claimed nothing, which is where
+   * most scenes stay, so every caller has to be ready for it. */
+  function windowForScene(p, scene) {
+    if (!scene) return null;
+    if (scene.link) return { doc: p.master, from: scene.link.from, to: scene.link.to, linked: true };
+    if (scene.local) return { doc: scene.local, from: 0, to: scene.local.text.length, linked: false };
+    return null;
+  }
+
+  function sceneTied(scene) { return !!(scene && (scene.link || scene.local)); }
+
   /* The one place master-script text changes.
-   * sourceShotId = the shot whose box the user typed in (null = typed in master).
+   * sourceShotId  = the shot whose box the user typed in (null = typed in master).
+   * sourceSceneId = likewise for a scene's own section box.
    */
-  function applyMasterEdit(p, start, end, text, sourceShotId) {
+  function applyMasterEdit(p, start, end, text, sourceShotId, sourceSceneId) {
     if (SB.History) SB.History.push('master:' + (sourceShotId || ''));
     /* Fold before op.len is taken, not inside Doc.replace: every anchor below
      * is mapped through that length, so measuring the un-folded string would
@@ -373,6 +418,20 @@
       sh.link.to = Math.max(nf, nt);
       if (sh.link.to <= sh.link.from) sh.broken = true;
       else if (sh.broken && sh.link.to > sh.link.from) sh.broken = false;
+    });
+
+    /* A scene's claim is a coarse container: text typed against either edge in
+     * the master belongs to the section, and typing inside the scene's own box
+     * grows it at both edges the way a shot's box does. */
+    p.scenes.forEach(function (sc) {
+      if (!sc.link) return;
+      const own = sc.id === sourceSceneId;
+      const nf = SB.Doc.mapPos(sc.link.from, start, end, op.len, own ? true : false);
+      const nt = SB.Doc.mapPos(sc.link.to, start, end, op.len, false);
+      sc.link.from = Math.min(nf, nt);
+      sc.link.to = Math.max(nf, nt);
+      if (sc.link.to <= sc.link.from) sc.broken = true;
+      else if (sc.broken && sc.link.to > sc.link.from) sc.broken = false;
     });
 
     /* A note on a phrase should not swallow text typed against its edges, so
@@ -415,6 +474,67 @@
     shot.link = null;
     shot.broken = false;
     p.updatedAt = Date.now();
+  }
+
+  /* ---------- a scene's own section of the script ---------- */
+
+  /* Edit routed from a scene's section box (local coords). */
+  function applySceneEdit(p, scene, lStart, lEnd, text) {
+    text = SB.Doc.eol(text);
+    if (scene.link) {
+      return applyMasterEdit(p, scene.link.from + lStart, scene.link.from + lEnd,
+        text, null, scene.id);
+    }
+    if (!scene.local) return null;
+    if (SB.History) SB.History.push('scenelocal:' + scene.id);
+    SB.Doc.replace(scene.local, lStart, lEnd, text);
+    p.updatedAt = Date.now();
+    return { start: lStart, end: lEnd, len: text.length };
+  }
+
+  function breakSceneLink(p, scene) {
+    if (!scene.link) return;
+    if (SB.History) { SB.History.seal(); SB.History.push('scenebreak:' + scene.id); SB.History.seal(); }
+    const w = windowForScene(p, scene);
+    scene.local = {
+      text: p.master.text.slice(w.from, w.to),
+      marks: SB.Doc.sliceMarks(p.master, w.from, w.to)
+    };
+    scene.link = null;
+    scene.broken = false;
+    p.updatedAt = Date.now();
+  }
+
+  /* Claim [from,to) of the master for a scene. `widen` keeps whatever the scene
+   * already had and stretches to cover both, which is how a section gets claimed
+   * a paragraph at a time. */
+  function tieScene(p, sceneId, from, to, widen) {
+    const f = findScene(p, sceneId);
+    if (!f) return null;
+    from = SB.clamp(from | 0, 0, p.master.text.length);
+    to = SB.clamp(to | 0, from, p.master.text.length);
+    if (to <= from) return null;
+    if (widen && f.scene.link && !f.scene.broken) {
+      from = Math.min(from, f.scene.link.from);
+      to = Math.max(to, f.scene.link.to);
+    }
+    f.scene.link = { from: from, to: to };
+    f.scene.local = null;
+    f.scene.broken = false;
+    p.updatedAt = Date.now();
+    return f.scene;
+  }
+
+  /* Give the section back — the scene keeps its heading, description and shots.
+   * A shot cannot do this; a scene with no script is the normal state. */
+  function untieScene(p, sceneId) {
+    const f = findScene(p, sceneId);
+    if (!f) return null;
+    f.scene.link = null;
+    f.scene.local = null;
+    f.scene.broken = false;
+    p.updatedAt = Date.now();
+    return f.scene;
   }
 
   /* ---------- notes on the script ---------- */
@@ -468,6 +588,28 @@
       for (let i = sh.link.from; i < sh.link.to && i < n; i++) if (d[i] < 250) d[i]++;
     });
     return d;
+  }
+
+  /* How many scenes claim each master character. The loose layer: this is what
+   * says a stretch of script is spoken for before any shot exists. */
+  function sceneCoverage(p) {
+    const n = p.master.text.length;
+    const d = new Uint8Array(n);
+    p.scenes.forEach(function (sc) {
+      if (!sc.link || sc.broken) return;
+      for (let i = sc.link.from; i < sc.link.to && i < n; i++) if (d[i] < 250) d[i]++;
+    });
+    return d;
+  }
+
+  /* What share of the script any scene has claimed, 0..1 — the answer to "have
+   * I covered it all yet?" without counting spans by eye. */
+  function sceneCoverageShare(p) {
+    const d = sceneCoverage(p);
+    if (!d.length) return 0;
+    let hit = 0;
+    for (let i = 0; i < d.length; i++) if (d[i]) hit++;
+    return hit / d.length;
   }
 
   /* ---------- structure ---------- */
@@ -596,9 +738,11 @@
     sc.shots = order;
     p.scenes.splice(afterIdx + 1, 0, sc);
     /* A scene emptied BY THIS is noise on the board. An empty scene the user
-     * made on purpose somewhere else is not ours to delete. */
+     * made on purpose somewhere else is not ours to delete — and neither is one
+     * holding a claim on the script, which is a deliberate mark that outlives
+     * whichever cards happened to be sitting in it. */
     p.scenes = p.scenes.filter(function (s) {
-      return s.shots.length || sources.indexOf(s) < 0;
+      return s.shots.length || sources.indexOf(s) < 0 || sceneTied(s);
     });
     if (!p.scenes.length) p.scenes.push(sc);
     p.updatedAt = Date.now();
@@ -631,6 +775,10 @@
     eachShot: eachShot, code: code, findShot: findShot, findScene: findScene,
     windowFor: windowFor, applyMasterEdit: applyMasterEdit, applyShotEdit: applyShotEdit,
     breakLink: breakLink, coverage: coverage,
+    windowForScene: windowForScene, sceneTied: sceneTied,
+    applySceneEdit: applySceneEdit, breakSceneLink: breakSceneLink,
+    tieScene: tieScene, untieScene: untieScene,
+    sceneCoverage: sceneCoverage, sceneCoverageShare: sceneCoverageShare,
     addScriptComment: addScriptComment, deleteScriptComment: deleteScriptComment,
     scriptComments: scriptComments, commentCoverage: commentCoverage,
     addScene: addScene, deleteScene: deleteScene, addShot: addShot, deleteShot: deleteShot,

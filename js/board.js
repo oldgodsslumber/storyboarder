@@ -6,8 +6,10 @@
   const DND_SCENE = 'application/x-sb-scene';
 
   const B = {
-    scriptEditors: {},   // shotId -> editor api
-    scriptEls: {}        // shotId -> element
+    scriptEditors: {},        // shotId -> editor api
+    scriptEls: {},            // shotId -> element
+    sceneScriptEditors: {},   // sceneId -> editor api, for a scene's own section
+    sceneScriptEls: {}        // sceneId -> element
   };
 
   /* Scene-level AI state, per scene id and only for this session: the text a
@@ -88,7 +90,11 @@
       t.innerHTML = '<span class="num">' + (idx + 1) + '</span><span class="ttl">' +
         SB.esc(sc.heading || '(untitled scene)') + '</span>';
       it.appendChild(t);
-      it.appendChild(SB.el('div', 'cnt', sc.shots.length + ' shot' + (sc.shots.length === 1 ? '' : 's')));
+      /* Which sections are claimed, answerable without opening the script. */
+      const claim = sc.link && !sc.broken ? ' · section'
+        : (sc.broken ? ' · section broken' : (sc.local ? ' · own section' : ''));
+      it.appendChild(SB.el('div', 'cnt', sc.shots.length + ' shot' +
+        (sc.shots.length === 1 ? '' : 's') + claim));
 
       it.addEventListener('click', function () {
         SB.app.selectedSceneId = sc.id;
@@ -207,6 +213,8 @@
 
     B.scriptEditors = {};
     B.scriptEls = {};
+    B.sceneScriptEditors = {};
+    B.sceneScriptEls = {};
     const board = document.getElementById('board');
     board.innerHTML = '';
     P().scenes.forEach(function (sc, si) { board.appendChild(sceneBlock(sc, si)); });
@@ -373,6 +381,70 @@
     return row;
   }
 
+  /* A scene's own section of the script — the same box a card gets, so the two
+   * layers behave alike, and only ever present once a scene claims something. */
+  function sceneScriptBox(sc) {
+    const wrap = SB.el('div', 'scene-script');
+    const linked = !!sc.link;
+
+    const lbl = SB.el('div', 'box-label');
+    lbl.appendChild(SB.el('span', 'link-dot' + (sc.broken ? ' broken' : (linked ? '' : ' free'))));
+    lbl.appendChild(SB.el('span', null, sc.broken ? 'section — link broken'
+      : (linked ? 'section — linked' : 'section — freestanding')));
+
+    const la = SB.el('div', 'lbl-actions');
+    if (linked) {
+      const bl = SB.el('button', null, 'break link');
+      bl.title = 'Stop syncing with the master script; keep the text as this scene’s own';
+      bl.onclick = function () {
+        SB.Model.breakSceneLink(P(), sc);
+        SB.app.changed(true);
+        SB.ScriptMode.refresh();
+      };
+      la.appendChild(bl);
+      const go = SB.el('button', null, 'show');
+      go.onclick = function () {
+        SB.app.selectedSceneId = sc.id;
+        SB.ScriptMode.open();
+        SB.ScriptMode.scrollToScene();
+      };
+      la.appendChild(go);
+    }
+    /* Letting go of a section is not creating one, so this does not give an
+     * untied scene a way in — it has no label at all. */
+    const rm = SB.el('button', null, linked ? 'untie' : 'remove');
+    rm.title = linked ? 'Forget which part of the script this scene covers'
+      : 'Delete this scene’s own script text';
+    rm.onclick = function () {
+      if (!linked && sc.local && (sc.local.text || '').trim() &&
+        !confirm('Delete this scene’s script text? It is no longer in the master script.')) return;
+      SB.Model.untieScene(P(), sc.id);
+      SB.app.changed(true);
+      SB.ScriptMode.refresh();
+    };
+    la.appendChild(rm);
+    lbl.appendChild(la);
+    wrap.appendChild(lbl);
+
+    const box = SB.el('div', 'script-box scene-script-box' + (sc.broken ? ' broken' : ''));
+    box.dataset.scene = sc.id;
+    B.sceneScriptEls[sc.id] = box;
+    B.sceneScriptEditors[sc.id] = SB.Editor.attach(box, {
+      get: function () {
+        const f = SB.Model.findScene(P(), sc.id);
+        return f ? SB.Model.windowForScene(P(), f.scene) : null;
+      },
+      edit: function (s, e, t) { SB.Model.applySceneEdit(P(), sc, s, e, t); },
+      toggle: function (type, s, e) {
+        const w = SB.Model.windowForScene(P(), sc);
+        if (w) SB.Doc.toggleMark(w.doc, type, w.from + s, w.from + e);
+      },
+      after: function () { SB.app.scriptChanged(); }
+    });
+    wrap.appendChild(box);
+    return wrap;
+  }
+
   function sceneBlock(sc, si) {
     const blk = SB.el('div', 'scene-block');
     blk.dataset.scene = sc.id;
@@ -396,7 +468,23 @@
     d.addEventListener('input', function () { sc.description = d.value; SB.app.changed(false); });
     fields.appendChild(h); fields.appendChild(d);
     fields.appendChild(sceneAi(sc, d));
+    /* Only once the scene actually claims something — an untied scene, which is
+     * most of them, looks exactly as it always did. */
+    if (SB.Model.sceneTied(sc)) fields.appendChild(sceneScriptBox(sc));
     head.appendChild(fields);
+
+    /* Selecting a scene by clicking its header is what makes the Capture form's
+     * scene picker already point at the one you mean. */
+    head.addEventListener('mousedown', function (ev) {
+      if (ev.target.tagName === 'BUTTON' || ev.target.tagName === 'SELECT') return;
+      if (SB.app.selectedSceneId === sc.id) return;
+      SB.app.selectedSceneId = sc.id;
+      renderSceneList();
+      document.querySelectorAll('.scene-head').forEach(function (x) {
+        x.classList.toggle('sel', x.parentNode.dataset.scene === sc.id);
+      });
+      if (SB.ScriptMode.isOpen()) SB.ScriptMode.refresh();
+    });
 
     const acts = SB.el('div', 'scene-actions');
     const bAdd = SB.el('button', 'mini', '+ Shot');
@@ -409,8 +497,11 @@
     bAddScene.onclick = function () { SB.Model.addScene(P(), si); SB.app.changed(true); };
     const bDel = SB.el('button', 'mini danger', 'Delete scene');
     bDel.onclick = function () {
-      if (sc.shots.length && !confirm('Delete "' + (sc.heading || 'scene') + '" and its ' +
-        sc.shots.length + ' shot(s)? Script text stays in the master script.')) return;
+      /* A scene holding a claim but no cards used to delete with no warning. */
+      if ((sc.shots.length || SB.Model.sceneTied(sc)) &&
+        !confirm('Delete "' + (sc.heading || 'scene') + '"' +
+          (sc.shots.length ? ' and its ' + sc.shots.length + ' shot(s)' : '') +
+          '? Script text stays in the master script.')) return;
       SB.Model.deleteScene(P(), sc.id);
       SB.app.changed(true);
     };
@@ -1032,23 +1123,43 @@
 
   /* ---------------- live script sync ---------------- */
 
+  /* Both kinds of box are built the same way — label then box, appended to the
+   * same parent — so one sync serves them both. */
+  function syncScriptBox(el, api, linked, broken, what) {
+    el.classList.toggle('broken', !!broken);
+    api.render();
+    const lbl = el.previousSibling;
+    if (!lbl || !lbl.classList || !lbl.classList.contains('box-label')) return;
+    const dot = lbl.querySelector('.link-dot');
+    const txt = lbl.querySelector('span:nth-child(2)');
+    if (dot) dot.className = 'link-dot' + (broken ? ' broken' : (linked ? '' : ' free'));
+    if (txt) txt.textContent = what +
+      (broken ? ' — link broken' : (linked ? ' — linked' : ' — freestanding'));
+  }
+
   function renderScriptWindows() {
     Object.keys(B.scriptEditors).forEach(function (id) {
       const f = SB.Model.findShot(P(), id);
       const el = B.scriptEls[id];
       if (!f || !el) return;
-      el.classList.toggle('broken', !!f.shot.broken);
-      B.scriptEditors[id].render();
-      const lbl = el.previousSibling;
-      if (lbl && lbl.classList && lbl.classList.contains('box-label')) {
-        const dot = lbl.querySelector('.link-dot');
-        const txt = lbl.querySelector('span:nth-child(2)');
-        const linked = !!f.shot.link;
-        if (dot) dot.className = 'link-dot' + (f.shot.broken ? ' broken' : (linked ? '' : ' free'));
-        if (txt) txt.textContent = f.shot.broken ? 'script — link broken' :
-          (linked ? 'script — linked' : 'script — freestanding');
-      }
+      syncScriptBox(el, B.scriptEditors[id], !!f.shot.link, !!f.shot.broken, 'script');
     });
+
+    /* Undo can hand a scene back a claim it no longer has a box for, or take
+     * one away from a scene that still shows one — only a full render can add
+     * or remove the box itself. */
+    let drift = false;
+    Object.keys(B.sceneScriptEditors).forEach(function (id) {
+      const f = SB.Model.findScene(P(), id);
+      const el = B.sceneScriptEls[id];
+      if (!f || !el) return;
+      if (!SB.Model.sceneTied(f.scene)) { drift = true; return; }
+      syncScriptBox(el, B.sceneScriptEditors[id], !!f.scene.link, !!f.scene.broken, 'section');
+    });
+    P().scenes.forEach(function (sc) {
+      if (SB.Model.sceneTied(sc) && !B.sceneScriptEls[sc.id]) drift = true;
+    });
+    if (drift) render();
   }
 
   SB.Board = {

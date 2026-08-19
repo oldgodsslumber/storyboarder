@@ -67,7 +67,17 @@
 
   /* ---------- context for the call ---------- */
 
+  /* A scene's own claim is a statement of what it covers; stitching its shots'
+   * windows together is a guess derived from them. Prefer the claim — and in
+   * the case this feature exists for, a scene with no shots yet, it is the only
+   * script there is. Preferred, not unioned: shot ranges usually sit inside the
+   * claimed stretch, so concatenating would send the model the same text twice. */
   function sceneScript(p, sc) {
+    const sw = SB.Model.windowForScene(p, sc);
+    if (sw) {
+      const t = (sw.doc.text || '').slice(sw.from, sw.to).replace(/\s+/g, ' ').trim();
+      if (t) return t;
+    }
     const bits = [];
     sc.shots.forEach(function (sh) {
       const w = SB.Model.windowFor(p, sh);
@@ -199,7 +209,11 @@
       '',
       note ? 'ADDITIONAL DIRECTION: ' + note + '\n' : '',
       'SCENE ' + (idx + 1) + ': ' + (sc.heading || '(untitled)'),
-      'DESCRIPTION:\n' + sc.description.trim()
+      /* With a section claimed and no description written, the script IS the
+       * brief — an empty DESCRIPTION block would just read as a blank order. */
+      (sc.description || '').trim()
+        ? 'DESCRIPTION:\n' + sc.description.trim()
+        : 'There is no scene description. Board directly from the script this scene covers, below.'
     ];
 
     neighbours(p, idx).forEach(function (l) { lines.push(l); });
@@ -257,8 +271,11 @@
     let f;
     try { f = sceneOf(p, sceneId); } catch (e) { return Promise.reject(e); }
     const sc = f.scene;
-    if (!(sc.description || '').trim()) {
-      return Promise.reject(new Error('Write a scene description first — the shots are built from it.'));
+    /* Either brief will do: a description written by hand, or a stretch of the
+     * script this scene has claimed — which is the whole point of claiming one. */
+    if (!(sc.description || '').trim() && !sceneScript(p, sc)) {
+      return Promise.reject(new Error('Write a scene description first, or tie this scene to a ' +
+        'stretch of the master script — the shots are built from one of them.'));
     }
     const miss = needKey();
     if (miss) return Promise.reject(miss);
@@ -376,7 +393,8 @@
   SB.Coverage = {
     MIN: MIN, MAX: MAX,
     generate: generate, rewrite: rewrite, undo: undo,
-    matchType: matchType, ensureSubject: ensureSubject, isBlank: isBlank
+    matchType: matchType, ensureSubject: ensureSubject, isBlank: isBlank,
+    sceneScript: sceneScript
   };
 
 })(window.SB);

@@ -64,10 +64,12 @@
         <button id="btnUndo" class="mini" title="Undo script edit (Ctrl+Z)">↶</button>
         <button id="btnRedo" class="mini" title="Redo script edit (Ctrl+Shift+Z)">↷</button>
         <button id="btnScriptNote" class="mini hidden" disabled title="Select some text in the script first">+ Comment</button>
-        <button id="btnCapture" class="mini primary" disabled title="Select some text in the script first">Capture shot</button>
+        <button id="btnCapture" class="mini primary" disabled title="Select some text in the script first">Capture</button>
       </div>
       <div class="script-hint">
-        Select text below, then <b>Capture shot</b>. Highlighted text is already driving a shot.
+        Select text below, then <b>Capture</b>. A <b>wash</b> means a shot covers it;
+        a <b class="hint-scene">teal rule above the line</b> means a scene claims that section.
+        <span id="scriptCoverage" class="hint-cov"></span>
       </div>
       <div id="masterScript" class="master-script" contenteditable="true" spellcheck="true"></div>
       <div id="captureForm" class="capture-form hidden"></div>

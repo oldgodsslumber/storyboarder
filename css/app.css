@@ -21,6 +21,10 @@
   --hl1:rgba(91,141,255,.20);
   --hl2:rgba(91,141,255,.36);
   --hl3:rgba(255,179,71,.42);
+  /* a scene's claim on a section — teal, because blue is the shot wash and
+     amber is already the comment underline and the selected card */
+  --scene:#3fb99a;
+  --scene-on:#7ee0c4;
   --card-radius:8px;
   /* how much of a card's colour shows through it */
   --card-tint:20%;
@@ -47,6 +51,8 @@
   --hl1:rgba(37,99,235,.15);
   --hl2:rgba(37,99,235,.30);
   --hl3:rgba(180,83,9,.30);
+  --scene:#0f766e;
+  --scene-on:#14b8a6;
   /* the same hues sit heavier on a light surface, so less of them */
   --card-tint:13%;
   --card-tint-strong:24%;
@@ -159,6 +165,9 @@ button,input,select,textarea{font:inherit;color:inherit}
   background:transparent;border:1px solid transparent;border-radius:4px;padding:2px 5px;
   resize:vertical;min-height:24px;color:var(--fg-dim);font-size:12px;
 }
+.scene-head .scene-script{margin-top:3px}
+.scene-head .box-label{padding:2px 4px 0}
+.scene-head .script-box.scene-script-box{margin:1px 0 2px;max-height:110px}
 .scene-head input:hover,.scene-head textarea:hover{border-color:var(--line)}
 .scene-head input:focus,.scene-head textarea:focus{outline:none;border-color:var(--accent);background:var(--bg)}
 .scene-actions{display:flex;gap:4px}
@@ -320,6 +329,8 @@ button,input,select,textarea{font:inherit;color:inherit}
 
 /* ---------- master script ---------- */
 .script-hint{padding:6px 8px;color:var(--fg-dim);font-size:11px;border-bottom:1px solid var(--line)}
+.script-hint .hint-scene{color:var(--scene-on)}
+.script-hint .hint-cov{display:block;margin-top:2px;color:var(--fg)}
 .master-script{
   flex:1;overflow:auto;padding:10px 12px;white-space:pre-wrap;word-wrap:break-word;
   font-size:13.5px;line-height:1.6;background:var(--bg);
@@ -332,7 +343,22 @@ button,input,select,textarea{font:inherit;color:inherit}
 .master-script .h1{background:var(--hl1);border-radius:2px}
 .master-script .h2{background:var(--hl2);border-radius:2px}
 .master-script .h3{background:var(--hl3);border-radius:2px}
-.master-script .hactive{box-shadow:inset 0 -2px 0 var(--accent2)}
+/* Two coverage layers land on the same characters and both have to stay
+ * readable: the background wash says how many SHOTS cover a character, the rule
+ * along the TOP says a SCENE claims it — the loose early pass, which is often
+ * there before any shot is. The bottom rule stays the selected card.
+ * Everything here paints the whole span rather than its edges: renderHTML
+ * splits a run wherever any class changes, so a border would sprout ends
+ * mid-section wherever a shot wash starts. One box-shadow is built from custom
+ * properties because a second declaration would replace the first, not add. */
+.master-script span{
+  --sc-top:0 0 transparent;
+  --sh-bot:0 0 transparent;
+  box-shadow:var(--sc-top),var(--sh-bot);
+}
+.master-script .scov{--sc-top:inset 0 3px 0 var(--scene)}
+.master-script .scov-on{--sc-top:inset 0 4px 0 var(--scene-on)}
+.master-script .hactive{--sh-bot:inset 0 -2px 0 var(--accent2)}
 /* a commented phrase is underlined, so it still reads under a capture wash */
 .master-script .cmt{
   text-decoration:underline;
@@ -382,6 +408,11 @@ body.comment-mode .master-script .cmt{cursor:pointer}
   display:flex;flex-direction:column;gap:6px;
 }
 .capture-form .row{display:flex;gap:6px;align-items:center}
+.capture-form .cap-mode .mini.on{border-color:var(--accent);color:var(--fg)}
+.capture-form .cap-note{
+  margin:4px 0 2px;padding:5px 6px;font-size:11px;line-height:1.45;
+  color:var(--fg-dim);background:var(--bg3);border-radius:4px;
+}
 .capture-form label{color:var(--fg-dim);font-size:11px;min-width:52px}
 .capture-form select{flex:1;background:var(--bg2);border:1px solid var(--line);border-radius:4px;padding:3px 5px}
 .capture-form .preview{

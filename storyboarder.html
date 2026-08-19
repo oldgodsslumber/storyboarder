@@ -27,6 +27,10 @@
   --hl1:rgba(91,141,255,.20);
   --hl2:rgba(91,141,255,.36);
   --hl3:rgba(255,179,71,.42);
+  /* a scene's claim on a section — teal, because blue is the shot wash and
+     amber is already the comment underline and the selected card */
+  --scene:#3fb99a;
+  --scene-on:#7ee0c4;
   --card-radius:8px;
   /* how much of a card's colour shows through it */
   --card-tint:20%;
@@ -53,6 +57,8 @@
   --hl1:rgba(37,99,235,.15);
   --hl2:rgba(37,99,235,.30);
   --hl3:rgba(180,83,9,.30);
+  --scene:#0f766e;
+  --scene-on:#14b8a6;
   /* the same hues sit heavier on a light surface, so less of them */
   --card-tint:13%;
   --card-tint-strong:24%;
@@ -165,6 +171,9 @@ button,input,select,textarea{font:inherit;color:inherit}
   background:transparent;border:1px solid transparent;border-radius:4px;padding:2px 5px;
   resize:vertical;min-height:24px;color:var(--fg-dim);font-size:12px;
 }
+.scene-head .scene-script{margin-top:3px}
+.scene-head .box-label{padding:2px 4px 0}
+.scene-head .script-box.scene-script-box{margin:1px 0 2px;max-height:110px}
 .scene-head input:hover,.scene-head textarea:hover{border-color:var(--line)}
 .scene-head input:focus,.scene-head textarea:focus{outline:none;border-color:var(--accent);background:var(--bg)}
 .scene-actions{display:flex;gap:4px}
@@ -326,6 +335,8 @@ button,input,select,textarea{font:inherit;color:inherit}
 
 /* ---------- master script ---------- */
 .script-hint{padding:6px 8px;color:var(--fg-dim);font-size:11px;border-bottom:1px solid var(--line)}
+.script-hint .hint-scene{color:var(--scene-on)}
+.script-hint .hint-cov{display:block;margin-top:2px;color:var(--fg)}
 .master-script{
   flex:1;overflow:auto;padding:10px 12px;white-space:pre-wrap;word-wrap:break-word;
   font-size:13.5px;line-height:1.6;background:var(--bg);
@@ -338,7 +349,22 @@ button,input,select,textarea{font:inherit;color:inherit}
 .master-script .h1{background:var(--hl1);border-radius:2px}
 .master-script .h2{background:var(--hl2);border-radius:2px}
 .master-script .h3{background:var(--hl3);border-radius:2px}
-.master-script .hactive{box-shadow:inset 0 -2px 0 var(--accent2)}
+/* Two coverage layers land on the same characters and both have to stay
+ * readable: the background wash says how many SHOTS cover a character, the rule
+ * along the TOP says a SCENE claims it — the loose early pass, which is often
+ * there before any shot is. The bottom rule stays the selected card.
+ * Everything here paints the whole span rather than its edges: renderHTML
+ * splits a run wherever any class changes, so a border would sprout ends
+ * mid-section wherever a shot wash starts. One box-shadow is built from custom
+ * properties because a second declaration would replace the first, not add. */
+.master-script span{
+  --sc-top:0 0 transparent;
+  --sh-bot:0 0 transparent;
+  box-shadow:var(--sc-top),var(--sh-bot);
+}
+.master-script .scov{--sc-top:inset 0 3px 0 var(--scene)}
+.master-script .scov-on{--sc-top:inset 0 4px 0 var(--scene-on)}
+.master-script .hactive{--sh-bot:inset 0 -2px 0 var(--accent2)}
 /* a commented phrase is underlined, so it still reads under a capture wash */
 .master-script .cmt{
   text-decoration:underline;
@@ -388,6 +414,11 @@ body.comment-mode .master-script .cmt{cursor:pointer}
   display:flex;flex-direction:column;gap:6px;
 }
 .capture-form .row{display:flex;gap:6px;align-items:center}
+.capture-form .cap-mode .mini.on{border-color:var(--accent);color:var(--fg)}
+.capture-form .cap-note{
+  margin:4px 0 2px;padding:5px 6px;font-size:11px;line-height:1.45;
+  color:var(--fg-dim);background:var(--bg3);border-radius:4px;
+}
 .capture-form label{color:var(--fg-dim);font-size:11px;min-width:52px}
 .capture-form select{flex:1;background:var(--bg2);border:1px solid var(--line);border-radius:4px;padding:3px 5px}
 .capture-form .preview{
@@ -666,7 +697,7 @@ body.comment-mode .frame{cursor:crosshair}
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-08-19 15:30 · bd1bcd9+";</script>
+<script>window.SB_BUILD = "2026-08-19 23:53 · 806bf9a+";</script>
 
 <div id="app">
 
@@ -725,10 +756,12 @@ body.comment-mode .frame{cursor:crosshair}
         <button id="btnUndo" class="mini" title="Undo script edit (Ctrl+Z)">↶</button>
         <button id="btnRedo" class="mini" title="Redo script edit (Ctrl+Shift+Z)">↷</button>
         <button id="btnScriptNote" class="mini hidden" disabled title="Select some text in the script first">+ Comment</button>
-        <button id="btnCapture" class="mini primary" disabled title="Select some text in the script first">Capture shot</button>
+        <button id="btnCapture" class="mini primary" disabled title="Select some text in the script first">Capture</button>
       </div>
       <div class="script-hint">
-        Select text below, then <b>Capture shot</b>. Highlighted text is already driving a shot.
+        Select text below, then <b>Capture</b>. A <b>wash</b> means a shot covers it;
+        a <b class="hint-scene">teal rule above the line</b> means a scene claims that section.
+        <span id="scriptCoverage" class="hint-cov"></span>
       </div>
       <div id="masterScript" class="master-script" contenteditable="true" spellcheck="true"></div>
       <div id="captureForm" class="capture-form hidden"></div>
@@ -2269,8 +2302,21 @@ window.SB = window.SB || {};
     };
   }
 
+  /* A scene can claim a stretch of the master script of its own — the loose,
+   * early pass, before anyone knows what the shots are. It is independent of
+   * whatever its shots point at: they may overlap it, or sit outside it, or not
+   * exist yet. Unlike a shot, a scene starts with NO script at all — an empty
+   * local doc here would have every scene claiming to have one. */
   function newScene(heading) {
-    return { id: SB.uid('sc'), heading: heading || 'New scene', description: '', shots: [] };
+    return {
+      id: SB.uid('sc'),
+      heading: heading || 'New scene',
+      description: '',
+      link: null,          // {from,to} into master
+      local: null,         // its own doc once the link is broken; null = untied
+      broken: false,
+      shots: []
+    };
   }
 
   /* How this board prints. Kept in the file rather than in localStorage so a
@@ -2342,6 +2388,11 @@ window.SB = window.SB || {};
     const at = SB.Doc.foldEOL(core.master);
     if (at) {
       (core.scenes || []).forEach(function (sc) {
+        if (sc && sc.link && typeof sc.link.from === 'number') {
+          sc.link.from = at(sc.link.from);
+          sc.link.to = at(sc.link.to);
+          if (sc.link.to <= sc.link.from) sc.broken = true;
+        }
         (sc.shots || []).forEach(function (sh) {
           if (!sh || !sh.link || typeof sh.link.from !== 'number') return;
           sh.link.from = at(sh.link.from);
@@ -2356,8 +2407,9 @@ window.SB = window.SB || {};
         if (c.to <= c.from) c.broken = true;
       });
     }
-    /* A freestanding card owns its own text, with no anchors into it. */
+    /* A freestanding card or scene owns its own text, with no anchors into it. */
     (core.scenes || []).forEach(function (sc) {
+      if (sc && !sc.link && sc.local) SB.Doc.foldEOL(sc.local);
       (sc.shots || []).forEach(function (sh) {
         if (sh && !sh.link && sh.local) SB.Doc.foldEOL(sh.local);
       });
@@ -2470,6 +2522,20 @@ window.SB = window.SB || {};
       sc.id = sc.id || SB.uid('sc');
       sc.heading = sc.heading || '';
       sc.description = sc.description || '';
+      /* An older board has no section on any scene, and must not be given one:
+       * untied is the resting state, so only what is already there is kept. */
+      sc.link = sc.link && typeof sc.link.from === 'number' ? sc.link : null;
+      if (sc.link) {
+        sc.link.from = SB.clamp(sc.link.from, 0, p.master.text.length);
+        sc.link.to = SB.clamp(sc.link.to, sc.link.from, p.master.text.length);
+        sc.local = null;
+      } else if (sc.local && typeof sc.local.text === 'string') {
+        sc.local.marks = sc.local.marks || { b: [], i: [], u: [] };
+        ['b', 'i', 'u'].forEach(function (t) { sc.local.marks[t] = sc.local.marks[t] || []; });
+      } else {
+        sc.local = null;
+      }
+      sc.broken = !!sc.broken;
       sc.shots = Array.isArray(sc.shots) ? sc.shots : [];
       sc.shots.forEach(function (sh) {
         sh.id = sh.id || SB.uid('sh');
@@ -2534,10 +2600,22 @@ window.SB = window.SB || {};
     return { doc: shot.local, from: 0, to: shot.local.text.length, linked: false };
   }
 
+  /* The same for a scene — null when it has claimed nothing, which is where
+   * most scenes stay, so every caller has to be ready for it. */
+  function windowForScene(p, scene) {
+    if (!scene) return null;
+    if (scene.link) return { doc: p.master, from: scene.link.from, to: scene.link.to, linked: true };
+    if (scene.local) return { doc: scene.local, from: 0, to: scene.local.text.length, linked: false };
+    return null;
+  }
+
+  function sceneTied(scene) { return !!(scene && (scene.link || scene.local)); }
+
   /* The one place master-script text changes.
-   * sourceShotId = the shot whose box the user typed in (null = typed in master).
+   * sourceShotId  = the shot whose box the user typed in (null = typed in master).
+   * sourceSceneId = likewise for a scene's own section box.
    */
-  function applyMasterEdit(p, start, end, text, sourceShotId) {
+  function applyMasterEdit(p, start, end, text, sourceShotId, sourceSceneId) {
     if (SB.History) SB.History.push('master:' + (sourceShotId || ''));
     /* Fold before op.len is taken, not inside Doc.replace: every anchor below
      * is mapped through that length, so measuring the un-folded string would
@@ -2565,6 +2643,20 @@ window.SB = window.SB || {};
       sh.link.to = Math.max(nf, nt);
       if (sh.link.to <= sh.link.from) sh.broken = true;
       else if (sh.broken && sh.link.to > sh.link.from) sh.broken = false;
+    });
+
+    /* A scene's claim is a coarse container: text typed against either edge in
+     * the master belongs to the section, and typing inside the scene's own box
+     * grows it at both edges the way a shot's box does. */
+    p.scenes.forEach(function (sc) {
+      if (!sc.link) return;
+      const own = sc.id === sourceSceneId;
+      const nf = SB.Doc.mapPos(sc.link.from, start, end, op.len, own ? true : false);
+      const nt = SB.Doc.mapPos(sc.link.to, start, end, op.len, false);
+      sc.link.from = Math.min(nf, nt);
+      sc.link.to = Math.max(nf, nt);
+      if (sc.link.to <= sc.link.from) sc.broken = true;
+      else if (sc.broken && sc.link.to > sc.link.from) sc.broken = false;
     });
 
     /* A note on a phrase should not swallow text typed against its edges, so
@@ -2607,6 +2699,67 @@ window.SB = window.SB || {};
     shot.link = null;
     shot.broken = false;
     p.updatedAt = Date.now();
+  }
+
+  /* ---------- a scene's own section of the script ---------- */
+
+  /* Edit routed from a scene's section box (local coords). */
+  function applySceneEdit(p, scene, lStart, lEnd, text) {
+    text = SB.Doc.eol(text);
+    if (scene.link) {
+      return applyMasterEdit(p, scene.link.from + lStart, scene.link.from + lEnd,
+        text, null, scene.id);
+    }
+    if (!scene.local) return null;
+    if (SB.History) SB.History.push('scenelocal:' + scene.id);
+    SB.Doc.replace(scene.local, lStart, lEnd, text);
+    p.updatedAt = Date.now();
+    return { start: lStart, end: lEnd, len: text.length };
+  }
+
+  function breakSceneLink(p, scene) {
+    if (!scene.link) return;
+    if (SB.History) { SB.History.seal(); SB.History.push('scenebreak:' + scene.id); SB.History.seal(); }
+    const w = windowForScene(p, scene);
+    scene.local = {
+      text: p.master.text.slice(w.from, w.to),
+      marks: SB.Doc.sliceMarks(p.master, w.from, w.to)
+    };
+    scene.link = null;
+    scene.broken = false;
+    p.updatedAt = Date.now();
+  }
+
+  /* Claim [from,to) of the master for a scene. `widen` keeps whatever the scene
+   * already had and stretches to cover both, which is how a section gets claimed
+   * a paragraph at a time. */
+  function tieScene(p, sceneId, from, to, widen) {
+    const f = findScene(p, sceneId);
+    if (!f) return null;
+    from = SB.clamp(from | 0, 0, p.master.text.length);
+    to = SB.clamp(to | 0, from, p.master.text.length);
+    if (to <= from) return null;
+    if (widen && f.scene.link && !f.scene.broken) {
+      from = Math.min(from, f.scene.link.from);
+      to = Math.max(to, f.scene.link.to);
+    }
+    f.scene.link = { from: from, to: to };
+    f.scene.local = null;
+    f.scene.broken = false;
+    p.updatedAt = Date.now();
+    return f.scene;
+  }
+
+  /* Give the section back — the scene keeps its heading, description and shots.
+   * A shot cannot do this; a scene with no script is the normal state. */
+  function untieScene(p, sceneId) {
+    const f = findScene(p, sceneId);
+    if (!f) return null;
+    f.scene.link = null;
+    f.scene.local = null;
+    f.scene.broken = false;
+    p.updatedAt = Date.now();
+    return f.scene;
   }
 
   /* ---------- notes on the script ---------- */
@@ -2660,6 +2813,28 @@ window.SB = window.SB || {};
       for (let i = sh.link.from; i < sh.link.to && i < n; i++) if (d[i] < 250) d[i]++;
     });
     return d;
+  }
+
+  /* How many scenes claim each master character. The loose layer: this is what
+   * says a stretch of script is spoken for before any shot exists. */
+  function sceneCoverage(p) {
+    const n = p.master.text.length;
+    const d = new Uint8Array(n);
+    p.scenes.forEach(function (sc) {
+      if (!sc.link || sc.broken) return;
+      for (let i = sc.link.from; i < sc.link.to && i < n; i++) if (d[i] < 250) d[i]++;
+    });
+    return d;
+  }
+
+  /* What share of the script any scene has claimed, 0..1 — the answer to "have
+   * I covered it all yet?" without counting spans by eye. */
+  function sceneCoverageShare(p) {
+    const d = sceneCoverage(p);
+    if (!d.length) return 0;
+    let hit = 0;
+    for (let i = 0; i < d.length; i++) if (d[i]) hit++;
+    return hit / d.length;
   }
 
   /* ---------- structure ---------- */
@@ -2788,9 +2963,11 @@ window.SB = window.SB || {};
     sc.shots = order;
     p.scenes.splice(afterIdx + 1, 0, sc);
     /* A scene emptied BY THIS is noise on the board. An empty scene the user
-     * made on purpose somewhere else is not ours to delete. */
+     * made on purpose somewhere else is not ours to delete — and neither is one
+     * holding a claim on the script, which is a deliberate mark that outlives
+     * whichever cards happened to be sitting in it. */
     p.scenes = p.scenes.filter(function (s) {
-      return s.shots.length || sources.indexOf(s) < 0;
+      return s.shots.length || sources.indexOf(s) < 0 || sceneTied(s);
     });
     if (!p.scenes.length) p.scenes.push(sc);
     p.updatedAt = Date.now();
@@ -2823,6 +3000,10 @@ window.SB = window.SB || {};
     eachShot: eachShot, code: code, findShot: findShot, findScene: findScene,
     windowFor: windowFor, applyMasterEdit: applyMasterEdit, applyShotEdit: applyShotEdit,
     breakLink: breakLink, coverage: coverage,
+    windowForScene: windowForScene, sceneTied: sceneTied,
+    applySceneEdit: applySceneEdit, breakSceneLink: breakSceneLink,
+    tieScene: tieScene, untieScene: untieScene,
+    sceneCoverage: sceneCoverage, sceneCoverageShare: sceneCoverageShare,
     addScriptComment: addScriptComment, deleteScriptComment: deleteScriptComment,
     scriptComments: scriptComments, commentCoverage: commentCoverage,
     addScene: addScene, deleteScene: deleteScene, addShot: addShot, deleteShot: deleteShot,
@@ -3449,7 +3630,7 @@ window.SB = window.SB || {};
  *
  * The editor suppresses the browser's own undo (we own the DOM), so this
  * supplies it. A step snapshots the script layer only: the master document
- * plus every shot's link range / freestanding text. Structural changes —
+ * plus every shot's and scene's link range / freestanding text. Structural changes —
  * adding, deleting or moving shots and scenes — are deliberately NOT undone,
  * so Ctrl+Z can never make a card disappear out from under you.
  *
@@ -3475,10 +3656,23 @@ window.SB = window.SB || {};
         local: s.local ? SB.clone(s.local) : null
       });
     });
+    /* A scene's claim on a stretch of script is anchored into the same text, so
+     * it belongs to this layer too — without it, undo puts the old text back
+     * while every claim stays mapped forward against text that no longer
+     * exists. Which scenes exist is structural and is left alone. */
+    const scenes = p.scenes.map(function (sc) {
+      return {
+        id: sc.id,
+        link: sc.link ? { from: sc.link.from, to: sc.link.to } : null,
+        broken: !!sc.broken,
+        local: sc.local ? SB.clone(sc.local) : null
+      };
+    });
     return {
       text: p.master.text,
       marks: SB.clone(p.master.marks),
       shots: shots,
+      scenes: scenes,
       /* notes are anchored into the same text, so they have to move back with it */
       notes: SB.clone(p.scriptComments || [])
     };
@@ -3496,6 +3690,15 @@ window.SB = window.SB || {};
       sh.link = x.link ? { from: x.link.from, to: x.link.to } : null;
       sh.broken = x.broken;
       sh.local = x.local ? SB.clone(x.local) : null;
+    });
+    const scById = {};
+    (s.scenes || []).forEach(function (x) { scById[x.id] = x; });
+    p.scenes.forEach(function (sc) {
+      const x = scById[sc.id];
+      if (!x) return;                    // scene created after this snapshot
+      sc.link = x.link ? { from: x.link.from, to: x.link.to } : null;
+      sc.broken = x.broken;
+      sc.local = x.local ? SB.clone(x.local) : null;
     });
   }
 
@@ -3843,8 +4046,10 @@ window.SB = window.SB || {};
   const DND_SCENE = 'application/x-sb-scene';
 
   const B = {
-    scriptEditors: {},   // shotId -> editor api
-    scriptEls: {}        // shotId -> element
+    scriptEditors: {},        // shotId -> editor api
+    scriptEls: {},            // shotId -> element
+    sceneScriptEditors: {},   // sceneId -> editor api, for a scene's own section
+    sceneScriptEls: {}        // sceneId -> element
   };
 
   /* Scene-level AI state, per scene id and only for this session: the text a
@@ -3925,7 +4130,11 @@ window.SB = window.SB || {};
       t.innerHTML = '<span class="num">' + (idx + 1) + '</span><span class="ttl">' +
         SB.esc(sc.heading || '(untitled scene)') + '</span>';
       it.appendChild(t);
-      it.appendChild(SB.el('div', 'cnt', sc.shots.length + ' shot' + (sc.shots.length === 1 ? '' : 's')));
+      /* Which sections are claimed, answerable without opening the script. */
+      const claim = sc.link && !sc.broken ? ' · section'
+        : (sc.broken ? ' · section broken' : (sc.local ? ' · own section' : ''));
+      it.appendChild(SB.el('div', 'cnt', sc.shots.length + ' shot' +
+        (sc.shots.length === 1 ? '' : 's') + claim));
 
       it.addEventListener('click', function () {
         SB.app.selectedSceneId = sc.id;
@@ -4044,6 +4253,8 @@ window.SB = window.SB || {};
 
     B.scriptEditors = {};
     B.scriptEls = {};
+    B.sceneScriptEditors = {};
+    B.sceneScriptEls = {};
     const board = document.getElementById('board');
     board.innerHTML = '';
     P().scenes.forEach(function (sc, si) { board.appendChild(sceneBlock(sc, si)); });
@@ -4210,6 +4421,70 @@ window.SB = window.SB || {};
     return row;
   }
 
+  /* A scene's own section of the script — the same box a card gets, so the two
+   * layers behave alike, and only ever present once a scene claims something. */
+  function sceneScriptBox(sc) {
+    const wrap = SB.el('div', 'scene-script');
+    const linked = !!sc.link;
+
+    const lbl = SB.el('div', 'box-label');
+    lbl.appendChild(SB.el('span', 'link-dot' + (sc.broken ? ' broken' : (linked ? '' : ' free'))));
+    lbl.appendChild(SB.el('span', null, sc.broken ? 'section — link broken'
+      : (linked ? 'section — linked' : 'section — freestanding')));
+
+    const la = SB.el('div', 'lbl-actions');
+    if (linked) {
+      const bl = SB.el('button', null, 'break link');
+      bl.title = 'Stop syncing with the master script; keep the text as this scene’s own';
+      bl.onclick = function () {
+        SB.Model.breakSceneLink(P(), sc);
+        SB.app.changed(true);
+        SB.ScriptMode.refresh();
+      };
+      la.appendChild(bl);
+      const go = SB.el('button', null, 'show');
+      go.onclick = function () {
+        SB.app.selectedSceneId = sc.id;
+        SB.ScriptMode.open();
+        SB.ScriptMode.scrollToScene();
+      };
+      la.appendChild(go);
+    }
+    /* Letting go of a section is not creating one, so this does not give an
+     * untied scene a way in — it has no label at all. */
+    const rm = SB.el('button', null, linked ? 'untie' : 'remove');
+    rm.title = linked ? 'Forget which part of the script this scene covers'
+      : 'Delete this scene’s own script text';
+    rm.onclick = function () {
+      if (!linked && sc.local && (sc.local.text || '').trim() &&
+        !confirm('Delete this scene’s script text? It is no longer in the master script.')) return;
+      SB.Model.untieScene(P(), sc.id);
+      SB.app.changed(true);
+      SB.ScriptMode.refresh();
+    };
+    la.appendChild(rm);
+    lbl.appendChild(la);
+    wrap.appendChild(lbl);
+
+    const box = SB.el('div', 'script-box scene-script-box' + (sc.broken ? ' broken' : ''));
+    box.dataset.scene = sc.id;
+    B.sceneScriptEls[sc.id] = box;
+    B.sceneScriptEditors[sc.id] = SB.Editor.attach(box, {
+      get: function () {
+        const f = SB.Model.findScene(P(), sc.id);
+        return f ? SB.Model.windowForScene(P(), f.scene) : null;
+      },
+      edit: function (s, e, t) { SB.Model.applySceneEdit(P(), sc, s, e, t); },
+      toggle: function (type, s, e) {
+        const w = SB.Model.windowForScene(P(), sc);
+        if (w) SB.Doc.toggleMark(w.doc, type, w.from + s, w.from + e);
+      },
+      after: function () { SB.app.scriptChanged(); }
+    });
+    wrap.appendChild(box);
+    return wrap;
+  }
+
   function sceneBlock(sc, si) {
     const blk = SB.el('div', 'scene-block');
     blk.dataset.scene = sc.id;
@@ -4233,7 +4508,23 @@ window.SB = window.SB || {};
     d.addEventListener('input', function () { sc.description = d.value; SB.app.changed(false); });
     fields.appendChild(h); fields.appendChild(d);
     fields.appendChild(sceneAi(sc, d));
+    /* Only once the scene actually claims something — an untied scene, which is
+     * most of them, looks exactly as it always did. */
+    if (SB.Model.sceneTied(sc)) fields.appendChild(sceneScriptBox(sc));
     head.appendChild(fields);
+
+    /* Selecting a scene by clicking its header is what makes the Capture form's
+     * scene picker already point at the one you mean. */
+    head.addEventListener('mousedown', function (ev) {
+      if (ev.target.tagName === 'BUTTON' || ev.target.tagName === 'SELECT') return;
+      if (SB.app.selectedSceneId === sc.id) return;
+      SB.app.selectedSceneId = sc.id;
+      renderSceneList();
+      document.querySelectorAll('.scene-head').forEach(function (x) {
+        x.classList.toggle('sel', x.parentNode.dataset.scene === sc.id);
+      });
+      if (SB.ScriptMode.isOpen()) SB.ScriptMode.refresh();
+    });
 
     const acts = SB.el('div', 'scene-actions');
     const bAdd = SB.el('button', 'mini', '+ Shot');
@@ -4246,8 +4537,11 @@ window.SB = window.SB || {};
     bAddScene.onclick = function () { SB.Model.addScene(P(), si); SB.app.changed(true); };
     const bDel = SB.el('button', 'mini danger', 'Delete scene');
     bDel.onclick = function () {
-      if (sc.shots.length && !confirm('Delete "' + (sc.heading || 'scene') + '" and its ' +
-        sc.shots.length + ' shot(s)? Script text stays in the master script.')) return;
+      /* A scene holding a claim but no cards used to delete with no warning. */
+      if ((sc.shots.length || SB.Model.sceneTied(sc)) &&
+        !confirm('Delete "' + (sc.heading || 'scene') + '"' +
+          (sc.shots.length ? ' and its ' + sc.shots.length + ' shot(s)' : '') +
+          '? Script text stays in the master script.')) return;
       SB.Model.deleteScene(P(), sc.id);
       SB.app.changed(true);
     };
@@ -4869,23 +5163,43 @@ window.SB = window.SB || {};
 
   /* ---------------- live script sync ---------------- */
 
+  /* Both kinds of box are built the same way — label then box, appended to the
+   * same parent — so one sync serves them both. */
+  function syncScriptBox(el, api, linked, broken, what) {
+    el.classList.toggle('broken', !!broken);
+    api.render();
+    const lbl = el.previousSibling;
+    if (!lbl || !lbl.classList || !lbl.classList.contains('box-label')) return;
+    const dot = lbl.querySelector('.link-dot');
+    const txt = lbl.querySelector('span:nth-child(2)');
+    if (dot) dot.className = 'link-dot' + (broken ? ' broken' : (linked ? '' : ' free'));
+    if (txt) txt.textContent = what +
+      (broken ? ' — link broken' : (linked ? ' — linked' : ' — freestanding'));
+  }
+
   function renderScriptWindows() {
     Object.keys(B.scriptEditors).forEach(function (id) {
       const f = SB.Model.findShot(P(), id);
       const el = B.scriptEls[id];
       if (!f || !el) return;
-      el.classList.toggle('broken', !!f.shot.broken);
-      B.scriptEditors[id].render();
-      const lbl = el.previousSibling;
-      if (lbl && lbl.classList && lbl.classList.contains('box-label')) {
-        const dot = lbl.querySelector('.link-dot');
-        const txt = lbl.querySelector('span:nth-child(2)');
-        const linked = !!f.shot.link;
-        if (dot) dot.className = 'link-dot' + (f.shot.broken ? ' broken' : (linked ? '' : ' free'));
-        if (txt) txt.textContent = f.shot.broken ? 'script — link broken' :
-          (linked ? 'script — linked' : 'script — freestanding');
-      }
+      syncScriptBox(el, B.scriptEditors[id], !!f.shot.link, !!f.shot.broken, 'script');
     });
+
+    /* Undo can hand a scene back a claim it no longer has a box for, or take
+     * one away from a scene that still shows one — only a full render can add
+     * or remove the box itself. */
+    let drift = false;
+    Object.keys(B.sceneScriptEditors).forEach(function (id) {
+      const f = SB.Model.findScene(P(), id);
+      const el = B.sceneScriptEls[id];
+      if (!f || !el) return;
+      if (!SB.Model.sceneTied(f.scene)) { drift = true; return; }
+      syncScriptBox(el, B.sceneScriptEditors[id], !!f.scene.link, !!f.scene.broken, 'section');
+    });
+    P().scenes.forEach(function (sc) {
+      if (SB.Model.sceneTied(sc) && !B.sceneScriptEls[sc.id]) drift = true;
+    });
+    if (drift) render();
   }
 
   SB.Board = {
@@ -4916,7 +5230,9 @@ window.SB = window.SB || {};
   let masterEl, editor, capBtn, form, panel;
   let noteBtn, noteForm, noteListEl;
   let cover = null;          // Uint8Array shot coverage over master text
+  let scov = null;           // Uint8Array scene coverage — the loose layer
   let notes = null;          // Uint8Array comment coverage
+  let sceneRange = null;     // selected scene's claim, drawn brighter
   let activeRange = null;    // selected shot's range, drawn with an underline
   let activeNote = null;     // the note being looked at
   let pendingSel = null;     // range captured when the user clicked "Capture shot"
@@ -5006,7 +5322,7 @@ window.SB = window.SB || {};
       lastSel.to <= (P() ? P().master.text.length : 0));
     capBtn.disabled = !ok;
     capBtn.title = ok
-      ? 'Make a shot from the selected text'
+      ? 'Make a shot from the selected text, or tie it to a scene'
       : 'Select some text in the script first';
     if (noteBtn) {
       noteBtn.classList.toggle('hidden', !SB.app.commentMode);
@@ -5024,11 +5340,15 @@ window.SB = window.SB || {};
     syncCaptureBtn();
   }
 
-  /* Captures are a background wash, notes are an underline — so a phrase that
-   * is both still reads as both. */
+  /* Shots are a background wash, scenes are a rule above the line, notes are an
+   * underline — so a phrase that is all three still reads as all three. */
   function extraClass(i) {
     let c = '';
     if (cover && i < cover.length && cover[i] > 0) c = 'h' + Math.min(3, cover[i]);
+    if (scov && i < scov.length && scov[i] > 0) {
+      const on = sceneRange && i >= sceneRange.from && i < sceneRange.to;
+      c += (c ? ' ' : '') + (on ? 'scov scov-on' : 'scov');
+    }
     if (activeRange && i >= activeRange.from && i < activeRange.to) c += (c ? ' ' : '') + 'hactive';
     if (notes && i < notes.length && notes[i] > 0) c += (c ? ' ' : '') + 'cmt';
     if (activeNote && i >= activeNote.from && i < activeNote.to) c += (c ? ' ' : '') + 'cmt-on';
@@ -5038,7 +5358,15 @@ window.SB = window.SB || {};
   function refresh() {
     if (!masterEl || !P()) return;
     cover = SB.Model.coverage(P());
+    scov = SB.Model.sceneCoverage(P());
     notes = SB.Model.commentCoverage(P());
+    sceneRange = null;
+    if (SB.app.selectedSceneId) {
+      const fs = SB.Model.findScene(P(), SB.app.selectedSceneId);
+      if (fs && fs.scene.link && !fs.scene.broken) {
+        sceneRange = { from: fs.scene.link.from, to: fs.scene.link.to };
+      }
+    }
     activeRange = null;
     if (SB.app.selectedShotId) {
       const f = SB.Model.findShot(P(), SB.app.selectedShotId);
@@ -5051,7 +5379,18 @@ window.SB = window.SB || {};
     }
     editor.render();
     renderNotes();
+    syncCoverage();
     syncCaptureBtn();
+  }
+
+  /* "Have I covered it all yet?" answered rather than counted by eye. */
+  function syncCoverage() {
+    const el = document.getElementById('scriptCoverage');
+    if (!el) return;
+    const share = SB.Model.sceneCoverageShare(P());
+    el.textContent = P().master.text.length
+      ? 'Scenes claim ' + Math.round(share * 100) + '% of the script.'
+      : '';
   }
 
   function open() {
@@ -5071,6 +5410,12 @@ window.SB = window.SB || {};
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
 
+  function scrollToScene() {
+    refresh();
+    const el = masterEl.querySelector('.scov-on');
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
   /* ---------- capture form ---------- */
 
   function showForm() {
@@ -5084,7 +5429,30 @@ window.SB = window.SB || {};
     const prev = SB.el('div', 'preview', text);
     form.appendChild(prev);
 
-    const r1 = SB.el('div', 'row');
+    /* A selection can become a shot — a picture on a fragment — or a scene's
+     * claim on a whole section, which is the looser, earlier way in: you know
+     * roughly where this stretch belongs long before you know the shots. */
+    let mode = 'shot';
+    const r0 = SB.el('div', 'row cap-mode');
+    r0.appendChild(SB.el('label', null, 'Make'));
+    const bShot = SB.el('button', 'mini on', 'a shot');
+    bShot.dataset.mode = 'shot';
+    bShot.title = 'A card anchored to exactly this text';
+    const bScene = SB.el('button', 'mini', 'a scene section');
+    bScene.dataset.mode = 'scene';
+    bScene.title = 'Mark this stretch as covered by a scene — independent of any shots in it';
+    [bShot, bScene].forEach(function (b) {
+      b.onclick = function () {
+        mode = b.dataset.mode;
+        bShot.classList.toggle('on', mode === 'shot');
+        bScene.classList.toggle('on', mode === 'scene');
+        applyMode();
+      };
+      r0.appendChild(b);
+    });
+    form.appendChild(r0);
+
+    const r1 = SB.el('div', 'row row-type');
     r1.appendChild(SB.el('label', null, 'Shot type'));
     const tsel = document.createElement('select');
     p.settings.shotTypes.forEach(function (t) {
@@ -5106,7 +5474,7 @@ window.SB = window.SB || {};
     r2.appendChild(ssel);
     form.appendChild(r2);
 
-    const r3 = SB.el('div', 'row');
+    const r3 = SB.el('div', 'row row-noshot');
     const nsLbl = SB.el('label', null, '');
     nsLbl.style.minWidth = '0';
     const ns = document.createElement('input');
@@ -5116,12 +5484,69 @@ window.SB = window.SB || {};
     r3.appendChild(nsLbl);
     form.appendChild(r3);
 
+    const note = SB.el('div', 'cap-note hidden');
+    form.appendChild(note);
+
     const r4 = SB.el('div', 'row');
     r4.appendChild(SB.el('span', 'spacer'));
     const cancel = SB.el('button', 'mini', 'Cancel');
+    cancel.dataset.act = 'cancel';
     cancel.onclick = hideForm;
+    const extend = SB.el('button', 'mini hidden', 'Widen');
+    extend.dataset.act = 'widen';
+    extend.title = 'Keep what this scene already claims and stretch it to cover both';
     const done = SB.el('button', 'mini primary', 'Complete');
+    done.dataset.act = 'complete';
+
+    /* What the chosen scene is holding right now decides what the buttons can
+     * honestly offer. */
+    function chosenScene() {
+      const f = SB.Model.findScene(P(), ssel.value);
+      return f ? f.scene : null;
+    }
+
+    function applyMode() {
+      const scene = mode === 'scene';
+      r1.classList.toggle('hidden', scene);
+      r3.classList.toggle('hidden', scene);
+      const sc = scene ? chosenScene() : null;
+      const linked = !!(sc && sc.link && !sc.broken);
+      extend.classList.toggle('hidden', !linked);
+      done.textContent = !scene ? 'Complete' : (linked ? 'Replace' : 'Tie to scene');
+      note.classList.toggle('hidden', !scene || !sc || !(linked || sc.local));
+      if (!scene || !sc) return;
+      if (linked) {
+        const gap = pendingSel.from > sc.link.to ? pendingSel.from - sc.link.to
+          : (sc.link.from > pendingSel.to ? sc.link.from - pendingSel.to : 0);
+        note.textContent = 'This scene already claims ' + (sc.link.to - sc.link.from) +
+          ' characters. Widen keeps both' +
+          (gap ? ', and takes in the ' + gap + ' characters between them' : '') +
+          '; Replace swaps in the selection.';
+      } else if (sc.local) {
+        note.textContent = 'This scene’s script was unlinked from the master. Tying it here ' +
+          'replaces ' + sc.local.text.length + ' characters of its own text.';
+      }
+    }
+    ssel.onchange = applyMode;
+
+    function tie(widen) {
+      const sc = chosenScene();
+      if (sc && !sc.link && sc.local && (sc.local.text || '').trim() &&
+        !confirm('Replace this scene’s own script text with the selection?')) return;
+      const tied = SB.Model.tieScene(P(), ssel.value, pendingSel.from, pendingSel.to, widen);
+      hideForm();
+      if (!tied) return;
+      SB.app.selectedSceneId = tied.id;
+      SB.app.changed(true);
+      refresh();
+      const el = document.querySelector('.scene-block[data-scene="' + tied.id + '"]');
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      SB.toast('Scene claims ' + (tied.link.to - tied.link.from) + ' characters of script');
+    }
+    extend.onclick = function () { tie(true); };
+
     done.onclick = function () {
+      if (mode === 'scene') { tie(false); return; }
       const sh = SB.Model.addShot(P(), ssel.value, {
         type: tsel.value,
         noShot: ns.checked,
@@ -5131,12 +5556,16 @@ window.SB = window.SB || {};
       if (sh) {
         SB.app.selectedShotId = sh.id;
         SB.app.changed(true);
+        /* changed() rebuilds the board but not the master editor, so without
+         * this the new wash does not show until the next script edit. */
+        refresh();
         const el = document.querySelector('.card[data-shot="' + sh.id + '"]');
         if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }
     };
-    r4.appendChild(cancel); r4.appendChild(done);
+    r4.appendChild(cancel); r4.appendChild(extend); r4.appendChild(done);
     form.appendChild(r4);
+    applyMode();
 
     tsel.focus();
   }
@@ -5259,7 +5688,7 @@ window.SB = window.SB || {};
 
   SB.ScriptMode = {
     init: init, refresh: refresh, open: open, close: close, toggle: toggle,
-    isOpen: isOpen, scrollTo: scrollTo,
+    isOpen: isOpen, scrollTo: scrollTo, scrollToScene: scrollToScene,
     invalidateSelection: invalidateSelection, syncCaptureBtn: syncCaptureBtn,
     lastSelection: function () { return lastSel; },
     selectNote: selectNote, showNoteForm: showNoteForm
@@ -5841,7 +6270,17 @@ window.SB = window.SB || {};
 
   /* ---------- context for the call ---------- */
 
+  /* A scene's own claim is a statement of what it covers; stitching its shots'
+   * windows together is a guess derived from them. Prefer the claim — and in
+   * the case this feature exists for, a scene with no shots yet, it is the only
+   * script there is. Preferred, not unioned: shot ranges usually sit inside the
+   * claimed stretch, so concatenating would send the model the same text twice. */
   function sceneScript(p, sc) {
+    const sw = SB.Model.windowForScene(p, sc);
+    if (sw) {
+      const t = (sw.doc.text || '').slice(sw.from, sw.to).replace(/\s+/g, ' ').trim();
+      if (t) return t;
+    }
     const bits = [];
     sc.shots.forEach(function (sh) {
       const w = SB.Model.windowFor(p, sh);
@@ -5973,7 +6412,11 @@ window.SB = window.SB || {};
       '',
       note ? 'ADDITIONAL DIRECTION: ' + note + '\n' : '',
       'SCENE ' + (idx + 1) + ': ' + (sc.heading || '(untitled)'),
-      'DESCRIPTION:\n' + sc.description.trim()
+      /* With a section claimed and no description written, the script IS the
+       * brief — an empty DESCRIPTION block would just read as a blank order. */
+      (sc.description || '').trim()
+        ? 'DESCRIPTION:\n' + sc.description.trim()
+        : 'There is no scene description. Board directly from the script this scene covers, below.'
     ];
 
     neighbours(p, idx).forEach(function (l) { lines.push(l); });
@@ -6031,8 +6474,11 @@ window.SB = window.SB || {};
     let f;
     try { f = sceneOf(p, sceneId); } catch (e) { return Promise.reject(e); }
     const sc = f.scene;
-    if (!(sc.description || '').trim()) {
-      return Promise.reject(new Error('Write a scene description first — the shots are built from it.'));
+    /* Either brief will do: a description written by hand, or a stretch of the
+     * script this scene has claimed — which is the whole point of claiming one. */
+    if (!(sc.description || '').trim() && !sceneScript(p, sc)) {
+      return Promise.reject(new Error('Write a scene description first, or tie this scene to a ' +
+        'stretch of the master script — the shots are built from one of them.'));
     }
     const miss = needKey();
     if (miss) return Promise.reject(miss);
@@ -6150,7 +6596,8 @@ window.SB = window.SB || {};
   SB.Coverage = {
     MIN: MIN, MAX: MAX,
     generate: generate, rewrite: rewrite, undo: undo,
-    matchType: matchType, ensureSubject: ensureSubject, isBlank: isBlank
+    matchType: matchType, ensureSubject: ensureSubject, isBlank: isBlank,
+    sceneScript: sceneScript
   };
 
 })(window.SB);

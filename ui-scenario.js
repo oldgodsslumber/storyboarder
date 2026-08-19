@@ -1209,6 +1209,92 @@
           box && box.textContent === want, box ? JSON.stringify(box.textContent) : 'no card');
       })();
 
+      /* A scene can claim a stretch of script of its own — the loose early pass,
+       * where you know roughly where a section belongs long before the shots. */
+      (function () {
+        const master = document.getElementById('masterScript');
+        const sc0 = P().scenes[0];
+        const claimed = 'Line one.';
+
+        SB.Model.tieScene(P(), sc0.id, 0, claimed.length);
+        app.selectedSceneId = sc0.id;
+        app.changed(true);
+        SB.ScriptMode.open();
+        SB.ScriptMode.refresh();
+
+        t('a claimed section is marked in the master script',
+          master.querySelectorAll('.scov').length > 0, master.innerHTML.slice(0, 240));
+        t('and the panel says how much is claimed',
+          /\d+% of the script/.test(document.getElementById('scriptCoverage').textContent),
+          document.getElementById('scriptCoverage').textContent);
+
+        const sbox = document.querySelector('.script-box[data-scene="' + sc0.id + '"]');
+        t('the scene header grows a section box', sbox !== null, '');
+        t('showing the text it claims', sbox && sbox.textContent === claimed,
+          sbox ? JSON.stringify(sbox.textContent) : 'no box');
+
+        /* Everything in this scenario runs inside the coalescing window, so
+           without a seal the whole run would collapse into one undo step. */
+        SB.History.seal();
+        sbox.focus();
+        SB.Editor.setSel(sbox, claimed.length, claimed.length);
+        sbox.dispatchEvent(new InputEvent('beforeinput',
+          { inputType: 'insertText', data: '!!', bubbles: true, cancelable: true }));
+        t('typing in it writes through to the master',
+          P().master.text.indexOf('Line one.!!') === 0, P().master.text.slice(0, 20));
+
+        /* The claim is anchored into the text being undone, so it has to travel
+         * back with it — otherwise Ctrl+Z leaves it pointing past the end. */
+        SB.History.undo();
+        t('undo takes the text back',
+          P().master.text.indexOf('Line one.\n') === 0, P().master.text.slice(0, 20));
+        t('and the claim with it, still framing its own words',
+          P().master.text.slice(P().scenes[0].link.from, P().scenes[0].link.to) === claimed,
+          JSON.stringify(P().master.text.slice(P().scenes[0].link.from, P().scenes[0].link.to)));
+
+        const sc1 = SB.Model.addScene(P());
+        app.changed(true);
+        t('a scene that claims nothing shows no section box',
+          document.querySelector('.script-box[data-scene="' + sc1.id + '"]') === null, '');
+
+        /* The two layers land on the same characters and must both survive. */
+        const shotAt = P().master.text.indexOf('THE TARGET');
+        SB.Model.tieScene(P(), sc0.id, shotAt, shotAt + 10, true);
+        app.changed(true);
+        SB.ScriptMode.refresh();
+        t('a stretch covered by both reads as both',
+          master.querySelector('.h1.scov, .h2.scov, .h3.scov') !== null,
+          master.innerHTML.slice(0, 240));
+
+        // the capture form offers the scene as a target
+        master.focus();
+        SB.Editor.setSel(master, 12, 20);
+        const cap = document.getElementById('btnCapture');
+        cap.disabled = false;
+        cap.click();
+        const cf = document.getElementById('captureForm');
+        const bScene = cf.querySelector('[data-mode="scene"]');
+        t('the capture form offers a scene section', bScene !== null, cf.innerHTML.slice(0, 240));
+        bScene.click();
+        t('and choosing it puts the shot type away',
+          cf.querySelector('.row-type').classList.contains('hidden'), '');
+        t('while the scene picker stays', cf.querySelector('select') !== null, '');
+        const before = P().scenes[0].link.from;
+        cf.querySelector('[data-act="complete"]').click();
+        t('completing it moves the claim, and makes no card',
+          P().scenes[0].link.from === 12 && P().scenes[0].link.from !== before,
+          JSON.stringify(P().scenes[0].link));
+
+        // break link — a freestanding section claims nothing in the master
+        SB.Model.breakSceneLink(P(), P().scenes[0]);
+        app.changed(true);
+        SB.ScriptMode.refresh();
+        t('a scene section can be broken off',
+          document.querySelector('.scene-block[data-scene="' + sc0.id + '"] .link-dot.free') !== null, '');
+        t('and then claims none of the master',
+          master.querySelectorAll('.scov').length === 0, master.innerHTML.slice(0, 240));
+      })();
+
       // comment mode
       app.commentMode = true;
       SB.Board.render();

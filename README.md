@@ -91,6 +91,38 @@ amber = three or more. The selected card's range gets an amber underline.
 dropdown, or anything else) in between doesn't lose it — the button only goes dark when
 there is genuinely nothing selected. Any edit to the script clears it.
 
+### Scene sections — claiming a stretch before you know the shots
+
+Anchoring a shot to script text assumes you already know the shot. Coming out of the
+Premiere panel you do. Early on you don't: you read the script and think *"this stretch is
+Scene 3, I'll work out the shots later."* A **scene section** is that thought, written down.
+
+Select some script, press **Capture**, and choose **a scene section** instead of a shot. The
+scene now claims that stretch. Nothing else about the scene changes — it keeps its heading,
+its description and whatever shots it already has.
+
+The point is what you can then see. The master script carries two independent layers at once:
+
+- a **background wash** — how many *shots* cover these characters (the precise, later layer)
+- a **teal rule above the line** — a *scene* claims this section (the loose, earlier one),
+  brighter on the scene you have selected
+
+They are genuinely independent. A scene's claim may overlap any number of its shots' ranges,
+sit beside them, or exist with no shots at all — nothing is kept "consistent" behind your
+back. The panel also reports what share of the script any scene has claimed, so *"have I
+covered it all yet?"* is answerable rather than eyeballed.
+
+A claimed scene grows a script box on its header that behaves exactly like a card's: type in
+it and the master changes, **break link** turns it into the scene's own freestanding text,
+and **untie** hands the section back. One consequence worth knowing: freestanding scene text
+claims *nothing* in the master — no teal rule, and it counts toward no coverage — because the
+whole point of the layer is what is covered **in the master script**. If a scene has drifted
+that way, untie it and capture it again.
+
+Once a scene claims a section, **✦ Generate shots** will board from that script even with no
+scene description written — which is the workflow this exists for: claim a section loosely,
+then ask for shots that cover it.
+
 ### Pasted line endings
 
 Windows puts a carriage return before every newline on the clipboard, so text pasted in

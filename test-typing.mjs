@@ -229,7 +229,7 @@ try {
   await sleep(250);
   t('Capture still works — the selection is latched, not lost',
     await evaluate('return !document.getElementById("captureForm").classList.contains("hidden");'), '');
-  await evaluate('var b=document.querySelector("#captureForm .mini:not(.primary)");if(b)b.click();return 1;');
+  await evaluate('var b=document.querySelector("#captureForm [data-act=\\"cancel\\"]");if(b)b.click();return 1;');
   await sleep(150);
   t('cancelling clears the latch, so Capture goes dark again',
     await evaluate('return document.getElementById("btnCapture").disabled;'), '');

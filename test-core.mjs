@@ -58,6 +58,14 @@ function win(p, sh) {
   const w = SB.Model.windowFor(p, sh);
   return w.doc.text.slice(w.from, w.to);
 }
+function tie(p, from, to, widen) {
+  return SB.Model.tieScene(p, p.scenes[0].id, from, to, widen);
+}
+/* null when the scene claims nothing — a state no shot can be in */
+function swin(p, sc) {
+  const w = SB.Model.windowForScene(p, sc);
+  return w ? w.doc.text.slice(w.from, w.to) : null;
+}
 
 console.log('\n— anchors survive edits elsewhere —');
 {
@@ -1018,6 +1026,158 @@ console.log('\n— a board saved with the CRs still in it is repaired on open �
   eq(snap.master.text, 'One.\nTwo.\nThree.', 'a frozen version is repaired as well');
   eq(snap.master.text.slice(snap.scenes[0].shots[1].link.from, snap.scenes[0].shots[1].link.to),
     'Three.', 'so restoring it does not bring the drift back');
+}
+
+console.log('\n— a scene claims a stretch of script of its own —');
+{
+  const p = projectWith('ONE two THREE four');
+  const sc = p.scenes[0];
+  eq(swin(p, sc), null, 'a scene starts claiming nothing at all');
+  eq(SB.Model.sceneTied(sc), false, 'and knows it');
+
+  tie(p, 0, 7);
+  eq(swin(p, sc), 'ONE two', 'a tie frames the text it points at');
+  eq(Array.from(SB.Model.sceneCoverage(p)).slice(0, 9).join(''), '111111100',
+    'and those characters read as claimed');
+  eq(Math.round(SB.Model.sceneCoverageShare(p) * 100), 39, 'the share is answerable');
+
+  const other = SB.Model.addScene(p);
+  eq(swin(p, other), null, 'a scene added beside it claims nothing');
+}
+
+console.log('\n— a scene range and a shot range are independent —');
+{
+  const p = projectWith('ONE two THREE four');
+  const sc = p.scenes[0];
+  tie(p, 0, 13);                       // "ONE two THREE"
+  const sh = addLinked(p, 8, 13);      // "THREE", inside it
+  SB.Model.applyMasterEdit(p, 4, 4, 'and ', null);
+  eq(swin(p, sc), 'ONE and two THREE', 'an edit inside the claim moves its far edge');
+  eq(win(p, sh), 'THREE', 'and carries the shot along without changing it');
+
+  SB.Model.applyMasterEdit(p, 17, 17, '!', null);
+  eq(swin(p, sc), 'ONE and two THREE!', 'text typed at the claim’s tail joins the section');
+  eq(win(p, sh), 'THREE!', 'the shot ending there grows too — neither contains the other');
+}
+
+console.log('\n— typing in a scene’s own box writes through to the master —');
+{
+  const p = projectWith('ONE two THREE four');
+  const sc = p.scenes[0];
+  tie(p, 0, 7);
+  SB.Model.applySceneEdit(p, sc, 7, 7, '!!');
+  eq(p.master.text, 'ONE two!! THREE four', 'the master took the edit');
+  eq(swin(p, sc), 'ONE two!!', 'and the claim grew at the edge that was typed at');
+
+  SB.Model.applySceneEdit(p, sc, 0, 0, '» ');
+  eq(swin(p, sc), '» ONE two!!', 'typing at its own leading edge grows it too');
+}
+
+console.log('\n— deleting the claimed text breaks the tie —');
+{
+  const p = projectWith('ONE two THREE four');
+  const sc = p.scenes[0];
+  tie(p, 0, 7);
+  SB.Model.applyMasterEdit(p, 0, 7, '', null);
+  eq(sc.broken, true, 'the scene is flagged rather than silently emptied');
+  eq(Array.from(SB.Model.sceneCoverage(p)).some(Boolean), false,
+    'and a broken claim covers nothing');
+}
+
+console.log('\n— break link on a scene —');
+{
+  const p = projectWith('ONE two THREE four');
+  const sc = p.scenes[0];
+  tie(p, 0, 7);
+  SB.Model.breakSceneLink(p, sc);
+  eq(sc.link, null, 'the link is gone');
+  eq(swin(p, sc), 'ONE two', 'the text stays as the scene’s own');
+  SB.Model.applyMasterEdit(p, 0, 3, 'ZERO', null);
+  eq(swin(p, sc), 'ONE two', 'and stops following the master');
+  eq(Array.from(SB.Model.sceneCoverage(p)).some(Boolean), false,
+    'freestanding text claims none of the master, which is what makes the layer honest');
+
+  const at = p.master.text.indexOf('THREE');   // the master moved under us above
+  tie(p, at, at + 5);
+  eq(sc.local, null, 'tying it again drops the freestanding copy');
+  eq(swin(p, sc), 'THREE', 'and frames the new selection');
+}
+
+console.log('\n— widen versus replace —');
+{
+  const p = projectWith('ONE two THREE four');
+  tie(p, 0, 3);
+  tie(p, 8, 13, true);
+  eq([p.scenes[0].link.from, p.scenes[0].link.to], [0, 13],
+    'widen keeps what was claimed and stretches over the gap');
+  tie(p, 14, 18);
+  eq([p.scenes[0].link.from, p.scenes[0].link.to], [14, 18], 'replace swaps it out');
+
+  SB.Model.untieScene(p, p.scenes[0].id);
+  eq(swin(p, p.scenes[0]), null, 'untie gives the section back');
+  eq(p.scenes[0].shots.length === 0 && p.scenes[0].heading !== undefined, true,
+    'and leaves the scene itself alone');
+}
+
+console.log('\n— the two coverage layers are counted apart —');
+{
+  const p = projectWith('ONE two THREE four');
+  addLinked(p, 0, 3);
+  tie(p, 8, 13);
+  const shots = SB.Model.coverage(p), scenes = SB.Model.sceneCoverage(p);
+  eq([shots[0], scenes[0]], [1, 0], 'a shot-only stretch counts as shot, not scene');
+  eq([shots[8], scenes[8]], [0, 1], 'and a scene-only stretch the other way round');
+}
+
+console.log('\n— migrate leaves an older board untied —');
+{
+  const p = SB.Model.migrate({ master: { text: 'ONE two' }, scenes: [{ heading: 'x' }] });
+  eq(p.scenes[0].link, null, 'no claim is invented');
+  eq(p.scenes[0].local, null, 'and no empty doc either — untied is a real state');
+
+  const q = SB.Model.migrate({
+    master: { text: 'ONE two' },
+    scenes: [{ heading: 'x', link: { from: 2, to: 900 } }]
+  });
+  eq([q.scenes[0].link.from, q.scenes[0].link.to], [2, 7], 'an out-of-range claim is clamped');
+}
+
+console.log('\n— a scene claim survives the carriage-return repair —');
+{
+  const p = projectWith('');
+  p.master.text = 'One.\r\nTwo.\r\nThree.';        // as an older build wrote it out
+  tie(p, 12, 18);                                  // "Three."
+  p.versions.push({ n: 1, name: 'v1', createdAt: 0, snapshot: SB.clone({
+    master: p.master, scenes: p.scenes, scriptComments: p.scriptComments
+  }) });
+  SB.Model.migrate(p);
+  eq(swin(p, p.scenes[0]), 'Three.', 'the claim still frames its own words');
+  const snap = p.versions[0].snapshot;
+  eq(snap.master.text.slice(snap.scenes[0].link.from, snap.scenes[0].link.to), 'Three.',
+    'and so does the one frozen in a version');
+}
+
+console.log('\n— the AI reads a claimed section —');
+{
+  const p = projectWith('ONE two THREE four');
+  const sc = p.scenes[0];
+  eq(SB.Coverage.sceneScript(p, sc), '', 'an untied, shotless scene has no script');
+  addLinked(p, 14, 18);
+  eq(SB.Coverage.sceneScript(p, sc), 'four', 'with shots it is stitched from their windows');
+  tie(p, 0, 7);
+  eq(SB.Coverage.sceneScript(p, sc), 'ONE two',
+    'but the scene’s own claim is what it covers, and wins');
+}
+
+console.log('\n— gathering shots does not delete a scene that claims something —');
+{
+  const p = projectWith('ONE two THREE four');
+  const sc = p.scenes[0];
+  const a = SB.Model.addShot(p, sc.id, {});
+  tie(p, 0, 7);
+  SB.Model.sceneFromShots(p, [a.id]);
+  eq(p.scenes.filter(function (s) { return s.id === sc.id; }).length, 1,
+    'the emptied source scene stays, because its claim outlives its cards');
 }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed\n');
