@@ -968,5 +968,57 @@ console.log('\n— scene coverage: rewrite keeps the draft in play —');
     'and rewrite does not write it itself — the caller applies it, so revert stays possible');
 }
 
+console.log('\n— Windows line endings never reach a doc —');
+{
+  /* The DOM cannot hold a \r: the HTML parser folds it into \n on the way in.
+   * A doc that keeps one measures longer than the editor can see, and every
+   * offset read off a selection comes back short by one per line above it. */
+  const p = projectWith('');
+  SB.Model.applyMasterEdit(p, 0, 0, 'One.\r\nTwo.\r\nThree.', null);
+  eq(p.master.text, 'One.\nTwo.\nThree.', 'a pasted CRLF block is folded to LF');
+
+  const sh = addLinked(p, 10, 15);
+  eq(win(p, sh), 'Three', 'so an offset taken off the screen picks the text it points at');
+
+  const local = SB.Model.addShot(p, p.scenes[0].id, { text: 'A.\r\nB.' });
+  eq(local.local.text, 'A.\nB.', 'a freestanding card is folded too');
+  SB.Model.applyShotEdit(p, local, 5, 5, '\r\nC.');
+  eq(local.local.text, 'A.\nB.\nC.', 'and stays folded as it is typed in');
+
+  /* A lone \r is a line break to the parser, not a deletion. */
+  const q = projectWith('');
+  SB.Model.applyMasterEdit(q, 0, 0, 'Mac.\rClassic.', null);
+  eq(q.master.text, 'Mac.\nClassic.', 'a lone CR becomes a line break, keeping its place');
+}
+
+console.log('\n— a board saved with the CRs still in it is repaired on open —');
+{
+  /* Anchors in such a file are already counted against the longer text, so
+   * folding has to drag them along or the repair moves everyone's cards. */
+  const p = projectWith('');
+  p.master.text = 'One.\r\nTwo.\r\nThree.';   // as an older build wrote it out
+  const a = addLinked(p, 0, 4);        // "One."
+  const b = addLinked(p, 12, 18);      // "Three."
+  SB.Model.addScriptComment(p, 6, 10, 'about the second line');
+  SB.Doc.addMark(p.master, 'b', 12, 18);
+  p.versions.push({ n: 1, name: 'v1', createdAt: 0, snapshot: SB.clone({
+    master: p.master, scenes: p.scenes, scriptComments: p.scriptComments
+  }) });
+
+  SB.Model.migrate(p);
+
+  eq(p.master.text, 'One.\nTwo.\nThree.', 'the master loses its CRs');
+  eq(win(p, a), 'One.', 'a link at the top is untouched');
+  eq(win(p, b), 'Three.', 'a link below the folded lines still frames its own text');
+  eq(p.master.text.slice(p.scriptComments[0].from, p.scriptComments[0].to), 'Two.',
+    'a script comment still quotes the phrase it was left on');
+  eq(p.master.marks.b, [[10, 16]], 'and a bold run moves with the text it marks');
+
+  const snap = p.versions[0].snapshot;
+  eq(snap.master.text, 'One.\nTwo.\nThree.', 'a frozen version is repaired as well');
+  eq(snap.master.text.slice(snap.scenes[0].shots[1].link.from, snap.scenes[0].shots[1].link.to),
+    'Three.', 'so restoring it does not bring the drift back');
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed\n');
 process.exit(fail ? 1 : 0);

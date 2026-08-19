@@ -16,8 +16,47 @@
   const TYPES = ['b', 'i', 'u'];
   const BIT = { b: 1, i: 2, u: 4 };
 
+  /* The HTML parser folds \r\n — and a lone \r — into \n the instant text
+   * reaches the DOM. A doc holding CRs therefore measures longer than anything
+   * the editor can see, so every offset read back off a selection came up short
+   * by one per line above it, and a shot captured from the script was handed
+   * somebody else's characters. Windows puts CRs on the clipboard, so this
+   * arrives by pasting from Word, Outlook or a transcript. Nothing above this
+   * layer has to care: the CRs are folded out on the way in. */
+  function eol(s) {
+    return String(s == null ? '' : s).replace(/\r\n?/g, '\n');
+  }
+
+  /* Fold the CRs out of a doc that already holds some, returning a map from old
+   * character offsets to new ones — null when there was nothing to fold. The
+   * caller owns every other anchor into this doc and has to drag it through. */
+  function foldEOL(doc) {
+    if (!doc || typeof doc.text !== 'string' || doc.text.indexOf('\r') < 0) return null;
+    const old = doc.text;
+    const map = new Int32Array(old.length + 1);
+    let out = '', drop = 0;
+    for (let i = 0; i < old.length; i++) {
+      map[i] = i - drop;
+      if (old.charAt(i) === '\r') {
+        if (old.charAt(i + 1) === '\n') drop++;   // CRLF: the LF stands for both
+        else out += '\n';                         // a lone CR is a line break too
+      } else out += old.charAt(i);
+    }
+    map[old.length] = old.length - drop;
+    doc.text = out;
+    doc.marks = doc.marks || { b: [], i: [], u: [] };
+    const at = function (p) { return map[SB.clamp(p | 0, 0, old.length)]; };
+    for (let k = 0; k < TYPES.length; k++) {
+      const t = TYPES[k];
+      doc.marks[t] = normalize((doc.marks[t] || []).map(function (r) {
+        return [at(r[0]), at(r[1])];
+      }));
+    }
+    return at;
+  }
+
   function make(text) {
-    return { text: text || '', marks: { b: [], i: [], u: [] } };
+    return { text: eol(text), marks: { b: [], i: [], u: [] } };
   }
 
   function normalize(list) {
@@ -64,7 +103,7 @@
   function replace(doc, start, end, text) {
     start = SB.clamp(start | 0, 0, doc.text.length);
     end = SB.clamp(end | 0, start, doc.text.length);
-    text = text == null ? '' : String(text);
+    text = eol(text);
     doc.text = doc.text.slice(0, start) + text + doc.text.slice(end);
     for (let k = 0; k < TYPES.length; k++) {
       const t = TYPES[k];
@@ -170,6 +209,7 @@
   SB.Doc = {
     TYPES: TYPES, BIT: BIT,
     make: make, normalize: normalize, mapPos: mapPos, mapList: mapList,
+    eol: eol, foldEOL: foldEOL,
     replace: replace, hasMark: hasMark, toggleMark: toggleMark,
     addMark: addMark, removeMark: removeMark,
     flags: flags, sliceMarks: sliceMarks, renderHTML: renderHTML

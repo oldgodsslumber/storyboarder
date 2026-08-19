@@ -666,7 +666,7 @@ body.comment-mode .frame{cursor:crosshair}
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-08-19 15:03 · 1c65457+";</script>
+<script>window.SB_BUILD = "2026-08-19 15:30 · bd1bcd9+";</script>
 
 <div id="app">
 
@@ -1108,8 +1108,47 @@ window.SB = window.SB || {};
   const TYPES = ['b', 'i', 'u'];
   const BIT = { b: 1, i: 2, u: 4 };
 
+  /* The HTML parser folds \r\n — and a lone \r — into \n the instant text
+   * reaches the DOM. A doc holding CRs therefore measures longer than anything
+   * the editor can see, so every offset read back off a selection came up short
+   * by one per line above it, and a shot captured from the script was handed
+   * somebody else's characters. Windows puts CRs on the clipboard, so this
+   * arrives by pasting from Word, Outlook or a transcript. Nothing above this
+   * layer has to care: the CRs are folded out on the way in. */
+  function eol(s) {
+    return String(s == null ? '' : s).replace(/\r\n?/g, '\n');
+  }
+
+  /* Fold the CRs out of a doc that already holds some, returning a map from old
+   * character offsets to new ones — null when there was nothing to fold. The
+   * caller owns every other anchor into this doc and has to drag it through. */
+  function foldEOL(doc) {
+    if (!doc || typeof doc.text !== 'string' || doc.text.indexOf('\r') < 0) return null;
+    const old = doc.text;
+    const map = new Int32Array(old.length + 1);
+    let out = '', drop = 0;
+    for (let i = 0; i < old.length; i++) {
+      map[i] = i - drop;
+      if (old.charAt(i) === '\r') {
+        if (old.charAt(i + 1) === '\n') drop++;   // CRLF: the LF stands for both
+        else out += '\n';                         // a lone CR is a line break too
+      } else out += old.charAt(i);
+    }
+    map[old.length] = old.length - drop;
+    doc.text = out;
+    doc.marks = doc.marks || { b: [], i: [], u: [] };
+    const at = function (p) { return map[SB.clamp(p | 0, 0, old.length)]; };
+    for (let k = 0; k < TYPES.length; k++) {
+      const t = TYPES[k];
+      doc.marks[t] = normalize((doc.marks[t] || []).map(function (r) {
+        return [at(r[0]), at(r[1])];
+      }));
+    }
+    return at;
+  }
+
   function make(text) {
-    return { text: text || '', marks: { b: [], i: [], u: [] } };
+    return { text: eol(text), marks: { b: [], i: [], u: [] } };
   }
 
   function normalize(list) {
@@ -1156,7 +1195,7 @@ window.SB = window.SB || {};
   function replace(doc, start, end, text) {
     start = SB.clamp(start | 0, 0, doc.text.length);
     end = SB.clamp(end | 0, start, doc.text.length);
-    text = text == null ? '' : String(text);
+    text = eol(text);
     doc.text = doc.text.slice(0, start) + text + doc.text.slice(end);
     for (let k = 0; k < TYPES.length; k++) {
       const t = TYPES[k];
@@ -1262,6 +1301,7 @@ window.SB = window.SB || {};
   SB.Doc = {
     TYPES: TYPES, BIT: BIT,
     make: make, normalize: normalize, mapPos: mapPos, mapList: mapList,
+    eol: eol, foldEOL: foldEOL,
     replace: replace, hasMark: hasMark, toggleMark: toggleMark,
     addMark: addMark, removeMark: removeMark,
     flags: flags, sliceMarks: sliceMarks, renderHTML: renderHTML
@@ -2291,6 +2331,39 @@ window.SB = window.SB || {};
     return p;
   }
 
+  /* Boards written before the fold were saved with the CRs still in them, and
+   * their links are already anchored against those longer offsets. Folding the
+   * text without dragging every anchor through the same map would move each
+   * card's text instead of repairing it, so both happen together.
+   * `core` is {master, scenes, scriptComments} — the shape of a project and of
+   * a frozen version alike, so a restore does not bring the CRs back. */
+  function foldLineEndings(core) {
+    if (!core || !core.master || typeof core.master.text !== 'string') return;
+    const at = SB.Doc.foldEOL(core.master);
+    if (at) {
+      (core.scenes || []).forEach(function (sc) {
+        (sc.shots || []).forEach(function (sh) {
+          if (!sh || !sh.link || typeof sh.link.from !== 'number') return;
+          sh.link.from = at(sh.link.from);
+          sh.link.to = at(sh.link.to);
+          if (sh.link.to <= sh.link.from) sh.broken = true;
+        });
+      });
+      (core.scriptComments || []).forEach(function (c) {
+        c.from = at(c.from);
+        c.to = at(c.to);
+        c.quote = SB.Doc.eol(c.quote);
+        if (c.to <= c.from) c.broken = true;
+      });
+    }
+    /* A freestanding card owns its own text, with no anchors into it. */
+    (core.scenes || []).forEach(function (sc) {
+      (sc.shots || []).forEach(function (sh) {
+        if (sh && !sh.link && sh.local) SB.Doc.foldEOL(sh.local);
+      });
+    });
+  }
+
   /* Fill in anything an older/hand-edited file is missing. */
   function migrate(p) {
     if (!p || typeof p !== 'object') throw new Error('not a Storyboarder project');
@@ -2422,6 +2495,10 @@ window.SB = window.SB || {};
         sh.annotation = SB.Blobs.adopt(p, sh.annotation);
       });
     });
+
+    /* Last, so it works on shots and comments that are already well-formed. */
+    foldLineEndings(p);
+    p.versions.forEach(function (v) { if (v && v.snapshot) foldLineEndings(v.snapshot); });
     return p;
   }
 
@@ -2462,6 +2539,10 @@ window.SB = window.SB || {};
    */
   function applyMasterEdit(p, start, end, text, sourceShotId) {
     if (SB.History) SB.History.push('master:' + (sourceShotId || ''));
+    /* Fold before op.len is taken, not inside Doc.replace: every anchor below
+     * is mapped through that length, so measuring the un-folded string would
+     * push each link one character further right per pasted line. */
+    text = SB.Doc.eol(text);
     const op = { start: start, end: end, len: (text || '').length };
     const links = [];
     eachShot(p, function (sh) { if (sh.link) links.push(sh); });
@@ -2505,6 +2586,7 @@ window.SB = window.SB || {};
 
   /* Edit routed from a shot's own script box (local coords). */
   function applyShotEdit(p, shot, lStart, lEnd, text) {
+    text = SB.Doc.eol(text);
     if (shot.link) {
       return applyMasterEdit(p, shot.link.from + lStart, shot.link.from + lEnd, text, shot.id);
     }
@@ -2735,7 +2817,8 @@ window.SB = window.SB || {};
     CARD_COLORS: CARD_COLORS,
     DEFAULT_SHOT_TYPES: DEFAULT_SHOT_TYPES,
     IMG_TPL: IMG_TPL, VID_TPL: VID_TPL,
-    newProject: newProject, migrate: migrate, newShot: newShot, newScene: newScene,
+    newProject: newProject, migrate: migrate, foldLineEndings: foldLineEndings,
+    newShot: newShot, newScene: newScene,
     defaultModels: defaultModels, defaultExport: defaultExport,
     eachShot: eachShot, code: code, findShot: findShot, findScene: findScene,
     windowFor: windowFor, applyMasterEdit: applyMasterEdit, applyShotEdit: applyShotEdit,

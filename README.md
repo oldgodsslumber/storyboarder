@@ -91,6 +91,21 @@ amber = three or more. The selected card's range gets an amber underline.
 dropdown, or anything else) in between doesn't lose it — the button only goes dark when
 there is genuinely nothing selected. Any edit to the script clears it.
 
+### Pasted line endings
+
+Windows puts a carriage return before every newline on the clipboard, so text pasted in
+from Word, Outlook or a transcript arrives as `\r\n`. The browser cannot show a `\r` — the
+HTML parser folds it into `\n` the moment the text reaches the page — so a script holding
+them measured **longer than what was on screen**, and every offset read back off a
+selection came up short by one character per line above it. Capturing a shot part-way down
+a pasted script gave you a card whose text started a few characters early.
+
+Carriage returns are now folded to newlines as the text enters the document, and a board
+saved with them still in it is repaired when it opens: the text is folded and every anchor
+into it — shot links, script comments, bold/italic runs, and the same inside every frozen
+version — is moved by the same amount, so nothing shifts. Nothing above the document layer
+ever sees a `\r`.
+
 **Ctrl+Z / Ctrl+Shift+Z** undo and redo script edits, and the ↶ ↷ buttons in the script
 panel do the same. A run of typing collapses into one step. Undo covers script *text* only —
 it will never make a card or scene reappear or vanish.

@@ -139,6 +139,39 @@
     return p;
   }
 
+  /* Boards written before the fold were saved with the CRs still in them, and
+   * their links are already anchored against those longer offsets. Folding the
+   * text without dragging every anchor through the same map would move each
+   * card's text instead of repairing it, so both happen together.
+   * `core` is {master, scenes, scriptComments} — the shape of a project and of
+   * a frozen version alike, so a restore does not bring the CRs back. */
+  function foldLineEndings(core) {
+    if (!core || !core.master || typeof core.master.text !== 'string') return;
+    const at = SB.Doc.foldEOL(core.master);
+    if (at) {
+      (core.scenes || []).forEach(function (sc) {
+        (sc.shots || []).forEach(function (sh) {
+          if (!sh || !sh.link || typeof sh.link.from !== 'number') return;
+          sh.link.from = at(sh.link.from);
+          sh.link.to = at(sh.link.to);
+          if (sh.link.to <= sh.link.from) sh.broken = true;
+        });
+      });
+      (core.scriptComments || []).forEach(function (c) {
+        c.from = at(c.from);
+        c.to = at(c.to);
+        c.quote = SB.Doc.eol(c.quote);
+        if (c.to <= c.from) c.broken = true;
+      });
+    }
+    /* A freestanding card owns its own text, with no anchors into it. */
+    (core.scenes || []).forEach(function (sc) {
+      (sc.shots || []).forEach(function (sh) {
+        if (sh && !sh.link && sh.local) SB.Doc.foldEOL(sh.local);
+      });
+    });
+  }
+
   /* Fill in anything an older/hand-edited file is missing. */
   function migrate(p) {
     if (!p || typeof p !== 'object') throw new Error('not a Storyboarder project');
@@ -270,6 +303,10 @@
         sh.annotation = SB.Blobs.adopt(p, sh.annotation);
       });
     });
+
+    /* Last, so it works on shots and comments that are already well-formed. */
+    foldLineEndings(p);
+    p.versions.forEach(function (v) { if (v && v.snapshot) foldLineEndings(v.snapshot); });
     return p;
   }
 
@@ -310,6 +347,10 @@
    */
   function applyMasterEdit(p, start, end, text, sourceShotId) {
     if (SB.History) SB.History.push('master:' + (sourceShotId || ''));
+    /* Fold before op.len is taken, not inside Doc.replace: every anchor below
+     * is mapped through that length, so measuring the un-folded string would
+     * push each link one character further right per pasted line. */
+    text = SB.Doc.eol(text);
     const op = { start: start, end: end, len: (text || '').length };
     const links = [];
     eachShot(p, function (sh) { if (sh.link) links.push(sh); });
@@ -353,6 +394,7 @@
 
   /* Edit routed from a shot's own script box (local coords). */
   function applyShotEdit(p, shot, lStart, lEnd, text) {
+    text = SB.Doc.eol(text);
     if (shot.link) {
       return applyMasterEdit(p, shot.link.from + lStart, shot.link.from + lEnd, text, shot.id);
     }
@@ -583,7 +625,8 @@
     CARD_COLORS: CARD_COLORS,
     DEFAULT_SHOT_TYPES: DEFAULT_SHOT_TYPES,
     IMG_TPL: IMG_TPL, VID_TPL: VID_TPL,
-    newProject: newProject, migrate: migrate, newShot: newShot, newScene: newScene,
+    newProject: newProject, migrate: migrate, foldLineEndings: foldLineEndings,
+    newShot: newShot, newScene: newScene,
     defaultModels: defaultModels, defaultExport: defaultExport,
     eachShot: eachShot, code: code, findShot: findShot, findScene: findScene,
     windowFor: windowFor, applyMasterEdit: applyMasterEdit, applyShotEdit: applyShotEdit,

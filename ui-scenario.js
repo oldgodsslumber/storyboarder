@@ -1160,6 +1160,55 @@
           function (b) { return b.textContent === 'Cancel'; })[0].click();
       }
 
+      /* Pasting from Word or a transcript brings Windows CRs in with the text.
+       * The DOM cannot hold one — the parser folds it to \n — so a doc keeping
+       * CRs is longer than what is on screen, and a shot captured from the
+       * script came back shifted one character per line above the selection. */
+      (function () {
+        const master = document.getElementById('masterScript');
+        SB.Model.applyMasterEdit(P(), 0, P().master.text.length, '', null);
+        app.scriptChanged();
+        master.focus();
+        SB.Editor.setSel(master, 0, 0);   // the paste handler needs a caret to land on
+        master.dispatchEvent(new InputEvent('beforeinput', {
+          inputType: 'insertFromPaste', bubbles: true, cancelable: true,
+          dataTransfer: (function () {
+            const dt = new DataTransfer();
+            dt.setData('text/plain', 'Line one.\r\nLine two.\r\nTHE TARGET here.');
+            return dt;
+          })()
+        }));
+        app.scriptChanged();
+
+        t('a CRLF paste lands in the script',
+          /THE TARGET here\.$/.test(P().master.text), JSON.stringify(P().master.text));
+        t('and measures the same as what is on screen',
+          P().master.text.length === master.textContent.length,
+          P().master.text.length + ' vs ' + master.textContent.length);
+
+        const want = 'THE TARGET';
+        const at = master.textContent.indexOf(want);
+        master.focus();
+        SB.Editor.setSel(master, at, at + want.length);
+        const sel = SB.Editor.getSel(master);
+        t('and a selection in it points at the text it covers',
+          P().master.text.slice(sel.start, sel.end) === want,
+          JSON.stringify(P().master.text.slice(sel.start, sel.end)));
+
+        /* headless never focuses the panel, so selectionchange latches nothing;
+           the button's handler reads the live selection anyway */
+        const cap = document.getElementById('btnCapture');
+        cap.disabled = false;
+        cap.click();
+        Array.prototype.filter.call(document.querySelectorAll('#captureForm button'),
+          function (b) { return /Complete/.test(b.textContent); })[0].click();
+        let made = null;
+        SB.Model.eachShot(P(), function (sh) { if (sh.link) made = sh; });
+        const box = made && document.querySelector('.script-box[data-shot="' + made.id + '"]');
+        t('so the captured card carries the phrase that was selected',
+          box && box.textContent === want, box ? JSON.stringify(box.textContent) : 'no card');
+      })();
+
       // comment mode
       app.commentMode = true;
       SB.Board.render();
