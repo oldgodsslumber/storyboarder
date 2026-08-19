@@ -543,16 +543,20 @@
     if (!order.length) return null;
     const first = findShot(p, order[0].id);
     const afterIdx = first ? first.sceneIdx : p.scenes.length - 1;
+    const sources = [];
     order.forEach(function (sh) {
       const f = findShot(p, sh.id);
-      if (f) f.scene.shots.splice(f.shotIdx, 1);
+      if (!f) return;
+      if (sources.indexOf(f.scene) < 0) sources.push(f.scene);
+      f.scene.shots.splice(f.shotIdx, 1);
     });
     const sc = newScene('Scene ' + (afterIdx + 2));
     sc.shots = order;
     p.scenes.splice(afterIdx + 1, 0, sc);
-    /* a scene emptied by this is noise on the board */
-    p.scenes = p.scenes.filter(function (s, i) {
-      return s.shots.length || i === afterIdx + 1 || p.scenes.length === 1;
+    /* A scene emptied BY THIS is noise on the board. An empty scene the user
+     * made on purpose somewhere else is not ours to delete. */
+    p.scenes = p.scenes.filter(function (s) {
+      return s.shots.length || sources.indexOf(s) < 0;
     });
     if (!p.scenes.length) p.scenes.push(sc);
     p.updatedAt = Date.now();

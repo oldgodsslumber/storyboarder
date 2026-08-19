@@ -884,13 +884,17 @@
   }
 
   /* Redraw just the cast rows — cheaper than rebuilding every card. */
-  function refreshCast() {
+  function refreshCastRows() {
     document.querySelectorAll('.cast-row').forEach(function (row) {
       const f = SB.Model.findShot(P(), row.dataset.shot);
       if (!f) return;
       const fresh = castRow(f.shot);
       row.parentNode.replaceChild(fresh, row);
     });
+  }
+
+  function refreshCast() {
+    refreshCastRows();
     SB.PersonaPanel.refresh();
   }
 
@@ -1052,6 +1056,7 @@
     renderSceneList: renderSceneList,
     renderScriptWindows: renderScriptWindows,
     refreshCast: refreshCast,
+    refreshCastRows: refreshCastRows,
     setImage: setImage,
     swap: doSwap,
     armSwap: armSwap,

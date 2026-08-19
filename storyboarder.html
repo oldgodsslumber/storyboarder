@@ -666,7 +666,7 @@ body.comment-mode .frame{cursor:crosshair}
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-08-06 14:03 · 227615a+";</script>
+<script>window.SB_BUILD = "2026-08-19 15:03 · 1c65457+";</script>
 
 <div id="app">
 
@@ -2695,16 +2695,20 @@ window.SB = window.SB || {};
     if (!order.length) return null;
     const first = findShot(p, order[0].id);
     const afterIdx = first ? first.sceneIdx : p.scenes.length - 1;
+    const sources = [];
     order.forEach(function (sh) {
       const f = findShot(p, sh.id);
-      if (f) f.scene.shots.splice(f.shotIdx, 1);
+      if (!f) return;
+      if (sources.indexOf(f.scene) < 0) sources.push(f.scene);
+      f.scene.shots.splice(f.shotIdx, 1);
     });
     const sc = newScene('Scene ' + (afterIdx + 2));
     sc.shots = order;
     p.scenes.splice(afterIdx + 1, 0, sc);
-    /* a scene emptied by this is noise on the board */
-    p.scenes = p.scenes.filter(function (s, i) {
-      return s.shots.length || i === afterIdx + 1 || p.scenes.length === 1;
+    /* A scene emptied BY THIS is noise on the board. An empty scene the user
+     * made on purpose somewhere else is not ours to delete. */
+    p.scenes = p.scenes.filter(function (s) {
+      return s.shots.length || sources.indexOf(s) < 0;
     });
     if (!p.scenes.length) p.scenes.push(sc);
     p.updatedAt = Date.now();
@@ -4634,13 +4638,17 @@ window.SB = window.SB || {};
   }
 
   /* Redraw just the cast rows — cheaper than rebuilding every card. */
-  function refreshCast() {
+  function refreshCastRows() {
     document.querySelectorAll('.cast-row').forEach(function (row) {
       const f = SB.Model.findShot(P(), row.dataset.shot);
       if (!f) return;
       const fresh = castRow(f.shot);
       row.parentNode.replaceChild(fresh, row);
     });
+  }
+
+  function refreshCast() {
+    refreshCastRows();
     SB.PersonaPanel.refresh();
   }
 
@@ -4802,6 +4810,7 @@ window.SB = window.SB || {};
     renderSceneList: renderSceneList,
     renderScriptWindows: renderScriptWindows,
     refreshCast: refreshCast,
+    refreshCastRows: refreshCastRows,
     setImage: setImage,
     swap: doSwap,
     armSwap: armSwap,
@@ -5211,9 +5220,15 @@ window.SB = window.SB || {};
       function submit() {
         const t = inp.value.trim();
         if (!t) return;
+        sh.comments = sh.comments || [];
         sh.comments.push({ id: SB.uid('cm'), text: t, at: Date.now() });
         inp.value = '';
         SB.app.changed(true);
+        /* The board is rebuilt from scratch, so THIS box is already gone — put
+         * the caret back in the card's new one, or a second comment costs a
+         * click every time. */
+        const back = document.querySelector('.card[data-shot="' + sh.id + '"] .comment-add input');
+        if (back) back.focus();
       }
       inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); submit(); } });
       b.onclick = submit;
@@ -6420,7 +6435,9 @@ window.SB = window.SB || {};
     name.addEventListener('input', function () {
       per.name = name.value;
       SB.Store.touch();
-      SB.Board.refreshCast();
+      /* Rows only — refreshCast() re-renders this panel, which would rebuild
+         the very input being typed into and drop focus after each keystroke. */
+      SB.Board.refreshCastRows();
     });
     head.appendChild(name);
 
@@ -6816,9 +6833,15 @@ window.SB = window.SB || {};
     fieldHost.style.marginTop = '10px';
     panels.fields.appendChild(fieldHost);
 
+    /* Edit a copy, like the model list does: Cancel has to leave the project
+     * exactly as it was — renaming a field, switching one off, and above all
+     * removing one (which takes its text off every card with it) used to land
+     * the moment it was typed, whichever button was pressed afterwards. */
+    const workingFields = SB.clone(SB.Fields.all(p));
+
     function drawFields() {
       fieldHost.innerHTML = '';
-      SB.Fields.all(p).forEach(function (f) {
+      workingFields.forEach(function (f) {
         const row = SB.el('div', 'field-row');
 
         const on = document.createElement('input');
@@ -6851,7 +6874,8 @@ window.SB = window.SB || {};
             SB.Model.eachShot(p, function (sh) { if (SB.Fields.value(sh, f.id).trim()) used++; });
             if (used && !confirm('Remove “' + f.label + '”? Text in it on ' + used +
               ' card(s) is deleted with it.')) return;
-            SB.Fields.remove(p, f.id);
+            const at = workingFields.indexOf(f);
+            if (at >= 0) workingFields.splice(at, 1);
             drawFields();
           };
           row.appendChild(del);
@@ -6861,7 +6885,7 @@ window.SB = window.SB || {};
 
       const add = SB.el('button', 'tb', '+ Add a field');
       add.onclick = function () {
-        SB.Fields.add(p, 'New field');
+        workingFields.push({ id: SB.uid('fld'), label: 'New field', enabled: true, builtin: false });
         drawFields();
       };
       fieldHost.appendChild(add);
@@ -7116,6 +7140,23 @@ window.SB = window.SB || {};
             const t = types.value.split('\n').map(function (s) { return s.trim(); })
               .filter(function (s) { return s; });
             p.settings.shotTypes = t.length ? t : SB.Model.DEFAULT_SHOT_TYPES.slice();
+
+            /* Card fields: removals take their text off every card, so they are
+             * applied here rather than while the dialog is open. */
+            const kept = {};
+            workingFields.forEach(function (f) { kept[f.id] = 1; });
+            SB.Fields.all(p).slice().forEach(function (f) {
+              if (!kept[f.id]) SB.Fields.remove(p, f.id);
+            });
+            p.settings.fields = workingFields.map(function (f) {
+              return {
+                id: f.id,
+                label: (f.label || '').trim() || 'Field',
+                enabled: !!f.enabled,
+                builtin: !!f.builtin
+              };
+            });
+
             const bTxt = bText.value.trim();
             p.settings.brand = (bTxt && bTxt !== SB.Brand.DEFAULT.trim())
               ? { enabled: bChk.checked, custom: true, text: bTxt }
@@ -7213,7 +7254,12 @@ window.SB = window.SB || {};
     p.scriptComments = SB.clone(v.snapshot.scriptComments || []);
     p.versionNumber = p.versions.reduce(function (a, x) { return Math.max(a, x.n); }, p.versionNumber) + 1;
     p.versionName = v.name + ' (restored)';
+    /* The undo stack holds snapshots of the script we just replaced — a Ctrl+Z
+     * after a restore would paste the old master text back under the restored
+     * cards' link ranges. */
+    SB.History.reset();
     SB.app.selectedShotId = null;
+    SB.app.selection = [];
     SB.app.changed(true);
     SB.toast('Restored ' + v.name);
   }

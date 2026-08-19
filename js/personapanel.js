@@ -105,7 +105,9 @@
     name.addEventListener('input', function () {
       per.name = name.value;
       SB.Store.touch();
-      SB.Board.refreshCast();
+      /* Rows only — refreshCast() re-renders this panel, which would rebuild
+         the very input being typed into and drop focus after each keystroke. */
+      SB.Board.refreshCastRows();
     });
     head.appendChild(name);
 

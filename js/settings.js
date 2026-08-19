@@ -62,9 +62,15 @@
     fieldHost.style.marginTop = '10px';
     panels.fields.appendChild(fieldHost);
 
+    /* Edit a copy, like the model list does: Cancel has to leave the project
+     * exactly as it was — renaming a field, switching one off, and above all
+     * removing one (which takes its text off every card with it) used to land
+     * the moment it was typed, whichever button was pressed afterwards. */
+    const workingFields = SB.clone(SB.Fields.all(p));
+
     function drawFields() {
       fieldHost.innerHTML = '';
-      SB.Fields.all(p).forEach(function (f) {
+      workingFields.forEach(function (f) {
         const row = SB.el('div', 'field-row');
 
         const on = document.createElement('input');
@@ -97,7 +103,8 @@
             SB.Model.eachShot(p, function (sh) { if (SB.Fields.value(sh, f.id).trim()) used++; });
             if (used && !confirm('Remove “' + f.label + '”? Text in it on ' + used +
               ' card(s) is deleted with it.')) return;
-            SB.Fields.remove(p, f.id);
+            const at = workingFields.indexOf(f);
+            if (at >= 0) workingFields.splice(at, 1);
             drawFields();
           };
           row.appendChild(del);
@@ -107,7 +114,7 @@
 
       const add = SB.el('button', 'tb', '+ Add a field');
       add.onclick = function () {
-        SB.Fields.add(p, 'New field');
+        workingFields.push({ id: SB.uid('fld'), label: 'New field', enabled: true, builtin: false });
         drawFields();
       };
       fieldHost.appendChild(add);
@@ -362,6 +369,23 @@
             const t = types.value.split('\n').map(function (s) { return s.trim(); })
               .filter(function (s) { return s; });
             p.settings.shotTypes = t.length ? t : SB.Model.DEFAULT_SHOT_TYPES.slice();
+
+            /* Card fields: removals take their text off every card, so they are
+             * applied here rather than while the dialog is open. */
+            const kept = {};
+            workingFields.forEach(function (f) { kept[f.id] = 1; });
+            SB.Fields.all(p).slice().forEach(function (f) {
+              if (!kept[f.id]) SB.Fields.remove(p, f.id);
+            });
+            p.settings.fields = workingFields.map(function (f) {
+              return {
+                id: f.id,
+                label: (f.label || '').trim() || 'Field',
+                enabled: !!f.enabled,
+                builtin: !!f.builtin
+              };
+            });
+
             const bTxt = bText.value.trim();
             p.settings.brand = (bTxt && bTxt !== SB.Brand.DEFAULT.trim())
               ? { enabled: bChk.checked, custom: true, text: bTxt }

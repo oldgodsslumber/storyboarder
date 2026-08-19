@@ -31,9 +31,15 @@
       function submit() {
         const t = inp.value.trim();
         if (!t) return;
+        sh.comments = sh.comments || [];
         sh.comments.push({ id: SB.uid('cm'), text: t, at: Date.now() });
         inp.value = '';
         SB.app.changed(true);
+        /* The board is rebuilt from scratch, so THIS box is already gone — put
+         * the caret back in the card's new one, or a second comment costs a
+         * click every time. */
+        const back = document.querySelector('.card[data-shot="' + sh.id + '"] .comment-add input');
+        if (back) back.focus();
       }
       inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); submit(); } });
       b.onclick = submit;

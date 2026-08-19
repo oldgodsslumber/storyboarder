@@ -507,14 +507,21 @@
         document.querySelectorAll('.modal .tab-panel.on .field-row').length);
       t('and shows the placeholder to use in a template',
         /\{\{ART_DIRECTION\}\}/.test(document.querySelector('.modal .tab-panel.on').textContent), '');
+      /* The tab edits a draft — the project only changes on Save, so Cancel
+       * cannot leave a field renamed or a card's text deleted behind it. */
+      var rows = function () {
+        return document.querySelectorAll('.modal .tab-panel.on .field-row').length;
+      };
       var fieldsBefore = SB.Fields.all(P()).length;
+      var rowsBefore = rows();
       Array.prototype.filter.call(document.querySelectorAll('.modal .tab-panel.on .tb'),
         function (b) { return /Add a field/.test(b.textContent); })[0].click();
-      t('a custom field can be added',
-        SB.Fields.all(P()).length === fieldsBefore + 1, SB.Fields.all(P()).length);
+      t('a custom field can be added', rows() === rowsBefore + 1, rows());
+      t('but the project is untouched until Save',
+        SB.Fields.all(P()).length === fieldsBefore, SB.Fields.all(P()).length);
       Array.prototype.filter.call(document.querySelectorAll('.modal .tab-panel.on .mini.danger'),
         function (b) { return /remove/.test(b.textContent); })[0].click();
-      t('and removed again', SB.Fields.all(P()).length === fieldsBefore, SB.Fields.all(P()).length);
+      t('and removed again', rows() === rowsBefore, rows());
 
       tab('Brand style');
       t('brand tab holds the house style',

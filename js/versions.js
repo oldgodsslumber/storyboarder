@@ -60,7 +60,12 @@
     p.scriptComments = SB.clone(v.snapshot.scriptComments || []);
     p.versionNumber = p.versions.reduce(function (a, x) { return Math.max(a, x.n); }, p.versionNumber) + 1;
     p.versionName = v.name + ' (restored)';
+    /* The undo stack holds snapshots of the script we just replaced — a Ctrl+Z
+     * after a restore would paste the old master text back under the restored
+     * cards' link ranges. */
+    SB.History.reset();
     SB.app.selectedShotId = null;
+    SB.app.selection = [];
     SB.app.changed(true);
     SB.toast('Restored ' + v.name);
   }
