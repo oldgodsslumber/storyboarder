@@ -1,6 +1,6 @@
 /* geminimodels.js — which Gemini model writes the prompts.
  *
- * Curated list of the text models documented at ai.google.dev (checked Aug 2026),
+ * Curated list of the text models documented at ai.google.dev (verified against ListModels + a per-id generateContent ping, 2026-08-21),
  * filtered to ones that take text in and return text/JSON out — no image, TTS,
  * live-audio, embedding or video models, none of which can write a prompt.
  *
@@ -11,11 +11,12 @@
 (function (SB) {
   'use strict';
 
-  const DEFAULT = 'gemini-3.6-flash';
+  const DEFAULT = 'gemini-3.7-flash';
   const CACHE_KEY = 'sb.geminiModelList';
 
   const LIST = [
-    { id: 'gemini-3.6-flash', label: 'Gemini 3.6 Flash — latest, balanced (default)' },
+    { id: 'gemini-3.7-flash', label: 'Gemini 3.7 Flash — latest, best coding/agents (default)' },
+    { id: 'gemini-3.6-flash', label: 'Gemini 3.6 Flash — previous default, balanced' },
     { id: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash — most intelligent' },
     { id: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash-Lite — fastest / cheapest 3.5' },
     { id: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash-Lite — frontier-class, low cost' },
@@ -35,8 +36,10 @@
   /* ids Google has shut down — anything pointing at these gets moved to DEFAULT */
   const RETIRED = [
     'gemini-2.0-flash', 'gemini-2.0-flash-lite',
-    'gemini-3-pro-preview', 'gemini-3.1-flash-lite-preview',
-    'gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-flash-latest', 'gemini-pro'
+    'gemini-3-pro-preview',
+    'gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro',
+    /* Gemma ids Google has dropped from the API (verified 2026-08-21) */
+    'gemma-3-27b-it', 'gemma-3-12b-it', 'gemma-4-e4b-it', 'gemma-4-e2b-it'
   ];
 
   /* ---- daily request counting (same idea as the AI GM app) ----

@@ -141,8 +141,38 @@
     });
   }
 
+  /* Gemma has no JSON mode, and responseMimeType is accepted-then-IGNORED rather
+   * than rejected (verified live 2026-08-21), so nothing ever errors -- it just
+   * answers with a bulleted plan and prose that can contain no braces at all.
+   * Measured over 10 runs on a reproducing prompt: the old "start with { and end
+   * with }" hint parsed 5/10; this wording parsed 10/10. Prefilling a model turn
+   * with "{" was tried and REJECTED -- it lifts parse rate but makes the API read
+   * the turn as a function call, returning MALFORMED_FUNCTION_CALL on ~90% of
+   * calls, truncating mid-object and sometimes returning no content.parts at all. */
   const NO_SCHEMA_HINT =
-    '\n\nReply with ONLY the JSON object — start with { and end with }, no markdown fences.';
+    '\n\nOutput format: a single JSON object and nothing else. No preamble, no plan, no bullet points, no commentary. A ```json fenced block is acceptable. Your entire reply must be the JSON.';
+
+  /* Pull the first balanced {...} out of prose, respecting strings and escapes.
+   * The old /\{[\s\S]*\}/ was greedy: in a reply holding two objects it spanned
+   * from the first { to the last }, producing invalid JSON. */
+  function firstObject(str) {
+    const fence = str.match(/```(?:json)?[ \t]*\r?\n?([\s\S]*?)```/i);
+    if (fence) str = fence[1];
+    let depth = 0, start = -1, inStr = false, esc = false, q = '';
+    for (let i = 0; i < str.length; i++) {
+      const c = str[i];
+      if (inStr) {
+        if (esc) esc = false;
+        else if (c === '\\') esc = true;
+        else if (c === q) inStr = false;
+        continue;
+      }
+      if (c === '"' || c === "'") { inStr = true; q = c; continue; }
+      if (c === '{') { if (depth === 0) start = i; depth++; continue; }
+      if (c === '}') { depth--; if (depth === 0 && start >= 0) return str.slice(start, i + 1); }
+    }
+    return null;
+  }
 
   /* One JSON-shaped question to the writer model. */
   function ask(text, schema, system) {
@@ -188,9 +218,9 @@
       if (!raw) throw new Error('Gemini returned no text' + (cand && cand.finishReason ? ' (' + cand.finishReason + ')' : ''));
       try { return JSON.parse(raw); }
       catch (e) {
-        const m = raw.match(/\{[\s\S]*\}/);
+        const m = firstObject(raw);
         if (!m) throw new Error('Could not parse the Gemini response');
-        return JSON.parse(m[0]);
+        return JSON.parse(m);
       }
     });
   }
