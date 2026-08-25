@@ -138,6 +138,7 @@
         models: defaultModels(),
         imageModelId: null,
         videoModelId: null,
+        aiProvider: 'gemini',
         geminiModel: SB.GeminiModels.DEFAULT,
         brand: { enabled: true, custom: false },
         // prompt boxes stay off the cards until the user asks for them
@@ -277,6 +278,9 @@
     if (!has(s.videoModelId)) s.videoModelId = firstOfKind(s.models, 'video');
     // Google retires ids; move a project off anything that is gone
     s.geminiModel = SB.GeminiModels.normalize(s.geminiModel);
+    /* Every board written before the local-model option existed was a Gemini
+     * board, and normalize() says so for anything unrecognised too. */
+    s.aiProvider = SB.Providers.normalize(s.aiProvider);
     s.brand = (s.brand && typeof s.brand === 'object') ? s.brand : {};
     if (typeof s.brand.enabled !== 'boolean') s.brand.enabled = true;
     // only a hand-edited house style is stored; the rest follow the app's

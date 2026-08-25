@@ -125,10 +125,8 @@
   }
 
   function needKey() {
-    if (!SB.Store.getApiKey()) {
-      return new Error('No Google API key yet — add one in Settings → API.');
-    }
-    return null;
+    const prov = SB.Providers.active();
+    return prov.ready() ? null : new Error(prov.notReady());
   }
 
   /* ---------- generate shots ---------- */

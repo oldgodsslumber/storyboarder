@@ -577,6 +577,15 @@ button.linkish{
 .pp-note{color:var(--fg-dim);font-size:11px;line-height:1.5}
 .pp-note b{color:var(--fg)}
 .pp-actions{display:flex;gap:6px;flex-wrap:wrap}
+
+/* provider switch — Settings → API, and the Prompts panel */
+.pp-label{font-size:11px;text-transform:uppercase;letter-spacing:.04em;
+  color:var(--fg-dim);margin-bottom:6px}
+.prov-pick{display:flex;gap:6px;flex-wrap:wrap}
+.prov-pick .tb{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.prov-block{margin-top:14px}
+.prov-block.hidden{display:none}
+.prov-row .prov-pick{flex:1;min-width:0}
 .pp-status{font-size:11px;color:var(--fg-dim);min-height:15px}
 .pp-status.err{color:var(--danger)}
 /* PDF export dialog — controls on the left, a scaled-down real sheet on the right */

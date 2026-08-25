@@ -76,6 +76,11 @@ window.SB = window.SB || {};
   /* 'blocked' | 'offline' | null (an ordinary error, handle it normally) */
   SB.netKind = function (e) {
     if (!e) return null;
+    /* A local model server that isn't answering fails exactly like a proxied
+     * request — same TypeError, same "Failed to fetch" — but the fix has
+     * nothing to do with AI Studio. Providers mark those, and they are never
+     * classified as a network block. */
+    if (e.localApi) return null;
     if (e.blocked) return e.netKind || 'blocked';
     if (typeof navigator !== 'undefined' && navigator.onLine === false) return 'offline';
     /* fetch itself rejecting — CORS, a proxy, DNS. No response ever arrived. */

@@ -583,6 +583,15 @@ button.linkish{
 .pp-note{color:var(--fg-dim);font-size:11px;line-height:1.5}
 .pp-note b{color:var(--fg)}
 .pp-actions{display:flex;gap:6px;flex-wrap:wrap}
+
+/* provider switch — Settings → API, and the Prompts panel */
+.pp-label{font-size:11px;text-transform:uppercase;letter-spacing:.04em;
+  color:var(--fg-dim);margin-bottom:6px}
+.prov-pick{display:flex;gap:6px;flex-wrap:wrap}
+.prov-pick .tb{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.prov-block{margin-top:14px}
+.prov-block.hidden{display:none}
+.prov-row .prov-pick{flex:1;min-width:0}
 .pp-status{font-size:11px;color:var(--fg-dim);min-height:15px}
 .pp-status.err{color:var(--danger)}
 /* PDF export dialog — controls on the left, a scaled-down real sheet on the right */
@@ -697,7 +706,7 @@ body.comment-mode .frame{cursor:crosshair}
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-08-19 23:53 · 806bf9a+";</script>
+<script>window.SB_BUILD = "2026-08-25 14:15 · c6ce9d9+";</script>
 
 <div id="app">
 
@@ -911,6 +920,11 @@ window.SB = window.SB || {};
   /* 'blocked' | 'offline' | null (an ordinary error, handle it normally) */
   SB.netKind = function (e) {
     if (!e) return null;
+    /* A local model server that isn't answering fails exactly like a proxied
+     * request — same TypeError, same "Failed to fetch" — but the fix has
+     * nothing to do with AI Studio. Providers mark those, and they are never
+     * classified as a network block. */
+    if (e.localApi) return null;
     if (e.blocked) return e.netKind || 'blocked';
     if (typeof navigator !== 'undefined' && navigator.onLine === false) return 'offline';
     /* fetch itself rejecting — CORS, a proxy, DNS. No response ever arrived. */
@@ -1514,7 +1528,7 @@ window.SB = window.SB || {};
 /* ===== js/geminimodels.js ===== */
 /* geminimodels.js — which Gemini model writes the prompts.
  *
- * Curated list of the text models documented at ai.google.dev (checked Aug 2026),
+ * Curated list of the text models documented at ai.google.dev (verified against ListModels + a per-id generateContent ping, 2026-08-21),
  * filtered to ones that take text in and return text/JSON out — no image, TTS,
  * live-audio, embedding or video models, none of which can write a prompt.
  *
@@ -1525,11 +1539,12 @@ window.SB = window.SB || {};
 (function (SB) {
   'use strict';
 
-  const DEFAULT = 'gemini-3.6-flash';
+  const DEFAULT = 'gemini-3.7-flash';
   const CACHE_KEY = 'sb.geminiModelList';
 
   const LIST = [
-    { id: 'gemini-3.6-flash', label: 'Gemini 3.6 Flash — latest, balanced (default)' },
+    { id: 'gemini-3.7-flash', label: 'Gemini 3.7 Flash — latest, best coding/agents (default)' },
+    { id: 'gemini-3.6-flash', label: 'Gemini 3.6 Flash — previous default, balanced' },
     { id: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash — most intelligent' },
     { id: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash-Lite — fastest / cheapest 3.5' },
     { id: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash-Lite — frontier-class, low cost' },
@@ -1549,8 +1564,10 @@ window.SB = window.SB || {};
   /* ids Google has shut down — anything pointing at these gets moved to DEFAULT */
   const RETIRED = [
     'gemini-2.0-flash', 'gemini-2.0-flash-lite',
-    'gemini-3-pro-preview', 'gemini-3.1-flash-lite-preview',
-    'gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-flash-latest', 'gemini-pro'
+    'gemini-3-pro-preview',
+    'gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro',
+    /* Gemma ids Google has dropped from the API (verified 2026-08-21) */
+    'gemma-3-27b-it', 'gemma-3-12b-it', 'gemma-4-e4b-it', 'gemma-4-e2b-it'
   ];
 
   /* ---- daily request counting (same idea as the AI GM app) ----
@@ -1760,6 +1777,264 @@ window.SB = window.SB || {};
     fetchAvailable: fetchAvailable, clearCache: clearCache, picker: picker,
     bump: bump, count: count, markExhausted: markExhausted,
     limit: limit, setLimit: setLimit, remaining: remaining, usageText: usageText
+  };
+
+})(window.SB);
+
+</script>
+<script>
+/* ===== js/providers.js ===== */
+/* providers.js — where the prompt WRITER runs.
+ *
+ * Two backends, one shape. prompts.js asks a provider to build a request body
+ * and to pull the text back out; everything else in the app is unchanged.
+ *
+ *   gemini — Google's generativelanguage endpoint, with JSON schema mode.
+ *   ooba   — any OpenAI-compatible /v1/chat/completions server: oobabooga's
+ *            text-generation-webui (--api), LM Studio, llama.cpp's server,
+ *            KoboldCpp. No schema mode, so it takes the same "ask for JSON in
+ *            words" path Gemma already uses.
+ *
+ * Which one is active is a project setting (p.settings.aiProvider) because a
+ * board's prompts are written by whatever the board is pointed at. WHERE the
+ * local server lives is not: the URL, model and optional key are per-browser,
+ * like the Gemini key, so a .storyboard handed to someone else carries neither
+ * your key nor your machine's address — and so flipping provider back and
+ * forth never costs you either side's model choice.
+ */
+(function (SB) {
+  'use strict';
+
+  const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/';
+  const DEFAULT_OOBA_URL = 'http://127.0.0.1:5000';
+
+  function P() { return SB.app && SB.app.project; }
+
+  /* ---------------- gemini ---------------- */
+
+  const gemini = {
+    id: 'gemini',
+    label: 'Google Gemini',
+    supportsSchema: true,
+    needsKey: true,
+
+    model: function () {
+      return (P() && P().settings.geminiModel) || SB.GeminiModels.DEFAULT;
+    },
+    /* Gemma is served through the same endpoint but has no JSON mode. */
+    schemaFor: function (mdl) { return !SB.GeminiModels.isGemma(mdl); },
+
+    ready: function () { return !!SB.Store.getApiKey(); },
+    notReady: function () {
+      return 'No Google API key. Add one in Settings → API.';
+    },
+
+    url: function (mdl) {
+      return GEMINI_ENDPOINT + encodeURIComponent(mdl) +
+        ':generateContent?key=' + encodeURIComponent(SB.Store.getApiKey());
+    },
+    headers: function () { return { 'Content-Type': 'application/json' }; },
+
+    /* opts = { schema, system, hint } — hint is the wording that replaces a
+     * response schema when the model has no JSON mode. */
+    body: function (mdl, text, opts) {
+      const plain = !this.schemaFor(mdl);
+      const withSchema = !plain && !!opts.schema;
+      const gen = { temperature: 0.8 };
+      if (withSchema) {
+        gen.responseMimeType = 'application/json';
+        gen.responseSchema = opts.schema;
+      }
+      let user = withSchema ? text : text + opts.hint;
+      const body = { generationConfig: gen };
+      if (opts.system) {
+        /* Gemma takes no systemInstruction either — fold it into the one turn. */
+        if (plain) user = opts.system + '\n\n----\n\n' + user;
+        else body.systemInstruction = { parts: [{ text: opts.system }] };
+      }
+      body.contents = [{ role: 'user', parts: [{ text: user }] }];
+      return body;
+    },
+
+    text: function (data) {
+      const cand = data.candidates && data.candidates[0];
+      const part = cand && cand.content && cand.content.parts && cand.content.parts[0];
+      const raw = part && part.text;
+      if (!raw) {
+        throw new Error('Gemini returned no text' +
+          (cand && cand.finishReason ? ' (' + cand.finishReason + ')' : ''));
+      }
+      return raw;
+    },
+
+    /* Turn a non-2xx into the message that says what to do about it. */
+    error: function (status, msg, mdl) {
+      let err;
+      if (status === 429) {
+        SB.GeminiModels.markExhausted(mdl);
+        err = new Error('Gemini 429 — daily/rate limit reached for ' + mdl +
+          '. Pick another model in the Prompts panel. (' + msg + ')');
+      } else if (status === 404) {
+        err = new Error('Gemini 404 — "' + mdl + '" is not available to this key. ' +
+          'Settings → API → refresh the model list. (' + msg + ')');
+      } else {
+        err = new Error('Gemini ' + status + ': ' + msg);
+      }
+      return err;
+    }
+  };
+
+  /* ---------------- ooba / OpenAI-compatible ---------------- */
+
+  /* Trailing slashes and a pasted-in /v1 are both things people will type. */
+  function baseUrl(raw) {
+    let u = String(raw == null ? SB.Store.getOoba().url : raw).trim();
+    if (!u) u = DEFAULT_OOBA_URL;
+    u = u.replace(/\s+$/, '').replace(/\/+$/, '');
+    u = u.replace(/\/v1(\/chat(\/completions)?)?$/i, '');
+    return u;
+  }
+
+  const ooba = {
+    id: 'ooba',
+    label: 'Ooba / OpenAI-compatible',
+    supportsSchema: false,
+    needsKey: false,
+
+    model: function () { return SB.Store.getOoba().model || ''; },
+    schemaFor: function () { return false; },
+
+    /* A local server needs no key, so "ready" only means we know where it is. */
+    ready: function () { return !!baseUrl(); },
+    notReady: function () {
+      return 'No server address for the local model. Set one in Settings → API.';
+    },
+
+    url: function () { return baseUrl() + '/v1/chat/completions'; },
+    headers: function () {
+      const h = { 'Content-Type': 'application/json' };
+      const k = SB.Store.getOoba().key;
+      if (k) h['Authorization'] = 'Bearer ' + k;
+      return h;
+    },
+
+    body: function (mdl, text, opts) {
+      const messages = [];
+      if (opts.system) messages.push({ role: 'system', content: opts.system });
+      messages.push({ role: 'user', content: text + opts.hint });
+      const b = { messages: messages, temperature: 0.8, stream: false };
+      /* Ooba serves whatever model is loaded and ignores this; LM Studio and
+       * llama-server want it. Sending it only when set keeps both happy. */
+      if (mdl) b.model = mdl;
+      return b;
+    },
+
+    text: function (data) {
+      const ch = data.choices && data.choices[0];
+      const raw = ch && ((ch.message && ch.message.content) || ch.text);
+      if (!raw) {
+        throw new Error('The local model returned no text' +
+          (ch && ch.finish_reason ? ' (' + ch.finish_reason + ')' : ''));
+      }
+      return raw;
+    },
+
+    error: function (status, msg) {
+      if (status === 404) {
+        return new Error('404 from ' + baseUrl() + ' — that address answered, but not on ' +
+          '/v1/chat/completions. Check the port, and that the server is started with its ' +
+          'OpenAI-compatible API enabled (text-generation-webui: --api). (' + msg + ')');
+      }
+      if (status === 401 || status === 403) {
+        return new Error(status + ' from the local server — it wants an API key. ' +
+          'Put the one you launched it with into Settings → API. (' + msg + ')');
+      }
+      if (status === 500 && /model|loaded/i.test(msg)) {
+        return new Error('500 — no model is loaded in the server. Load one, then try again. (' +
+          msg + ')');
+      }
+      return new Error('Local model ' + status + ': ' + msg);
+    },
+
+    /* GET /v1/models — the same call on every OpenAI-compatible server. */
+    listModels: function (url) {
+      const base = baseUrl(url);
+      const headers = {};
+      const k = SB.Store.getOoba().key;
+      if (k) headers['Authorization'] = 'Bearer ' + k;
+      return fetch(base + '/v1/models', { headers: headers })
+        .catch(function (e) { throw localError(e, base); })
+        .then(function (r) {
+          return r.text().then(function (t) {
+            if (!r.ok) throw ooba.error(r.status, t);
+            let data;
+            try { data = JSON.parse(t); }
+            catch (e) {
+              throw new Error(base + ' answered, but not with JSON — is that really an ' +
+                'OpenAI-compatible API port?');
+            }
+            const list = (data.data || data.models || []).map(function (m) {
+              const id = typeof m === 'string' ? m : (m.id || m.name || '');
+              return { id: id, label: id };
+            }).filter(function (m) { return m.id; });
+            if (!list.length) throw new Error('That server lists no models.');
+            return list;
+          });
+        });
+    }
+  };
+
+  /* A dead localhost is not a corporate proxy, and saying so sends people to
+   * the wrong fix. util.js classifies any bare fetch rejection as "blocked";
+   * for a local server the answer is always about the server itself. */
+  function localError(e, base) {
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      /* still worth reporting honestly — a localhost call does not need the net */
+    }
+    const err = new Error('Could not reach ' + (base || baseUrl()) + '. Check that the server ' +
+      'is running with its OpenAI-compatible API enabled (text-generation-webui: --api), that ' +
+      'the port matches, and that it allows requests from this page ' +
+      '(text-generation-webui: --api-enable-CORS, or serve this app from the same host).');
+    err.localApi = true;      // so SB.apiBlocked leaves it alone
+    return err;
+  }
+
+  /* ---------------- registry ---------------- */
+
+  const ALL = { gemini: gemini, ooba: ooba };
+  const ORDER = ['gemini', 'ooba'];
+
+  function normalize(id) { return ALL[id] ? id : 'gemini'; }
+
+  function activeId() {
+    const p = P();
+    return normalize(p && p.settings && p.settings.aiProvider);
+  }
+
+  function active() { return ALL[activeId()]; }
+
+  function get(id) { return ALL[normalize(id)]; }
+
+  function setActive(id) {
+    const p = P();
+    if (!p) return;
+    p.settings.aiProvider = normalize(id);
+  }
+
+  function list() { return ORDER.map(function (id) { return ALL[id]; }); }
+
+  /* What the usage counter is keyed on: two providers can both be running
+   * "mistral-7b" and they are not the same allowance. */
+  function usageKey(id, mdl) {
+    const pid = normalize(id);
+    return pid === 'gemini' ? mdl : pid + ':' + (mdl || 'local');
+  }
+
+  SB.Providers = {
+    DEFAULT_OOBA_URL: DEFAULT_OOBA_URL,
+    all: ALL, list: list, get: get, active: active, activeId: activeId,
+    setActive: setActive, normalize: normalize, usageKey: usageKey,
+    baseUrl: baseUrl, localError: localError
   };
 
 })(window.SB);
@@ -2363,6 +2638,7 @@ window.SB = window.SB || {};
         models: defaultModels(),
         imageModelId: null,
         videoModelId: null,
+        aiProvider: 'gemini',
         geminiModel: SB.GeminiModels.DEFAULT,
         brand: { enabled: true, custom: false },
         // prompt boxes stay off the cards until the user asks for them
@@ -2502,6 +2778,9 @@ window.SB = window.SB || {};
     if (!has(s.videoModelId)) s.videoModelId = firstOfKind(s.models, 'video');
     // Google retires ids; move a project off anything that is gone
     s.geminiModel = SB.GeminiModels.normalize(s.geminiModel);
+    /* Every board written before the local-model option existed was a Gemini
+     * board, and normalize() says so for anything unrecognised too. */
+    s.aiProvider = SB.Providers.normalize(s.aiProvider);
     s.brand = (s.brand && typeof s.brand === 'object') ? s.brand : {};
     if (typeof s.brand.enabled !== 'boolean') s.brand.enabled = true;
     // only a hand-edited house style is stored; the rest follow the app's
@@ -3028,6 +3307,7 @@ window.SB = window.SB || {};
   'use strict';
 
   const KEY_API = 'sb.geminiApiKey';
+  const KEY_OOBA = 'sb.oobaServer';
   const IDB_NAME = 'storyboarder';
   const IDB_STORE = 'handles';
 
@@ -3298,6 +3578,35 @@ window.SB = window.SB || {};
   function getApiKey() { try { return localStorage.getItem(KEY_API) || ''; } catch (e) { return ''; } }
   function setApiKey(v) { try { v ? localStorage.setItem(KEY_API, v) : localStorage.removeItem(KEY_API); } catch (e) { } }
 
+  /* Where the local (OpenAI-compatible) server lives. Per browser, not per
+   * project: it is a fact about this machine, and a .storyboard passed to
+   * someone else should carry neither it nor the key beside it. Keeping it
+   * here also means switching provider back and forth never loses either
+   * side's model choice. */
+  function getOoba() {
+    let v = {};
+    try { v = JSON.parse(localStorage.getItem(KEY_OOBA)) || {}; } catch (e) { v = {}; }
+    return {
+      url: v.url || '',
+      model: v.model || '',
+      key: v.key || ''
+    };
+  }
+  function setOoba(v) {
+    const clean = {
+      url: (v && v.url || '').trim(),
+      model: (v && v.model || '').trim(),
+      key: (v && v.key || '').trim()
+    };
+    try {
+      if (clean.url || clean.model || clean.key) {
+        localStorage.setItem(KEY_OOBA, JSON.stringify(clean));
+      } else {
+        localStorage.removeItem(KEY_OOBA);
+      }
+    } catch (e) { }
+  }
+
   /* ---------- rescuing a truncated file ---------- */
 
   /* A project file cut short at the end — an interrupted write, or the
@@ -3412,6 +3721,8 @@ window.SB = window.SB || {};
     detach: detach,
     getApiKey: getApiKey,
     setApiKey: setApiKey,
+    getOoba: getOoba,
+    setOoba: setOoba,
     serialize: serialize,
     downloadCopy: downloadCopy,
     storageUsable: storageUsable,
@@ -5862,7 +6173,10 @@ window.SB = window.SB || {};
 </script>
 <script>
 /* ===== js/prompts.js ===== */
-/* prompts.js — Gemini is the prompt WRITER. The app never generates media.
+/* prompts.js — the prompt WRITER. The app never generates media.
+ *
+ * Which model writes them is providers.js's business: Google's Gemini, or a
+ * local OpenAI-compatible server. Everything below is the same either way.
  *
  * Two roles, each with its own target model:
  *   image model -> the first-frame prompt      (stored on prompts[imageModel.id].imagePrompt)
@@ -5871,8 +6185,6 @@ window.SB = window.SB || {};
  */
 (function (SB) {
   'use strict';
-
-  const ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/';
 
   function P() { return SB.app.project; }
 
@@ -5968,98 +6280,119 @@ window.SB = window.SB || {};
     return jobs;
   }
 
-  function request(mdl, key, body) {
-    return fetch(ENDPOINT + encodeURIComponent(mdl) + ':generateContent?key=' + encodeURIComponent(key), {
+  /* One POST to whichever backend is selected. The provider owns the URL, the
+   * headers and the wording of a failure; everything the retry logic below
+   * needs (status, raw) is attached the same way for both. */
+  function request(prov, mdl, body) {
+    return fetch(prov.url(mdl), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: prov.headers(),
       body: JSON.stringify(body)
     }).catch(function (e) {
-      /* fetch rejected: nothing reached Google. Say which wall it hit. */
+      /* fetch rejected: nothing reached the server. Say which wall it hit —
+       * for a local server that is never the corporate proxy. */
+      if (prov.id === 'ooba') throw SB.Providers.localError(e);
       const kind = SB.netKind(e);
       if (kind) throw SB.netError(kind);
       throw e;
     }).then(function (r) {
       return r.text().then(function (t) {
         if (!r.ok) {
-          if (SB.isInterception(r.status, t)) throw SB.netError('blocked');
+          if (prov.id !== 'ooba' && SB.isInterception(r.status, t)) throw SB.netError('blocked');
           let msg = t;
-          try { msg = JSON.parse(t).error.message; } catch (e) { }
-          let err;
-          if (r.status === 429) {
-            SB.GeminiModels.markExhausted(mdl);
-            err = new Error('Gemini 429 — daily/rate limit reached for ' + mdl +
-              '. Pick another model in the Prompts panel. (' + msg + ')');
-          } else if (r.status === 404) {
-            err = new Error('Gemini 404 — "' + mdl + '" is not available to this key. ' +
-              'Settings → API → refresh the model list. (' + msg + ')');
-          } else {
-            err = new Error('Gemini ' + r.status + ': ' + msg);
-          }
+          try {
+            const j = JSON.parse(t);
+            msg = (j.error && (j.error.message || j.error)) || j.detail || t;
+            if (typeof msg !== 'string') msg = JSON.stringify(msg);
+          } catch (e) { }
+          const err = prov.error(r.status, msg, mdl);
           err.status = r.status;
           err.raw = msg;
           throw err;
         }
-        SB.GeminiModels.bump(mdl);
-        return JSON.parse(t);
+        SB.GeminiModels.bump(SB.Providers.usageKey(prov.id, mdl));
+        try { return JSON.parse(t); }
+        catch (e) {
+          throw new Error('The server answered, but not with JSON.' +
+            (prov.id === 'ooba'
+              ? ' Check that the address points at an OpenAI-compatible API port.'
+              : ''));
+        }
       });
     });
   }
 
+  /* Gemma has no JSON mode, and responseMimeType is accepted-then-IGNORED rather
+   * than rejected (verified live 2026-08-21), so nothing ever errors -- it just
+   * answers with a bulleted plan and prose that can contain no braces at all.
+   * Measured over 10 runs on a reproducing prompt: the old "start with { and end
+   * with }" hint parsed 5/10; this wording parsed 10/10. Prefilling a model turn
+   * with "{" was tried and REJECTED -- it lifts parse rate but makes the API read
+   * the turn as a function call, returning MALFORMED_FUNCTION_CALL on ~90% of
+   * calls, truncating mid-object and sometimes returning no content.parts at all. */
   const NO_SCHEMA_HINT =
-    '\n\nReply with ONLY the JSON object — start with { and end with }, no markdown fences.';
+    '\n\nOutput format: a single JSON object and nothing else. No preamble, no plan, no bullet points, no commentary. A ```json fenced block is acceptable. Your entire reply must be the JSON.';
 
-  /* One JSON-shaped question to the writer model. */
+  /* Pull the first balanced {...} out of prose, respecting strings and escapes.
+   * The old /\{[\s\S]*\}/ was greedy: in a reply holding two objects it spanned
+   * from the first { to the last }, producing invalid JSON. */
+  function firstObject(str) {
+    const fence = str.match(/```(?:json)?[ \t]*\r?\n?([\s\S]*?)```/i);
+    if (fence) str = fence[1];
+    let depth = 0, start = -1, inStr = false, esc = false, q = '';
+    for (let i = 0; i < str.length; i++) {
+      const c = str[i];
+      if (inStr) {
+        if (esc) esc = false;
+        else if (c === '\\') esc = true;
+        else if (c === q) inStr = false;
+        continue;
+      }
+      if (c === '"' || c === "'") { inStr = true; q = c; continue; }
+      if (c === '{') { if (depth === 0) start = i; depth++; continue; }
+      if (c === '}') { depth--; if (depth === 0 && start >= 0) return str.slice(start, i + 1); }
+    }
+    return null;
+  }
+
+  /* One JSON-shaped question to the writer model, wherever it runs. */
   function ask(text, schema, system) {
-    const key = SB.Store.getApiKey();
-    if (!key) return Promise.reject(new Error('No Google API key. Add one in Settings → API.'));
-    const mdl = P().settings.geminiModel || SB.GeminiModels.DEFAULT;
-
-    /* Gemma takes neither a response schema nor a systemInstruction — it gets
-     * both folded into the one user turn instead. */
-    const plain = SB.GeminiModels.isGemma(mdl);
+    const prov = SB.Providers.active();
+    if (!prov.ready()) return Promise.reject(new Error(prov.notReady()));
+    const mdl = prov.model();
 
     function build(withSchema) {
-      const gen = { temperature: 0.8 };
-      if (withSchema) {
-        gen.responseMimeType = 'application/json';
-        gen.responseSchema = schema;
-      }
-      let user = withSchema ? text : text + NO_SCHEMA_HINT;
-      const body = { generationConfig: gen };
-      if (system) {
-        if (plain) user = system + '\n\n----\n\n' + user;
-        else body.systemInstruction = { parts: [{ text: system }] };
-      }
-      body.contents = [{ role: 'user', parts: [{ text: user }] }];
-      return body;
+      return prov.body(mdl, text, {
+        schema: withSchema ? schema : null,
+        system: system,
+        hint: NO_SCHEMA_HINT
+      });
     }
 
-    /* Gemma runs on the same endpoint but has no JSON mode — ask it in words.
-     * Any other model that rejects the schema gets the same treatment on retry. */
-    const useSchema = !plain;
+    /* A local server has no JSON mode at all, and neither does Gemma — both
+     * get asked in words instead. Any other model that rejects the schema is
+     * given the same treatment on retry. */
+    const useSchema = prov.supportsSchema && prov.schemaFor(mdl) && !!schema;
 
-    return request(mdl, key, build(useSchema)).catch(function (e) {
+    return request(prov, mdl, build(useSchema)).catch(function (e) {
       const schemaProblem = /schema|json|mime|not supported|unsupported|invalid argument/i
         .test(String(e.raw || e.message || ''));
       if (useSchema && e.status === 400 && schemaProblem) {
-        return request(mdl, key, build(false));
+        return request(prov, mdl, build(false));
       }
       throw e;
     }).then(function (data) {
-      const cand = data.candidates && data.candidates[0];
-      const part = cand && cand.content && cand.content.parts && cand.content.parts[0];
-      const raw = part && part.text;
-      if (!raw) throw new Error('Gemini returned no text' + (cand && cand.finishReason ? ' (' + cand.finishReason + ')' : ''));
+      const raw = prov.text(data);
       try { return JSON.parse(raw); }
       catch (e) {
-        const m = raw.match(/\{[\s\S]*\}/);
-        if (!m) throw new Error('Could not parse the Gemini response');
-        return JSON.parse(m[0]);
+        const m = firstObject(raw);
+        if (!m) throw new Error('Could not parse the reply from ' + prov.label);
+        return JSON.parse(m);
       }
     });
   }
 
-  function callGemini(text, keys, system) {
+  function callWriter(text, keys, system) {
     const props = {};
     keys.forEach(function (k) { props[k] = { type: 'STRING' }; });
     return ask(text, { type: 'OBJECT', properties: props, required: keys }, system);
@@ -6095,7 +6428,7 @@ window.SB = window.SB || {};
       'Rewrite it with no gendered nouns, adjectives, titles or pronouns — ' +
       'use "the subject", "the person", or no pronoun at all. Keep everything else the same.';
 
-    return callGemini(fix, job.keys, job.system).then(function (res2) {
+    return callWriter(fix, job.keys, job.system).then(function (res2) {
       const still = {};
       job.keys.forEach(function (k) {
         const terms = SB.Brand.genderedTerms(res2[k]);
@@ -6118,9 +6451,8 @@ window.SB = window.SB || {};
     }
     /* Check up front rather than letting every job fail one at a time — the
      * reason is what the user needs, not a count of failures. */
-    if (!SB.Store.getApiKey()) {
-      return Promise.reject(new Error('No Google API key yet — add one in Settings → API.'));
-    }
+    const prov = SB.Providers.active();
+    if (!prov.ready()) return Promise.reject(new Error(prov.notReady()));
 
     const jobs = [];
     shots.forEach(function (s) {
@@ -6143,7 +6475,7 @@ window.SB = window.SB || {};
       if (stopped) return Promise.resolve();
       const j = queue.shift();
       if (!j) return Promise.resolve();
-      return callGemini(j.text, j.keys, j.system).then(function (res) {
+      return callWriter(j.text, j.keys, j.system).then(function (res) {
         return enforceNeutral(j, res);
       }).then(function (out) {
         j.targets.forEach(function (t) {
@@ -6328,10 +6660,8 @@ window.SB = window.SB || {};
   }
 
   function needKey() {
-    if (!SB.Store.getApiKey()) {
-      return new Error('No Google API key yet — add one in Settings → API.');
-    }
-    return null;
+    const prov = SB.Providers.active();
+    return prov.ready() ? null : new Error(prov.notReady());
   }
 
   /* ---------- generate shots ---------- */
@@ -6710,8 +7040,9 @@ window.SB = window.SB || {};
     acts.appendChild(gen);
     b2.appendChild(acts);
 
-    statusEl = SB.el('div', 'pp-status', SB.Store.getApiKey() ? '' : 'No API key yet — Settings → API.');
-    if (!SB.Store.getApiKey()) statusEl.classList.add('err');
+    const ready = SB.Providers.active().ready();
+    statusEl = SB.el('div', 'pp-status', ready ? '' : SB.Providers.active().notReady());
+    if (!ready) statusEl.classList.add('err');
     b2.appendChild(statusEl);
     bodyEl.appendChild(b2);
 
@@ -6738,37 +7069,85 @@ window.SB = window.SB || {};
       'Off by default so cards stay compact. Generating turns the matching box on for you.'));
     bodyEl.appendChild(b3);
 
-    /* --- engine --- */
+    /* --- engine ---
+     * The provider switch lives here as well as in Settings: choosing between
+     * the cloud model and the local one is a working decision (quota gone,
+     * offline, a draft not worth spending calls on), not a configuration one,
+     * and it should not cost a trip through a modal. */
     const b4 = block('prompt writer');
-    const pick = SB.GeminiModels.picker(p.settings.geminiModel, function (id) {
-      p.settings.geminiModel = id || SB.GeminiModels.DEFAULT;
-      SB.Store.touch();
-      refreshUsage();
-    });
-    b4.appendChild(row('Gemini', pick.el));
 
-    const uRow = SB.el('div', 'pp-row');
-    uRow.appendChild(SB.el('label', null, 'Free calls'));
-    usageEl = SB.el('span', 'pp-usage');
-    uRow.appendChild(usageEl);
-    limitEl = document.createElement('input');
-    limitEl.type = 'number';
-    limitEl.min = '0';
-    limitEl.className = 'pp-limit';
-    limitEl.title = 'Your free-tier requests per day for this model (AI Studio shows the real number). Blank = just count.';
-    limitEl.placeholder = 'limit';
-    limitEl.addEventListener('change', function () {
-      SB.GeminiModels.setLimit(p.settings.geminiModel, parseInt(limitEl.value, 10) || 0);
-      refreshUsage();
+    const provRow = SB.el('div', 'pp-row prov-row');
+    provRow.appendChild(SB.el('label', null, 'Writer'));
+    const provWrap = SB.el('div', 'prov-pick');
+    SB.Providers.list().forEach(function (prov) {
+      const b = SB.el('button', 'tb toggle' + (prov.id === SB.Providers.activeId() ? ' on' : ''),
+        prov.id === 'gemini' ? 'Gemini' : 'Local');
+      b.title = prov.label;
+      b.onclick = function () {
+        SB.Providers.setActive(prov.id);
+        SB.app.changed(true);
+        render();                       // the model picker below it changes too
+      };
+      provWrap.appendChild(b);
     });
-    uRow.appendChild(limitEl);
-    b4.appendChild(uRow);
-    b4.appendChild(SB.el('div', 'pp-note',
-      'Counted in this browser and reset at midnight. Google no longer publishes the free-tier ' +
-      'daily cap per model — set it from your AI Studio rate-limit page.'));
+    provRow.appendChild(provWrap);
+    b4.appendChild(provRow);
 
-    b4.appendChild(SB.el('div', 'pp-note', SB.Store.getApiKey()
-      ? 'API key is set in this browser.' : 'No API key — add one in Settings → API.'));
+    const activeProv = SB.Providers.active();
+
+    if (activeProv.id === 'gemini') {
+      const pick = SB.GeminiModels.picker(p.settings.geminiModel, function (id) {
+        p.settings.geminiModel = id || SB.GeminiModels.DEFAULT;
+        SB.Store.touch();
+        refreshUsage();
+      });
+      b4.appendChild(row('Model', pick.el));
+
+      const uRow = SB.el('div', 'pp-row');
+      uRow.appendChild(SB.el('label', null, 'Free calls'));
+      usageEl = SB.el('span', 'pp-usage');
+      uRow.appendChild(usageEl);
+      limitEl = document.createElement('input');
+      limitEl.type = 'number';
+      limitEl.min = '0';
+      limitEl.className = 'pp-limit';
+      limitEl.title = 'Your free-tier requests per day for this model (AI Studio shows the real number). Blank = just count.';
+      limitEl.placeholder = 'limit';
+      limitEl.addEventListener('change', function () {
+        SB.GeminiModels.setLimit(p.settings.geminiModel, parseInt(limitEl.value, 10) || 0);
+        refreshUsage();
+      });
+      uRow.appendChild(limitEl);
+      b4.appendChild(uRow);
+      b4.appendChild(SB.el('div', 'pp-note',
+        'Counted in this browser and reset at midnight. Google no longer publishes the free-tier ' +
+        'daily cap per model — set it from your AI Studio rate-limit page.'));
+
+      b4.appendChild(SB.el('div', 'pp-note', SB.Store.getApiKey()
+        ? 'API key is set in this browser.' : 'No API key — add one in Settings → API.'));
+    } else {
+      /* Local: no quota to spend, so the counter is a plain tally and the
+       * things worth showing are where it points and what is loaded. */
+      const o = SB.Store.getOoba();
+      usageEl = null;
+      limitEl = null;
+      const mRow = SB.el('div', 'pp-row');
+      mRow.appendChild(SB.el('label', null, 'Model'));
+      mRow.appendChild(SB.el('span', 'pp-usage', o.model || 'whatever is loaded'));
+      b4.appendChild(mRow);
+
+      const sRow = SB.el('div', 'pp-row');
+      sRow.appendChild(SB.el('label', null, 'Server'));
+      sRow.appendChild(SB.el('span', 'pp-usage', SB.Providers.baseUrl()));
+      b4.appendChild(sRow);
+
+      const calls = SB.GeminiModels.count(SB.Providers.usageKey('ooba', o.model));
+      b4.appendChild(SB.el('div', 'pp-note',
+        'Runs on your machine — no quota, no key, nothing sent out. ' +
+        calls + ' request' + (calls === 1 ? '' : 's') + ' today.'));
+      b4.appendChild(SB.el('div', 'pp-note',
+        'Change the address or model in Settings → API.'));
+    }
     bodyEl.appendChild(b4);
 
     refreshUsage();
@@ -6776,6 +7155,7 @@ window.SB = window.SB || {};
 
   function refreshUsage() {
     if (!usageEl || !P()) return;
+    if (SB.Providers.activeId() !== 'gemini') return;   // local runs have no allowance
     const id = P().settings.geminiModel;
     usageEl.textContent = SB.GeminiModels.usageText(id);
     const rem = SB.GeminiModels.remaining(id);
@@ -6822,7 +7202,7 @@ window.SB = window.SB || {};
       setStatus(msg, true);
       /* "that model is not available to this key" is answerable on the spot:
        * ask the key what it can reach and put those in the picker. */
-      if (/\b404\b/.test(msg)) {
+      if (/\b404\b/.test(msg) && SB.Providers.activeId() === 'gemini') {
         setStatus(msg + ' — checking what your key can reach…', true);
         SB.GeminiModels.fetchAvailable().then(function (models) {
           render();
@@ -7299,7 +7679,7 @@ window.SB = window.SB || {};
 </script>
 <script>
 /* ===== js/settings.js ===== */
-/* settings.js — tabbed: General · Models & templates · API. */
+/* settings.js — tabbed: General · Card fields · Brand · Models & templates · API. */
 (function (SB) {
   'use strict';
 
@@ -7558,11 +7938,51 @@ window.SB = window.SB || {};
     drawModels();
 
     /* ---------------- API ----------------
-     * The key field on its own only helps someone who already has a key. The
-     * path from "no Google account set up" to a working key is five steps, and
-     * step 2 is also what clears the blocked-API dialog on this network, so it
-     * is spelled out here rather than left to be asked about.
+     * Two backends, picked at the top: Google's Gemini, or any local
+     * OpenAI-compatible server (oobabooga's text-generation-webui, LM Studio,
+     * llama.cpp, KoboldCpp). Each keeps its own settings, so switching back
+     * and forth costs nothing — the one you left is exactly as you left it.
+     *
+     * The Gemini key field on its own only helps someone who already has a
+     * key. The path from "no Google account set up" to a working key is five
+     * steps, and step 2 is also what clears the blocked-API dialog on this
+     * network, so it is spelled out here rather than left to be asked about.
      */
+    let chosenProvider = SB.Providers.normalize(p.settings.aiProvider);
+
+    const provRow = SB.el('div', 'prov-pick');
+    const provBtns = {};
+    const provBlocks = {};
+
+    function showProvider(id) {
+      chosenProvider = SB.Providers.normalize(id);
+      Object.keys(provBtns).forEach(function (k) {
+        provBtns[k].classList.toggle('on', k === chosenProvider);
+      });
+      Object.keys(provBlocks).forEach(function (k) {
+        provBlocks[k].classList.toggle('hidden', k !== chosenProvider);
+      });
+    }
+
+    SB.Providers.list().forEach(function (prov) {
+      const b = SB.el('button', 'tb toggle', prov.label);
+      b.onclick = function () { showProvider(prov.id); };
+      provBtns[prov.id] = b;
+      provRow.appendChild(b);
+      provBlocks[prov.id] = SB.el('div', 'prov-block');
+    });
+    panels.api.appendChild(SB.el('div', 'pp-label', 'Who writes the prompts'));
+    panels.api.appendChild(provRow);
+    panels.api.appendChild(SB.el('div', 'pp-note',
+      'The choice is saved with the project. Both sides keep their own model and ' +
+      'credentials in this browser, so switching back is lossless.'));
+    SB.Providers.list().forEach(function (prov) {
+      panels.api.appendChild(provBlocks[prov.id]);
+    });
+
+    const gemPanel = provBlocks.gemini;
+    const oobaPanel = provBlocks.ooba;
+
     const how = SB.el('div', 'setup');
     how.appendChild(SB.el('div', 't', 'Getting a key'));
     const steps = document.createElement('ol');
@@ -7600,16 +8020,16 @@ window.SB = window.SB || {};
       ' — if it comes back with a model count, everything downstream works.']);
 
     how.appendChild(steps);
-    panels.api.appendChild(how);
+    gemPanel.appendChild(how);
 
     const key = document.createElement('input');
     key.type = 'password';
     key.value = SB.Store.getApiKey();
     key.placeholder = 'AIza…';
-    panels.api.appendChild(field('Google (Gemini) API key', key));
-    panels.api.appendChild(SB.el('div', 'pp-note',
+    gemPanel.appendChild(field('Google (Gemini) API key', key));
+    gemPanel.appendChild(SB.el('div', 'pp-note',
       'Stored in this browser only — never written into the .storyboard file, so a board can be shared without leaking the key.'));
-    panels.api.appendChild(SB.el('div', 'pp-note',
+    gemPanel.appendChild(SB.el('div', 'pp-note',
       'The free tier is counted per Google Cloud project per day. What this browser has spent ' +
       'today is shown as “Free calls” in the Prompts panel.'));
 
@@ -7617,7 +8037,7 @@ window.SB = window.SB || {};
     const pick = SB.GeminiModels.picker(chosenModel, function (id) { chosenModel = id; });
     const gmField = field('Gemini model used to write prompts', pick.el);
     gmField.style.marginTop = '14px';
-    panels.api.appendChild(gmField);
+    gemPanel.appendChild(gmField);
 
     const refreshRow = SB.el('div', 'pp-actions');
     const refresh = SB.el('button', 'tb', 'Refresh list from my key');
@@ -7651,11 +8071,147 @@ window.SB = window.SB || {};
     };
     refreshRow.appendChild(refresh);
     refreshRow.appendChild(useCurated);
-    panels.api.appendChild(refreshRow);
-    panels.api.appendChild(refreshNote);
-    panels.api.appendChild(SB.el('div', 'pp-note',
+    gemPanel.appendChild(refreshRow);
+    gemPanel.appendChild(refreshNote);
+    gemPanel.appendChild(SB.el('div', 'pp-note',
       'Google retires model ids on its own schedule. If a prompt run comes back 404, ' +
       'refresh this list — it asks your key what it can actually reach today.'));
+
+
+    /* ---- local / OpenAI-compatible server ---- */
+    const oobaSaved = SB.Store.getOoba();
+
+    oobaPanel.appendChild(SB.el('div', 'pp-note',
+      'Any server speaking the OpenAI chat API: oobabooga’s text-generation-webui started ' +
+      'with --api, LM Studio, llama.cpp’s server, KoboldCpp. Nothing leaves your machine, ' +
+      'there is no quota, and no key is needed unless you launched the server with one.'));
+
+    const oUrl = document.createElement('input');
+    oUrl.type = 'text';
+    oUrl.value = oobaSaved.url || '';
+    oUrl.placeholder = SB.Providers.DEFAULT_OOBA_URL;
+    oobaPanel.appendChild(field('Server address', oUrl));
+    oobaPanel.appendChild(SB.el('div', 'pp-note',
+      'Just the host and port — /v1/chat/completions is added for you. ' +
+      'Blank means ' + SB.Providers.DEFAULT_OOBA_URL + '.'));
+
+    /* Same shape as the Gemini picker: a list when the server has told us
+     * what it has, and a free-text box for when it hasn't. */
+    let oobaModel = oobaSaved.model || '';
+    const oSel = document.createElement('select');
+    const oCustom = document.createElement('input');
+    oCustom.type = 'text';
+    oCustom.className = 'gm-custom';
+    oCustom.placeholder = 'model name as the server reports it';
+    const oWrap = SB.el('div', 'gm-picker');
+    oWrap.appendChild(oSel);
+    oWrap.appendChild(oCustom);
+
+    function buildOoba(list) {
+      oSel.innerHTML = '';
+      const none = document.createElement('option');
+      none.value = '';
+      none.textContent = 'whatever is loaded (send no model name)';
+      oSel.appendChild(none);
+      let matched = !oobaModel;
+      (list || []).forEach(function (m) {
+        const o = document.createElement('option');
+        o.value = m.id; o.textContent = m.label || m.id;
+        if (m.id === oobaModel) { o.selected = true; matched = true; }
+        oSel.appendChild(o);
+      });
+      if (oobaModel && !matched) {
+        const o = document.createElement('option');
+        o.value = oobaModel; o.textContent = oobaModel + ' — (not listed)';
+        o.selected = true;
+        oSel.insertBefore(o, oSel.firstChild.nextSibling);
+      }
+      const oc = document.createElement('option');
+      oc.value = '__custom'; oc.textContent = 'Custom…';
+      oSel.appendChild(oc);
+      oCustom.classList.add('hidden');
+    }
+    buildOoba(null);
+
+    oSel.addEventListener('change', function () {
+      if (oSel.value === '__custom') {
+        oCustom.classList.remove('hidden');
+        oCustom.value = oobaModel || '';
+        oCustom.focus();
+        return;
+      }
+      oCustom.classList.add('hidden');
+      oobaModel = oSel.value;
+    });
+    oCustom.addEventListener('input', function () { oobaModel = oCustom.value.trim(); });
+
+    oobaPanel.appendChild(field('Model', oWrap));
+    oobaPanel.appendChild(SB.el('div', 'pp-note',
+      'text-generation-webui serves the one model you have loaded and ignores this. ' +
+      'LM Studio and llama-server want the name — load the list to fill it in.'));
+
+    const oKey = document.createElement('input');
+    oKey.type = 'password';
+    oKey.value = oobaSaved.key || '';
+    oKey.placeholder = 'usually blank';
+    oobaPanel.appendChild(field('API key (only if the server asks for one)', oKey));
+
+    const oActs = SB.el('div', 'pp-actions');
+    const oLoad = SB.el('button', 'tb', 'Load models from the server');
+    const oTest = SB.el('button', 'tb', 'Test connection');
+    const oNote = SB.el('span', 'pp-note', '');
+
+    /* Both buttons work off what is typed right now, not what was saved —
+     * otherwise the first thing anyone does is press Save to find out whether
+     * the address they just typed is right. */
+    function liveOoba() {
+      SB.Store.setOoba({ url: oUrl.value, model: oobaModel, key: oKey.value });
+    }
+    function oobaFail(e) {
+      oNote.textContent = e.message || String(e);
+      oNote.classList.add('err');
+    }
+
+    oLoad.onclick = function () {
+      liveOoba();
+      oLoad.disabled = true;
+      oNote.textContent = 'asking the server…';
+      oNote.classList.remove('err');
+      SB.Providers.get('ooba').listModels(oUrl.value).then(function (list) {
+        oLoad.disabled = false;
+        buildOoba(list);
+        oNote.textContent = list.length + ' model' + (list.length === 1 ? '' : 's') + ' loaded.';
+      }).catch(function (e) { oLoad.disabled = false; oobaFail(e); });
+    };
+
+    /* A model list can come back from a server with nothing loaded, so the
+     * only honest test is a real completion. */
+    oTest.onclick = function () {
+      liveOoba();
+      const wasProvider = p.settings.aiProvider;
+      p.settings.aiProvider = 'ooba';
+      oTest.disabled = true;
+      oNote.textContent = 'sending a test prompt…';
+      oNote.classList.remove('err');
+      const started = Date.now();
+      SB.Prompts.raw('Reply with the JSON object {"ok":true} and nothing else.',
+        { type: 'OBJECT', properties: { ok: { type: 'BOOLEAN' } }, required: ['ok'] })
+        .then(function () {
+          oNote.textContent = 'answered in ' + (Date.now() - started) + ' ms — ready to write prompts.';
+        })
+        .catch(oobaFail)
+        .then(function () {
+          oTest.disabled = false;
+          p.settings.aiProvider = wasProvider;
+        });
+    };
+
+    oActs.appendChild(oLoad);
+    oActs.appendChild(oTest);
+    oobaPanel.appendChild(oActs);
+    oobaPanel.appendChild(oNote);
+
+    showProvider(chosenProvider);
 
     select(startTab && panels[startTab] ? startTab : 'general');
 
@@ -7691,6 +8247,7 @@ window.SB = window.SB || {};
             p.settings.brand = (bTxt && bTxt !== SB.Brand.DEFAULT.trim())
               ? { enabled: bChk.checked, custom: true, text: bTxt }
               : { enabled: bChk.checked, custom: false };
+            p.settings.aiProvider = SB.Providers.normalize(chosenProvider);
             p.settings.geminiModel = (chosenModel || '').trim() || SB.GeminiModels.DEFAULT;
             p.settings.models = working.filter(function (m) { return (m.name || '').trim(); })
               .map(function (m) { delete m.__open; return m; });
@@ -7705,6 +8262,7 @@ window.SB = window.SB || {};
               p.settings.videoModelId = SB.Model.firstOfKind(p.settings.models, 'video');
             }
             SB.Store.setApiKey(key.value.trim());
+            SB.Store.setOoba({ url: oUrl.value, model: oobaModel, key: oKey.value });
             close();
             SB.app.changed(true);
             SB.PromptPanel.refresh();

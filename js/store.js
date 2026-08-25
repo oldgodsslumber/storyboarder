@@ -8,6 +8,7 @@
   'use strict';
 
   const KEY_API = 'sb.geminiApiKey';
+  const KEY_OOBA = 'sb.oobaServer';
   const IDB_NAME = 'storyboarder';
   const IDB_STORE = 'handles';
 
@@ -278,6 +279,35 @@
   function getApiKey() { try { return localStorage.getItem(KEY_API) || ''; } catch (e) { return ''; } }
   function setApiKey(v) { try { v ? localStorage.setItem(KEY_API, v) : localStorage.removeItem(KEY_API); } catch (e) { } }
 
+  /* Where the local (OpenAI-compatible) server lives. Per browser, not per
+   * project: it is a fact about this machine, and a .storyboard passed to
+   * someone else should carry neither it nor the key beside it. Keeping it
+   * here also means switching provider back and forth never loses either
+   * side's model choice. */
+  function getOoba() {
+    let v = {};
+    try { v = JSON.parse(localStorage.getItem(KEY_OOBA)) || {}; } catch (e) { v = {}; }
+    return {
+      url: v.url || '',
+      model: v.model || '',
+      key: v.key || ''
+    };
+  }
+  function setOoba(v) {
+    const clean = {
+      url: (v && v.url || '').trim(),
+      model: (v && v.model || '').trim(),
+      key: (v && v.key || '').trim()
+    };
+    try {
+      if (clean.url || clean.model || clean.key) {
+        localStorage.setItem(KEY_OOBA, JSON.stringify(clean));
+      } else {
+        localStorage.removeItem(KEY_OOBA);
+      }
+    } catch (e) { }
+  }
+
   /* ---------- rescuing a truncated file ---------- */
 
   /* A project file cut short at the end — an interrupted write, or the
@@ -392,6 +422,8 @@
     detach: detach,
     getApiKey: getApiKey,
     setApiKey: setApiKey,
+    getOoba: getOoba,
+    setOoba: setOoba,
     serialize: serialize,
     downloadCopy: downloadCopy,
     storageUsable: storageUsable,

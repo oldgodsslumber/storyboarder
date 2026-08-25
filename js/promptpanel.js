@@ -103,8 +103,9 @@
     acts.appendChild(gen);
     b2.appendChild(acts);
 
-    statusEl = SB.el('div', 'pp-status', SB.Store.getApiKey() ? '' : 'No API key yet — Settings → API.');
-    if (!SB.Store.getApiKey()) statusEl.classList.add('err');
+    const ready = SB.Providers.active().ready();
+    statusEl = SB.el('div', 'pp-status', ready ? '' : SB.Providers.active().notReady());
+    if (!ready) statusEl.classList.add('err');
     b2.appendChild(statusEl);
     bodyEl.appendChild(b2);
 
@@ -131,37 +132,85 @@
       'Off by default so cards stay compact. Generating turns the matching box on for you.'));
     bodyEl.appendChild(b3);
 
-    /* --- engine --- */
+    /* --- engine ---
+     * The provider switch lives here as well as in Settings: choosing between
+     * the cloud model and the local one is a working decision (quota gone,
+     * offline, a draft not worth spending calls on), not a configuration one,
+     * and it should not cost a trip through a modal. */
     const b4 = block('prompt writer');
-    const pick = SB.GeminiModels.picker(p.settings.geminiModel, function (id) {
-      p.settings.geminiModel = id || SB.GeminiModels.DEFAULT;
-      SB.Store.touch();
-      refreshUsage();
-    });
-    b4.appendChild(row('Gemini', pick.el));
 
-    const uRow = SB.el('div', 'pp-row');
-    uRow.appendChild(SB.el('label', null, 'Free calls'));
-    usageEl = SB.el('span', 'pp-usage');
-    uRow.appendChild(usageEl);
-    limitEl = document.createElement('input');
-    limitEl.type = 'number';
-    limitEl.min = '0';
-    limitEl.className = 'pp-limit';
-    limitEl.title = 'Your free-tier requests per day for this model (AI Studio shows the real number). Blank = just count.';
-    limitEl.placeholder = 'limit';
-    limitEl.addEventListener('change', function () {
-      SB.GeminiModels.setLimit(p.settings.geminiModel, parseInt(limitEl.value, 10) || 0);
-      refreshUsage();
+    const provRow = SB.el('div', 'pp-row prov-row');
+    provRow.appendChild(SB.el('label', null, 'Writer'));
+    const provWrap = SB.el('div', 'prov-pick');
+    SB.Providers.list().forEach(function (prov) {
+      const b = SB.el('button', 'tb toggle' + (prov.id === SB.Providers.activeId() ? ' on' : ''),
+        prov.id === 'gemini' ? 'Gemini' : 'Local');
+      b.title = prov.label;
+      b.onclick = function () {
+        SB.Providers.setActive(prov.id);
+        SB.app.changed(true);
+        render();                       // the model picker below it changes too
+      };
+      provWrap.appendChild(b);
     });
-    uRow.appendChild(limitEl);
-    b4.appendChild(uRow);
-    b4.appendChild(SB.el('div', 'pp-note',
-      'Counted in this browser and reset at midnight. Google no longer publishes the free-tier ' +
-      'daily cap per model — set it from your AI Studio rate-limit page.'));
+    provRow.appendChild(provWrap);
+    b4.appendChild(provRow);
 
-    b4.appendChild(SB.el('div', 'pp-note', SB.Store.getApiKey()
-      ? 'API key is set in this browser.' : 'No API key — add one in Settings → API.'));
+    const activeProv = SB.Providers.active();
+
+    if (activeProv.id === 'gemini') {
+      const pick = SB.GeminiModels.picker(p.settings.geminiModel, function (id) {
+        p.settings.geminiModel = id || SB.GeminiModels.DEFAULT;
+        SB.Store.touch();
+        refreshUsage();
+      });
+      b4.appendChild(row('Model', pick.el));
+
+      const uRow = SB.el('div', 'pp-row');
+      uRow.appendChild(SB.el('label', null, 'Free calls'));
+      usageEl = SB.el('span', 'pp-usage');
+      uRow.appendChild(usageEl);
+      limitEl = document.createElement('input');
+      limitEl.type = 'number';
+      limitEl.min = '0';
+      limitEl.className = 'pp-limit';
+      limitEl.title = 'Your free-tier requests per day for this model (AI Studio shows the real number). Blank = just count.';
+      limitEl.placeholder = 'limit';
+      limitEl.addEventListener('change', function () {
+        SB.GeminiModels.setLimit(p.settings.geminiModel, parseInt(limitEl.value, 10) || 0);
+        refreshUsage();
+      });
+      uRow.appendChild(limitEl);
+      b4.appendChild(uRow);
+      b4.appendChild(SB.el('div', 'pp-note',
+        'Counted in this browser and reset at midnight. Google no longer publishes the free-tier ' +
+        'daily cap per model — set it from your AI Studio rate-limit page.'));
+
+      b4.appendChild(SB.el('div', 'pp-note', SB.Store.getApiKey()
+        ? 'API key is set in this browser.' : 'No API key — add one in Settings → API.'));
+    } else {
+      /* Local: no quota to spend, so the counter is a plain tally and the
+       * things worth showing are where it points and what is loaded. */
+      const o = SB.Store.getOoba();
+      usageEl = null;
+      limitEl = null;
+      const mRow = SB.el('div', 'pp-row');
+      mRow.appendChild(SB.el('label', null, 'Model'));
+      mRow.appendChild(SB.el('span', 'pp-usage', o.model || 'whatever is loaded'));
+      b4.appendChild(mRow);
+
+      const sRow = SB.el('div', 'pp-row');
+      sRow.appendChild(SB.el('label', null, 'Server'));
+      sRow.appendChild(SB.el('span', 'pp-usage', SB.Providers.baseUrl()));
+      b4.appendChild(sRow);
+
+      const calls = SB.GeminiModels.count(SB.Providers.usageKey('ooba', o.model));
+      b4.appendChild(SB.el('div', 'pp-note',
+        'Runs on your machine — no quota, no key, nothing sent out. ' +
+        calls + ' request' + (calls === 1 ? '' : 's') + ' today.'));
+      b4.appendChild(SB.el('div', 'pp-note',
+        'Change the address or model in Settings → API.'));
+    }
     bodyEl.appendChild(b4);
 
     refreshUsage();
@@ -169,6 +218,7 @@
 
   function refreshUsage() {
     if (!usageEl || !P()) return;
+    if (SB.Providers.activeId() !== 'gemini') return;   // local runs have no allowance
     const id = P().settings.geminiModel;
     usageEl.textContent = SB.GeminiModels.usageText(id);
     const rem = SB.GeminiModels.remaining(id);
@@ -215,7 +265,7 @@
       setStatus(msg, true);
       /* "that model is not available to this key" is answerable on the spot:
        * ask the key what it can reach and put those in the picker. */
-      if (/\b404\b/.test(msg)) {
+      if (/\b404\b/.test(msg) && SB.Providers.activeId() === 'gemini') {
         setStatus(msg + ' — checking what your key can reach…', true);
         SB.GeminiModels.fetchAvailable().then(function (models) {
           render();

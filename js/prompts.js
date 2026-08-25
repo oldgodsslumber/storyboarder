@@ -1,4 +1,7 @@
-/* prompts.js — Gemini is the prompt WRITER. The app never generates media.
+/* prompts.js — the prompt WRITER. The app never generates media.
+ *
+ * Which model writes them is providers.js's business: Google's Gemini, or a
+ * local OpenAI-compatible server. Everything below is the same either way.
  *
  * Two roles, each with its own target model:
  *   image model -> the first-frame prompt      (stored on prompts[imageModel.id].imagePrompt)
@@ -7,8 +10,6 @@
  */
 (function (SB) {
   'use strict';
-
-  const ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/';
 
   function P() { return SB.app.project; }
 
@@ -104,39 +105,44 @@
     return jobs;
   }
 
-  function request(mdl, key, body) {
-    return fetch(ENDPOINT + encodeURIComponent(mdl) + ':generateContent?key=' + encodeURIComponent(key), {
+  /* One POST to whichever backend is selected. The provider owns the URL, the
+   * headers and the wording of a failure; everything the retry logic below
+   * needs (status, raw) is attached the same way for both. */
+  function request(prov, mdl, body) {
+    return fetch(prov.url(mdl), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: prov.headers(),
       body: JSON.stringify(body)
     }).catch(function (e) {
-      /* fetch rejected: nothing reached Google. Say which wall it hit. */
+      /* fetch rejected: nothing reached the server. Say which wall it hit —
+       * for a local server that is never the corporate proxy. */
+      if (prov.id === 'ooba') throw SB.Providers.localError(e);
       const kind = SB.netKind(e);
       if (kind) throw SB.netError(kind);
       throw e;
     }).then(function (r) {
       return r.text().then(function (t) {
         if (!r.ok) {
-          if (SB.isInterception(r.status, t)) throw SB.netError('blocked');
+          if (prov.id !== 'ooba' && SB.isInterception(r.status, t)) throw SB.netError('blocked');
           let msg = t;
-          try { msg = JSON.parse(t).error.message; } catch (e) { }
-          let err;
-          if (r.status === 429) {
-            SB.GeminiModels.markExhausted(mdl);
-            err = new Error('Gemini 429 — daily/rate limit reached for ' + mdl +
-              '. Pick another model in the Prompts panel. (' + msg + ')');
-          } else if (r.status === 404) {
-            err = new Error('Gemini 404 — "' + mdl + '" is not available to this key. ' +
-              'Settings → API → refresh the model list. (' + msg + ')');
-          } else {
-            err = new Error('Gemini ' + r.status + ': ' + msg);
-          }
+          try {
+            const j = JSON.parse(t);
+            msg = (j.error && (j.error.message || j.error)) || j.detail || t;
+            if (typeof msg !== 'string') msg = JSON.stringify(msg);
+          } catch (e) { }
+          const err = prov.error(r.status, msg, mdl);
           err.status = r.status;
           err.raw = msg;
           throw err;
         }
-        SB.GeminiModels.bump(mdl);
-        return JSON.parse(t);
+        SB.GeminiModels.bump(SB.Providers.usageKey(prov.id, mdl));
+        try { return JSON.parse(t); }
+        catch (e) {
+          throw new Error('The server answered, but not with JSON.' +
+            (prov.id === 'ooba'
+              ? ' Check that the address points at an OpenAI-compatible API port.'
+              : ''));
+        }
       });
     });
   }
@@ -174,58 +180,44 @@
     return null;
   }
 
-  /* One JSON-shaped question to the writer model. */
+  /* One JSON-shaped question to the writer model, wherever it runs. */
   function ask(text, schema, system) {
-    const key = SB.Store.getApiKey();
-    if (!key) return Promise.reject(new Error('No Google API key. Add one in Settings → API.'));
-    const mdl = P().settings.geminiModel || SB.GeminiModels.DEFAULT;
-
-    /* Gemma takes neither a response schema nor a systemInstruction — it gets
-     * both folded into the one user turn instead. */
-    const plain = SB.GeminiModels.isGemma(mdl);
+    const prov = SB.Providers.active();
+    if (!prov.ready()) return Promise.reject(new Error(prov.notReady()));
+    const mdl = prov.model();
 
     function build(withSchema) {
-      const gen = { temperature: 0.8 };
-      if (withSchema) {
-        gen.responseMimeType = 'application/json';
-        gen.responseSchema = schema;
-      }
-      let user = withSchema ? text : text + NO_SCHEMA_HINT;
-      const body = { generationConfig: gen };
-      if (system) {
-        if (plain) user = system + '\n\n----\n\n' + user;
-        else body.systemInstruction = { parts: [{ text: system }] };
-      }
-      body.contents = [{ role: 'user', parts: [{ text: user }] }];
-      return body;
+      return prov.body(mdl, text, {
+        schema: withSchema ? schema : null,
+        system: system,
+        hint: NO_SCHEMA_HINT
+      });
     }
 
-    /* Gemma runs on the same endpoint but has no JSON mode — ask it in words.
-     * Any other model that rejects the schema gets the same treatment on retry. */
-    const useSchema = !plain;
+    /* A local server has no JSON mode at all, and neither does Gemma — both
+     * get asked in words instead. Any other model that rejects the schema is
+     * given the same treatment on retry. */
+    const useSchema = prov.supportsSchema && prov.schemaFor(mdl) && !!schema;
 
-    return request(mdl, key, build(useSchema)).catch(function (e) {
+    return request(prov, mdl, build(useSchema)).catch(function (e) {
       const schemaProblem = /schema|json|mime|not supported|unsupported|invalid argument/i
         .test(String(e.raw || e.message || ''));
       if (useSchema && e.status === 400 && schemaProblem) {
-        return request(mdl, key, build(false));
+        return request(prov, mdl, build(false));
       }
       throw e;
     }).then(function (data) {
-      const cand = data.candidates && data.candidates[0];
-      const part = cand && cand.content && cand.content.parts && cand.content.parts[0];
-      const raw = part && part.text;
-      if (!raw) throw new Error('Gemini returned no text' + (cand && cand.finishReason ? ' (' + cand.finishReason + ')' : ''));
+      const raw = prov.text(data);
       try { return JSON.parse(raw); }
       catch (e) {
         const m = firstObject(raw);
-        if (!m) throw new Error('Could not parse the Gemini response');
+        if (!m) throw new Error('Could not parse the reply from ' + prov.label);
         return JSON.parse(m);
       }
     });
   }
 
-  function callGemini(text, keys, system) {
+  function callWriter(text, keys, system) {
     const props = {};
     keys.forEach(function (k) { props[k] = { type: 'STRING' }; });
     return ask(text, { type: 'OBJECT', properties: props, required: keys }, system);
@@ -261,7 +253,7 @@
       'Rewrite it with no gendered nouns, adjectives, titles or pronouns — ' +
       'use "the subject", "the person", or no pronoun at all. Keep everything else the same.';
 
-    return callGemini(fix, job.keys, job.system).then(function (res2) {
+    return callWriter(fix, job.keys, job.system).then(function (res2) {
       const still = {};
       job.keys.forEach(function (k) {
         const terms = SB.Brand.genderedTerms(res2[k]);
@@ -284,9 +276,8 @@
     }
     /* Check up front rather than letting every job fail one at a time — the
      * reason is what the user needs, not a count of failures. */
-    if (!SB.Store.getApiKey()) {
-      return Promise.reject(new Error('No Google API key yet — add one in Settings → API.'));
-    }
+    const prov = SB.Providers.active();
+    if (!prov.ready()) return Promise.reject(new Error(prov.notReady()));
 
     const jobs = [];
     shots.forEach(function (s) {
@@ -309,7 +300,7 @@
       if (stopped) return Promise.resolve();
       const j = queue.shift();
       if (!j) return Promise.resolve();
-      return callGemini(j.text, j.keys, j.system).then(function (res) {
+      return callWriter(j.text, j.keys, j.system).then(function (res) {
         return enforceNeutral(j, res);
       }).then(function (out) {
         j.targets.forEach(function (t) {

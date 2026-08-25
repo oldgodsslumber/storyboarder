@@ -1,4 +1,4 @@
-/* settings.js — tabbed: General · Models & templates · API. */
+/* settings.js — tabbed: General · Card fields · Brand · Models & templates · API. */
 (function (SB) {
   'use strict';
 
@@ -257,11 +257,51 @@
     drawModels();
 
     /* ---------------- API ----------------
-     * The key field on its own only helps someone who already has a key. The
-     * path from "no Google account set up" to a working key is five steps, and
-     * step 2 is also what clears the blocked-API dialog on this network, so it
-     * is spelled out here rather than left to be asked about.
+     * Two backends, picked at the top: Google's Gemini, or any local
+     * OpenAI-compatible server (oobabooga's text-generation-webui, LM Studio,
+     * llama.cpp, KoboldCpp). Each keeps its own settings, so switching back
+     * and forth costs nothing — the one you left is exactly as you left it.
+     *
+     * The Gemini key field on its own only helps someone who already has a
+     * key. The path from "no Google account set up" to a working key is five
+     * steps, and step 2 is also what clears the blocked-API dialog on this
+     * network, so it is spelled out here rather than left to be asked about.
      */
+    let chosenProvider = SB.Providers.normalize(p.settings.aiProvider);
+
+    const provRow = SB.el('div', 'prov-pick');
+    const provBtns = {};
+    const provBlocks = {};
+
+    function showProvider(id) {
+      chosenProvider = SB.Providers.normalize(id);
+      Object.keys(provBtns).forEach(function (k) {
+        provBtns[k].classList.toggle('on', k === chosenProvider);
+      });
+      Object.keys(provBlocks).forEach(function (k) {
+        provBlocks[k].classList.toggle('hidden', k !== chosenProvider);
+      });
+    }
+
+    SB.Providers.list().forEach(function (prov) {
+      const b = SB.el('button', 'tb toggle', prov.label);
+      b.onclick = function () { showProvider(prov.id); };
+      provBtns[prov.id] = b;
+      provRow.appendChild(b);
+      provBlocks[prov.id] = SB.el('div', 'prov-block');
+    });
+    panels.api.appendChild(SB.el('div', 'pp-label', 'Who writes the prompts'));
+    panels.api.appendChild(provRow);
+    panels.api.appendChild(SB.el('div', 'pp-note',
+      'The choice is saved with the project. Both sides keep their own model and ' +
+      'credentials in this browser, so switching back is lossless.'));
+    SB.Providers.list().forEach(function (prov) {
+      panels.api.appendChild(provBlocks[prov.id]);
+    });
+
+    const gemPanel = provBlocks.gemini;
+    const oobaPanel = provBlocks.ooba;
+
     const how = SB.el('div', 'setup');
     how.appendChild(SB.el('div', 't', 'Getting a key'));
     const steps = document.createElement('ol');
@@ -299,16 +339,16 @@
       ' — if it comes back with a model count, everything downstream works.']);
 
     how.appendChild(steps);
-    panels.api.appendChild(how);
+    gemPanel.appendChild(how);
 
     const key = document.createElement('input');
     key.type = 'password';
     key.value = SB.Store.getApiKey();
     key.placeholder = 'AIza…';
-    panels.api.appendChild(field('Google (Gemini) API key', key));
-    panels.api.appendChild(SB.el('div', 'pp-note',
+    gemPanel.appendChild(field('Google (Gemini) API key', key));
+    gemPanel.appendChild(SB.el('div', 'pp-note',
       'Stored in this browser only — never written into the .storyboard file, so a board can be shared without leaking the key.'));
-    panels.api.appendChild(SB.el('div', 'pp-note',
+    gemPanel.appendChild(SB.el('div', 'pp-note',
       'The free tier is counted per Google Cloud project per day. What this browser has spent ' +
       'today is shown as “Free calls” in the Prompts panel.'));
 
@@ -316,7 +356,7 @@
     const pick = SB.GeminiModels.picker(chosenModel, function (id) { chosenModel = id; });
     const gmField = field('Gemini model used to write prompts', pick.el);
     gmField.style.marginTop = '14px';
-    panels.api.appendChild(gmField);
+    gemPanel.appendChild(gmField);
 
     const refreshRow = SB.el('div', 'pp-actions');
     const refresh = SB.el('button', 'tb', 'Refresh list from my key');
@@ -350,11 +390,147 @@
     };
     refreshRow.appendChild(refresh);
     refreshRow.appendChild(useCurated);
-    panels.api.appendChild(refreshRow);
-    panels.api.appendChild(refreshNote);
-    panels.api.appendChild(SB.el('div', 'pp-note',
+    gemPanel.appendChild(refreshRow);
+    gemPanel.appendChild(refreshNote);
+    gemPanel.appendChild(SB.el('div', 'pp-note',
       'Google retires model ids on its own schedule. If a prompt run comes back 404, ' +
       'refresh this list — it asks your key what it can actually reach today.'));
+
+
+    /* ---- local / OpenAI-compatible server ---- */
+    const oobaSaved = SB.Store.getOoba();
+
+    oobaPanel.appendChild(SB.el('div', 'pp-note',
+      'Any server speaking the OpenAI chat API: oobabooga’s text-generation-webui started ' +
+      'with --api, LM Studio, llama.cpp’s server, KoboldCpp. Nothing leaves your machine, ' +
+      'there is no quota, and no key is needed unless you launched the server with one.'));
+
+    const oUrl = document.createElement('input');
+    oUrl.type = 'text';
+    oUrl.value = oobaSaved.url || '';
+    oUrl.placeholder = SB.Providers.DEFAULT_OOBA_URL;
+    oobaPanel.appendChild(field('Server address', oUrl));
+    oobaPanel.appendChild(SB.el('div', 'pp-note',
+      'Just the host and port — /v1/chat/completions is added for you. ' +
+      'Blank means ' + SB.Providers.DEFAULT_OOBA_URL + '.'));
+
+    /* Same shape as the Gemini picker: a list when the server has told us
+     * what it has, and a free-text box for when it hasn't. */
+    let oobaModel = oobaSaved.model || '';
+    const oSel = document.createElement('select');
+    const oCustom = document.createElement('input');
+    oCustom.type = 'text';
+    oCustom.className = 'gm-custom';
+    oCustom.placeholder = 'model name as the server reports it';
+    const oWrap = SB.el('div', 'gm-picker');
+    oWrap.appendChild(oSel);
+    oWrap.appendChild(oCustom);
+
+    function buildOoba(list) {
+      oSel.innerHTML = '';
+      const none = document.createElement('option');
+      none.value = '';
+      none.textContent = 'whatever is loaded (send no model name)';
+      oSel.appendChild(none);
+      let matched = !oobaModel;
+      (list || []).forEach(function (m) {
+        const o = document.createElement('option');
+        o.value = m.id; o.textContent = m.label || m.id;
+        if (m.id === oobaModel) { o.selected = true; matched = true; }
+        oSel.appendChild(o);
+      });
+      if (oobaModel && !matched) {
+        const o = document.createElement('option');
+        o.value = oobaModel; o.textContent = oobaModel + ' — (not listed)';
+        o.selected = true;
+        oSel.insertBefore(o, oSel.firstChild.nextSibling);
+      }
+      const oc = document.createElement('option');
+      oc.value = '__custom'; oc.textContent = 'Custom…';
+      oSel.appendChild(oc);
+      oCustom.classList.add('hidden');
+    }
+    buildOoba(null);
+
+    oSel.addEventListener('change', function () {
+      if (oSel.value === '__custom') {
+        oCustom.classList.remove('hidden');
+        oCustom.value = oobaModel || '';
+        oCustom.focus();
+        return;
+      }
+      oCustom.classList.add('hidden');
+      oobaModel = oSel.value;
+    });
+    oCustom.addEventListener('input', function () { oobaModel = oCustom.value.trim(); });
+
+    oobaPanel.appendChild(field('Model', oWrap));
+    oobaPanel.appendChild(SB.el('div', 'pp-note',
+      'text-generation-webui serves the one model you have loaded and ignores this. ' +
+      'LM Studio and llama-server want the name — load the list to fill it in.'));
+
+    const oKey = document.createElement('input');
+    oKey.type = 'password';
+    oKey.value = oobaSaved.key || '';
+    oKey.placeholder = 'usually blank';
+    oobaPanel.appendChild(field('API key (only if the server asks for one)', oKey));
+
+    const oActs = SB.el('div', 'pp-actions');
+    const oLoad = SB.el('button', 'tb', 'Load models from the server');
+    const oTest = SB.el('button', 'tb', 'Test connection');
+    const oNote = SB.el('span', 'pp-note', '');
+
+    /* Both buttons work off what is typed right now, not what was saved —
+     * otherwise the first thing anyone does is press Save to find out whether
+     * the address they just typed is right. */
+    function liveOoba() {
+      SB.Store.setOoba({ url: oUrl.value, model: oobaModel, key: oKey.value });
+    }
+    function oobaFail(e) {
+      oNote.textContent = e.message || String(e);
+      oNote.classList.add('err');
+    }
+
+    oLoad.onclick = function () {
+      liveOoba();
+      oLoad.disabled = true;
+      oNote.textContent = 'asking the server…';
+      oNote.classList.remove('err');
+      SB.Providers.get('ooba').listModels(oUrl.value).then(function (list) {
+        oLoad.disabled = false;
+        buildOoba(list);
+        oNote.textContent = list.length + ' model' + (list.length === 1 ? '' : 's') + ' loaded.';
+      }).catch(function (e) { oLoad.disabled = false; oobaFail(e); });
+    };
+
+    /* A model list can come back from a server with nothing loaded, so the
+     * only honest test is a real completion. */
+    oTest.onclick = function () {
+      liveOoba();
+      const wasProvider = p.settings.aiProvider;
+      p.settings.aiProvider = 'ooba';
+      oTest.disabled = true;
+      oNote.textContent = 'sending a test prompt…';
+      oNote.classList.remove('err');
+      const started = Date.now();
+      SB.Prompts.raw('Reply with the JSON object {"ok":true} and nothing else.',
+        { type: 'OBJECT', properties: { ok: { type: 'BOOLEAN' } }, required: ['ok'] })
+        .then(function () {
+          oNote.textContent = 'answered in ' + (Date.now() - started) + ' ms — ready to write prompts.';
+        })
+        .catch(oobaFail)
+        .then(function () {
+          oTest.disabled = false;
+          p.settings.aiProvider = wasProvider;
+        });
+    };
+
+    oActs.appendChild(oLoad);
+    oActs.appendChild(oTest);
+    oobaPanel.appendChild(oActs);
+    oobaPanel.appendChild(oNote);
+
+    showProvider(chosenProvider);
 
     select(startTab && panels[startTab] ? startTab : 'general');
 
@@ -390,6 +566,7 @@
             p.settings.brand = (bTxt && bTxt !== SB.Brand.DEFAULT.trim())
               ? { enabled: bChk.checked, custom: true, text: bTxt }
               : { enabled: bChk.checked, custom: false };
+            p.settings.aiProvider = SB.Providers.normalize(chosenProvider);
             p.settings.geminiModel = (chosenModel || '').trim() || SB.GeminiModels.DEFAULT;
             p.settings.models = working.filter(function (m) { return (m.name || '').trim(); })
               .map(function (m) { delete m.__open; return m; });
@@ -404,6 +581,7 @@
               p.settings.videoModelId = SB.Model.firstOfKind(p.settings.models, 'video');
             }
             SB.Store.setApiKey(key.value.trim());
+            SB.Store.setOoba({ url: oUrl.value, model: oobaModel, key: oKey.value });
             close();
             SB.app.changed(true);
             SB.PromptPanel.refresh();

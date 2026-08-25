@@ -30,8 +30,8 @@ const sandbox = {
 sandbox.window = sandbox;
 vm.createContext(sandbox);
 
-for (const f of ['js/util.js', 'js/doc.js', 'js/blobs.js', 'js/geminimodels.js', 'js/brand.js',
-  'js/personas.js', 'js/fields.js', 'js/model.js', 'js/store.js', 'js/usage.js',
+for (const f of ['js/util.js', 'js/doc.js', 'js/blobs.js', 'js/geminimodels.js', 'js/providers.js',
+  'js/brand.js', 'js/personas.js', 'js/fields.js', 'js/model.js', 'js/store.js', 'js/usage.js',
   'js/coverage.js']) {
   vm.runInContext(readFileSync(join(root, f), 'utf8'), sandbox, { filename: f });
 }
@@ -1178,6 +1178,167 @@ console.log('\n— gathering shots does not delete a scene that claims something
   SB.Model.sceneFromShots(p, [a.id]);
   eq(p.scenes.filter(function (s) { return s.id === sc.id; }).length, 1,
     'the emptied source scene stays, because its claim outlives its cards');
+}
+
+console.log('\n— the writer runs where the project says it does —');
+{
+  const p = SB.Model.newProject();
+  SB.app = { project: p };
+  eq(p.settings.aiProvider, 'gemini', 'a new project writes with Gemini');
+  eq(SB.Providers.activeId(), 'gemini', 'and that is what the registry reports');
+
+  /* a board written before the local option existed, and one pointing at
+     something that no longer exists, both open as Gemini rather than broken */
+  const old = SB.Model.newProject();
+  delete old.settings.aiProvider;
+  SB.Model.migrate(old);
+  eq(old.settings.aiProvider, 'gemini', 'an older board opens as a Gemini board');
+  old.settings.aiProvider = 'nonsense';
+  SB.Model.migrate(old);
+  eq(old.settings.aiProvider, 'gemini', 'an unknown provider falls back rather than failing');
+
+  /* switching is lossless: each side keeps its own model */
+  p.settings.geminiModel = 'gemini-3.5-flash';
+  SB.Store.setOoba({ url: 'http://127.0.0.1:5000', model: 'mistral-7b' });
+  SB.Providers.setActive('ooba');
+  eq(SB.Providers.active().model(), 'mistral-7b', 'the local side has its own model');
+  SB.Providers.setActive('gemini');
+  eq(SB.Providers.active().model(), 'gemini-3.5-flash', 'and the cloud side kept its own');
+  eq(SB.Providers.usageKey('ooba', 'mistral-7b'), 'ooba:mistral-7b',
+    'the two are counted separately');
+}
+
+console.log('\n— each backend gets the body it understands —');
+{
+  const p = SB.Model.newProject();
+  SB.app = { project: p };
+  const HINT = ' [hint]';
+  const schema = { type: 'OBJECT', properties: { a: { type: 'STRING' } }, required: ['a'] };
+
+  const g = SB.Providers.get('gemini');
+  const gb = g.body('gemini-3.7-flash', 'WRITE THIS', { schema, system: 'BE BRIEF', hint: HINT });
+  eq(gb.contents[0].parts[0].text, 'WRITE THIS', 'Gemini takes the prompt as a user turn');
+  eq(gb.systemInstruction.parts[0].text, 'BE BRIEF', 'with the system prompt beside it');
+  eq(gb.generationConfig.responseSchema, schema, 'and a response schema');
+
+  /* Gemma has no JSON mode and no system turn — both fold into the one turn */
+  const gm = g.body('gemma-4-31b-it', 'WRITE THIS', { schema, system: 'BE BRIEF', hint: HINT });
+  eq(gm.systemInstruction, undefined, 'Gemma is sent no systemInstruction');
+  eq(gm.generationConfig.responseSchema, undefined, 'and no schema');
+  eq(gm.contents[0].parts[0].text, 'BE BRIEF\n\n----\n\nWRITE THIS [hint]',
+    'the system prompt and the JSON wording ride in the user turn');
+
+  const o = SB.Providers.get('ooba');
+  SB.Store.setOoba({ url: 'http://127.0.0.1:5000', model: 'mistral-7b' });
+  const ob = o.body('mistral-7b', 'WRITE THIS', { schema, system: 'BE BRIEF', hint: HINT });
+  eq(ob.messages[0], { role: 'system', content: 'BE BRIEF' }, 'the local server takes a system message');
+  eq(ob.messages[1], { role: 'user', content: 'WRITE THIS [hint]' },
+    'and the JSON wording, because it has no schema mode');
+  eq(ob.model, 'mistral-7b', 'the model name goes along when there is one');
+  eq(o.body('', 'X', { hint: '' }).model, undefined,
+    'and is left out when the server should just use what is loaded');
+  eq(o.supportsSchema, false, 'so the schema path is never taken for it');
+}
+
+console.log('\n— replies come back out of two different shapes —');
+{
+  const g = SB.Providers.get('gemini'), o = SB.Providers.get('ooba');
+  eq(g.text({ candidates: [{ content: { parts: [{ text: '{"a":1}' }] } }] }), '{"a":1}',
+    'Gemini answers under candidates/content/parts');
+  eq(o.text({ choices: [{ message: { content: '{"a":1}' } }] }), '{"a":1}',
+    'the local server answers under choices/message/content');
+  eq(o.text({ choices: [{ text: '{"a":1}' }] }), '{"a":1}',
+    'and older completion-shaped servers still parse');
+
+  let threw = '';
+  try { o.text({ choices: [{ finish_reason: 'length' }] }); } catch (e) { threw = e.message; }
+  eq(/no text/.test(threw) && /length/.test(threw), true,
+    'an empty reply says so, and says why it stopped');
+}
+
+console.log('\n— the address is taken as typed, however it is typed —');
+{
+  const B = SB.Providers.baseUrl;
+  eq(B('http://127.0.0.1:5000'), 'http://127.0.0.1:5000', 'a plain host:port is left alone');
+  eq(B('http://127.0.0.1:5000/'), 'http://127.0.0.1:5000', 'a trailing slash is dropped');
+  eq(B('http://127.0.0.1:5000/v1'), 'http://127.0.0.1:5000', 'a pasted /v1 is dropped');
+  eq(B('http://127.0.0.1:5000/v1/chat/completions'), 'http://127.0.0.1:5000',
+    'and so is the full endpoint someone copied out of the docs');
+  eq(B('  http://box:8080/v1/  '), 'http://box:8080', 'whitespace too');
+  eq(B(''), 'http://127.0.0.1:5000', 'blank means the default');
+}
+
+console.log('\n— a dead local server is not the corporate proxy —');
+{
+  /* util.js reads any bare fetch rejection as "blocked by the proxy" and pops
+     the AI Studio dialog. For a local server that is the wrong fix entirely. */
+  const bare = new TypeError('Failed to fetch');
+  eq(SB.netKind(bare), 'blocked', 'an unexplained failure to Google is still read as blocked');
+  eq(SB.netKind(SB.Providers.localError(bare)), null,
+    'but the same failure to a local server is not');
+  eq(/--api/.test(SB.Providers.localError(bare).message), true,
+    'and it names the flag that is usually missing');
+}
+
+console.log('\n— end to end against a stubbed local server —');
+{
+  /* The real ask() path, with only the socket replaced: this is what a small
+     model actually sends back when there is no schema mode to hold it to the
+     format — prose, a fence, and braces inside the string. */
+  const seen = {};
+  sandbox.fetch = (url, init) => {
+    seen.url = url;
+    seen.init = init;
+    seen.body = JSON.parse(init.body);
+    return Promise.resolve({
+      ok: true,
+      status: 200,
+      text: () => Promise.resolve(JSON.stringify({
+        choices: [{ message: { content:
+          'Sure! Here is the prompt you asked for:\n\n```json\n' +
+          '{"imagePrompt": "a wide shot, {no braces} inside"}\n```\nHope that helps!' } }]
+      }))
+    });
+  };
+  vm.runInContext(readFileSync(join(root, 'js/prompts.js'), 'utf8'), sandbox,
+    { filename: 'js/prompts.js' });
+
+  const p = SB.Model.newProject();
+  SB.app = { project: p, changed() { } };
+  p.settings.aiProvider = 'ooba';
+  SB.Store.setOoba({ url: 'http://127.0.0.1:5000/v1/', model: 'mistral-7b', key: 'sekrit' });
+
+  await SB.Prompts.raw('WRITE THIS',
+    { type: 'OBJECT', properties: { imagePrompt: { type: 'STRING' } }, required: ['imagePrompt'] },
+    'BE BRIEF'
+  ).then(out => {
+    eq(seen.url, 'http://127.0.0.1:5000/v1/chat/completions',
+      'the pasted /v1/ was normalised and the endpoint appended');
+    eq(seen.init.headers.Authorization, 'Bearer sekrit', 'the key rides as a bearer token');
+    eq(seen.body.model, 'mistral-7b', 'the model name is sent');
+    eq(seen.body.messages[0].role, 'system', 'the system prompt goes in its own message');
+    eq(/JSON object and nothing else/.test(seen.body.messages[1].content), true,
+      'and the user turn carries the ask-in-words JSON wording');
+    eq(seen.body.generationConfig, undefined, 'no Gemini-shaped fields leak into it');
+    eq(out.imagePrompt, 'a wide shot, {no braces} inside',
+      'and the JSON is recovered from the prose and the fence around it');
+  }).catch(e => {
+    fail++;
+    console.log('  FAIL end-to-end local call\n       ' + (e && e.message));
+  });
+
+  /* the same stub, answering the way a server with nothing loaded does */
+  sandbox.fetch = () => Promise.resolve({
+    ok: false, status: 500,
+    text: () => Promise.resolve(JSON.stringify({ error: { message: 'no model is loaded' } }))
+  });
+  await SB.Prompts.raw('X', null).then(() => {
+    fail++; console.log('  FAIL a 500 should not resolve');
+  }).catch(e => {
+    eq(/no model is loaded/.test(e.message), true, 'a server with no model says exactly that');
+  });
+
+  delete sandbox.fetch;
 }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed\n');
