@@ -346,6 +346,54 @@
         if (scopeSel) scopeSel.value = 'project';
       }
 
+      /* ---------- MiniMax H3 gets its own published prompt format ---------- */
+      {
+        const h3 = P().settings.models.filter(function (m) {
+          return m.name === 'MiniMax H3 (Hailuo)'; })[0];
+        t('the MiniMax model ships as H3', !!h3,
+          P().settings.models.map(function (m) { return m.name; }).join(','));
+        const six = ['subject_definitions', 'summary', 'retention_analysis',
+          'detailed_description', 'overall_soundscape', 'non_diegetic_music'];
+        t('its video template asks for the six-section rewrite',
+          !!h3 && six.every(function (k) { return h3.videoTemplate.indexOf(k) >= 0; }),
+          h3 && h3.videoTemplate.slice(0, 60));
+        t('and it carries the reference labels',
+          !!h3 && /<Subject N>/.test(h3.videoTemplate) && /<Picture 1>/.test(h3.videoTemplate),
+          h3 && h3.videoTemplate.slice(0, 60));
+        t('its persona wording is the H3 one, not the generic numbered line',
+          !!h3 && /<Subject N>/.test(h3.referenceTemplate),
+          h3 && h3.referenceTemplate);
+
+        P().settings.videoModelId = h3.id;
+        window.__calls = [];
+        await SB.Prompts.generateFor([shots.a], { roles: { video: true } });
+        const sent = JSON.stringify(window.__calls[0].body);
+        t('the format reaches the request', sent.indexOf('retention_analysis') > 0,
+          sent.slice(0, 80));
+      }
+
+      /* ---------- and an existing board is carried over to it ---------- */
+      {
+        const old1 = { id: 'm_old1', name: 'Hailuo (MiniMax)', kind: 'video',
+          imageTemplate: SB.Model.IMG_TPL, videoTemplate: SB.Model.VID_TPL,
+          referenceTemplate: SB.Personas.DEFAULT_REF_TEMPLATE };
+        const old2 = { id: 'm_old2', name: 'Hailuo (MiniMax)', kind: 'video',
+          imageTemplate: SB.Model.IMG_TPL, videoTemplate: 'my own wording',
+          referenceTemplate: 'mine too' };
+        const proj = { name: 'old', master: SB.Doc.make(''), scenes: [],
+          settings: { models: [old1, old2], modelSeeds: ['Hailuo (MiniMax)'] } };
+        SB.Model.migrate(proj);
+        t('a legacy MiniMax entry is renamed', old1.name === 'MiniMax H3 (Hailuo)', old1.name);
+        t('and picks up the H3 template',
+          old1.videoTemplate.indexOf('retention_analysis') > 0, old1.videoTemplate.slice(0, 40));
+        t('an edited template is left alone', old2.videoTemplate === 'my own wording' &&
+          old2.referenceTemplate === 'mine too', old2.videoTemplate);
+        t('the seed list follows the rename, so H3 is not added twice',
+          proj.settings.models.filter(function (m) {
+            return /MiniMax/.test(m.name); }).length === 2,
+          proj.settings.models.map(function (m) { return m.name; }).join(','));
+      }
+
       t('no page errors', (window.__err || []).length === 0, JSON.stringify(window.__err));
     } catch (e) {
       out.push('FAIL exception :: ' + (e && e.stack || e));

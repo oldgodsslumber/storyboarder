@@ -211,7 +211,9 @@
         const rst = SB.el('button', 'mini', 'reset');
         rst.title = 'Restore the default templates for this model';
         rst.onclick = function () {
-          m.imageTemplate = SB.Model.IMG_TPL; m.videoTemplate = SB.Model.VID_TPL;
+          const t = SB.Model.tplsFor(m.name);
+          m.imageTemplate = t.image; m.videoTemplate = t.video;
+          m.referenceTemplate = t.reference;
           m.__open = true; drawModels();
         };
         const del = SB.el('button', 'mini danger', 'remove');

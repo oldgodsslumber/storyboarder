@@ -105,7 +105,7 @@ A mode where the app turns each shot's **description into model-specific prompts
 
 ### Behavior
 - User selects an **image/video model** from a **user-extensible** list. Starter set (current popular models as of 2026 — user can add/remove/rename in Settings):
-  - **Video:** Wan, LTX (LTXV / "LTX 2.3"), Veo, Kling, Sora, Runway, Hailuo (MiniMax), Seedance. *(Team accesses these via ImagineArt — noted as the access platform, not itself a model.)*
+  - **Video:** Wan, LTX (LTXV / "LTX 2.3"), Veo, Kling, Sora, Runway, MiniMax H3 (Hailuo), Seedance. *(Team accesses these via ImagineArt — noted as the access platform, not itself a model.)* A model whose vendor publishes a required prompt format ships with its own template instead of the generic pair — MiniMax H3 gets the six-section full-reference rewrite from its official guide.
   - **Image:** Nano Banana (Gemini image), Qwen (Qwen-Image), FLUX, GPT Image, Imagen, Ideogram, Midjourney.
 - For each shot, the app calls Gemini with the shot's **description + the user's per-model template** and produces **two prompts**:
   1. **First-frame (image) prompt**

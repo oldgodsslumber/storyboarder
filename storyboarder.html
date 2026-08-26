@@ -706,7 +706,7 @@ body.comment-mode .frame{cursor:crosshair}
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-08-25 14:15 · c6ce9d9+";</script>
+<script>window.SB_BUILD = "2026-08-26 14:03 · 729e3b8+";</script>
 
 <div id="app">
 
@@ -2523,11 +2523,79 @@ window.SB = window.SB || {};
     'Keep it one paragraph, no preamble.\n\n' +
     'SHOT DESCRIPTION:\n{{DESCRIPTION}}';
 
+  /* MiniMax H3 does not take a paragraph. Its published prompt guide
+   * (VIDEO_PROMPT_WRITING_GUIDE_ref_en.md) specifies a six-section rewrite with
+   * its own reference labels, relationship markers and shot syntax; a prose
+   * prompt is simply the wrong shape for it. Everything below is that format. */
+  const H3_VID_TPL =
+    'Write a single image-to-video prompt for {{MODEL}}, starting from the first frame described below.\n' +
+    'H3 takes a full-reference rewrite, NOT a paragraph. Emit exactly these six sections, ' +
+    'in this order, each introduced on its own line as "name:" followed by its content:\n' +
+    '  subject_definitions, summary, retention_analysis, detailed_description, ' +
+    'overall_soundscape, non_diegetic_music\n\n' +
+    'FORMAT RULES\n' +
+    '- English throughout. Keep dialogue and lyrics in their original language inside ' +
+    '<d>[Language] ...</d>, and keep visible on-screen text as it reads.\n' +
+    '- Reference labels: <Subject N> for reusable visible content (a person, a place, a ' +
+    'costume, a prop, a style, an action), <Picture N> for an image used as a concrete frame ' +
+    'or composition anchor, <Video N> for a source video, <Audio N> for a copied or referenced ' +
+    'audio signal. The supplied first frame is <Picture 1>. Define each label once in ' +
+    'subject_definitions, then reuse it unchanged everywhere after. An image that only ' +
+    'establishes a character, wardrobe or style gets no <Picture N> line of its own — cite it ' +
+    'inside that <Subject N> definition instead.\n' +
+    '- summary: one short paragraph opening with a bracketed task type. A supplied first frame ' +
+    'is [keyframe completion]; add reference generation when character or style references are ' +
+    'also supplied. Join multiple types with " + " and never repeat one. Introduce no new labels here.\n' +
+    '- retention_analysis: one line per label, e.g. "<Subject 1> (appears in [Shot 1]): ' +
+    'fully_preserved - ...". Visible content uses fully_preserved, partially_preserved, ' +
+    'attribute_transfer or weak_reference; audio uses fully_copy, partially_copy, reference or ' +
+    'weak_reference. Never write a speaker ID in this section.\n' +
+    '- detailed_description: one or two sentences of style FIRST, then the shots in playback ' +
+    'order. [Shot 1] carries no timestamp; each later shot opens "[Shot N] At MM:SS.mmm, ...". ' +
+    'Treat this as one continuous shot unless the description below calls for a cut. State that ' +
+    'the shot begins from <Picture 1>, then give composition, subject appearance and position, ' +
+    'environment and lighting, the action and every state change, the camera move (type, ' +
+    'amplitude and speed, written as natural English), the sound, and the moment each reference ' +
+    'takes effect. 350-500 words. Do not reduce it to a plot summary or a list of reference ' +
+    'relationships.\n' +
+    '- Speakers take stable IDs in the order they first speak: "<Subject 2> (S1) turns and says, ' +
+    '<d>[English] ...</d>". Mark unseen speech off-screen. Use <scenetrans> for dialogue carrying ' +
+    'across a cut and <cutoff> for a line the shot ends on.\n' +
+    '- overall_soundscape: ambience and physical sound across the whole clip. ' +
+    'non_diegetic_music: audience-only score — instrumentation, tempo, dynamics — or N/A. ' +
+    'Neither section repeats dialogue or lyrics.\n' +
+    '- No preamble, no commentary, no markdown fences.\n\n' +
+    'Shot type: {{SHOT_TYPE}}. Scene: {{SCENE}}.\n\n' +
+    'SHOT DESCRIPTION:\n{{DESCRIPTION}}';
+
+  const H3_REF_TPL =
+    'Reference images are supplied in order. Give each recurring subject its own <Subject N> ' +
+    'line in subject_definitions, citing the image it comes from ("<Subject 1> is the woman in ' +
+    'reference image {{N}}, with ..."), and keep face, hair and wardrobe exactly as in that ' +
+    'image. Reuse the same <Subject N> label in summary, retention_analysis and ' +
+    'detailed_description. Named subjects: {{NAME}}.';
+
+  /* Templates a specific model needs instead of the generic pair, keyed by the
+   * name it ships under in defaultModels(). */
+  const MODEL_TPLS = {
+    'MiniMax H3 (Hailuo)': { video: H3_VID_TPL, reference: H3_REF_TPL }
+  };
+
+  function tplsFor(name) {
+    const o = MODEL_TPLS[name] || {};
+    return {
+      image: o.image || IMG_TPL,
+      video: o.video || VID_TPL,
+      reference: typeof o.reference === 'string' ? o.reference : SB.Personas.DEFAULT_REF_TEMPLATE
+    };
+  }
+
   function model(name, kind) {
+    const t = tplsFor(name);
     return {
       id: SB.uid('m'), name: name, kind: kind,
-      imageTemplate: IMG_TPL, videoTemplate: VID_TPL,
-      referenceTemplate: SB.Personas.DEFAULT_REF_TEMPLATE
+      imageTemplate: t.image, videoTemplate: t.video,
+      referenceTemplate: t.reference
     };
   }
 
@@ -2535,7 +2603,7 @@ window.SB = window.SB || {};
     return [
       model('Wan', 'video'), model('LTX (LTXV 2.3)', 'video'), model('Veo', 'video'),
       model('Kling', 'video'), model('Sora', 'video'), model('Runway', 'video'),
-      model('Hailuo (MiniMax)', 'video'), model('Seedance', 'video'),
+      model('MiniMax H3 (Hailuo)', 'video'), model('Seedance', 'video'),
       model('Flux 3', 'video'),
       model('Nano Banana (Gemini Image)', 'image'), model('Qwen-Image', 'image'),
       model('FLUX', 'image'), model('GPT Image', 'image'), model('Imagen', 'image'),
@@ -2747,13 +2815,31 @@ window.SB = window.SB || {};
     s.shotTypes = (s.shotTypes && s.shotTypes.length) ? s.shotTypes : DEFAULT_SHOT_TYPES.slice();
     SB.Fields.migrate(p);
     s.models = (s.models && s.models.length) ? s.models : defaultModels();
+    /* The MiniMax entry shipped under its platform name with the generic
+     * templates. Rename it and hand it the H3 format — but only where the
+     * templates are still untouched, so an edited one stays the user's. */
+    s.models.forEach(function (m) {
+      if (m.name !== 'Hailuo (MiniMax)') return;
+      m.name = 'MiniMax H3 (Hailuo)';
+      const t = tplsFor(m.name);
+      if (!m.videoTemplate || m.videoTemplate === VID_TPL) m.videoTemplate = t.video;
+      if (typeof m.referenceTemplate !== 'string' ||
+          m.referenceTemplate === SB.Personas.DEFAULT_REF_TEMPLATE) {
+        m.referenceTemplate = t.reference;
+      }
+    });
+    s.modelSeeds = (s.modelSeeds || []).map(function (n) {
+      return n === 'Hailuo (MiniMax)' ? 'MiniMax H3 (Hailuo)' : n;
+    });
+
     s.models.forEach(function (m) {
       m.id = m.id || SB.uid('m');
       m.kind = m.kind || 'video';
-      m.imageTemplate = m.imageTemplate || IMG_TPL;
-      m.videoTemplate = m.videoTemplate || VID_TPL;
+      const t = tplsFor(m.name);
+      m.imageTemplate = m.imageTemplate || t.image;
+      m.videoTemplate = m.videoTemplate || t.video;
       if (typeof m.referenceTemplate !== 'string') {
-        m.referenceTemplate = SB.Personas.DEFAULT_REF_TEMPLATE;
+        m.referenceTemplate = t.reference;
       }
     });
     /* A board keeps its own model list, so a model added to the app later
@@ -3272,7 +3358,7 @@ window.SB = window.SB || {};
     FILE_VERSION: FILE_VERSION,
     CARD_COLORS: CARD_COLORS,
     DEFAULT_SHOT_TYPES: DEFAULT_SHOT_TYPES,
-    IMG_TPL: IMG_TPL, VID_TPL: VID_TPL,
+    IMG_TPL: IMG_TPL, VID_TPL: VID_TPL, tplsFor: tplsFor,
     newProject: newProject, migrate: migrate, foldLineEndings: foldLineEndings,
     newShot: newShot, newScene: newScene,
     defaultModels: defaultModels, defaultExport: defaultExport,
@@ -7892,7 +7978,9 @@ window.SB = window.SB || {};
         const rst = SB.el('button', 'mini', 'reset');
         rst.title = 'Restore the default templates for this model';
         rst.onclick = function () {
-          m.imageTemplate = SB.Model.IMG_TPL; m.videoTemplate = SB.Model.VID_TPL;
+          const t = SB.Model.tplsFor(m.name);
+          m.imageTemplate = t.image; m.videoTemplate = t.video;
+          m.referenceTemplate = t.reference;
           m.__open = true; drawModels();
         };
         const del = SB.el('button', 'mini danger', 'remove');
