@@ -290,6 +290,9 @@
       x.name = x.name || 'Persona';
       x.description = x.description || '';
       x.imagePrompt = x.imagePrompt || '';
+      /* Left at 0 when a board predates the stamp: unknown, not "just edited",
+       * so no card is falsely flagged as behind. */
+      x.updatedAt = typeof x.updatedAt === 'number' ? x.updatedAt : 0;
       x.image = SB.Blobs.adopt(p, x.image);
     });
     p.scenes = Array.isArray(p.scenes) ? p.scenes : [];

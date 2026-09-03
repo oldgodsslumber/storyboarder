@@ -29,8 +29,33 @@
       name: opts.name || 'New persona',
       description: opts.description || '',
       imagePrompt: opts.imagePrompt || '',
-      image: opts.image || null      // {ref,w,h} — the reference frame
+      image: opts.image || null,     // {ref,w,h} — the reference frame
+      updatedAt: Date.now()
     };
+  }
+
+  /* A prompt already written into a card is a snapshot of the persona as it read
+   * at the time. Editing the persona does not — cannot — reach back into it, so
+   * the edit is stamped and the card can say it has fallen behind. */
+  function touch(per) {
+    if (per) per.updatedAt = Date.now();
+  }
+
+  /* The newest edit among the people on this shot, or 0 if none of them has
+   * ever been stamped (a board written before this was recorded — unknowable,
+   * so it is never reported as stale). */
+  function editedAt(p, shot) {
+    return forShot(p, shot).reduce(function (a, per) {
+      return Math.max(a, per.updatedAt || 0);
+    }, 0);
+  }
+
+  /* Has this shot's stored prompt fallen behind its cast? `at` is the stamp the
+   * prompt was written with (prompts.js store()). */
+  function staleFor(p, shot, at) {
+    if (!at) return false;
+    const ed = editedAt(p, shot);
+    return !!ed && ed > at;
   }
 
   function all(p) { return (p.personas = p.personas || []); }
@@ -92,7 +117,14 @@
         lines.push('  image ' + (i + 1) + ' = ' + (per.name || 'unnamed'));
       });
     }
-    lines.push('Wardrobe stays identical to the description above unless the shot says otherwise.');
+    /* The shot description may itself name a wardrobe — older boards baked the
+     * subject into every description, and that copy went stale the moment the
+     * persona was edited. This block is the live record, so it is declared to
+     * win outright rather than deferring to whatever the description says. */
+    lines.push('The descriptions above are the CURRENT and AUTHORITATIVE record of how these ' +
+      'people look and what they wear. Where the shot description says anything different about ' +
+      'their appearance, hair or wardrobe, it is out of date — follow this block and ignore it. ' +
+      'The shot description still governs what they are DOING and where.');
     return lines.join('\n');
   }
 
@@ -165,7 +197,8 @@
     REF_TEMPLATES: REF_TEMPLATES,
     DEFAULT_REF_TEMPLATE: DEFAULT_REF_TEMPLATE,
     newPersona: newPersona, all: all, find: find, add: add, remove: remove,
-    forShot: forShot, toggleOnShot: toggleOnShot, block: block, generate: generate
+    forShot: forShot, toggleOnShot: toggleOnShot, block: block, generate: generate,
+    touch: touch, editedAt: editedAt, staleFor: staleFor
   };
 
 })(window.SB);

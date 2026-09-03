@@ -541,8 +541,18 @@
       t('templates collapsed until opened',
         document.querySelectorAll('.modal .tab-panel.on textarea').length === 0, '');
       tab('API');
-      t('api tab has the model dropdown',
-        document.querySelectorAll('.modal .tab-panel.on .gm-picker select').length === 1, '');
+      /* Both providers keep their own model picker of the same shape — the
+         panels are told apart by which provider they belong to, not by there
+         being only one of them. */
+      t('the Gemini panel has its own model dropdown',
+        document.querySelectorAll('.modal .tab-panel.on [data-prov="gemini"] .gm-picker select').length === 1,
+        document.querySelectorAll('.modal .tab-panel.on [data-prov="gemini"] .gm-picker select').length);
+      t('and the local server has a separate one',
+        document.querySelectorAll('.modal .tab-panel.on [data-prov="ooba"] .gm-picker select').length === 1,
+        document.querySelectorAll('.modal .tab-panel.on [data-prov="ooba"] .gm-picker select').length);
+      t('only the chosen provider is showing',
+        document.querySelectorAll('.modal .tab-panel.on .prov-block:not(.hidden)').length === 1,
+        document.querySelectorAll('.modal .tab-panel.on .prov-block:not(.hidden)').length);
       t('api tab can refresh from the key',
         /Refresh list/.test(document.querySelector('.modal .tab-panel.on .pp-actions').textContent), '');
       tab('Models & templates');
@@ -1059,25 +1069,39 @@
 
         SB.Prompts.raw = function () {
           return Promise.resolve({
-            subject: 'A courier in a rust-orange weatherproof jacket.',
+            cast: [{
+              name: 'Courier',
+              description: 'Late twenties, in a rust-orange weatherproof jacket.',
+              imagePrompt: 'Front-facing reference frame, plain background.'
+            }],
             shots: [
-              { beat: 'arrives', type: 'WS', description: 'The courier reaches the loading door.' },
+              { beat: 'arrives', type: 'WS', cast: ['Courier'], description: 'The courier reaches the loading door.' },
               { beat: 'the label', type: 'ECU', description: 'Fingers turn a crumpled label to the light.' },
-              { beat: 'signed for', type: 'CU', description: 'A rust-orange sleeve as the screen blinks green.' }
+              { beat: 'signed for', type: 'CU', cast: ['Courier'], description: 'The courier leans in as the screen blinks green.' }
             ]
           });
         };
+        const castBefore = SB.Personas.all(P()).length;
         bGen.click();
         await settle();
         t('three shots landed on the scene', sc.shots.length === 3, sc.shots.length);
         t('their types came from the project list',
           sc.shots.map(function (s) { return s.type; }).join(',') === 'Wide,Extreme close-up,Close-up',
           sc.shots.map(function (s) { return s.type; }).join(','));
-        t('the subject reaches every description',
-          sc.shots.every(function (s) { return /rust-orange/.test(s.description); }),
+        t('no wardrobe is stapled into the descriptions',
+          sc.shots.every(function (s) { return !/rust-orange/.test(s.description); }),
           JSON.stringify(sc.shots.map(function (s) { return s.description; })));
-        t('the row reports what it did',
-          /3 shots added/.test(document.querySelector(sel + '.sc-ai-status').textContent),
+        const courier = SB.Personas.all(P()).filter(function (x) { return x.name === 'Courier'; })[0];
+        t('the person it needed was cast as a new persona',
+          !!courier && SB.Personas.all(P()).length === castBefore + 1,
+          JSON.stringify(SB.Personas.all(P()).map(function (x) { return x.name; })));
+        t('and pinned to every card, including the one that named nobody',
+          !!courier && sc.shots.every(function (s) {
+            return (s.personaIds || [])[0] === courier.id;
+          }),
+          JSON.stringify(sc.shots.map(function (s) { return s.personaIds; })));
+        t('the row reports what it did, and who it cast',
+          /3 shots added · cast Courier/.test(document.querySelector(sel + '.sc-ai-status').textContent),
           document.querySelector(sel + '.sc-ai-status').textContent);
 
         const bUndo = Array.prototype.filter.call(document.querySelectorAll(sel + '.sc-ai .mini'),
@@ -1086,6 +1110,8 @@
         bUndo.click();
         await settle();
         t('undo takes the generated shots back off', sc.shots.length === 0, sc.shots.length);
+        t('and the persona it invented goes with them, leaving the rest alone',
+          SB.Personas.all(P()).length === castBefore, SB.Personas.all(P()).length);
 
         // rewrite, then revert
         SB.Prompts.raw = function () {
@@ -1125,10 +1151,10 @@
 
         SB.Prompts.raw = function () {
           return Promise.resolve({
-            subject: 'A courier in a rust-orange weatherproof jacket.',
+            cast: [{ name: 'Courier', description: 'Late twenties, in a rust-orange weatherproof jacket.' }],
             shots: [
-              { beat: 'arrives', type: 'WS', description: 'The courier reaches the door.' },
-              { beat: 'signed for', type: 'CU', description: 'A rust-orange sleeve, screen green.' }
+              { beat: 'arrives', type: 'WS', cast: ['Courier'], description: 'The courier reaches the door.' },
+              { beat: 'signed for', type: 'CU', cast: ['Courier'], description: 'The courier waits as the screen goes green.' }
             ]
           });
         };

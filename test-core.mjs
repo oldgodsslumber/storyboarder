@@ -172,16 +172,22 @@ console.log('\n— gemini model list —');
 {
   const G = SB.GeminiModels;
   eq(G.LIST.some(m => m.id === G.DEFAULT), true, 'the default is in the list');
-  eq(G.DEFAULT, 'gemini-3.6-flash', 'default is a current model');
+  /* Pinned to a version number this rots every time the list moves on. What
+     actually matters is that the default is one the app still considers live. */
+  eq(G.isRetired(G.DEFAULT), false, 'the default is not itself a retired id');
+  eq(G.normalize(G.DEFAULT), G.DEFAULT, 'and normalize leaves it alone');
+  eq(G.isAlias(G.DEFAULT), false, 'the default is a pinned id, never a floating alias');
   eq(G.LIST.some(m => /image|tts|embedding|live|veo/.test(m.id)), false,
     'no non-text models in the picker');
   eq(G.normalize('gemini-2.0-flash'), G.DEFAULT, 'retired id falls back to the default');
-  eq(G.normalize('gemini-flash-latest'), G.DEFAULT, 'retired alias falls back too');
+  eq(G.normalize('gemini-flash-latest'), G.DEFAULT, 'a floating alias falls back too');
+  eq(G.normalize('gemini-pro-latest'), G.DEFAULT, 'every -latest alias does');
+  eq(G.isAlias('gemini-flash-latest'), true, 'and is recognised as an alias, not a retirement');
   eq(G.normalize('gemini-2.5-pro'), 'gemini-2.5-pro', 'a live id is left alone');
   eq(G.normalize('some-custom-id'), 'some-custom-id', 'a custom id is left alone');
   eq(G.LIST.some(m => m.id === 'gemma-4-31b-it'), true, 'Gemma 4 31B is offered');
   eq(G.isGemma('gemma-4-31b-it'), true, 'gemma is recognised (it has no JSON mode)');
-  eq(G.isGemma('gemini-3.6-flash'), false, 'gemini is not treated as gemma');
+  eq(G.isGemma(G.DEFAULT), false, 'gemini is not treated as gemma');
   eq(G.limit('gemma-4-31b-it'), 1500, 'gemma ships with its larger free quota');
 
   const p = SB.Model.newProject();
@@ -851,28 +857,169 @@ console.log('\n— scene coverage: shot types land on the project list —');
     'an unknown type falls back to the first on the list, never an unselectable value');
 }
 
-console.log('\n— scene coverage: the subject survives into every description —');
+console.log('\n— descriptions that still carry a wardrobe are found and repaired —');
 {
   const C = SB.Coverage;
-  const subj = 'A warehouse worker in a faded olive canvas jacket and grey knit beanie.';
-  const carries = 'The warehouse worker, olive canvas jacket creased at the elbow, lifts the crate.';
-  eq(C.ensureSubject(carries, subj), carries, 'a description that already carries the subject is left alone');
-  const bare = 'Hands close around a strap and pull.';
-  eq(C.ensureSubject(bare, subj), bare + ' ' + subj,
-    'a description that dropped the subject gets it appended');
-  eq(C.ensureSubject('', subj), subj, 'an empty description becomes the subject line');
-  eq(C.ensureSubject(bare, ''), bare, 'no subject, no change');
+
+  eq(C.wardrobeTerms('The courier sets the parcel down and waits.').length, 0,
+    'plain action is not mistaken for a character sheet');
+  eq(C.wardrobeTerms('A gloved hand pulls the strap tight.').length, 0,
+    'one garment is the thing being photographed, not an introduction');
+  eq(C.wardrobeTerms('Hands find the label. A courier in a rust-orange jacket and grey boots.').length > 0,
+    true, 'two garments together read as an introduction');
+  eq(C.wardrobeTerms('The lead, wearing the same coat, steps back.').length > 0, true,
+    '"wearing" gives it away on its own');
+  eq(C.wardrobeTerms('Late twenties, wiry, at the rack.').length > 0, true,
+    'so does an age range');
+
+  /* only a card with cast can be carrying it redundantly */
+  const p = SB.Model.newProject();
+  const per = SB.Personas.add(p, {
+    name: 'Courier',
+    description: 'Late twenties, wiry, in a rust-orange weatherproof jacket and scuffed grey boots.'
+  });
+  const sh = p.scenes[0].shots[0];
+  sh.description = 'Hands turn a crumpled label into the light. ' +
+    'Late twenties, wiry, in a rust-orange weatherproof jacket and scuffed grey boots.';
+  eq(C.carriesWardrobe(p, sh), null, 'with nobody cast, the text is the only record and is left alone');
+  sh.personaIds = [per.id];
+  eq(!!C.carriesWardrobe(p, sh), true, 'attaching the persona makes the same text redundant');
+  eq(C.shotsCarryingWardrobe(p).length, 1, 'and the board-wide sweep finds it');
+
+  /* the stapled tail is an exact copy, so it comes off for free */
+  eq(C.stripCast(sh.description, [per]), 'Hands turn a crumpled label into the light.',
+    'a tail that is a copy of the persona is lifted straight off');
+  eq(C.stripCast('Hands turn a crumpled label into the light.', [per]),
+    'Hands turn a crumpled label into the light.',
+    'a description that never carried one is untouched');
+  eq(C.stripCast('Late twenties, wiry, in a rust-orange jacket.', [per]),
+    'Late twenties, wiry, in a rust-orange jacket.',
+    'the only sentence is never stripped — that would leave an empty card');
+  eq(C.stripCast('The courier waits. Rain runs off the loading door.', [per]),
+    'The courier waits. Rain runs off the loading door.',
+    'a real closing sentence survives — it is not the persona in disguise');
+}
+
+console.log('\n— cleaning: free where it can be, a request only where it must —');
+{
+  const C = SB.Coverage;
+  const p = SB.Model.newProject();
+  const per = SB.Personas.add(p, {
+    name: 'Courier',
+    description: 'Late twenties, wiry, in a rust-orange weatherproof jacket and scuffed grey boots.'
+  });
+  const sc = p.scenes[0];
+  const a = sc.shots[0];
+  a.personaIds = [per.id];
+  a.description = 'Hands turn a crumpled label into the light. ' +
+    'Late twenties, wiry, in a rust-orange weatherproof jacket and scuffed grey boots.';
+
+  let asked = 0;
+  SB.Prompts = { raw: () => { asked++; return Promise.resolve({ description: 'unused' }); } };
+  SB.Store.getApiKey = () => 'test-key';
+
+  const r1 = await C.cleanWardrobe(p, [a]);
+  eq(asked, 0, 'an exact copy costs no request at all');
+  eq(r1.stripped, 1, 'it is reported as stripped');
+  eq(a.description, 'Hands turn a crumpled label into the light.', 'and the card is repaired');
+  eq(C.carriesWardrobe(p, a), null, 'the card no longer reads as carrying a wardrobe');
+
+  /* the persona has since been re-dressed, so the baked copy no longer matches
+     anything and only a rewrite can find it */
+  const b = SB.Model.addShot(p, sc.id, {});
+  b.personaIds = [per.id];
+  b.description = 'The lead leans in, wearing a navy fleece over grey trousers, as the screen blinks.';
+  asked = 0;
+  SB.Prompts = {
+    raw: (text) => {
+      asked++;
+      eq(/no longer describes what anybody LOOKS LIKE/.test(text), true,
+        'the rewrite is asked for in so many words');
+      eq(/Courier/.test(text), true, 'and the cast on the card is named for it');
+      return Promise.resolve({ description: 'Courier leans in as the screen blinks.' });
+    }
+  };
+  const r2 = await C.cleanWardrobe(p, [b]);
+  eq(asked, 1, 'a copy that no longer matches costs exactly one request');
+  eq(r2.stripped, 0, 'nothing could be stripped for free');
+  eq(b.description, 'Courier leans in as the screen blinks.', 'the rewrite lands on the card');
+
+  /* a card with nobody on it is never touched, whatever it says */
+  const c = SB.Model.addShot(p, sc.id, {});
+  c.description = 'A courier in a rust-orange jacket and grey boots waits at the door.';
+  asked = 0;
+  const r3 = await C.cleanWardrobe(p, [c]);
+  eq(r3.cleaned, 0, 'an uncast card is skipped');
+  eq(asked, 0, 'and costs nothing');
+  eq(/rust-orange/.test(c.description), true, 'its text is left exactly as it was');
+}
+
+console.log('\n— the cast block is the live record, and a stale prompt says so —');
+{
+  const p = SB.Model.newProject();
+  const per = SB.Personas.add(p, { name: 'Ops lead', description: 'In a navy zip fleece.' });
+  const sh = p.scenes[0].shots[0];
+  sh.personaIds = [per.id];
+
+  const b = SB.Personas.block(p, sh, null);
+  eq(/navy zip fleece/.test(b), true, 'the block carries the persona description as it reads now');
+  eq(/CURRENT and AUTHORITATIVE/.test(b), true,
+    'and declares itself authoritative over anything the shot description says about wardrobe');
+  eq(/governs what they are DOING/.test(b), true, 'while leaving the action to the description');
+
+  /* editing the persona shows up immediately — nothing snapshots it */
+  per.description = 'In a rust-orange weatherproof jacket.';
+  eq(/rust-orange/.test(SB.Personas.block(p, sh, null)), true,
+    'an edited persona reaches the very next prompt with no regeneration');
+
+  /* but a prompt already stored is a snapshot, and is reported as behind */
+  const written = 1000;
+  SB.Personas.touch(per);
+  eq(SB.Personas.staleFor(p, sh, written), true,
+    'a prompt written before the edit is stale');
+  eq(SB.Personas.staleFor(p, sh, Date.now() + 5000), false,
+    'one written after it is not');
+  eq(SB.Personas.staleFor(p, sh, 0), false,
+    'a card with no stored prompt is never flagged');
+
+  const virgin = SB.Model.newProject();
+  const old = SB.Personas.add(virgin, { name: 'Legacy' });
+  old.updatedAt = 0;                       // a board written before the stamp existed
+  const vs = virgin.scenes[0].shots[0];
+  vs.personaIds = [old.id];
+  eq(SB.Personas.staleFor(virgin, vs, written), false,
+    'an unstamped persona is unknowable, not stale — no false flags on old boards');
+}
+
+console.log('\n— scene coverage: descriptions are prose, not prompts —');
+{
+  const C = SB.Coverage;
+  const plain = 'The ops lead kneels beside the rack and works a fitting loose while the light drops.';
+  eq(C.deprompt(plain), plain, 'a plain-English description is left exactly as it is');
+  eq(C.deprompt('Hands close around a strap and pull, cinematic lighting, 8k, highly detailed'),
+    'Hands close around a strap and pull.',
+    'a trailing run of prompt tags is trimmed off');
+  eq(C.deprompt('A courier waits in the doorway, breath fogging in the cold'),
+    'A courier waits in the doorway, breath fogging in the cold.',
+    'a real clause after a comma survives — this trims tags, it does not rewrite sentences');
+  eq(C.deprompt('The aisle, seen end to end, empty'), 'The aisle, seen end to end.',
+    'a bare two-word modifier at the very end goes');
+  eq(C.deprompt(''), '', 'nothing in, nothing out');
 }
 
 console.log('\n— scene coverage: generate lands shots on the scene —');
 {
   const C = SB.Coverage;
   const canned = {
-    subject: 'A courier in a rust-orange weatherproof jacket and scuffed grey boots.',
+    cast: [{
+      name: 'Courier',
+      description: 'Late twenties, wiry, cropped dark hair, in a rust-orange weatherproof jacket and scuffed grey boots.',
+      imagePrompt: 'Front-facing reference frame of a courier, plain background, natural light.'
+    }],
     shots: [
-      { beat: 'arrives at the door', type: 'WS establishing', description: 'The courier steps up to the loading door.' },
+      { beat: 'arrives at the door', type: 'WS establishing', cast: ['Courier'], description: 'The courier steps up to the loading door.' },
       { beat: 'hands find the label', type: 'ECU', description: 'Fingers turn a crumpled label into the light.' },
-      { beat: 'the scan lands', type: 'CU', description: 'A rust-orange weatherproof shoulder fills the frame as the scanner blinks green.' }
+      { beat: 'the scan lands', type: 'CU', cast: ['Courier'], description: 'The courier leans in as the scanner blinks green.' }
     ]
   };
   let asked = null;
@@ -890,8 +1037,14 @@ console.log('\n— scene coverage: generate lands shots on the scene —');
   eq(sc.shots[0].id, r.ids[0], 'the starter card is the first generated shot');
   eq(sc.shots.map(s => s.type), ['Wide', 'Extreme close-up', 'Close-up'],
     'every returned type landed on the project list');
-  eq(sc.shots.every(s => /rust-orange/.test(s.description)), true,
-    'the subject wording reaches all three descriptions');
+  eq(sc.shots.every(s => !/rust-orange/.test(s.description)), true,
+    'no wardrobe is stapled into the descriptions — they stay plain English');
+  eq(p.personas.length, 1, 'the person the scene needed was minted as a persona');
+  eq(r.created.map(x => x.name), ['Courier'], 'and handed back so the UI can say so');
+  eq(p.personas[0].imagePrompt.length > 0, true, 'with a reference-frame prompt ready to go');
+  eq(sc.shots.every(s => (s.personaIds || [])[0] === p.personas[0].id), true,
+    'every card carries the persona — including the insert that named nobody');
+  eq(/NOT IMAGE PROMPTS/.test(asked.text), true, 'the request forbids prompt-style descriptions');
   eq(r.beats, ['arrives at the door', 'hands find the label', 'the scan lands'],
     'the beats come back for the status line');
   eq(/consecutive beats of ONE continuous moment/.test(asked.text), true,
@@ -899,17 +1052,18 @@ console.log('\n— scene coverage: generate lands shots on the scene —');
   eq(asked.text.indexOf(sc.description) > 0, true, 'and it sends the scene description');
   eq(/Extreme close-up/.test(asked.text), true, "and this project's own shot-type list");
 
-  C.undo(p, r.ids);
+  C.undo(p, r.ids, r.personaIds);
   eq(sc.shots.length, 0, 'undo removes exactly what generate created');
+  eq(p.personas.length, 0, 'and takes the persona it invented back out with them');
 }
 
 console.log('\n— scene coverage: a second run appends, and count is honoured —');
 {
   const C = SB.Coverage;
   const two = {
-    subject: 'A technician in a navy zip fleece.',
+    cast: [{ name: 'Technician', description: 'Thirties, in a navy zip fleece and dark work trousers.' }],
     shots: [
-      { beat: 'reaches in', type: 'Insert', description: 'A navy zip fleece cuff brushes the rack rail.' },
+      { beat: 'reaches in', type: 'Insert', cast: ['Technician'], description: 'A cuff brushes the rack rail.' },
       { beat: 'it seats home', type: 'Close-up', description: 'The drive clicks into the bay.' },
       { beat: 'spare beat', type: 'Wide', description: 'The aisle, seen end to end.' }
     ]
@@ -926,12 +1080,20 @@ console.log('\n— scene coverage: a second run appends, and count is honoured �
   eq(r.ids.length, 2, 'a count of 2 returns two shots');
   eq(sc.shots.length, 3, 'they were appended after the authored card, not into it');
   eq(sc.shots[0].description, 'hand-written card the user already made', 'the authored card is untouched');
+
+  /* second run, same board: the name already on the roster is reused, not cloned */
+  const before = p.personas.length;
+  const sc2 = SB.Model.addScene(p, {});
+  sc2.description = 'The technician checks the aisle temperature.';
+  const r2 = await C.generate(p, sc2.id, { count: 2 });
+  eq(p.personas.length, before, 'a returned name that already exists is reused, not duplicated');
+  eq(r2.created.length, 0, 'so nothing is reported as newly cast');
 }
 
 console.log('\n— scene coverage: it refuses to guess —');
 {
   const C = SB.Coverage;
-  SB.Prompts = { raw: () => Promise.resolve({ subject: 's', shots: [] }) };
+  SB.Prompts = { raw: () => Promise.resolve({ cast: [], shots: [] }) };
   SB.Store.getApiKey = () => 'test-key';
   const p = SB.Model.newProject();
   const sc = p.scenes[0];
@@ -1254,6 +1416,19 @@ console.log('\n— replies come back out of two different shapes —');
   try { o.text({ choices: [{ finish_reason: 'length' }] }); } catch (e) { threw = e.message; }
   eq(/no text/.test(threw) && /length/.test(threw), true,
     'an empty reply says so, and says why it stopped');
+
+  /* Qwen3 and friends answer in `content` and think in `reasoning`. Empty
+     content beside a full reasoning block is a token ceiling, not a dead server. */
+  let thought = '';
+  try {
+    o.text({ choices: [{ finish_reason: 'length', message: { content: '', reasoning: 'okay, the' } }] });
+  } catch (e) { thought = e.message; }
+  eq(/whole reply thinking/.test(thought), true,
+    'a reply that was all thinking says exactly that');
+  eq(/num_ctx/.test(thought), true, 'and names the knob that fixes it');
+
+  eq(o.text({ choices: [{ message: { content: '{"a":1}', reasoning: 'pondering' } }] }), '{\"a\":1}',
+    'a thinking model that did reach an answer is read normally, reasoning ignored');
 }
 
 console.log('\n— the address is taken as typed, however it is typed —');
@@ -1266,6 +1441,48 @@ console.log('\n— the address is taken as typed, however it is typed —');
     'and so is the full endpoint someone copied out of the docs');
   eq(B('  http://box:8080/v1/  '), 'http://box:8080', 'whitespace too');
   eq(B(''), 'http://127.0.0.1:5000', 'blank means the default');
+  /* Without a scheme fetch() treats it as a path relative to the page and the
+     page's own server answers — a 404 that looks like the model server's. */
+  eq(B('127.0.0.1:11434'), 'http://127.0.0.1:11434', 'a bare host:port gets a scheme');
+  eq(B('localhost:11434/v1'), 'http://localhost:11434', 'and still loses the pasted /v1');
+  eq(B('https://box:8443'), 'https://box:8443', 'https is left as it was typed');
+}
+
+console.log('\n— a 404 about the model is not a 404 about the address —');
+{
+  const o = SB.Providers.get('ooba');
+
+  /* Ollama answers 404 on the right endpoint when it does not know the model. */
+  const missing = o.error(404, "model 'qwen3' not found", 'qwen3');
+  eq(/no model called "qwen3"/.test(missing.message), true,
+    'a model-not-found 404 is reported as a model problem');
+  eq(/check the port/i.test(missing.message), false,
+    'and never sends anyone to restart a server that was answering fine');
+  eq(/qwen3:8b/.test(missing.message), true, 'it points out that Ollama names carry a tag');
+
+  const wrongPort = o.error(404, '<html>Not Found</html>', 'qwen3:8b');
+  eq(/that address answered, but not on/.test(wrongPort.message), true,
+    'a genuine endpoint 404 still says so');
+
+  const noModel = o.error(400, 'model is required', '');
+  eq(/has to be told which model/.test(noModel.message), true,
+    'a server that requires a model name says which setting fixes it');
+
+  const other = o.error(500, 'boom', 'x');
+  eq(/Local model 500/.test(other.message), true, 'anything else is passed through as it was');
+
+  /* "Get model names from server" calls /v1/models. Blaming the completions
+     endpoint for its 404 sends people to check a port that was never asked. */
+  const listing = o.error(404, '<html>Not Found</html>', null, '/v1/models');
+  eq(/not on \/v1\/models/.test(listing.message), true,
+    'a 404 from the model listing names the endpoint that was actually called');
+  eq(/chat\/completions/.test(listing.message), false,
+    'and never mentions one the app did not touch');
+
+  /* a listing call names no model, so it can never be a model-not-found */
+  const listingOdd = o.error(404, "model 'x' not found", null, '/v1/models');
+  eq(/not on \/v1\/models/.test(listingOdd.message), true,
+    'even a model-shaped body on the listing call is read as an endpoint problem');
 }
 
 console.log('\n— a dead local server is not the corporate proxy —');

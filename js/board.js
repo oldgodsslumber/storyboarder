@@ -358,19 +358,28 @@
       busy(true, 'boarding…');
       SB.Coverage.generate(p, sc.id, { count: ai.count | 0 }).then(function (r) {
         ai.ids = r.ids.slice();
-        ai.status = r.ids.length + ' shot' + (r.ids.length === 1 ? '' : 's') + ' added';
+        ai.personaIds = (r.personaIds || []).slice();
+        /* A person the run had to invent is a change to the whole board, not
+         * just to this scene, so it is said out loud rather than found later. */
+        const newCast = (r.created || []).map(function (per) { return per.name; });
+        ai.status = r.ids.length + ' shot' + (r.ids.length === 1 ? '' : 's') + ' added' +
+          (newCast.length ? ' · cast ' + newCast.join(', ') : '');
         ai.err = false;
         SB.app.selectedShotId = r.ids[0];
         SB.app.selection = [r.ids[0]];
         SB.app.changed(true);                 // rebuilds this row from ai state
+        if (newCast.length) SB.PersonaPanel.refresh();
         SB.toast(ai.status + (r.beats.length ? ' — ' + r.beats.join(' → ') : ''));
       }).catch(function (e) { failed(e, runGen); });
     }
 
     bUndo.onclick = function () {
       if (!ai.ids || !ai.ids.length) return;
-      SB.Coverage.undo(P(), ai.ids);
+      const hadCast = !!(ai.personaIds && ai.personaIds.length);
+      SB.Coverage.undo(P(), ai.ids, ai.personaIds);
       ai.ids = null;
+      ai.personaIds = null;
+      if (hadCast) SB.PersonaPanel.refresh();
       ai.status = 'generated shots removed';
       ai.err = false;
       SB.app.selectedShotId = null;
@@ -930,6 +939,35 @@
     });
     if (!cast.length) row.appendChild(SB.el('span', 'cast-empty', 'no cast'));
 
+    /* The moment somebody is attached, a description written for a different
+     * person — or for this one before they were re-dressed — becomes visibly
+     * wrong. castRow is rebuilt on every cast change, so this lands right when
+     * the mistake is made rather than at prompt time. */
+    const terms = SB.Coverage.carriesWardrobe(P(), sh);
+    if (terms) {
+      const warn = SB.el('button', 'mini cast-fix', 'describes wardrobe');
+      warn.title = 'This description still says what somebody looks like (' +
+        terms.slice(0, 4).join(', ') + (terms.length > 4 ? '…' : '') + '). ' +
+        'The cast above is the real record — click to take it out of the text.';
+      warn.onclick = function (ev) {
+        ev.stopPropagation();
+        warn.disabled = true;
+        warn.textContent = 'cleaning…';
+        SB.Coverage.cleanWardrobe(P(), [sh]).then(function (r) {
+          SB.app.changed(true);
+          SB.toast(r.cleaned
+            ? 'Description cleaned — the cast keeps the wardrobe now'
+            : 'Nothing could be taken out of that one', !r.cleaned);
+        }).catch(function (e) {
+          warn.disabled = false;
+          warn.textContent = 'describes wardrobe';
+          if (SB.apiBlocked(e, function () { warn.onclick(ev); })) return;
+          SB.toast(e.message || String(e), true);
+        });
+      };
+      row.appendChild(warn);
+    }
+
     const b = SB.el('button', 'mini cast-edit', cast.length ? 'edit' : '+ cast');
     b.onclick = function (ev) {
       ev.stopPropagation();
@@ -1013,9 +1051,42 @@
     }, 0);
   }
 
+  /* A stored prompt froze its cast's wardrobe at the moment it was written. If
+   * the persona has been edited since, the text in the box is describing
+   * somebody who no longer exists — say so rather than letting it look current. */
+  function staleBadge(sh, m, field) {
+    const pr = sh.prompts[m.id] || null;
+    if (!pr || !(pr[field] || '').trim()) return null;
+    if (!SB.Personas.staleFor(P(), sh, pr.at)) return null;
+    const b = SB.el('span', 'badge warn stale', 'persona changed');
+    b.title = 'A persona on this card was edited after this prompt was written, so it still ' +
+      'describes the old wardrobe. Generate again to pick up the current one.';
+    return b;
+  }
+
+  /* Re-evaluate the badges without rebuilding the cards — editing a persona
+   * description is a keystroke-rate event, and replacing the textarea under the
+   * cursor would be worse than the staleness. */
+  function refreshPromptStale() {
+    document.querySelectorAll('.prompt-box').forEach(function (box) {
+      const f = SB.Model.findShot(P(), box.dataset.shot);
+      const t = box.querySelector('.ptitle');
+      if (!f || !t) return;
+      const old = t.querySelector('.stale');
+      if (old) old.remove();
+      const m = SB.Model.modelById(P(), box.dataset.model);
+      if (!m) return;
+      const b = staleBadge(f.shot, m, box.dataset.field);
+      if (b) t.insertBefore(b, t.querySelector('button') || null);
+    });
+  }
+
   function promptBox(sh, m, field, title) {
     const pr = sh.prompts[m.id] || null;
     const wrap = SB.el('div', 'prompt-box');
+    wrap.dataset.shot = sh.id;
+    wrap.dataset.model = m.id;
+    wrap.dataset.field = field;
     const t = SB.el('div', 'ptitle');
     t.appendChild(SB.el('span', null, title + ' · ' + m.name));
 
@@ -1027,6 +1098,8 @@
         '. The rewrite pass could not clear it — edit it or generate again.';
       t.appendChild(warn);
     }
+    const st = staleBadge(sh, m, field);
+    if (st) t.appendChild(st);
     const gen = SB.el('button', 'mini', 'generate');
     gen.style.marginLeft = 'auto';
     gen.onclick = function () {
@@ -1048,6 +1121,11 @@
       sh.prompts[m.id] = sh.prompts[m.id] || { imagePrompt: '', videoPrompt: '', modelName: m.name };
       sh.prompts[m.id][field] = ta.value;
       sh.prompts[m.id].modelName = m.name;
+      /* Hand-editing is the user restating the prompt as it should read now, so
+       * it stops being behind the persona. */
+      sh.prompts[m.id].at = Date.now();
+      const badge = wrap.querySelector('.stale');
+      if (badge) badge.remove();
       SB.app.changed(false);
     });
     wrap.appendChild(ta);
@@ -1167,7 +1245,7 @@
     renderSceneList: renderSceneList,
     renderScriptWindows: renderScriptWindows,
     refreshCast: refreshCast,
-    refreshCastRows: refreshCastRows,
+    refreshCastRows: refreshCastRows, refreshPromptStale: refreshPromptStale,
     setImage: setImage,
     swap: doSwap,
     armSwap: armSwap,

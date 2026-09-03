@@ -5,9 +5,10 @@
  *
  *   gemini — Google's generativelanguage endpoint, with JSON schema mode.
  *   ooba   — any OpenAI-compatible /v1/chat/completions server: oobabooga's
- *            text-generation-webui (--api), LM Studio, llama.cpp's server,
- *            KoboldCpp. No schema mode, so it takes the same "ask for JSON in
- *            words" path Gemma already uses.
+ *            text-generation-webui (--api), Ollama (:11434, which requires a
+ *            model name and answers 404 when it does not know it), LM Studio,
+ *            llama.cpp's server, KoboldCpp. No schema mode, so it takes the
+ *            same "ask for JSON in words" path Gemma already uses.
  *
  * Which one is active is a project setting (p.settings.aiProvider) because a
  * board's prompts are written by whatever the board is pointed at. WHERE the
@@ -106,6 +107,11 @@
     if (!u) u = DEFAULT_OOBA_URL;
     u = u.replace(/\s+$/, '').replace(/\/+$/, '');
     u = u.replace(/\/v1(\/chat(\/completions)?)?$/i, '');
+    /* "127.0.0.1:11434" is not a URL. fetch() reads it as a path relative to
+     * wherever this page is being served from, sends the request to THAT server
+     * and hands back its 404 — which reads exactly like the local model server
+     * answering on the wrong endpoint. Assume http rather than guessing. */
+    if (!/^https?:\/\//i.test(u)) u = 'http://' + u.replace(/^\/+/, '');
     return u;
   }
 
@@ -145,19 +151,60 @@
 
     text: function (data) {
       const ch = data.choices && data.choices[0];
-      const raw = ch && ((ch.message && ch.message.content) || ch.text);
+      const m = ch && ch.message;
+      const raw = (m && m.content) || (ch && ch.text);
       if (!raw) {
+        /* Thinking models — Qwen3, DeepSeek-R1 — put their chain of thought in
+         * a separate `reasoning` field and the actual answer in `content`. An
+         * empty content beside a full reasoning block means the reply ran out
+         * of room mid-thought and never reached the answer. That is a context
+         * or token ceiling, not a broken server, and saying "returned no text"
+         * sends people back to the address for a second time. */
+        if (m && m.reasoning) {
+          throw new Error('The model used its whole reply thinking and never got to an ' +
+            'answer' + (ch.finish_reason ? ' (' + ch.finish_reason + ')' : '') +
+            '. Give it more room — on Ollama that is num_ctx — or use a model with ' +
+            'thinking turned off.');
+        }
         throw new Error('The local model returned no text' +
           (ch && ch.finish_reason ? ' (' + ch.finish_reason + ')' : ''));
       }
       return raw;
     },
 
-    error: function (status, msg) {
+    /* `path` is the endpoint the request actually went to. It defaults to the
+     * completions one because that is where all but one of these come from, but
+     * "refresh the model list" calls /v1/models — and telling somebody their
+     * server is not answering on an endpoint the app never asked for sends them
+     * to check a port that was right all along. */
+    error: function (status, msg, mdl, path) {
+      const ep = path || '/v1/chat/completions';
+      /* Ollama answers 404 on a perfectly good endpoint when the MODEL is the
+       * thing it cannot find. Reading that as "wrong port" sends people off to
+       * restart a server that was never the problem, so the body decides which
+       * kind of 404 this is before the address is ever blamed. A listing call
+       * names no model, so it can never be this. */
+      if (ep === '/v1/chat/completions' && status === 404 &&
+        /\bmodels?\b/i.test(msg) &&
+        /not found|does not exist|no such|unknown/i.test(msg)) {
+        return new Error('The server answered, but it has no model called "' +
+          (mdl || SB.Store.getOoba().model || '(none chosen)') +
+          '". Pick one in Settings → API → Model — ' +
+          '“Refresh list” asks the server what it actually has. Ollama names carry ' +
+          'the tag, so it is qwen3:8b rather than qwen3. (' + msg + ')');
+      }
       if (status === 404) {
         return new Error('404 from ' + baseUrl() + ' — that address answered, but not on ' +
-          '/v1/chat/completions. Check the port, and that the server is started with its ' +
-          'OpenAI-compatible API enabled (text-generation-webui: --api). (' + msg + ')');
+          ep + '. Check the port, and that the server is started with its ' +
+          'OpenAI-compatible API enabled (text-generation-webui: --api; Ollama serves this ' +
+          'on 11434 with no flag). (' + msg + ')');
+      }
+      /* Ooba serves whatever is loaded and ignores the field; Ollama and friends
+       * refuse without it, so "whatever is loaded" is not a universal default. */
+      if (status === 400 && /model/i.test(msg) && /required|missing/i.test(msg)) {
+        return new Error('This server has to be told which model to use — ' +
+          '“whatever is loaded” only works on servers that keep one loaded. ' +
+          'Choose a model in Settings → API. (' + msg + ')');
       }
       if (status === 401 || status === 403) {
         return new Error(status + ' from the local server — it wants an API key. ' +
@@ -180,7 +227,7 @@
         .catch(function (e) { throw localError(e, base); })
         .then(function (r) {
           return r.text().then(function (t) {
-            if (!r.ok) throw ooba.error(r.status, t);
+            if (!r.ok) throw ooba.error(r.status, t, null, '/v1/models');
             let data;
             try { data = JSON.parse(t); }
             catch (e) {
@@ -208,7 +255,8 @@
     const err = new Error('Could not reach ' + (base || baseUrl()) + '. Check that the server ' +
       'is running with its OpenAI-compatible API enabled (text-generation-webui: --api), that ' +
       'the port matches, and that it allows requests from this page ' +
-      '(text-generation-webui: --api-enable-CORS, or serve this app from the same host).');
+      '(text-generation-webui: --api-enable-CORS; Ollama: set OLLAMA_ORIGINS to allow this ' +
+      'origin, or serve this app from the same host).');
     err.localApi = true;      // so SB.apiBlocked leaves it alone
     return err;
   }

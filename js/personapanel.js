@@ -17,10 +17,64 @@
     statusEl.classList.toggle('err', !!isErr);
   }
 
+  /* A board-wide sweep for descriptions that still carry a wardrobe. It lives
+   * here because this panel is where the wardrobe gets changed, which is what
+   * puts the descriptions out of date in the first place. */
+  function sweepBlock(p) {
+    const stale = SB.Coverage.shotsCarryingWardrobe(p);
+    if (!stale.length) return null;
+
+    const box = SB.el('div', 'pp-block warn-block');
+    box.appendChild(SB.el('div', 't', 'descriptions out of date'));
+    box.appendChild(SB.el('div', 'pp-note',
+      stale.length + (stale.length === 1 ? ' card describes' : ' cards describe') +
+      ' what somebody looks like in the description itself. The cast is the real ' +
+      'record, so that text is a frozen copy — it does not change when you edit a ' +
+      'persona, and it is simply wrong once a different person is put on the card.'));
+
+    const st = SB.el('div', 'pp-status');
+    const say = function (txt, isErr) {
+      st.textContent = txt || '';
+      st.classList.toggle('err', !!isErr);
+    };
+
+    const acts = SB.el('div', 'pp-actions');
+    const b = SB.el('button', 'tb on', 'Clean ' + stale.length +
+      (stale.length === 1 ? ' description' : ' descriptions'));
+    b.title = 'Take the appearance and wardrobe out of those descriptions, keeping the action. ' +
+      'Anything that is an exact copy of a persona is lifted off for free; the rest is rewritten.';
+    b.onclick = function () {
+      b.disabled = true;
+      say('cleaning 0/' + stale.length + '…');
+      SB.Coverage.cleanWardrobe(p, stale, {
+        onProgress: function (done, total) { say('cleaning ' + done + '/' + total + '…'); }
+      }).then(function (r) {
+        SB.app.changed(true);
+        render();
+        /* render() has rebuilt the panel by now — the sweep block is gone once
+           everything is clean, so anything left to say goes to the toast. */
+        SB.toast(r.cleaned + ' description' + (r.cleaned === 1 ? '' : 's') + ' cleaned' +
+          (r.stripped ? ' (' + r.stripped + ' without a request)' : '') +
+          (r.failed ? ' · ' + r.failed + ' could not be done' : ''), !!r.failed);
+      }).catch(function (e) {
+        b.disabled = false;
+        if (SB.apiBlocked(e, function () { b.onclick(); })) { say('blocked — see the dialog', true); return; }
+        say(e.message || String(e), true);
+      });
+    };
+    acts.appendChild(b);
+    box.appendChild(acts);
+    box.appendChild(st);
+    return box;
+  }
+
   function render() {
     if (!panel || !P()) return;
     const p = P();
     bodyEl.innerHTML = '';
+
+    const sweep = sweepBlock(p);
+    if (sweep) bodyEl.appendChild(sweep);
 
     /* --- generate --- */
     const gen = SB.el('div', 'pp-block');
@@ -104,6 +158,7 @@
     name.placeholder = 'Name';
     name.addEventListener('input', function () {
       per.name = name.value;
+      SB.Personas.touch(per);
       SB.Store.touch();
       /* Rows only — refreshCast() re-renders this panel, which would rebuild
          the very input being typed into and drop focus after each keystroke. */
@@ -155,6 +210,7 @@
       rm.onclick = function (ev) {
         ev.stopPropagation();
         per.image = null;
+        SB.Personas.touch(per);
         SB.app.changed(true);
         render();
       };
@@ -172,7 +228,15 @@
     d.rows = 4;
     d.value = per.description || '';
     d.placeholder = 'Age range, build, hair, and the exact outfit — fabric and colour.';
-    d.addEventListener('input', function () { per.description = d.value; SB.Store.touch(); });
+    d.addEventListener('input', function () {
+      per.description = d.value;
+      SB.Personas.touch(per);
+      SB.Store.touch();
+      /* the cards carrying this person may now be showing a prompt written
+         against the old wardrobe */
+      SB.Board.refreshCastRows();
+      SB.Board.refreshPromptStale();
+    });
     wrap.appendChild(d);
 
     wrap.appendChild(SB.el('div', 'box-label', 'reference image prompt'));
@@ -181,7 +245,11 @@
     ip.rows = 4;
     ip.value = per.imagePrompt || '';
     ip.placeholder = 'The prompt that makes this person’s reference frame.';
-    ip.addEventListener('input', function () { per.imagePrompt = ip.value; SB.Store.touch(); });
+    ip.addEventListener('input', function () {
+      per.imagePrompt = ip.value;
+      SB.Personas.touch(per);
+      SB.Store.touch();
+    });
     wrap.appendChild(ip);
 
     const foot = SB.el('div', 'pp-actions');

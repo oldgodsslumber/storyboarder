@@ -134,8 +134,14 @@
 
   function isRetired(id) { return RETIRED.indexOf(id) >= 0; }
 
+  /* Google also serves floating aliases — gemini-flash-latest and friends —
+   * that silently repoint at whatever is newest. A board must not change which
+   * model writes its prompts without anyone touching a setting, so an alias is
+   * moved onto the pinned default the same way a retired id is. */
+  function isAlias(id) { return /-latest$/i.test(String(id || '')); }
+
   function normalize(id) {
-    if (!id || isRetired(id)) return DEFAULT;
+    if (!id || isRetired(id) || isAlias(id)) return DEFAULT;
     return id;
   }
 
@@ -245,7 +251,7 @@
 
   SB.GeminiModels = {
     DEFAULT: DEFAULT, LIST: LIST, RETIRED: RETIRED,
-    options: options, isRetired: isRetired, normalize: normalize, isGemma: isGemma,
+    options: options, isRetired: isRetired, isAlias: isAlias, normalize: normalize, isGemma: isGemma,
     fetchAvailable: fetchAvailable, clearCache: clearCache, picker: picker,
     bump: bump, count: count, markExhausted: markExhausted,
     limit: limit, setLimit: setLimit, remaining: remaining, usageText: usageText

@@ -290,7 +290,10 @@
       b.onclick = function () { showProvider(prov.id); };
       provBtns[prov.id] = b;
       provRow.appendChild(b);
+      /* Named, so the two providers' panels are told apart from the outside —
+         both hold a model picker of the same shape. */
       provBlocks[prov.id] = SB.el('div', 'prov-block');
+      provBlocks[prov.id].dataset.prov = prov.id;
     });
     panels.api.appendChild(SB.el('div', 'pp-label', 'Who writes the prompts'));
     panels.api.appendChild(provRow);
