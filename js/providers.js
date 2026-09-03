@@ -106,7 +106,13 @@
     let u = String(raw == null ? SB.Store.getOoba().url : raw).trim();
     if (!u) u = DEFAULT_OOBA_URL;
     u = u.replace(/\s+$/, '').replace(/\/+$/, '');
-    u = u.replace(/\/v1(\/chat(\/completions)?)?$/i, '');
+    /* Whatever someone pasted, /v1 is the OpenAI version segment and the base
+     * is what comes before it — so the whole tail goes, not just the three
+     * endings that were listed here. Pasting the models URL while trying to
+     * make the model-list button work produced /v1/models/v1/models and a 404
+     * that read as the server being wrong. A prefix in front of /v1 is real
+     * though (host/openai/v1), so only the tail is taken. */
+    u = u.replace(/\/v1(\/[^?#]*)?$/i, '');
     /* "127.0.0.1:11434" is not a URL. fetch() reads it as a path relative to
      * wherever this page is being served from, sends the request to THAT server
      * and hands back its 404 — which reads exactly like the local model server

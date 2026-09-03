@@ -1446,6 +1446,17 @@ console.log('\n— the address is taken as typed, however it is typed —');
   eq(B('127.0.0.1:11434'), 'http://127.0.0.1:11434', 'a bare host:port gets a scheme');
   eq(B('localhost:11434/v1'), 'http://localhost:11434', 'and still loses the pasted /v1');
   eq(B('https://box:8443'), 'https://box:8443', 'https is left as it was typed');
+  /* Anything after /v1 is the endpoint, not the base. Pasting the models URL —
+     the obvious thing to try when the model-list button is what is failing —
+     used to build /v1/models/v1/models and 404. */
+  eq(B('http://127.0.0.1:11434/v1/models'), 'http://127.0.0.1:11434',
+    'a pasted /v1/models is dropped, not doubled');
+  eq(B('http://127.0.0.1:11434/v1/completions'), 'http://127.0.0.1:11434',
+    'and so is any other /v1 endpoint');
+  eq(B('https://host/openai/v1'), 'https://host/openai',
+    'a real prefix in front of /v1 survives — only the tail is taken');
+  eq(B('https://host/api'), 'https://host/api',
+    'a proxy prefix that is not /v1 is left alone; it may be the real base');
 }
 
 console.log('\n— a 404 about the model is not a 404 about the address —');
