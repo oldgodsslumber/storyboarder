@@ -25,7 +25,7 @@ const sandbox = {
       removeItem: k => m.delete(k)
     };
   })(),
-  Uint8Array, TextEncoder
+  Uint8Array, TextEncoder, URL
 };
 sandbox.window = sandbox;
 vm.createContext(sandbox);
@@ -1494,6 +1494,37 @@ console.log('\n— a 404 about the model is not a 404 about the address —');
   const listingOdd = o.error(404, "model 'x' not found", null, '/v1/models');
   eq(/not on \/v1\/models/.test(listingOdd.message), true,
     'even a model-shaped body on the listing call is read as an endpoint problem');
+}
+
+console.log('\n— an https page cannot reach a plain http LAN address —');
+{
+  const M = SB.Providers.mixedContent;
+  eq(M('http://192.168.4.175:11434'), null, 'with no page at all there is nothing to say');
+
+  sandbox.location = { protocol: 'https:', host: 'oldgodsslumber.github.io' };
+  const lan = M('http://192.168.4.175:11434');
+  eq(typeof lan === 'string', true, 'an https page reaching a LAN address over http is refused');
+  eq(/nothing you change on the server can fix it/i.test(lan), true,
+    'and it says so, rather than sending anyone to the server');
+  eq(/toolbar . Copy/.test(lan) || /Copy\)/.test(lan), true, 'it names the way out');
+
+  /* browsers treat loopback as trustworthy, so the hosted copy CAN reach it */
+  eq(M('http://127.0.0.1:11434'), null, '127.0.0.1 is exempt and stays allowed');
+  eq(M('http://localhost:11434'), null, 'so is localhost');
+  eq(M('https://box.example:11434'), null, 'an https server is fine wherever it lives');
+
+  sandbox.location = { protocol: 'http:', host: 'localhost:8000' };
+  eq(M('http://192.168.4.175:11434'), null,
+    'served over plain http, the same LAN address is allowed — that is the fix');
+
+  /* the unreachable-server message must not claim what the browser blocked */
+  sandbox.location = { protocol: 'https:', host: 'oldgodsslumber.github.io' };
+  const err = SB.Providers.localError(new TypeError('Failed to fetch'), 'http://192.168.4.175:11434');
+  eq(/https page/.test(err.message), true,
+    'a refused scheme is reported as that, not as a server that is down');
+  eq(err.localApi, true, 'and still never pops the corporate-proxy dialog');
+
+  delete sandbox.location;
 }
 
 console.log('\n— a dead local server is not the corporate proxy —');

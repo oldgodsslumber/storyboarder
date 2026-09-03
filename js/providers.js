@@ -121,6 +121,34 @@
     return u;
   }
 
+  /* Browsers treat these as trustworthy even over plain http, so an https page
+   * is allowed to reach them. Nothing else on a private network qualifies. */
+  function isLoopback(host) {
+    return /^(localhost|127\.\d+\.\d+\.\d+|\[::1\]|::1)$/i.test(host || '');
+  }
+
+  /* An https page may not fetch a plain http address. The browser refuses
+   * before anything reaches the network, so the rejection is identical to the
+   * one a dead server produces — and every hint about ports, flags and CORS
+   * then sends people to fix a machine that was never asked a question.
+   *
+   * This is the shape it takes in practice: the app opened from its hosted
+   * copy, and the model server on another box on the LAN. There is no setting
+   * on either side that allows it. */
+  function mixedContent(base) {
+    if (typeof location === 'undefined' || location.protocol !== 'https:') return null;
+    if (!/^http:\/\//i.test(base)) return null;
+    let host = '';
+    try { host = new URL(base).hostname; } catch (e) { return null; }
+    if (isLoopback(host)) return null;
+    return 'This page is served over https (' + location.host + '), and a browser will not let ' +
+      'an https page reach a plain http address like ' + base + '. The request is refused ' +
+      'before it leaves the browser, which looks exactly like the server being down — but ' +
+      'nothing you change on the server can fix it. Either run the model server on this same ' +
+      'machine and point at 127.0.0.1, or take a local copy of this app (toolbar → Copy), open ' +
+      'that file on the machine you want to use, and set the address there.';
+  }
+
   const ooba = {
     id: 'ooba',
     label: 'Ooba / OpenAI-compatible',
@@ -226,6 +254,14 @@
     /* GET /v1/models — the same call on every OpenAI-compatible server. */
     listModels: function (url) {
       const base = baseUrl(url);
+      /* Fail here rather than letting the browser refuse it and reporting that
+       * as an unreachable server. */
+      const mc = mixedContent(base);
+      if (mc) {
+        const e = new Error(mc);
+        e.localApi = true;
+        return Promise.reject(e);
+      }
       const headers = {};
       const k = SB.Store.getOoba().key;
       if (k) headers['Authorization'] = 'Bearer ' + k;
@@ -257,6 +293,14 @@
   function localError(e, base) {
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
       /* still worth reporting honestly — a localhost call does not need the net */
+    }
+    /* The browser refusing the scheme is not the server being unreachable, and
+     * only one of those has a fix. */
+    const mc = mixedContent(base || baseUrl());
+    if (mc) {
+      const blocked = new Error(mc);
+      blocked.localApi = true;
+      return blocked;
     }
     const err = new Error('Could not reach ' + (base || baseUrl()) + '. Check that the server ' +
       'is running with its OpenAI-compatible API enabled (text-generation-webui: --api), that ' +
@@ -302,7 +346,7 @@
     DEFAULT_OOBA_URL: DEFAULT_OOBA_URL,
     all: ALL, list: list, get: get, active: active, activeId: activeId,
     setActive: setActive, normalize: normalize, usageKey: usageKey,
-    baseUrl: baseUrl, localError: localError
+    baseUrl: baseUrl, localError: localError, mixedContent: mixedContent
   };
 
 })(window.SB);
