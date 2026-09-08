@@ -268,8 +268,21 @@ console.log('\n— brand style —');
   eq(/MOTION/.test(B.systemFor(p, b, 'video')), true, 'video jobs do');
   eq(/MOTION/.test(B.systemFor(p, b, 'both')), true, 'combined jobs do too');
 
+  /* A first frame is one instant. The rider that says so is not part of the
+     house style — it is what the still IS — so it ships either way. */
+  eq(/THE FIRST FRAME IS ONE INSTANT/.test(B.systemFor(p, b, 'image')), true,
+    'image jobs are told the frame is a single moment');
+  eq(/THE FIRST FRAME IS ONE INSTANT/.test(B.systemFor(p, b, 'both')), true,
+    'and so are combined jobs, which write the still as well');
+  eq(/THE FIRST FRAME IS ONE INSTANT/.test(B.systemFor(p, b, 'video')), false,
+    'a video-only job is not — it is the half that moves');
+
   p.settings.brand.enabled = false;
-  eq(B.systemFor(p, b, 'image'), '', 'turning the house style off sends nothing');
+  eq(/HOUSE STYLE/.test(B.systemFor(p, b, 'image')), false,
+    'turning the house style off sends no house style');
+  eq(/THE FIRST FRAME IS ONE INSTANT/.test(B.systemFor(p, b, 'image')), true,
+    'but the craft rules are not the brand, and go anyway');
+  eq(/MOTION/.test(B.systemFor(p, b, 'video')), true, 'the motion rules likewise');
 }
 
 console.log('\n— personas —');
@@ -429,6 +442,86 @@ console.log('\n— a shot naming the same subject twice ——');
   eq(/image 1 = Dup/.test(blk) && /image 2 = Other/.test(blk), true,
     'so the image numbering stays honest');
   eq(/images 1–3/.test(blk), false, 'no range is claimed across somebody else’s image');
+}
+
+console.log('\n— a first frame is one instant —');
+{
+  const Per = SB.Personas;
+  const p = SB.Model.newProject();
+  const sh = p.scenes[0].shots[0];
+  sh.description = 'He sits writing at the desk. A moment later somebody walks into frame behind him.';
+
+  const him = Per.add(p, { name: 'Writer', description: 'Charcoal knit.' });
+  const her = Per.add(p, { name: 'Colleague', description: 'Rust-orange jacket.' });
+  Per.toggleOnShot(p, sh, him.id);
+  Per.toggleOnShot(p, sh, her.id);
+
+  eq(Per.presentAtOpen(p, sh).length, 2, 'everybody cast is in the opening frame until told otherwise');
+  eq(Per.arriving(p, sh).length, 0, 'nobody arrives by default — which is what every old board means');
+
+  /* the block used to read as a guest list: it named everyone cast and handed
+     over a numbered reference image each, so the writer drew them all */
+  const img = Per.block(p, sh, null, 'image');
+  eq(/not a list of who or what is visible/.test(img), true,
+    'the image job is told the cast block is not a list of who is in frame');
+  eq(/present at the instant the shot opens/.test(img), true,
+    'and that only what is there when it opens gets drawn');
+  eq(/not a list of who or what is visible/.test(Per.block(p, sh, null, 'video')), false,
+    'the video job is not — it covers the movement, arrivals included');
+
+  Per.toggleEnters(sh, her.id);
+  eq(Per.enters(sh, her.id), true, 'somebody can be marked as arriving partway through');
+  eq(Per.presentAtOpen(p, sh).length, 1, 'so the opening frame holds one of them');
+  eq(Per.arriving(p, sh)[0].name, 'Colleague', 'and the other is the one who walks in');
+
+  const img2 = Per.block(p, sh, null, 'image');
+  eq(/ARRIVES DURING THE SHOT — NOT IN THE FIRST FRAME/.test(img2), true,
+    'the marked subject is flagged in the list itself');
+  eq(/MARKED AS ARRIVING[\s\S]*Colleague/.test(img2), true, 'and named again, so it cannot be missed');
+  eq(/opening door, a shadow or a look off-screen/.test(img2), true,
+    'including the ways a model hints at somebody it was told to leave out');
+  eq(/Rust-orange/.test(img2), true,
+    'their description still travels — the still does not show them, the video will');
+
+  const vid = Per.block(p, sh, null, 'video');
+  eq(/ARRIVING DURING THE SHOT: Colleague/.test(vid), true,
+    'the video job is told the arrival is movement it owns');
+  eq(/NOT IN THE FIRST FRAME/.test(vid), true, 'and can still see the mark on the list');
+
+  /* the numbering has to mean the same thing in both prompts — it is the order
+     the person feeding the model puts their files in */
+  const im = function (c) { return SB.Blobs.image(p, 'data:image/jpeg;base64,' + c.repeat(60), 4, 3); };
+  Per.addImage(him, im('A'));
+  Per.addImage(her, im('B'));
+  const a = Per.block(p, sh, null, 'image'), b = Per.block(p, sh, null, 'video');
+  eq(/image 1 = Writer/.test(a) && /image 2 = Colleague/.test(a), true, 'the image job numbers both');
+  eq(/image 1 = Writer/.test(b) && /image 2 = Colleague/.test(b), true,
+    'and the video job numbers them identically');
+
+  /* the mark is a subset of the cast, and nothing else */
+  Per.toggleOnShot(p, sh, her.id);
+  eq(Per.enters(sh, her.id), false, 'taking somebody off the card takes their arrival mark too');
+  Per.toggleOnShot(p, sh, her.id);
+  Per.toggleEnters(sh, her.id);
+  Per.remove(p, her.id);
+  eq((sh.castEnters || []).length, 0, 'and deleting the subject outright clears it as well');
+
+  const old = { id: 'x', personaIds: ['a'], castEnters: ['a', 'ghost'] };
+  const mp = SB.Model.newProject();
+  mp.scenes[0].shots = [old];
+  SB.Model.migrate(mp);
+  eq(old.castEnters, ['a'], 'migration keeps only marks for people actually on the card');
+}
+
+console.log('\n— the board notices when a description reads as an arrival —');
+{
+  const Per = SB.Personas;
+  eq(Per.readsAsArrival('A colleague walks into frame behind him.'), true, 'walks into frame');
+  eq(Per.readsAsArrival('She enters as the lift doors part.'), true, 'enters');
+  eq(Per.readsAsArrival('A second figure appears at the far end.'), true, 'appears');
+  eq(Per.readsAsArrival('Two people lean over a whiteboard, talking.'), false,
+    'a shot where everybody is simply present is not flagged');
+  eq(Per.readsAsArrival(''), false, 'and an empty description is not either');
 }
 
 console.log('\n— gendered language detector —');

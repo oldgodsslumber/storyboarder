@@ -57,6 +57,31 @@
 
   /* Motion inherits the same rules; these are the ones that only make sense once
    * the frame starts moving. */
+  /* A first frame is an INSTANT, and a shot description is usually a little
+   * story. Nothing used to say so: the template called the job a "first-frame
+   * prompt" — a label, not a rule — and then handed over a paragraph in which
+   * two or three things happen one after another. A writer with no instruction
+   * about time drew all of them at once, so somebody described as walking in
+   * later was standing in the opening frame.
+   *
+   * This is a rider rather than template text on purpose. Templates are stored
+   * per project inside the file, so editing the default only reaches boards
+   * made afterwards; a rider reaches every board that already exists. */
+  const FIRST_FRAME_RIDER = [
+    'THE FIRST FRAME IS ONE INSTANT',
+    '- You are describing a single photograph: the state of things at the moment this shot ' +
+    'opens, before anything the description says happens next has happened.',
+    '- A shot description is a short sequence. Words like "then", "after", "as", "walks in", ' +
+    '"enters", "arrives", "turns to", "reaches for", "picks up", "reveals", "cuts to" mark what ' +
+    'happens AFTER the first frame. None of it is in this image.',
+    '- If somebody or something is described as arriving, entering or appearing, the frame is ' +
+    'what the camera sees BEFORE they arrive. Do not put them in it, and do not gesture at them ' +
+    'with an open door, a shadow or a look off-screen unless the description opens that way.',
+    '- If the description opens mid-action, draw the first recognisable instant of that action, ' +
+    'not its result.',
+    '- Everything you leave out is not lost: the image-to-video prompt covers the movement.'
+  ].join('\n');
+
   const VIDEO_RIDER = [
     'MOTION',
     '- Wardrobe and location must not change during the shot.',
@@ -135,14 +160,31 @@
     return lines.join('\n');
   }
 
-  /* The system instruction for one prompt-writing job. */
+  /* The system instruction for one prompt-writing job.
+   *
+   * The house style is a choice about how a board looks and can be switched
+   * off. The riders are not: they are what the two prompts ARE — a still of one
+   * instant, and the movement out of it — and a board with no house style needs
+   * them just as much. They used to sit behind the same early return, so
+   * turning the brand off quietly took the craft rules with it. */
   function systemFor(p, shot, role) {
     const b = brandOf(p);
-    if (!b.enabled) return '';
-    const parts = ['HOUSE STYLE — every prompt you write must obey this.', '', b.text];
-    if (role === 'video' || role === 'both') parts.push('', VIDEO_RIDER);
+    const parts = [];
+    if (b.enabled) parts.push('HOUSE STYLE — every prompt you write must obey this.', '', b.text);
+    if (role === 'image' || role === 'both') {
+      if (parts.length) parts.push('');
+      parts.push(FIRST_FRAME_RIDER);
+    }
+    if (role === 'video' || role === 'both') {
+      if (parts.length) parts.push('');
+      parts.push(VIDEO_RIDER);
+    }
     const seq = sequenceBlock(p, shot);
-    if (seq) parts.push('', seq);
+    if (seq) {
+      if (parts.length) parts.push('');
+      parts.push(seq);
+    }
+    if (!parts.length) return '';
     parts.push('', 'Fold these requirements into the prompt itself as concrete description — ' +
       'do not quote the rules back, do not add headings or commentary, and never use gendered language.');
     return parts.join('\n');
@@ -151,6 +193,7 @@
   SB.Brand = {
     DEFAULT: DEFAULT_BRAND,
     VIDEO_RIDER: VIDEO_RIDER,
+    FIRST_FRAME_RIDER: FIRST_FRAME_RIDER,
     brandOf: brandOf,
     systemFor: systemFor,
     sequenceBlock: sequenceBlock,

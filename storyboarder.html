@@ -812,9 +812,19 @@ button.linkish{
 
 .cast-row{display:flex;flex-wrap:wrap;gap:4px;align-items:center;padding:4px 6px 0}
 .cast-chip{
-  font-size:10px;padding:1px 6px;border-radius:9px;
+  font-size:10px;padding:1px 6px;border-radius:9px;background:none;cursor:pointer;
   border:1px solid var(--line2);color:var(--fg-dim);white-space:nowrap;
 }
+.cast-chip:hover{border-color:var(--fg-dim);color:var(--fg)}
+/* not in the first frame — it walks in partway through */
+.cast-chip.arriving,.cast-chip.arriving.has-img{
+  border-style:dashed;border-color:var(--accent2);color:var(--accent2);
+}
+.cast-late{
+  margin-left:auto;border-color:var(--accent2);color:var(--accent2);
+  font-size:10px;text-transform:uppercase;letter-spacing:.4px;
+}
+.cast-late + .cast-edit{margin-left:4px}
 .cast-chip.has-img{border-color:var(--accent);color:var(--accent)}
 .cast-chip.kind-place.has-img{border-color:var(--scene);color:var(--scene)}
 .cast-chip.kind-thing.has-img{border-color:var(--accent2);color:var(--accent2)}
@@ -883,7 +893,7 @@ body.comment-mode .frame{cursor:crosshair}
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-09-08 22:44 · 62ef98e+";</script>
+<script>window.SB_BUILD = "2026-09-08 22:51 · 72536c2+";</script>
 
 <div id="app">
 
@@ -2389,6 +2399,31 @@ window.SB = window.SB || {};
 
   /* Motion inherits the same rules; these are the ones that only make sense once
    * the frame starts moving. */
+  /* A first frame is an INSTANT, and a shot description is usually a little
+   * story. Nothing used to say so: the template called the job a "first-frame
+   * prompt" — a label, not a rule — and then handed over a paragraph in which
+   * two or three things happen one after another. A writer with no instruction
+   * about time drew all of them at once, so somebody described as walking in
+   * later was standing in the opening frame.
+   *
+   * This is a rider rather than template text on purpose. Templates are stored
+   * per project inside the file, so editing the default only reaches boards
+   * made afterwards; a rider reaches every board that already exists. */
+  const FIRST_FRAME_RIDER = [
+    'THE FIRST FRAME IS ONE INSTANT',
+    '- You are describing a single photograph: the state of things at the moment this shot ' +
+    'opens, before anything the description says happens next has happened.',
+    '- A shot description is a short sequence. Words like "then", "after", "as", "walks in", ' +
+    '"enters", "arrives", "turns to", "reaches for", "picks up", "reveals", "cuts to" mark what ' +
+    'happens AFTER the first frame. None of it is in this image.',
+    '- If somebody or something is described as arriving, entering or appearing, the frame is ' +
+    'what the camera sees BEFORE they arrive. Do not put them in it, and do not gesture at them ' +
+    'with an open door, a shadow or a look off-screen unless the description opens that way.',
+    '- If the description opens mid-action, draw the first recognisable instant of that action, ' +
+    'not its result.',
+    '- Everything you leave out is not lost: the image-to-video prompt covers the movement.'
+  ].join('\n');
+
   const VIDEO_RIDER = [
     'MOTION',
     '- Wardrobe and location must not change during the shot.',
@@ -2467,14 +2502,31 @@ window.SB = window.SB || {};
     return lines.join('\n');
   }
 
-  /* The system instruction for one prompt-writing job. */
+  /* The system instruction for one prompt-writing job.
+   *
+   * The house style is a choice about how a board looks and can be switched
+   * off. The riders are not: they are what the two prompts ARE — a still of one
+   * instant, and the movement out of it — and a board with no house style needs
+   * them just as much. They used to sit behind the same early return, so
+   * turning the brand off quietly took the craft rules with it. */
   function systemFor(p, shot, role) {
     const b = brandOf(p);
-    if (!b.enabled) return '';
-    const parts = ['HOUSE STYLE — every prompt you write must obey this.', '', b.text];
-    if (role === 'video' || role === 'both') parts.push('', VIDEO_RIDER);
+    const parts = [];
+    if (b.enabled) parts.push('HOUSE STYLE — every prompt you write must obey this.', '', b.text);
+    if (role === 'image' || role === 'both') {
+      if (parts.length) parts.push('');
+      parts.push(FIRST_FRAME_RIDER);
+    }
+    if (role === 'video' || role === 'both') {
+      if (parts.length) parts.push('');
+      parts.push(VIDEO_RIDER);
+    }
     const seq = sequenceBlock(p, shot);
-    if (seq) parts.push('', seq);
+    if (seq) {
+      if (parts.length) parts.push('');
+      parts.push(seq);
+    }
+    if (!parts.length) return '';
     parts.push('', 'Fold these requirements into the prompt itself as concrete description — ' +
       'do not quote the rules back, do not add headings or commentary, and never use gendered language.');
     return parts.join('\n');
@@ -2483,6 +2535,7 @@ window.SB = window.SB || {};
   SB.Brand = {
     DEFAULT: DEFAULT_BRAND,
     VIDEO_RIDER: VIDEO_RIDER,
+    FIRST_FRAME_RIDER: FIRST_FRAME_RIDER,
     brandOf: brandOf,
     systemFor: systemFor,
     sequenceBlock: sequenceBlock,
@@ -2679,6 +2732,7 @@ window.SB = window.SB || {};
     p.personas = all(p).filter(function (x) { return x.id !== id; });
     SB.Model.eachShot(p, function (sh) {
       sh.personaIds = (sh.personaIds || []).filter(function (x) { return x !== id; });
+      sh.castEnters = (sh.castEnters || []).filter(function (x) { return x !== id; });
     });
   }
 
@@ -2699,8 +2753,38 @@ window.SB = window.SB || {};
   function toggleOnShot(p, shot, id) {
     shot.personaIds = shot.personaIds || [];
     const i = shot.personaIds.indexOf(id);
-    if (i >= 0) shot.personaIds.splice(i, 1);
-    else shot.personaIds.push(id);
+    if (i >= 0) {
+      shot.personaIds.splice(i, 1);
+      setEnters(shot, id, false);      // taken off the card, so not arriving on it either
+    } else shot.personaIds.push(id);
+  }
+
+  /* ---- present when the shot opens, or arriving during it ----
+   *
+   * The first frame is one instant. Everything else about this was the writer
+   * being told, in prose, to work out from the description who was already
+   * there — and it got it wrong, because the CAST block reads like a guest
+   * list. This is the same answer as data, so nothing has to be inferred. */
+  function enters(shot, id) {
+    return ((shot && shot.castEnters) || []).indexOf(id) >= 0;
+  }
+
+  function setEnters(shot, id, on) {
+    if (!shot) return;
+    const list = shot.castEnters = (shot.castEnters || []).slice();
+    const i = list.indexOf(id);
+    if (on && i < 0) list.push(id);
+    if (!on && i >= 0) list.splice(i, 1);
+  }
+
+  function toggleEnters(shot, id) { setEnters(shot, id, !enters(shot, id)); }
+
+  /* The cast as the first frame sees it. */
+  function presentAtOpen(p, shot) {
+    return forShot(p, shot).filter(function (per) { return !enters(shot, per.id); });
+  }
+  function arriving(p, shot) {
+    return forShot(p, shot).filter(function (per) { return enters(shot, per.id); });
   }
 
   /* Everything of one kind, in board order. */
@@ -2714,7 +2798,7 @@ window.SB = window.SB || {};
    * because the number is a promise about the order the images are handed to
    * the model — and that order does not restart per kind.
    */
-  function block(p, shot, model) {
+  function block(p, shot, model, role) {
     const cast = forShot(p, shot);
     if (!cast.length) return '';
 
@@ -2743,7 +2827,11 @@ window.SB = window.SB || {};
         bits.push(rangeFor(per) + (per.name || 'unnamed'));
         const d = (per.description || '').replace(/\s+/g, ' ').trim();
         bits.push(d || '(no description yet)');
-        lines.push('  ' + (i + 1) + '. ' + bits.join(': '));
+        /* Marked rather than dropped: the image numbering has to mean the same
+           thing in both prompts, because it is the order the person feeding the
+           model puts their files in. */
+        const late = enters(shot, per.id) ? '  [ARRIVES DURING THE SHOT — NOT IN THE FIRST FRAME]' : '';
+        lines.push('  ' + (i + 1) + '. ' + bits.join(': ') + late);
         if (!hasImage(per)) lines.push('     ' + kind.noImage);
         if (imagesOf(per).length > 1) multi = true;
       });
@@ -2775,7 +2863,51 @@ window.SB = window.SB || {};
       'people, places and things look. Where the shot description says anything different about ' +
       'their appearance, hair, wardrobe or surroundings, it is out of date — follow this block ' +
       'and ignore it. The shot description still governs what they are DOING and where.');
+
+    /* ...and this block was being read as a guest list. It names everyone cast
+     * in the shot and hands over a numbered reference image for each, which to
+     * a writer looks like a manifest of who is in the picture — so somebody the
+     * description had walking in later was drawn standing in the first frame.
+     * What it actually answers is "how do they look", never "who is here". */
+    const late = arriving(p, shot);
+    if (role === 'image' || role === 'both') {
+      const who = role === 'both' ? 'In the FIRST-FRAME PROMPT, only' : 'Only';
+      lines.push('This block says how these subjects LOOK. It is not a list of who or what is ' +
+        'visible in the frame you are writing — the shot description decides that, and a ' +
+        'reference image being supplied does not mean the subject is in this frame. ' +
+        who + ' draw the ones present at the instant the shot opens. ' +
+        'Anything arriving, entering or appearing later is not in the frame yet' +
+        (role === 'both' ? ' — it belongs to the video prompt.' : '.'));
+      if (late.length) {
+        lines.push('MARKED AS ARRIVING, AND THEREFORE ABSENT FROM THE FIRST FRAME: ' +
+          late.map(function (x) { return x.name || 'unnamed'; }).join(', ') + '. ' +
+          'Do not draw them, and do not hint at them with an opening door, a shadow or a ' +
+          'look off-screen. The frame is what the camera sees before they arrive.');
+      }
+    }
+    if (late.length && (role === 'video' || role === 'both')) {
+      lines.push('ARRIVING DURING THE SHOT: ' +
+        late.map(function (x) { return x.name || 'unnamed'; }).join(', ') +
+        ' — they enter after the first frame, so their arrival is movement this prompt covers.');
+    }
     return lines.join('\n');
+  }
+
+  /* ---- the description says somebody walks in, but nobody is marked ----
+   *
+   * The mark is the only thing that makes this deterministic, so it has to be
+   * findable. This is the same shape as the wardrobe sweep: the board spots the
+   * contradiction and offers the fix, rather than leaving it to be discovered
+   * in a rendered frame with an extra person standing in it. */
+  const ARRIVAL_RE = new RegExp('\\b(' + [
+    'walks? in', 'walks? into', 'steps? in', 'steps? into', 'comes? in', 'enters?', 'entering',
+    'arrives?', 'arriving', 'appears?', 'joins?', 'approaches?', 'crosses into',
+    'moves? into (?:the )?(?:frame|shot)', 'into (?:frame|shot)'
+  ].join('|') + ')\\b', 'i');
+
+  /* True when the text reads as somebody turning up partway through. */
+  function readsAsArrival(desc) {
+    return ARRIVAL_RE.test(String(desc || ''));
   }
 
   /* ---- generate subjects from the brand + the master script ---- */
@@ -2880,6 +3012,9 @@ window.SB = window.SB || {};
     imagesOf: imagesOf, hero: hero, hasImage: hasImage,
     addImage: addImage, removeImage: removeImage, makeHero: makeHero, labelImage: labelImage,
     forShot: forShot, toggleOnShot: toggleOnShot, block: block, generate: generate,
+    enters: enters, setEnters: setEnters, toggleEnters: toggleEnters,
+    presentAtOpen: presentAtOpen, arriving: arriving, ARRIVAL_RE: ARRIVAL_RE,
+    readsAsArrival: readsAsArrival,
     touch: touch, editedAt: editedAt, staleFor: staleFor
   };
 
@@ -3020,9 +3155,21 @@ window.SB = window.SB || {};
     'Two shot', 'Insert', 'Cutaway', 'POV', 'Screen capture', 'Talking head'
   ];
 
+  /* The wording every board was written with, kept so a template nobody has
+   * touched can be brought up to date without overwriting one somebody has. */
+  const IMG_TPL_V1 =
+    'Write a single first-frame still-image prompt for {{MODEL}}.\n' +
+    'Shot type: {{SHOT_TYPE}}. Scene: {{SCENE}}.\n' +
+    'Describe subject, setting, composition, lens, lighting and mood in one dense paragraph. ' +
+    'No camera motion, no narration, no preamble.\n\n' +
+    'SHOT DESCRIPTION:\n{{DESCRIPTION}}';
+
   const IMG_TPL =
     'Write a single first-frame still-image prompt for {{MODEL}}.\n' +
     'Shot type: {{SHOT_TYPE}}. Scene: {{SCENE}}.\n' +
+    'The description below is a short sequence. You are writing only its FIRST INSTANT — the ' +
+    'state of things as the shot opens, before anything it says happens next has happened. ' +
+    'Anyone or anything described as arriving, entering or appearing later is not in this frame.\n' +
     'Describe subject, setting, composition, lens, lighting and mood in one dense paragraph. ' +
     'No camera motion, no narration, no preamble.\n\n' +
     'SHOT DESCRIPTION:\n{{DESCRIPTION}}';
@@ -3146,6 +3293,10 @@ window.SB = window.SB || {};
       link: opts.link || null,          // {from,to} into master, or null = freestanding
       local: opts.link ? null : SB.Doc.make(opts.text || ''),
       personaIds: [],                   // who appears in this shot
+      /* ...and which of them are not there yet when it opens. A first frame is
+       * one instant, so somebody who walks in during the shot must not be drawn
+       * standing in it. A subset of personaIds, never anything else. */
+      castEnters: [],
       broken: false,
       description: '',
       fields: {},                       // extra text boxes, keyed by field id
@@ -3364,6 +3515,14 @@ window.SB = window.SB || {};
       return n === 'Hailuo (MiniMax)' ? 'MiniMax H3 (Hailuo)' : n;
     });
 
+    /* A first frame is one instant, and the old template never said so — it
+     * called the job a first-frame prompt and then handed over a paragraph in
+     * which three things happen. Boards carry their own copy of that wording,
+     * so it is replaced here; anything edited by hand is left exactly alone. */
+    s.models.forEach(function (m) {
+      if (m.imageTemplate === IMG_TPL_V1) m.imageTemplate = IMG_TPL;
+    });
+
     s.models.forEach(function (m) {
       m.id = m.id || SB.uid('m');
       m.kind = m.kind || 'video';
@@ -3454,6 +3613,10 @@ window.SB = window.SB || {};
         sh.comments = Array.isArray(sh.comments) ? sh.comments : [];
         sh.prompts = sh.prompts || {};
         sh.personaIds = Array.isArray(sh.personaIds) ? sh.personaIds : [];
+        /* Empty for every board written before this, which is the right answer:
+           nobody was marked as arriving, so everybody was already there. */
+        sh.castEnters = (Array.isArray(sh.castEnters) ? sh.castEnters : [])
+          .filter(function (id) { return sh.personaIds.indexOf(id) >= 0; });
         sh.image = SB.Blobs.adopt(p, sh.image);
         sh.annotation = SB.Blobs.adopt(p, sh.annotation);
       });
@@ -3776,7 +3939,7 @@ window.SB = window.SB || {};
    * they stay behind when the imagery moves. */
   const CONTENT_KEYS = [
     'type', 'color', 'image', 'annotation', 'description',
-    'fields', 'prompts', 'personaIds', 'comments'
+    'fields', 'prompts', 'personaIds', 'castEnters', 'comments'
   ];
 
   /* Swap two shots' contents, leaving each card's dialogue where it is. */
@@ -3890,7 +4053,7 @@ window.SB = window.SB || {};
     FILE_VERSION: FILE_VERSION,
     CARD_COLORS: CARD_COLORS,
     DEFAULT_SHOT_TYPES: DEFAULT_SHOT_TYPES,
-    IMG_TPL: IMG_TPL, VID_TPL: VID_TPL, tplsFor: tplsFor,
+    IMG_TPL: IMG_TPL, IMG_TPL_V1: IMG_TPL_V1, VID_TPL: VID_TPL, tplsFor: tplsFor,
     newProject: newProject, migrate: migrate, foldLineEndings: foldLineEndings,
     newShot: newShot, newScene: newScene,
     defaultModels: defaultModels, defaultExport: defaultExport,
@@ -5960,12 +6123,26 @@ window.SB = window.SB || {};
     cast.forEach(function (per) {
       const kind = SB.Personas.kindOf(per);
       const n = SB.Personas.imagesOf(per).length;
-      const chip = SB.el('span', 'cast-chip kind-' + kind.id + (n ? ' has-img' : ''),
-        (n ? '◉ ' : '') + (per.name || 'unnamed') + (n > 1 ? ' ×' + n : ''));
-      chip.title = n
-        ? (per.name + ' — ' + kind.label.toLowerCase() + ', ' +
-           (n === 1 ? 'one reference image' : n + ' reference images'))
-        : (per.name + ' — ' + kind.label.toLowerCase() + ', no reference image, described in full');
+      const arriving = SB.Personas.enters(sh, per.id);
+      /* A chip is a two-state control: here when the shot opens, or arriving
+         during it. The first frame is one instant, and this is the only way to
+         say so that does not depend on a model reading the description right. */
+      const chip = SB.el('button', 'cast-chip kind-' + kind.id +
+        (n ? ' has-img' : '') + (arriving ? ' arriving' : ''),
+        (arriving ? '▷ ' : (n ? '◉ ' : '')) + (per.name || 'unnamed') + (n > 1 ? ' ×' + n : ''));
+      const refs = n
+        ? (n === 1 ? ', one reference image' : ', ' + n + ' reference images')
+        : ', no reference image, described in full';
+      chip.title = per.name + ' — ' + kind.label.toLowerCase() + refs + '.\n' +
+        (arriving
+          ? 'Arrives during the shot, so it is left out of the first frame. Click to say it is there when the shot opens.'
+          : 'There when the shot opens. Click if it arrives partway through instead.');
+      chip.onclick = function (ev) {
+        ev.stopPropagation();
+        SB.Personas.toggleEnters(sh, per.id);
+        SB.Store.touch();
+        refreshCastRows();
+      };
       row.appendChild(chip);
     });
     if (!cast.length) row.appendChild(SB.el('span', 'cast-empty', 'no cast'));
@@ -5997,6 +6174,21 @@ window.SB = window.SB || {};
         });
       };
       row.appendChild(warn);
+    }
+
+    /* The nudge, in the shape the board already uses for a description that
+       contradicts its cast: say it where the mistake is, and fix it in a click. */
+    if (cast.length > 1 && !SB.Personas.arriving(P(), sh).length &&
+        SB.Personas.readsAsArrival(sh.description)) {
+      const nudge = SB.el('button', 'mini cast-late', 'someone arrives?');
+      nudge.title = 'This description reads as somebody turning up partway through, but ' +
+        'everyone on this card is marked as being here when it opens — so they will all be ' +
+        'drawn into the first frame. Click a chip to mark whoever arrives.';
+      nudge.onclick = function (ev) {
+        ev.stopPropagation();
+        SB.toast('Click the chip of whoever arrives partway through');
+      };
+      row.appendChild(nudge);
     }
 
     const b = SB.el('button', 'mini cast-edit', cast.length ? 'edit' : '+ cast');
@@ -7019,7 +7211,7 @@ window.SB = window.SB || {};
     const wantI = roles.image && im, wantV = roles.video && vm;
     const sys = function (role, model) {
       const parts = [SB.Brand.systemFor(P(), shot, role)];
-      const cast = SB.Personas.block(P(), shot, model);
+      const cast = SB.Personas.block(P(), shot, model, role);
       if (cast) parts.push(cast);
       return parts.filter(Boolean).join('\n\n');
     };

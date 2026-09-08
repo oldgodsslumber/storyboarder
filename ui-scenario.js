@@ -472,6 +472,36 @@
         /Ops lead/.test(document.querySelector('.card .cast-row').textContent), '');
       castPop.remove();
 
+      // a first frame is one instant: a chip on the card says who is not there
+      // yet when it opens
+      {
+        SB.Personas.toggleOnShot(P(), firstShot, per2.id);
+        firstShot.description = 'He writes at the desk. A colleague walks into frame behind him.';
+        SB.Board.refreshCastRows();
+        var crow = document.querySelector('.card[data-shot="' + firstShot.id + '"] .cast-row');
+        t('the board notices a description that reads as an arrival',
+          !!crow.querySelector('.cast-late'), '');
+        var chips = crow.querySelectorAll('.cast-chip');
+        t('cast chips are controls, not labels', chips.length === 2 && chips[0].tagName === 'BUTTON',
+          chips.length + ' ' + (chips[0] && chips[0].tagName));
+        chips[1].click();
+        t('clicking one marks it as arriving partway through',
+          SB.Personas.enters(firstShot, per2.id), JSON.stringify(firstShot.castEnters));
+        crow = document.querySelector('.card[data-shot="' + firstShot.id + '"] .cast-row');
+        t('the chip shows it', !!crow.querySelector('.cast-chip.arriving'), '');
+        t('and the nudge goes away once somebody is marked',
+          !crow.querySelector('.cast-late'), '');
+        var iSys = SB.Prompts.jobsFor(firstShot, SB.Model.imageModel(P()), null, { image: true })[0].system;
+        t('the first-frame request says the frame is one instant',
+          /THE FIRST FRAME IS ONE INSTANT/.test(iSys), '');
+        t('and names who is not in it',
+          /MARKED AS ARRIVING[\s\S]*Technician/.test(iSys), '');
+        chips[1].click();
+        SB.Personas.toggleOnShot(P(), firstShot, per2.id);
+        firstShot.description = '';
+        SB.Board.refreshCastRows();
+      }
+
       var jobsCast = SB.Prompts.jobsFor(firstShot, SB.Model.imageModel(P()), SB.Model.videoModel(P()),
         { image: true });
       t('cast reaches the prompt request', /CAST/.test(jobsCast[0].system), '');

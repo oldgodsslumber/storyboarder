@@ -432,6 +432,34 @@ reorder, click its shot count to jump to it, and the **✦ Rewrite** and **✦ G
 buttons are the same ones that live under the scene banner. Drag the divider to give either
 half more room; where you leave it is remembered.
 
+### Who is in the first frame
+
+A shot description is usually a little story — *he writes at the desk; a moment later somebody
+walks in behind him.* The first-frame prompt is a photograph of **one instant**, so the second
+half of that sentence has not happened yet.
+
+Nothing used to say so. The template called the job a "first-frame prompt" — a label, not a
+rule — and then handed over the whole paragraph, while the CAST block named everybody on the
+card and supplied a numbered reference image for each. Read cold, that is a guest list, and
+the person who walks in later got drawn standing in the opening frame.
+
+Three things fix it, and the third is the one that actually settles it:
+
+- The first-frame request now carries a **rider** saying the still is the state of things as
+  the shot opens, and naming the tells — *then, after, walks in, enters, arrives, turns to,
+  reaches for, reveals* — as things that happen afterwards and belong to the video prompt. It
+  ships whether or not the house style is on, because it is not a matter of taste.
+- The **cast block knows which prompt it is serving**. For the first-frame job it says outright
+  that it describes how subjects *look* and is not a list of who is in the frame.
+- **Click a cast chip** on a card to mark that subject as arriving partway through: the chip
+  goes dashed amber with a ▷. The block then names them as absent from the first frame — and
+  tells the video prompt their arrival is movement it owns. This is the deterministic one:
+  nothing is inferred from your prose. When a description reads like an arrival and nobody is
+  marked, the cast row says **someone arrives?**
+
+Everyone is "present when it opens" until you say otherwise, so every board written before
+this means exactly what it meant.
+
 ### What the prompt gets
 
 When a shot has cast, its prompt request carries a **CAST** block, plus **LOCATIONS** and

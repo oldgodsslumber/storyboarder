@@ -183,6 +183,7 @@
     p.personas = all(p).filter(function (x) { return x.id !== id; });
     SB.Model.eachShot(p, function (sh) {
       sh.personaIds = (sh.personaIds || []).filter(function (x) { return x !== id; });
+      sh.castEnters = (sh.castEnters || []).filter(function (x) { return x !== id; });
     });
   }
 
@@ -203,8 +204,38 @@
   function toggleOnShot(p, shot, id) {
     shot.personaIds = shot.personaIds || [];
     const i = shot.personaIds.indexOf(id);
-    if (i >= 0) shot.personaIds.splice(i, 1);
-    else shot.personaIds.push(id);
+    if (i >= 0) {
+      shot.personaIds.splice(i, 1);
+      setEnters(shot, id, false);      // taken off the card, so not arriving on it either
+    } else shot.personaIds.push(id);
+  }
+
+  /* ---- present when the shot opens, or arriving during it ----
+   *
+   * The first frame is one instant. Everything else about this was the writer
+   * being told, in prose, to work out from the description who was already
+   * there — and it got it wrong, because the CAST block reads like a guest
+   * list. This is the same answer as data, so nothing has to be inferred. */
+  function enters(shot, id) {
+    return ((shot && shot.castEnters) || []).indexOf(id) >= 0;
+  }
+
+  function setEnters(shot, id, on) {
+    if (!shot) return;
+    const list = shot.castEnters = (shot.castEnters || []).slice();
+    const i = list.indexOf(id);
+    if (on && i < 0) list.push(id);
+    if (!on && i >= 0) list.splice(i, 1);
+  }
+
+  function toggleEnters(shot, id) { setEnters(shot, id, !enters(shot, id)); }
+
+  /* The cast as the first frame sees it. */
+  function presentAtOpen(p, shot) {
+    return forShot(p, shot).filter(function (per) { return !enters(shot, per.id); });
+  }
+  function arriving(p, shot) {
+    return forShot(p, shot).filter(function (per) { return enters(shot, per.id); });
   }
 
   /* Everything of one kind, in board order. */
@@ -218,7 +249,7 @@
    * because the number is a promise about the order the images are handed to
    * the model — and that order does not restart per kind.
    */
-  function block(p, shot, model) {
+  function block(p, shot, model, role) {
     const cast = forShot(p, shot);
     if (!cast.length) return '';
 
@@ -247,7 +278,11 @@
         bits.push(rangeFor(per) + (per.name || 'unnamed'));
         const d = (per.description || '').replace(/\s+/g, ' ').trim();
         bits.push(d || '(no description yet)');
-        lines.push('  ' + (i + 1) + '. ' + bits.join(': '));
+        /* Marked rather than dropped: the image numbering has to mean the same
+           thing in both prompts, because it is the order the person feeding the
+           model puts their files in. */
+        const late = enters(shot, per.id) ? '  [ARRIVES DURING THE SHOT — NOT IN THE FIRST FRAME]' : '';
+        lines.push('  ' + (i + 1) + '. ' + bits.join(': ') + late);
         if (!hasImage(per)) lines.push('     ' + kind.noImage);
         if (imagesOf(per).length > 1) multi = true;
       });
@@ -279,7 +314,51 @@
       'people, places and things look. Where the shot description says anything different about ' +
       'their appearance, hair, wardrobe or surroundings, it is out of date — follow this block ' +
       'and ignore it. The shot description still governs what they are DOING and where.');
+
+    /* ...and this block was being read as a guest list. It names everyone cast
+     * in the shot and hands over a numbered reference image for each, which to
+     * a writer looks like a manifest of who is in the picture — so somebody the
+     * description had walking in later was drawn standing in the first frame.
+     * What it actually answers is "how do they look", never "who is here". */
+    const late = arriving(p, shot);
+    if (role === 'image' || role === 'both') {
+      const who = role === 'both' ? 'In the FIRST-FRAME PROMPT, only' : 'Only';
+      lines.push('This block says how these subjects LOOK. It is not a list of who or what is ' +
+        'visible in the frame you are writing — the shot description decides that, and a ' +
+        'reference image being supplied does not mean the subject is in this frame. ' +
+        who + ' draw the ones present at the instant the shot opens. ' +
+        'Anything arriving, entering or appearing later is not in the frame yet' +
+        (role === 'both' ? ' — it belongs to the video prompt.' : '.'));
+      if (late.length) {
+        lines.push('MARKED AS ARRIVING, AND THEREFORE ABSENT FROM THE FIRST FRAME: ' +
+          late.map(function (x) { return x.name || 'unnamed'; }).join(', ') + '. ' +
+          'Do not draw them, and do not hint at them with an opening door, a shadow or a ' +
+          'look off-screen. The frame is what the camera sees before they arrive.');
+      }
+    }
+    if (late.length && (role === 'video' || role === 'both')) {
+      lines.push('ARRIVING DURING THE SHOT: ' +
+        late.map(function (x) { return x.name || 'unnamed'; }).join(', ') +
+        ' — they enter after the first frame, so their arrival is movement this prompt covers.');
+    }
     return lines.join('\n');
+  }
+
+  /* ---- the description says somebody walks in, but nobody is marked ----
+   *
+   * The mark is the only thing that makes this deterministic, so it has to be
+   * findable. This is the same shape as the wardrobe sweep: the board spots the
+   * contradiction and offers the fix, rather than leaving it to be discovered
+   * in a rendered frame with an extra person standing in it. */
+  const ARRIVAL_RE = new RegExp('\\b(' + [
+    'walks? in', 'walks? into', 'steps? in', 'steps? into', 'comes? in', 'enters?', 'entering',
+    'arrives?', 'arriving', 'appears?', 'joins?', 'approaches?', 'crosses into',
+    'moves? into (?:the )?(?:frame|shot)', 'into (?:frame|shot)'
+  ].join('|') + ')\\b', 'i');
+
+  /* True when the text reads as somebody turning up partway through. */
+  function readsAsArrival(desc) {
+    return ARRIVAL_RE.test(String(desc || ''));
   }
 
   /* ---- generate subjects from the brand + the master script ---- */
@@ -384,6 +463,9 @@
     imagesOf: imagesOf, hero: hero, hasImage: hasImage,
     addImage: addImage, removeImage: removeImage, makeHero: makeHero, labelImage: labelImage,
     forShot: forShot, toggleOnShot: toggleOnShot, block: block, generate: generate,
+    enters: enters, setEnters: setEnters, toggleEnters: toggleEnters,
+    presentAtOpen: presentAtOpen, arriving: arriving, ARRIVAL_RE: ARRIVAL_RE,
+    readsAsArrival: readsAsArrival,
     touch: touch, editedAt: editedAt, staleFor: staleFor
   };
 

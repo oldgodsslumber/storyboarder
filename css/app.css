@@ -806,9 +806,19 @@ button.linkish{
 
 .cast-row{display:flex;flex-wrap:wrap;gap:4px;align-items:center;padding:4px 6px 0}
 .cast-chip{
-  font-size:10px;padding:1px 6px;border-radius:9px;
+  font-size:10px;padding:1px 6px;border-radius:9px;background:none;cursor:pointer;
   border:1px solid var(--line2);color:var(--fg-dim);white-space:nowrap;
 }
+.cast-chip:hover{border-color:var(--fg-dim);color:var(--fg)}
+/* not in the first frame — it walks in partway through */
+.cast-chip.arriving,.cast-chip.arriving.has-img{
+  border-style:dashed;border-color:var(--accent2);color:var(--accent2);
+}
+.cast-late{
+  margin-left:auto;border-color:var(--accent2);color:var(--accent2);
+  font-size:10px;text-transform:uppercase;letter-spacing:.4px;
+}
+.cast-late + .cast-edit{margin-left:4px}
 .cast-chip.has-img{border-color:var(--accent);color:var(--accent)}
 .cast-chip.kind-place.has-img{border-color:var(--scene);color:var(--scene)}
 .cast-chip.kind-thing.has-img{border-color:var(--accent2);color:var(--accent2)}

@@ -986,12 +986,26 @@
     cast.forEach(function (per) {
       const kind = SB.Personas.kindOf(per);
       const n = SB.Personas.imagesOf(per).length;
-      const chip = SB.el('span', 'cast-chip kind-' + kind.id + (n ? ' has-img' : ''),
-        (n ? '◉ ' : '') + (per.name || 'unnamed') + (n > 1 ? ' ×' + n : ''));
-      chip.title = n
-        ? (per.name + ' — ' + kind.label.toLowerCase() + ', ' +
-           (n === 1 ? 'one reference image' : n + ' reference images'))
-        : (per.name + ' — ' + kind.label.toLowerCase() + ', no reference image, described in full');
+      const arriving = SB.Personas.enters(sh, per.id);
+      /* A chip is a two-state control: here when the shot opens, or arriving
+         during it. The first frame is one instant, and this is the only way to
+         say so that does not depend on a model reading the description right. */
+      const chip = SB.el('button', 'cast-chip kind-' + kind.id +
+        (n ? ' has-img' : '') + (arriving ? ' arriving' : ''),
+        (arriving ? '▷ ' : (n ? '◉ ' : '')) + (per.name || 'unnamed') + (n > 1 ? ' ×' + n : ''));
+      const refs = n
+        ? (n === 1 ? ', one reference image' : ', ' + n + ' reference images')
+        : ', no reference image, described in full';
+      chip.title = per.name + ' — ' + kind.label.toLowerCase() + refs + '.\n' +
+        (arriving
+          ? 'Arrives during the shot, so it is left out of the first frame. Click to say it is there when the shot opens.'
+          : 'There when the shot opens. Click if it arrives partway through instead.');
+      chip.onclick = function (ev) {
+        ev.stopPropagation();
+        SB.Personas.toggleEnters(sh, per.id);
+        SB.Store.touch();
+        refreshCastRows();
+      };
       row.appendChild(chip);
     });
     if (!cast.length) row.appendChild(SB.el('span', 'cast-empty', 'no cast'));
@@ -1023,6 +1037,21 @@
         });
       };
       row.appendChild(warn);
+    }
+
+    /* The nudge, in the shape the board already uses for a description that
+       contradicts its cast: say it where the mistake is, and fix it in a click. */
+    if (cast.length > 1 && !SB.Personas.arriving(P(), sh).length &&
+        SB.Personas.readsAsArrival(sh.description)) {
+      const nudge = SB.el('button', 'mini cast-late', 'someone arrives?');
+      nudge.title = 'This description reads as somebody turning up partway through, but ' +
+        'everyone on this card is marked as being here when it opens — so they will all be ' +
+        'drawn into the first frame. Click a chip to mark whoever arrives.';
+      nudge.onclick = function (ev) {
+        ev.stopPropagation();
+        SB.toast('Click the chip of whoever arrives partway through');
+      };
+      row.appendChild(nudge);
     }
 
     const b = SB.el('button', 'mini cast-edit', cast.length ? 'edit' : '+ cast');

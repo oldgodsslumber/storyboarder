@@ -72,7 +72,7 @@
     const wantI = roles.image && im, wantV = roles.video && vm;
     const sys = function (role, model) {
       const parts = [SB.Brand.systemFor(P(), shot, role)];
-      const cast = SB.Personas.block(P(), shot, model);
+      const cast = SB.Personas.block(P(), shot, model, role);
       if (cast) parts.push(cast);
       return parts.filter(Boolean).join('\n\n');
     };

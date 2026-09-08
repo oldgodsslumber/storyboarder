@@ -9,9 +9,21 @@
     'Two shot', 'Insert', 'Cutaway', 'POV', 'Screen capture', 'Talking head'
   ];
 
+  /* The wording every board was written with, kept so a template nobody has
+   * touched can be brought up to date without overwriting one somebody has. */
+  const IMG_TPL_V1 =
+    'Write a single first-frame still-image prompt for {{MODEL}}.\n' +
+    'Shot type: {{SHOT_TYPE}}. Scene: {{SCENE}}.\n' +
+    'Describe subject, setting, composition, lens, lighting and mood in one dense paragraph. ' +
+    'No camera motion, no narration, no preamble.\n\n' +
+    'SHOT DESCRIPTION:\n{{DESCRIPTION}}';
+
   const IMG_TPL =
     'Write a single first-frame still-image prompt for {{MODEL}}.\n' +
     'Shot type: {{SHOT_TYPE}}. Scene: {{SCENE}}.\n' +
+    'The description below is a short sequence. You are writing only its FIRST INSTANT — the ' +
+    'state of things as the shot opens, before anything it says happens next has happened. ' +
+    'Anyone or anything described as arriving, entering or appearing later is not in this frame.\n' +
     'Describe subject, setting, composition, lens, lighting and mood in one dense paragraph. ' +
     'No camera motion, no narration, no preamble.\n\n' +
     'SHOT DESCRIPTION:\n{{DESCRIPTION}}';
@@ -135,6 +147,10 @@
       link: opts.link || null,          // {from,to} into master, or null = freestanding
       local: opts.link ? null : SB.Doc.make(opts.text || ''),
       personaIds: [],                   // who appears in this shot
+      /* ...and which of them are not there yet when it opens. A first frame is
+       * one instant, so somebody who walks in during the shot must not be drawn
+       * standing in it. A subset of personaIds, never anything else. */
+      castEnters: [],
       broken: false,
       description: '',
       fields: {},                       // extra text boxes, keyed by field id
@@ -353,6 +369,14 @@
       return n === 'Hailuo (MiniMax)' ? 'MiniMax H3 (Hailuo)' : n;
     });
 
+    /* A first frame is one instant, and the old template never said so — it
+     * called the job a first-frame prompt and then handed over a paragraph in
+     * which three things happen. Boards carry their own copy of that wording,
+     * so it is replaced here; anything edited by hand is left exactly alone. */
+    s.models.forEach(function (m) {
+      if (m.imageTemplate === IMG_TPL_V1) m.imageTemplate = IMG_TPL;
+    });
+
     s.models.forEach(function (m) {
       m.id = m.id || SB.uid('m');
       m.kind = m.kind || 'video';
@@ -443,6 +467,10 @@
         sh.comments = Array.isArray(sh.comments) ? sh.comments : [];
         sh.prompts = sh.prompts || {};
         sh.personaIds = Array.isArray(sh.personaIds) ? sh.personaIds : [];
+        /* Empty for every board written before this, which is the right answer:
+           nobody was marked as arriving, so everybody was already there. */
+        sh.castEnters = (Array.isArray(sh.castEnters) ? sh.castEnters : [])
+          .filter(function (id) { return sh.personaIds.indexOf(id) >= 0; });
         sh.image = SB.Blobs.adopt(p, sh.image);
         sh.annotation = SB.Blobs.adopt(p, sh.annotation);
       });
@@ -765,7 +793,7 @@
    * they stay behind when the imagery moves. */
   const CONTENT_KEYS = [
     'type', 'color', 'image', 'annotation', 'description',
-    'fields', 'prompts', 'personaIds', 'comments'
+    'fields', 'prompts', 'personaIds', 'castEnters', 'comments'
   ];
 
   /* Swap two shots' contents, leaving each card's dialogue where it is. */
@@ -879,7 +907,7 @@
     FILE_VERSION: FILE_VERSION,
     CARD_COLORS: CARD_COLORS,
     DEFAULT_SHOT_TYPES: DEFAULT_SHOT_TYPES,
-    IMG_TPL: IMG_TPL, VID_TPL: VID_TPL, tplsFor: tplsFor,
+    IMG_TPL: IMG_TPL, IMG_TPL_V1: IMG_TPL_V1, VID_TPL: VID_TPL, tplsFor: tplsFor,
     newProject: newProject, migrate: migrate, foldLineEndings: foldLineEndings,
     newShot: newShot, newScene: newScene,
     defaultModels: defaultModels, defaultExport: defaultExport,
