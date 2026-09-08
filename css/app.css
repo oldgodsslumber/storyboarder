@@ -495,9 +495,16 @@ button.linkish{
 .draw-tools .sw.on{border-color:#fff}
 
 /* ---------- data readout ---------- */
+/* refreshBadge() writes the board's own size in here, so the text grows as the
+   board does — "—" to "834.2 KB" to "12.41 MB" — and goes bold on top of that
+   once it is over the limit. #topbar wraps, so a badge free to widen pushes the
+   last group onto a second row and moves the whole page down every time a photo
+   is dropped. Reserve the widest it can get (10 characters, bold), the same way
+   .save-state already does for its own text. */
 .size-state{
   background:none;border:1px solid transparent;border-radius:4px;padding:2px 6px;
   color:var(--fg-dim);font-size:11px;cursor:pointer;font-variant-numeric:tabular-nums;
+  min-width:76px;text-align:center;
 }
 .size-state:hover{border-color:var(--line);color:var(--fg)}
 .size-state.over{color:var(--danger);font-weight:600}

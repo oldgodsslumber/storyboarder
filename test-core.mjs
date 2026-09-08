@@ -807,6 +807,22 @@ console.log('\n— data usage tracker —');
     image: SB.Blobs.image(p, 'data:image/jpeg;base64,' + 'C'.repeat(40000), 854, 480)
   });
 
+  /* The size badge sits in a wrapping toolbar, so its width is reserved in CSS
+     (.size-state min-width) against the longest thing fmt can produce. Widen
+     fmt past that and the toolbar starts reflowing — and the whole page moves —
+     every time a photo is dropped and the number changes. */
+  {
+    const probes = [0, 1, 1023, 1024, 999999, 1048575, 1048576, 10485760,
+      1047527424, 1073741823, 1073741824, 53687091200];
+    let longest = '';
+    probes.forEach(function (n) {
+      const t = U.fmt(n);
+      if (t.length > longest.length) longest = t;
+    });
+    eq(longest, '1024.00 MB', 'the widest the badge can read is a ten-character MB value');
+    eq(longest.length <= 10, true, 'which is what .size-state reserves room for');
+  }
+
   const m = U.measure(p);
   eq(m.total > 88000, true, 'total measures the real serialised board');
   const sum = m.sections.reduce((n, s) => n + s.b, 0);
