@@ -235,7 +235,11 @@
 
           const tr = document.createElement('textarea');
           tr.rows = 3;
-          tr.value = m.referenceTemplate || SB.Personas.DEFAULT_REF_TEMPLATE;
+          /* Shown as stored, so a box left blank stays blank instead of the
+             default reappearing and looking like the clearing never took. */
+          tr.value = typeof m.referenceTemplate === 'string'
+            ? m.referenceTemplate : SB.Personas.DEFAULT_REF_TEMPLATE;
+          tr.placeholder = 'blank — no reference wording is sent for this model';
           tr.oninput = function () { m.referenceTemplate = tr.value; };
           const trF = field('reference-image wording — how THIS model expects to be told about ' +
             'reference images ({{N}} = image number, {{NAME}} = names)', tr);

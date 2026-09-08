@@ -10,6 +10,13 @@
     return {
       master: SB.clone(p.master),
       scenes: SB.clone(p.scenes),
+      /* The cast, the locations and the objects freeze with the version too.
+       * Without them a snapshot held cards naming subjects it did not carry:
+       * delete one afterwards and its reference frames were collected as
+       * orphans, so restoring that version brought back cards whose cast had
+       * quietly evaporated. Frames are stored by content hash, so a subject
+       * appearing in ten versions still costs its bytes once. */
+      personas: SB.clone(p.personas || []),
       scriptComments: SB.clone(p.scriptComments || []),
       versionNumber: p.versionNumber,
       versionName: p.versionName
@@ -57,6 +64,13 @@
     freeze(p, 'before restoring ' + v.name);
     p.master = SB.clone(v.snapshot.master);
     p.scenes = SB.clone(v.snapshot.scenes);
+    /* The snapshot's cast wins for the cards it belongs to — that is what
+     * restoring means — but anything created since is kept rather than thrown
+     * away. It simply arrives unused, sitting in the library where it was. */
+    const was = SB.clone(v.snapshot.personas || []);
+    const ids = {};
+    was.forEach(function (x) { ids[x.id] = 1; });
+    p.personas = was.concat((p.personas || []).filter(function (x) { return !ids[x.id]; }));
     p.scriptComments = SB.clone(v.snapshot.scriptComments || []);
     p.versionNumber = p.versions.reduce(function (a, x) { return Math.max(a, x.n); }, p.versionNumber) + 1;
     p.versionName = v.name + ' (restored)';
@@ -67,7 +81,18 @@
     SB.app.selectedShotId = null;
     SB.app.selection = [];
     SB.app.changed(true);
-    SB.toast('Restored ' + v.name);
+    /* A snapshot from before the cast froze with versions can name subjects
+     * that are simply gone. Restoring used to drop them off the cards in
+     * silence; counted here, the loss is at least visible. */
+    let lost = 0;
+    SB.Model.eachShot(p, function (sh) {
+      (sh.personaIds || []).forEach(function (id) {
+        if (!SB.Personas.find(p, id)) lost++;
+      });
+    });
+    SB.toast('Restored ' + v.name +
+      (lost ? ' — ' + lost + ' cast entr' + (lost === 1 ? 'y' : 'ies') +
+        ' could not be found and are not on the cards' : ''), !!lost);
   }
 
   function viewComments(v) {

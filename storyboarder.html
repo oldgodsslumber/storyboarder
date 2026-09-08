@@ -712,7 +712,7 @@ button.linkish{
 .persona-used.none{text-decoration:none;cursor:default}
 .persona-used:hover:not(.none){color:var(--accent)}
 .persona-frame{
-  position:relative;background:var(--frame-bg);aspect-ratio:4/3;max-height:150px;
+  position:relative;background:var(--frame-bg);width:100%;height:150px;
   display:flex;align-items:center;justify-content:center;cursor:pointer;
   border-radius:5px;overflow:hidden;margin-bottom:4px;
 }
@@ -893,7 +893,7 @@ body.comment-mode .frame{cursor:crosshair}
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-09-08 22:51 · 72536c2+";</script>
+<script>window.SB_BUILD = "2026-09-08 22:56 · 9359218+";</script>
 
 <div id="app">
 
@@ -2577,6 +2577,17 @@ window.SB = window.SB || {};
 
   const DEFAULT_REF_TEMPLATE = REF_TEMPLATES.numbered;
 
+  /* What every reference frame wants, whatever it is a frame of.
+   *
+   * Nothing here used to mention focus, so a portrait brief plus a house style
+   * that asks for aperture and grade produced "shallow depth of field, f/2.0,
+   * subtle cinematic grain" — which softens the fabric and shifts the colour,
+   * the two things the frame exists to record. The grade belongs on the shots,
+   * not on the reference. */
+  const NEUTRAL_REF = 'A reference frame is a neutral record, not a graded shot: ' +
+    'everything in sharp focus, deep depth of field, no background blur, accurate colour, ' +
+    'no grain and no grade';
+
   /* The three kinds of recurring subject. They differ only in what you are
    * being asked to write down and how the block addresses them — the record,
    * the reference images and the casting are identical, because to an image
@@ -2590,7 +2601,8 @@ window.SB = window.SB || {};
       descHint: 'Age range, build, hair, and the exact outfit — fabric and colour.',
       noImage: 'No reference image — describe this person fully and identically every time.',
       refBrief: 'a clean, front-facing reference frame of this person: plain background, ' +
-        'natural light, full wardrobe visible, neutral expression'
+        'even natural light, neutral expression, full length from head to feet with the whole ' +
+        'outfit in frame. ' + NEUTRAL_REF
     },
     {
       id: 'place', label: 'Location', plural: 'Locations', one: 'location',
@@ -2599,7 +2611,7 @@ window.SB = window.SB || {};
       descHint: 'Architecture, surfaces, furniture, light sources, time of day — what never changes.',
       noImage: 'No reference image — describe this place fully and identically every time.',
       refBrief: 'a clean establishing reference frame of this place: wide, eye level, ' +
-        'no people in shot, the light as it normally is there'
+        'no people in shot, the light as it normally is there. ' + NEUTRAL_REF
     },
     {
       id: 'thing', label: 'Object', plural: 'Objects', one: 'object',
@@ -2609,7 +2621,7 @@ window.SB = window.SB || {};
       descHint: 'Form, size, material, finish, colour, and any logo or screen state that must be exact.',
       noImage: 'No reference image — describe this object fully and identically every time.',
       refBrief: 'a clean product-style reference frame of this object: plain background, ' +
-        'even light, three-quarter view, the whole object in frame'
+        'even light, three-quarter view, the whole object in frame. ' + NEUTRAL_REF
     }
   ];
 
@@ -2838,7 +2850,12 @@ window.SB = window.SB || {};
     });
 
     if (numbered.length) {
-      const tpl = (model && model.referenceTemplate) || DEFAULT_REF_TEMPLATE;
+      /* An empty string is an answer: this model takes no reference wording, and
+       * the Settings box says so ("leave blank for a model that takes no
+       * references"). Only a missing field falls back to the default — treating
+       * blank as missing made that box impossible to obey. */
+      const tpl = (model && typeof model.referenceTemplate === 'string')
+        ? model.referenceTemplate : DEFAULT_REF_TEMPLATE;
       const names = cast.filter(hasImage).map(function (x) { return x.name; }).join(', ');
       lines.push(tpl.replace(/\{\{N\}\}/g, function () { return 'N'; })
         .replace(/\{\{NAME\}\}/g, names));
@@ -2938,7 +2955,9 @@ window.SB = window.SB || {};
       unit: ['object, product or screen', 'objects, products or screens'],
       name: 'a short label for the board — a handle like "Handset" or "Dashboard".',
       desc: 'what the object is and exactly what it looks like: form, size, material, finish, ' +
-        'colour, and any logo, label or on-screen state that has to be identical every time.'
+        'colour, and any logo, label or on-screen state that has to be identical every time. ' +
+        'Do not invent a brand name, logo, model number or asset tag: if the script does not ' +
+        'name one, say the surface is unbranded and leave any screen text generic.'
     }
   };
 
@@ -3486,8 +3505,22 @@ window.SB = window.SB || {};
      * hash to the same reference, so migrating them collapses the duplicates. */
     p.versions.forEach(function (v) {
       if (!v || !v.snapshot) return;
+      /* Versions written before the cast froze with them hold cards that name
+       * subjects the snapshot never carried. What that cast looked like at the
+       * time is not recorded anywhere and cannot be recovered — so the closest
+       * true thing is used: the cast as it stands now. That keeps every
+       * restored card's personaIds resolvable, and keeps the reference frames
+       * referenced, which is what stopped them being collected as orphans.
+       * A snapshot that already has its own cast is left alone. */
+      if (!Array.isArray(v.snapshot.personas)) {
+        v.snapshot.personas = SB.clone(p.personas);
+      }
       (v.snapshot.scenes || []).forEach(function (sc) {
         (sc.shots || []).forEach(function (sh) {
+          /* the arrival marks are a subset of the cast here too */
+          sh.personaIds = Array.isArray(sh.personaIds) ? sh.personaIds : [];
+          sh.castEnters = (Array.isArray(sh.castEnters) ? sh.castEnters : [])
+            .filter(function (id) { return sh.personaIds.indexOf(id) >= 0; });
           sh.image = SB.Blobs.adopt(p, sh.image);
           sh.annotation = SB.Blobs.adopt(p, sh.annotation);
         });
@@ -8979,7 +9012,14 @@ window.SB = window.SB || {};
       const was = nameWas, now = per.name || '';
       nameWas = now;
       if (!was || !now || was === now) return;
-      pendingRename = { id: per.id, was: was };
+      /* Renaming in two passes — fixing a typo, thinking again — used to lose
+         the repair: the second blur overwrote the pending record with a name
+         that was never in any description, which then cancelled itself. The
+         oldest unrepaired name is the one actually sitting in the text, so an
+         offer already standing for this subject is left alone. */
+      if (!pendingRename || pendingRename.id !== per.id) {
+        pendingRename = { id: per.id, was: was };
+      }
       /* This blur may be the panel tearing the input out from under the user
          — a tab, the kind select, the ✕. Redraw only if it was not. */
       if (root && refsEl && refsEl.querySelector('.persona[data-id="' + per.id + '"]')) renderRefs();
@@ -9239,7 +9279,10 @@ window.SB = window.SB || {};
     const now = per ? (per.name || '') : '';
     if (!per || !was || !now || was === now) { pendingRename = null; return null; }
 
-    const re = new RegExp('\\b' + was.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'g');
+    /* Lookarounds rather than \b: a name ending in ")" or "." has no word
+       boundary after it, so "Ops (lead)" was in the text and never matched. */
+    const re = new RegExp('(?<![\\w])' + was.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') +
+      '(?![\\w])', 'g');
     const hits = [];
     SB.Model.eachShot(P(), function (sh) {
       if ((sh.personaIds || []).indexOf(per.id) < 0) return;
@@ -10170,7 +10213,11 @@ window.SB = window.SB || {};
 
           const tr = document.createElement('textarea');
           tr.rows = 3;
-          tr.value = m.referenceTemplate || SB.Personas.DEFAULT_REF_TEMPLATE;
+          /* Shown as stored, so a box left blank stays blank instead of the
+             default reappearing and looking like the clearing never took. */
+          tr.value = typeof m.referenceTemplate === 'string'
+            ? m.referenceTemplate : SB.Personas.DEFAULT_REF_TEMPLATE;
+          tr.placeholder = 'blank — no reference wording is sent for this model';
           tr.oninput = function () { m.referenceTemplate = tr.value; };
           const trF = field('reference-image wording — how THIS model expects to be told about ' +
             'reference images ({{N}} = image number, {{NAME}} = names)', tr);
@@ -10551,6 +10598,13 @@ window.SB = window.SB || {};
     return {
       master: SB.clone(p.master),
       scenes: SB.clone(p.scenes),
+      /* The cast, the locations and the objects freeze with the version too.
+       * Without them a snapshot held cards naming subjects it did not carry:
+       * delete one afterwards and its reference frames were collected as
+       * orphans, so restoring that version brought back cards whose cast had
+       * quietly evaporated. Frames are stored by content hash, so a subject
+       * appearing in ten versions still costs its bytes once. */
+      personas: SB.clone(p.personas || []),
       scriptComments: SB.clone(p.scriptComments || []),
       versionNumber: p.versionNumber,
       versionName: p.versionName
@@ -10598,6 +10652,13 @@ window.SB = window.SB || {};
     freeze(p, 'before restoring ' + v.name);
     p.master = SB.clone(v.snapshot.master);
     p.scenes = SB.clone(v.snapshot.scenes);
+    /* The snapshot's cast wins for the cards it belongs to — that is what
+     * restoring means — but anything created since is kept rather than thrown
+     * away. It simply arrives unused, sitting in the library where it was. */
+    const was = SB.clone(v.snapshot.personas || []);
+    const ids = {};
+    was.forEach(function (x) { ids[x.id] = 1; });
+    p.personas = was.concat((p.personas || []).filter(function (x) { return !ids[x.id]; }));
     p.scriptComments = SB.clone(v.snapshot.scriptComments || []);
     p.versionNumber = p.versions.reduce(function (a, x) { return Math.max(a, x.n); }, p.versionNumber) + 1;
     p.versionName = v.name + ' (restored)';
@@ -10608,7 +10669,18 @@ window.SB = window.SB || {};
     SB.app.selectedShotId = null;
     SB.app.selection = [];
     SB.app.changed(true);
-    SB.toast('Restored ' + v.name);
+    /* A snapshot from before the cast froze with versions can name subjects
+     * that are simply gone. Restoring used to drop them off the cards in
+     * silence; counted here, the loss is at least visible. */
+    let lost = 0;
+    SB.Model.eachShot(p, function (sh) {
+      (sh.personaIds || []).forEach(function (id) {
+        if (!SB.Personas.find(p, id)) lost++;
+      });
+    });
+    SB.toast('Restored ' + v.name +
+      (lost ? ' — ' + lost + ' cast entr' + (lost === 1 ? 'y' : 'ies') +
+        ' could not be found and are not on the cards' : ''), !!lost);
   }
 
   function viewComments(v) {

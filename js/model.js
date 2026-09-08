@@ -340,8 +340,22 @@
      * hash to the same reference, so migrating them collapses the duplicates. */
     p.versions.forEach(function (v) {
       if (!v || !v.snapshot) return;
+      /* Versions written before the cast froze with them hold cards that name
+       * subjects the snapshot never carried. What that cast looked like at the
+       * time is not recorded anywhere and cannot be recovered — so the closest
+       * true thing is used: the cast as it stands now. That keeps every
+       * restored card's personaIds resolvable, and keeps the reference frames
+       * referenced, which is what stopped them being collected as orphans.
+       * A snapshot that already has its own cast is left alone. */
+      if (!Array.isArray(v.snapshot.personas)) {
+        v.snapshot.personas = SB.clone(p.personas);
+      }
       (v.snapshot.scenes || []).forEach(function (sc) {
         (sc.shots || []).forEach(function (sh) {
+          /* the arrival marks are a subset of the cast here too */
+          sh.personaIds = Array.isArray(sh.personaIds) ? sh.personaIds : [];
+          sh.castEnters = (Array.isArray(sh.castEnters) ? sh.castEnters : [])
+            .filter(function (id) { return sh.personaIds.indexOf(id) >= 0; });
           sh.image = SB.Blobs.adopt(p, sh.image);
           sh.annotation = SB.Blobs.adopt(p, sh.annotation);
         });

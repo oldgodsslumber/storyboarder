@@ -271,6 +271,14 @@ Comment mode also opens the script. Select any part of it and press **+ Comment*
 and ink) and starts the new one clean. You can restore any earlier version — the current
 state is auto-saved as a version first — and read a version's comments without restoring it.
 
+A version freezes the **reference library** with it: the cast, the locations and the objects
+as they read at the time. Without that, a snapshot held cards naming subjects it did not
+carry, so deleting one afterwards collected its reference frames as orphans and restoring
+that version brought back cards whose cast had quietly evaporated. Frames are stored by
+content hash, so a subject appearing in ten versions still costs its bytes once. Restoring
+puts the snapshot's cast back and **keeps** anything created since, which simply arrives
+unused; if a card still names something that cannot be found, the toast says how many.
+
 ## Prompt export
 
 Prompt boxes are **hidden on the cards by default** — cards stay compact until you want
@@ -473,8 +481,12 @@ than one frame, the block says outright that they are the same subject from diff
 angles — otherwise the second frame walks a second person into the shot. A subject with no
 reference image is described in full instead, so it still stays consistent.
 
-Boards written before any of this still open: every persona is a person, and its single
-image becomes the first frame.
+Boards written before any of this still open, and are brought up to date as they load: every
+persona becomes a person, its single image becomes the first frame, nobody is marked as
+arriving (so every shot means what it meant), an image template still identical to the old
+default is replaced while an edited one is left alone, and a version snapshot from before the
+cast froze with it is given the cast as it stands — the only recoverable answer, and the one
+that keeps its cards' cast resolvable and their frames from being collected as orphans.
 
 **Preview what a shot sends** in the Brand style tab shows the exact system instruction for
 the selected shot, continuity block included.
@@ -482,6 +494,10 @@ the selected shot, continuity block included.
 The starter model list is user-extensible in Settings. A model added to the app later — such
 as **Flux 3** — is offered once to boards that predate it; delete it there and it stays
 deleted.
+
+A model that takes no reference wording gets none: clear the box in Settings and it stays
+clear. The `image N = name` mapping still goes, because that is what tells you which file is
+which.
 
 Prompts are stored **per model**, all at once — switching target models only changes what is
 displayed; every model's prompts stay saved. Each card's prompt box names the model it came

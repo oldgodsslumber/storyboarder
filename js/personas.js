@@ -28,6 +28,17 @@
 
   const DEFAULT_REF_TEMPLATE = REF_TEMPLATES.numbered;
 
+  /* What every reference frame wants, whatever it is a frame of.
+   *
+   * Nothing here used to mention focus, so a portrait brief plus a house style
+   * that asks for aperture and grade produced "shallow depth of field, f/2.0,
+   * subtle cinematic grain" — which softens the fabric and shifts the colour,
+   * the two things the frame exists to record. The grade belongs on the shots,
+   * not on the reference. */
+  const NEUTRAL_REF = 'A reference frame is a neutral record, not a graded shot: ' +
+    'everything in sharp focus, deep depth of field, no background blur, accurate colour, ' +
+    'no grain and no grade';
+
   /* The three kinds of recurring subject. They differ only in what you are
    * being asked to write down and how the block addresses them — the record,
    * the reference images and the casting are identical, because to an image
@@ -41,7 +52,8 @@
       descHint: 'Age range, build, hair, and the exact outfit — fabric and colour.',
       noImage: 'No reference image — describe this person fully and identically every time.',
       refBrief: 'a clean, front-facing reference frame of this person: plain background, ' +
-        'natural light, full wardrobe visible, neutral expression'
+        'even natural light, neutral expression, full length from head to feet with the whole ' +
+        'outfit in frame. ' + NEUTRAL_REF
     },
     {
       id: 'place', label: 'Location', plural: 'Locations', one: 'location',
@@ -50,7 +62,7 @@
       descHint: 'Architecture, surfaces, furniture, light sources, time of day — what never changes.',
       noImage: 'No reference image — describe this place fully and identically every time.',
       refBrief: 'a clean establishing reference frame of this place: wide, eye level, ' +
-        'no people in shot, the light as it normally is there'
+        'no people in shot, the light as it normally is there. ' + NEUTRAL_REF
     },
     {
       id: 'thing', label: 'Object', plural: 'Objects', one: 'object',
@@ -60,7 +72,7 @@
       descHint: 'Form, size, material, finish, colour, and any logo or screen state that must be exact.',
       noImage: 'No reference image — describe this object fully and identically every time.',
       refBrief: 'a clean product-style reference frame of this object: plain background, ' +
-        'even light, three-quarter view, the whole object in frame'
+        'even light, three-quarter view, the whole object in frame. ' + NEUTRAL_REF
     }
   ];
 
@@ -289,7 +301,12 @@
     });
 
     if (numbered.length) {
-      const tpl = (model && model.referenceTemplate) || DEFAULT_REF_TEMPLATE;
+      /* An empty string is an answer: this model takes no reference wording, and
+       * the Settings box says so ("leave blank for a model that takes no
+       * references"). Only a missing field falls back to the default — treating
+       * blank as missing made that box impossible to obey. */
+      const tpl = (model && typeof model.referenceTemplate === 'string')
+        ? model.referenceTemplate : DEFAULT_REF_TEMPLATE;
       const names = cast.filter(hasImage).map(function (x) { return x.name; }).join(', ');
       lines.push(tpl.replace(/\{\{N\}\}/g, function () { return 'N'; })
         .replace(/\{\{NAME\}\}/g, names));
@@ -389,7 +406,9 @@
       unit: ['object, product or screen', 'objects, products or screens'],
       name: 'a short label for the board — a handle like "Handset" or "Dashboard".',
       desc: 'what the object is and exactly what it looks like: form, size, material, finish, ' +
-        'colour, and any logo, label or on-screen state that has to be identical every time.'
+        'colour, and any logo, label or on-screen state that has to be identical every time. ' +
+        'Do not invent a brand name, logo, model number or asset tag: if the script does not ' +
+        'name one, say the surface is unbranded and leave any screen text generic.'
     }
   };
 

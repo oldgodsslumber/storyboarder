@@ -524,6 +524,106 @@ console.log('\n— the board notices when a description reads as an arrival —'
   eq(Per.readsAsArrival(''), false, 'and an empty description is not either');
 }
 
+console.log('\n— a version freezes its cast with it —');
+{
+  const Per = SB.Personas;
+  const p = SB.Model.newProject();
+  const sh = p.scenes[0].shots[0];
+  const img = function (c) { return SB.Blobs.image(p, 'data:image/jpeg;base64,' + c.repeat(80), 4, 3); };
+
+  const lead = Per.add(p, { name: 'Ops lead', description: 'Charcoal knit.' });
+  const room = Per.add(p, { kind: 'place', name: 'Server room', description: 'Cold aisle.' });
+  Per.addImage(lead, img('A'));
+  Per.addImage(room, img('B'));
+  sh.personaIds = [lead.id, room.id];
+  Per.setEnters(sh, room.id, false);
+
+  /* freeze() is what newVersion() does once the name is settled */
+  p.versions.push({
+    n: 1, name: 'v1', createdAt: 1,
+    snapshot: {
+      master: SB.clone(p.master), scenes: SB.clone(p.scenes),
+      personas: SB.clone(p.personas), scriptComments: [],
+      versionNumber: 1, versionName: 'v1'
+    }
+  });
+  eq(p.versions[0].snapshot.personas.length, 2,
+    'the cast and the locations go into the snapshot');
+
+  /* the bug this fixes: delete a subject and its frames were collected as
+     orphans, so the frozen version's cards pointed at nothing */
+  const before = Object.keys(p.blobs).length;
+  Per.remove(p, lead.id);
+  SB.Blobs.gc(p);
+  eq(Object.keys(p.blobs).length, before,
+    'deleting a subject afterwards does not collect the frames the version still needs');
+  eq(SB.Blobs.src(p, p.versions[0].snapshot.personas[0].images[0]).length > 0, true,
+    'and the frozen copy still resolves');
+  eq(Per.all(p).length, 1, 'while the working board really has lost them');
+}
+
+console.log('\n— an old file is brought up to date on load —');
+{
+  const frame = 'data:image/jpeg;base64,' + 'Z'.repeat(400);
+  const old = SB.Model.newProject();
+  /* a board as it was written: one persona with a single image and no kind,
+     and a version snapshot from before the cast froze with it */
+  old.personas = [{ id: 'p1', name: 'Lead', description: 'Knit.',
+    image: { data: frame, w: 4, h: 3 } }];
+  old.scenes[0].shots[0].personaIds = ['p1'];
+  old.versions = [{
+    n: 1, name: 'v1', createdAt: 1,
+    snapshot: {
+      master: SB.Doc.make(''), versionNumber: 1, versionName: 'v1',
+      scenes: [{ id: 'sc', heading: '', description: '',
+        shots: [{ id: 'x', personaIds: ['p1'] }] }]
+    }
+  }];
+
+  const p = SB.Model.migrate(old);
+  eq(p.personas[0].kind, 'person', 'a persona from before kinds is a person');
+  eq(!!p.personas[0].images[0].ref, true, 'and its lone image became the first frame');
+  eq(Array.isArray(p.versions[0].snapshot.personas), true,
+    'a snapshot with no cast is given one, so restoring it does not drop the cast');
+  eq(p.versions[0].snapshot.personas[0].id, 'p1',
+    'backfilled from the cast as it stands, which is the closest recoverable thing');
+  eq(p.versions[0].snapshot.scenes[0].shots[0].castEnters, [],
+    'and its shots gain the arrival field, empty — everybody was already there');
+
+  /* the frames the snapshot needs are referenced, so a later delete keeps them */
+  const n = Object.keys(p.blobs).length;
+  SB.Personas.remove(p, 'p1');
+  SB.Blobs.gc(p);
+  eq(Object.keys(p.blobs).length, n, 'an old version keeps its frames alive too');
+
+  /* migrating twice must not double anything up */
+  const twice = SB.Model.migrate(p);
+  eq(twice.versions[0].snapshot.personas.length, 1, 'and migrating again changes nothing');
+}
+
+console.log('\n— a model that takes no reference wording —');
+{
+  const Per = SB.Personas;
+  const p = SB.Model.newProject();
+  const sh = p.scenes[0].shots[0];
+  const per = Per.add(p, { name: 'Ops lead', description: 'Knit.' });
+  Per.addImage(per, SB.Blobs.image(p, 'data:image/jpeg;base64,' + 'Q'.repeat(80), 4, 3));
+  sh.personaIds = [per.id];
+
+  const none = Per.block(p, sh, { name: 'Plain', referenceTemplate: '' }, 'image');
+  eq(/Reference images are supplied in order/.test(none), false,
+    'a blank wording sends no wording, as the Settings box has always said it would');
+  eq(/image 1 = Ops lead/.test(none), true,
+    'but the mapping still goes — it is what tells you which file is which');
+
+  const missing = Per.block(p, sh, { name: 'Unset' }, 'image');
+  eq(/Reference images are supplied in order/.test(missing), true,
+    'a model with no wording field at all still gets the default');
+
+  const model = SB.Model.newProject().settings.models[0];
+  eq(typeof model.referenceTemplate, 'string', 'every shipped model has the field set');
+}
+
 console.log('\n— gendered language detector —');
 {
   const g = SB.Brand.genderedTerms;

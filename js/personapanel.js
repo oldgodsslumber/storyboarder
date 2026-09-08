@@ -412,7 +412,14 @@
       const was = nameWas, now = per.name || '';
       nameWas = now;
       if (!was || !now || was === now) return;
-      pendingRename = { id: per.id, was: was };
+      /* Renaming in two passes — fixing a typo, thinking again — used to lose
+         the repair: the second blur overwrote the pending record with a name
+         that was never in any description, which then cancelled itself. The
+         oldest unrepaired name is the one actually sitting in the text, so an
+         offer already standing for this subject is left alone. */
+      if (!pendingRename || pendingRename.id !== per.id) {
+        pendingRename = { id: per.id, was: was };
+      }
       /* This blur may be the panel tearing the input out from under the user
          — a tab, the kind select, the ✕. Redraw only if it was not. */
       if (root && refsEl && refsEl.querySelector('.persona[data-id="' + per.id + '"]')) renderRefs();
@@ -672,7 +679,10 @@
     const now = per ? (per.name || '') : '';
     if (!per || !was || !now || was === now) { pendingRename = null; return null; }
 
-    const re = new RegExp('\\b' + was.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'g');
+    /* Lookarounds rather than \b: a name ending in ")" or "." has no word
+       boundary after it, so "Ops (lead)" was in the text and never matched. */
+    const re = new RegExp('(?<![\\w])' + was.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') +
+      '(?![\\w])', 'g');
     const hits = [];
     SB.Model.eachShot(P(), function (sh) {
       if ((sh.personaIds || []).indexOf(per.id) < 0) return;
