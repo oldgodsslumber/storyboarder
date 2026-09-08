@@ -276,7 +276,9 @@
       let v = null;
       if (el.classList.contains('sh-heading')) v = f.scene.heading || '';
       else if (el.classList.contains('sh-desc')) v = f.scene.description || '';
-      if (v !== null && el.value !== v) el.value = v;
+      if (v === null) return;
+      if (el.__refPaint) { if (SB.RefBox.read(el) !== v) el.__refPaint(false); return; }
+      if (el.value !== v) el.value = v;
     });
   }
 
@@ -359,7 +361,7 @@
       SB.Coverage.rewrite(P(), sc.id, '').then(function (next) {
         const f = SB.Model.findScene(P(), sc.id);
         if (!f) return;
-        f.scene.description = next;
+        f.scene.description = SB.Refs.linkAll(P(), next);   // it comes back as prose
         descEl.value = next;
         ai.prev = prev;
         syncSceneAi(sc.id);
@@ -513,17 +515,17 @@
       sc.heading = h.value; SB.app.changed(false); renderSceneList();
       syncSceneFields(sc.id);
     });
-    const d = document.createElement('textarea');
-    d.className = 'sh-desc';
+    const d = SB.el('div', 'sh-desc');
     d.dataset.scene = sc.id;
-    d.rows = 1;
-    d.value = sc.description || '';
-    d.placeholder = 'Scene description';
-    d.addEventListener('input', function () {
-      sc.description = d.value; SB.app.changed(false);
-      syncSceneFields(sc.id);
+    SB.RefBox.attach(d, {
+      get: function () { return sc.description || ''; },
+      set: function (t) {
+        sc.description = t; SB.app.changed(false);
+        syncSceneFields(sc.id);
+      },
+      placeholder: 'Scene description',
+      ctx: { scene: sc }
     });
-    SB.Mentions.attach(d, { scene: sc });
     fields.appendChild(h); fields.appendChild(d);
     fields.appendChild(sceneAi(sc, d));
     /* Only once the scene actually claims something — an untied scene, which is
@@ -787,6 +789,40 @@
 
     head.appendChild(SB.el('span', 'code', SB.Model.code(si, sj)));
 
+    /* Riffing is how a board actually gets made: you stand on a finished shot
+       and want the next one OFF it — the reverse, tighter, a moment later. The
+       new card arrives with this one already marked as a reference, so its
+       frame is fed and the description only has to say what changes. */
+    const riff = SB.el('button', 'mini card-riff', '▸ riff');
+    riff.title = 'New shot after this one, with this shot\'s frame as its reference. ' +
+      'Then just say what changes — "reverse angle", "push in on their face".';
+    riff.onclick = function (ev) {
+      ev.stopPropagation();
+      const made = SB.Model.addShot(P(), sc.id, { type: sh.type, color: sh.color });
+      if (!made) return;
+      /* straight after the one it came from, not at the end of the scene */
+      const at = sc.shots.indexOf(sh);
+      if (at >= 0) {
+        sc.shots.splice(sc.shots.indexOf(made), 1);
+        sc.shots.splice(at + 1, 0, made);
+      }
+      made.personaIds = (sh.personaIds || []).slice();
+      made.castEnters = (sh.castEnters || []).slice();
+      made.description = SB.Refs.mark(sh.id, SB.Model.code(si, sj)) + ' — ';
+      SB.app.selectedShotId = made.id;
+      SB.app.selection = [made.id];
+      SB.app.changed(true);
+      const box = document.querySelector('.card[data-shot="' + made.id + '"] .desc-box');
+      if (box) {
+        box.focus();
+        SB.RefBox.setCaret(box, (made.description || '').length);
+        box.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+      SB.toast('Riffing off ' + SB.Model.code(si, sj) + ' — say what changes' +
+        (sh.image ? '' : '. It has no frame yet, so render it first'), !sh.image);
+    };
+    head.appendChild(riff);
+
     const sel = document.createElement('select');
     sel.className = 'type';
     const types = P().settings.shotTypes.slice();
@@ -906,31 +942,41 @@
     dl.appendChild(SB.el('span', null, 'description'));
     c.appendChild(dl);
 
-    const desc = document.createElement('textarea');
-    desc.className = 'desc-box';
-    desc.value = sh.description || '';
-    desc.placeholder = 'What we see. This is what the prompt writer reads.';
-    desc.addEventListener('input', function () { sh.description = desc.value; SB.app.changed(false); });
-    /* @ names somebody, somewhere or something — and casts them on this card,
-       which is the half that reaches the model. */
-    SB.Mentions.attach(desc, { shot: sh, code: SB.Model.code(si, sj) });
+    /* Not a textarea: a mark has to be visible as an object, because the whole
+       point of @ is that it means a picture is being handed over. */
+    const desc = SB.el('div', 'desc-box');
+    desc.dataset.shot = sh.id;
+    SB.RefBox.attach(desc, {
+      get: function () { return sh.description || ''; },
+      set: function (t) {
+        sh.description = t;
+        SB.app.changed(false);
+        refreshFeed(sh.id);
+      },
+      placeholder: 'What we see. @ anything the model should be shown.',
+      ctx: { shot: sh, code: SB.Model.code(si, sj) }
+    });
     c.appendChild(desc);
+
+    /* what this card will actually feed, in order */
+    c.appendChild(feedRow(sh));
 
     /* --- the project's own extra fields --- */
     SB.Fields.enabled(P()).forEach(function (f) {
       const lbl = SB.el('div', 'box-label');
       lbl.appendChild(SB.el('span', null, f.label));
       c.appendChild(lbl);
-      const ta = document.createElement('textarea');
-      ta.className = 'desc-box field-box';
+      const ta = SB.el('div', 'desc-box field-box');
       ta.dataset.field = f.id;
-      ta.value = SB.Fields.value(sh, f.id);
-      ta.placeholder = f.label;
-      ta.addEventListener('input', function () {
-        SB.Fields.set(sh, f.id, ta.value);
-        SB.app.changed(false);
+      SB.RefBox.attach(ta, {
+        get: function () { return SB.Fields.value(sh, f.id); },
+        set: function (t) {
+          SB.Fields.set(sh, f.id, t);
+          SB.app.changed(false);
+        },
+        placeholder: f.label,
+        ctx: { shot: sh, code: SB.Model.code(si, sj) }
       });
-      SB.Mentions.attach(ta, { shot: sh, code: SB.Model.code(si, sj) });
       c.appendChild(ta);
     });
 
@@ -1063,6 +1109,130 @@
     return row;
   }
 
+  /* ---- the feed ----
+   *
+   * What this card hands the model, in order. This row is the whole reason @
+   * means "show the model a picture": the rule is invisible until its
+   * consequence is sitting on the card, numbered, with the images in the order
+   * the files go in. Somebody who has never used an image model can read this
+   * strip and drop the right files in the right order.
+   */
+  function feedRow(sh) {
+    const row = SB.el('div', 'feed-row');
+    row.dataset.feed = sh.id;
+    const list = SB.Refs.feed(P(), sh);
+
+    if (!list.length) {
+      /* Only worth saying on a card that has something to say it about. */
+      if ((sh.description || '').trim()) {
+        const hint = SB.el('span', 'feed-empty', 'no references — @ anything the model should see');
+        hint.title = 'Type @ in the description to name a person, a place, an object or another ' +
+          'shot. Whatever you @ is a picture the model gets handed.';
+        row.appendChild(hint);
+      }
+      return row;
+    }
+
+    row.appendChild(SB.el('span', 'feed-label', 'feed'));
+
+    list.forEach(function (e) {
+      const cell = SB.el('button', 'feed-cell' +
+        (e.mentioned ? '' : ' unmentioned') +
+        (e.images.length ? '' : ' empty'));
+      const n = e.numbers.length
+        ? (e.numbers.length === 1 ? e.numbers[0] : e.numbers[0] + '–' + e.numbers[e.numbers.length - 1])
+        : '–';
+      cell.appendChild(SB.el('span', 'feed-n', String(n)));
+
+      if (e.images.length) {
+        const t = SB.el('span', 'feed-thumb');
+        const im = document.createElement('img');
+        im.src = SB.Blobs.src(P(), e.images[0]);
+        t.appendChild(im);
+        if (e.images.length > 1) t.appendChild(SB.el('span', 'feed-more', '×' + e.images.length));
+        cell.appendChild(t);
+      } else {
+        cell.appendChild(SB.el('span', 'feed-thumb none', '?'));
+      }
+
+      cell.appendChild(SB.el('span', 'feed-name', e.label));
+      cell.title = e.label + (e.why ? ' — ' + e.why : '') +
+        (e.images.length ? '\nClick to open it.' : '\nClick to fix it.');
+      cell.onclick = function (ev) {
+        ev.stopPropagation();
+        SB.RefBox.go(e.id);
+      };
+      row.appendChild(cell);
+    });
+
+    const imgs = SB.Refs.images(P(), sh);
+    if (imgs.length > SB.Personas.IMAGE_ADVICE) {
+      const warn = SB.el('span', 'feed-warn', imgs.length + ' images');
+      warn.title = 'Past ' + SB.Personas.IMAGE_ADVICE + ' references most image models start ' +
+        'averaging them together instead of reading them. Drop a mark, or drop a frame off one ' +
+        'of these subjects.';
+      row.appendChild(warn);
+    }
+    if (imgs.length) {
+      const copy = SB.el('button', 'mini feed-copy', 'copy image set');
+      copy.title = 'Save all ' + imgs.length + ' reference images, numbered in feed order, ' +
+        'so they go into the model in the order the prompt promises.';
+      copy.onclick = function (ev) {
+        ev.stopPropagation();
+        saveFeed(sh, imgs);
+      };
+      row.appendChild(copy);
+    }
+
+    /* A name in the text that is not a mark feeds nothing — the exact mistake
+       this feature exists to stop, said where it happens. */
+    const loose = SB.Refs.unlinked(P(), sh.description);
+    if (loose.length) {
+      const fix = SB.el('button', 'mini feed-fix',
+        loose.length === 1 ? 'link 1 name' : 'link ' + loose.length + ' names');
+      fix.title = loose.map(function (x) { return x.name; }).join(', ') +
+        (loose.length === 1 ? ' is named' : ' are named') +
+        ' in the description but not referenced, so no picture is sent for ' +
+        (loose.length === 1 ? 'it' : 'them') + '. Click to link ' +
+        (loose.length === 1 ? 'it' : 'them') + '.';
+      fix.onclick = function (ev) {
+        ev.stopPropagation();
+        sh.description = SB.Refs.linkAll(P(), sh.description);
+        SB.app.changed(true);
+        SB.toast(loose.length + (loose.length === 1 ? ' name' : ' names') + ' linked');
+      };
+      row.appendChild(fix);
+    }
+    return row;
+  }
+
+  function refreshFeed(id) {
+    document.querySelectorAll('.feed-row[data-feed="' + id + '"]').forEach(function (row) {
+      const f = SB.Model.findShot(P(), id);
+      if (!f) return;
+      row.parentNode.replaceChild(feedRow(f.shot), row);
+    });
+  }
+
+  /* Hand the images over in feed order. Named 1_, 2_, … because the order is
+   * the promise the prompt's mapping makes, and a folder sorts by name. */
+  function saveFeed(sh, imgs) {
+    let n = 0;
+    imgs.forEach(function (e) {
+      const src = SB.Blobs.src(P(), e.img);
+      if (!src) return;
+      const a = document.createElement('a');
+      a.href = src;
+      a.download = e.n + '_' + String(e.label || 'ref').replace(/[^\w-]+/g, '-') +
+        (e.role ? '_' + String(e.role).replace(/[^\w-]+/g, '-') : '') + '.jpg';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      n++;
+    });
+    SB.toast(n + ' reference image' + (n === 1 ? '' : 's') + ' saved, numbered in feed order');
+  }
+
   function castPicker(anchor, sh) {
     const old = document.querySelector('.cast-pop');
     if (old) old.remove();
@@ -1115,6 +1285,7 @@
       if (!f) return;
       const fresh = castRow(f.shot);
       row.parentNode.replaceChild(fresh, row);
+      refreshFeed(f.shot.id);      // who is cast decides what is fed
     });
   }
 
@@ -1346,6 +1517,7 @@
     renderScriptWindows: renderScriptWindows,
     refreshCast: refreshCast,
     refreshCastRows: refreshCastRows, refreshPromptStale: refreshPromptStale,
+    refreshFeed: refreshFeed,
     setImage: setImage,
     swap: doSwap,
     armSwap: armSwap,

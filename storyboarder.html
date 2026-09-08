@@ -167,10 +167,11 @@ button,input,select,textarea{font:inherit;color:inherit}
   background:transparent;border:1px solid transparent;border-radius:4px;padding:2px 5px;
   font-size:15px;font-weight:600;
 }
-.scene-head textarea.sh-desc{
+.scene-head .sh-desc{
   background:transparent;border:1px solid transparent;border-radius:4px;padding:2px 5px;
-  resize:vertical;min-height:24px;color:var(--fg-dim);font-size:12px;
+  min-height:24px;color:var(--fg-dim);font-size:12px;
 }
+.scene-head .sh-desc:focus{background:var(--input-bg);border-color:var(--accent)}
 .scene-head .scene-script{margin-top:3px}
 .scene-head .box-label{padding:2px 4px 0}
 .scene-head .script-box.scene-script-box{margin:1px 0 2px;max-height:110px}
@@ -306,7 +307,7 @@ button,input,select,textarea{font:inherit;color:inherit}
 .script-box{min-height:44px;max-height:150px;font-size:12px}
 .script-box.broken{border-color:var(--danger);background:rgba(255,95,86,.07)}
 .script-box:empty::before{content:"(empty)";color:var(--fg-dim)}
-.desc-box{min-height:70px;max-height:260px;resize:vertical;width:calc(100% - 12px);font-size:12.5px}
+.desc-box{min-height:70px;max-height:260px;overflow:auto;width:calc(100% - 12px);font-size:12.5px}
 .desc-box.field-box{min-height:42px;font-size:12px}
 .script-box:focus,.desc-box:focus{outline:none;border-color:var(--accent)}
 
@@ -786,6 +787,63 @@ button.linkish{
 .sc-claim{font-size:10px;color:var(--fg-dim);text-transform:uppercase;letter-spacing:.4px}
 .sc-claim.broken{color:var(--danger)}
 
+/* ---------- a reference is an object, not words ---------- */
+/* The box is a contenteditable so a mark can be drawn as a link. It has to keep
+   looking and behaving exactly like the textarea it replaced. */
+.ref-box{white-space:pre-wrap;overflow-wrap:break-word;cursor:text}
+.ref-box:focus{outline:none;border-color:var(--accent)}
+.ref-box.empty::before{
+  content:attr(data-placeholder);color:var(--fg-dim);opacity:.75;pointer-events:none;
+}
+.ref-link{
+  color:var(--accent);text-decoration:underline;text-decoration-thickness:1px;
+  text-underline-offset:2px;cursor:pointer;border-radius:2px;
+}
+.ref-link:hover{background:var(--hl1)}
+.ref-link.ref-shot{color:var(--scene)}
+/* whatever it pointed at is gone: it is plain text now, and says so */
+.ref-link.dead{color:var(--fg-dim);text-decoration-style:dotted;cursor:default}
+
+/* ---------- the feed: what this card hands the model ---------- */
+.feed-row{
+  display:flex;align-items:center;gap:5px;flex-wrap:wrap;
+  padding:4px 6px 2px;min-height:22px;
+}
+.feed-label{
+  font-size:9px;text-transform:uppercase;letter-spacing:.6px;color:var(--fg-dim);
+}
+.feed-empty{font-size:10px;color:var(--fg-dim);font-style:italic}
+.feed-cell{
+  display:flex;align-items:center;gap:4px;padding:1px 5px 1px 2px;
+  border:1px solid var(--line2);border-radius:10px;background:none;cursor:pointer;
+  font-size:10px;color:var(--fg-dim);max-width:150px;
+}
+.feed-cell:hover{border-color:var(--accent);color:var(--fg)}
+.feed-n{
+  min-width:13px;text-align:center;font-variant-numeric:tabular-nums;
+  color:var(--accent);font-weight:600;
+}
+.feed-thumb{
+  position:relative;width:22px;height:16px;border-radius:2px;overflow:hidden;
+  background:var(--frame-bg);flex:0 0 auto;display:flex;align-items:center;justify-content:center;
+}
+.feed-thumb img{width:100%;height:100%;object-fit:cover}
+.feed-thumb.none{color:var(--accent2);font-size:9px}
+.feed-more{
+  position:absolute;right:0;bottom:0;background:rgba(0,0,0,.6);color:#fff;
+  font-size:7px;padding:0 1px;
+}
+.feed-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* fed, but nobody said to — its place in the order was nobody's decision */
+.feed-cell.unmentioned{border-style:dashed}
+.feed-cell.unmentioned .feed-n{color:var(--fg-dim)}
+/* @'d, but there is no picture behind it */
+.feed-cell.empty{border-color:var(--accent2);color:var(--accent2)}
+.feed-cell.empty .feed-n{color:var(--accent2)}
+.feed-warn{font-size:10px;color:var(--accent2);white-space:nowrap}
+.feed-copy{margin-left:auto}
+.feed-fix{border-color:var(--accent2);color:var(--accent2)}
+
 /* ---------- @ mentions ---------- */
 .men-pop{
   position:fixed;z-index:80;background:var(--bg2);border:1px solid var(--line2);
@@ -805,8 +863,14 @@ button.linkish{
 .men-kind.kind-person{color:var(--accent);border-color:var(--accent)}
 .men-kind.kind-place{color:var(--scene);border-color:var(--scene)}
 .men-kind.kind-thing{color:var(--accent2);border-color:var(--accent2)}
-.men-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
-.men-img{color:var(--accent);font-size:10px}
+.men-name{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.men-sub{
+  flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;
+  color:var(--fg-dim);font-size:10px;
+}
+.men-img{color:var(--accent);font-size:9px;white-space:nowrap}
+.men-img.warn{color:var(--accent2)}
+.men-kind.kind-shot{color:var(--scene);border-color:var(--scene)}
 /* measures where the caret is; never seen */
 .men-mirror{position:absolute;left:-9999px;top:0;visibility:hidden}
 
@@ -893,7 +957,7 @@ body.comment-mode .frame{cursor:crosshair}
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-09-08 22:56 · 9359218+";</script>
+<script>window.SB_BUILD = "2026-09-08 23:45 · 02c7447+";</script>
 
 <div id="app">
 
@@ -2492,7 +2556,7 @@ window.SB = window.SB || {};
       lines.push('The other beats in this scene, in order:');
       beats.forEach(function (s, i) {
         const sf = SB.Model.findShot(p, s.id);
-        const d = (s.description || '').replace(/\s+/g, ' ').trim();
+        const d = SB.Refs.plain(p, s.description).replace(/\s+/g, ' ').trim();
         lines.push('  ' + (i + 1) + '. [' + (sf ? sf.code : '?') + '] ' + (s.type || 'shot') + ' — ' +
           (d ? (d.length > 160 ? d.slice(0, 157) + '…' : d) : '(no description yet)') +
           (s.id === shot.id ? '   <-- the frame you are writing' : ''));
@@ -2540,6 +2604,242 @@ window.SB = window.SB || {};
     systemFor: systemFor,
     sequenceBlock: sequenceBlock,
     genderedTerms: genderedTerms
+  };
+
+})(window.SB);
+
+</script>
+<script>
+/* ===== js/refs.js ===== */
+/* refs.js — what the model is shown.
+ *
+ * An @ in a description is not a spelling convenience. It means: THE MODEL WILL
+ * BE SHOWN A PICTURE OF THIS. That is the whole idea, and everything here
+ * follows from it —
+ *
+ *   @a subject  ->  its reference frames go into the feed
+ *   @a shot     ->  that shot's rendered frame goes into the feed
+ *   the order of the marks in the sentence is the order of the images
+ *   no mark     ->  not shown, only described
+ *
+ * Knowing when to hand a model a reference image is the expertise this replaces.
+ * Written down as one rule with a visible consequence — the numbered feed strip
+ * on the card — it stops being expertise and becomes a process somebody can
+ * follow on their first day.
+ *
+ * ---- the stored form ----
+ *
+ * A mark is `@{id|Name}` in the description text. It carries the id AND a
+ * readable fallback, which buys three things:
+ *
+ *   - renaming a subject, or renumbering a shot, rewrites nothing: the chip is
+ *     drawn from the id every time it is rendered;
+ *   - a description read raw — in another editor, in a diff — still says who it
+ *     meant;
+ *   - deleting a subject degrades its mentions to that last known name as plain
+ *     prose, rather than leaving a dangling reference.
+ *
+ * Nothing outside this file should read a description for a machine. plain()
+ * is the boundary: it resolves marks to the names they now have and hands back
+ * ordinary prose.
+ */
+(function (SB) {
+  'use strict';
+
+  /* @{id|fallback} — ids are our own (per_/sh_), so the only thing that needs
+   * sanitising on the way in is the closing brace and the pipe. */
+  const MARK = /@\{([A-Za-z0-9_]+)\|([^}]*)\}/g;
+
+  function clean(name) {
+    return String(name == null ? '' : name).replace(/[|}]/g, '').trim();
+  }
+
+  function mark(id, name) { return '@{' + id + '|' + clean(name) + '}'; }
+
+  /* ---- resolving ---- */
+
+  /* What a mark points at, or null if it is gone. Subjects and shots live in
+   * different places, so the id prefix decides where to look. */
+  function target(p, id) {
+    if (!p || !id) return null;
+    if (/^sh_/.test(id)) {
+      const f = SB.Model.findShot(p, id);
+      if (!f) return null;
+      return { kind: 'shot', id: id, shot: f.shot, label: f.code, f: f };
+    }
+    const per = SB.Personas.find(p, id);
+    if (!per) return null;
+    return { kind: 'subject', id: id, subject: per, label: per.name || 'unnamed' };
+  }
+
+  /* Every mark in a piece of text, in the order it appears. `label` is what a
+   * reader should see; `dead` marks one whose target no longer exists. */
+  function parse(p, text) {
+    const out = [];
+    const s = String(text == null ? '' : text);
+    MARK.lastIndex = 0;
+    let m;
+    while ((m = MARK.exec(s))) {
+      const t = target(p, m[1]);
+      out.push({
+        id: m[1],
+        from: m.index,
+        to: m.index + m[0].length,
+        raw: m[0],
+        fallback: m[2],
+        label: t ? t.label : m[2],
+        dead: !t,
+        kind: t ? t.kind : null,
+        target: t
+      });
+    }
+    return out;
+  }
+
+  /* The boundary. Prose as a person or a model should read it: every mark
+   * becomes the name or shot code it currently points at. */
+  function plain(p, text) {
+    const s = String(text == null ? '' : text);
+    if (s.indexOf('@{') < 0) return s;
+    return s.replace(MARK, function (_, id, fallback) {
+      const t = target(p, id);
+      return t ? t.label : fallback;
+    });
+  }
+
+  /* Is there a mark for this id in here already? */
+  function has(text, id) {
+    return parse(null, text).some(function (x) { return x.id === id; });
+  }
+
+  /* ---- the feed ----
+   *
+   * The ordered list of images to hand the model. Marks first, in the order
+   * they were written, because that order is the one thing the person writing
+   * the sentence actually controls. Anything cast on the card but never
+   * mentioned follows, flagged: it is still sent — silently dropping it would
+   * change what every board made before this sends — but it is called out,
+   * because an unmentioned subject is one whose position in the feed nobody
+   * chose.
+   */
+  function feed(p, shot) {
+    const out = [];
+    const seen = {};
+
+    parse(p, shot.description).forEach(function (m) {
+      if (m.dead || seen[m.id]) return;
+      seen[m.id] = 1;
+      if (m.kind === 'shot') {
+        const img = m.target.shot.image;
+        out.push({
+          kind: 'shot', id: m.id, label: m.target.label, mentioned: true,
+          images: img ? [img] : [],
+          why: img ? 'the rendered frame of ' + m.target.label
+                   : m.target.label + ' has no frame yet — there is nothing to feed'
+        });
+        return;
+      }
+      const imgs = SB.Personas.imagesOf(m.target.subject);
+      out.push({
+        kind: 'subject', id: m.id, label: m.target.label, mentioned: true,
+        subject: m.target.subject, images: imgs,
+        why: imgs.length ? null : 'no reference image yet — it will be described in full instead'
+      });
+    });
+
+    /* cast, but nobody said to show it */
+    SB.Personas.forShot(p, shot).forEach(function (per) {
+      if (seen[per.id]) return;
+      seen[per.id] = 1;
+      const imgs = SB.Personas.imagesOf(per);
+      out.push({
+        kind: 'subject', id: per.id, label: per.name || 'unnamed', mentioned: false,
+        subject: per, images: imgs,
+        why: 'cast on this card but not mentioned in the description'
+      });
+    });
+
+    /* image numbers, assigned once across the whole feed — this is the order
+       the files go in, and it is what the prompt's mapping promises */
+    let n = 0;
+    out.forEach(function (e) {
+      e.numbers = e.images.map(function () { return ++n; });
+    });
+    return out;
+  }
+
+  /* Just the pictures, in order — what "copy the image set" hands over. */
+  function images(p, shot) {
+    const list = [];
+    feed(p, shot).forEach(function (e) {
+      e.images.forEach(function (img, i) {
+        list.push({
+          img: img, id: e.id, kind: e.kind, label: e.label,
+          role: (img.label || ''), n: e.numbers[i]
+        });
+      });
+    });
+    return list;
+  }
+
+  /* ---- writing marks ---- */
+
+  /* Put a mark in at a position, returning the new text and where the caret
+   * should land. Used by the popover and by anything seeding a description. */
+  function insert(text, at, until, id, name) {
+    const s = String(text == null ? '' : text);
+    const tok = mark(id, name);
+    return { text: s.slice(0, at) + tok + s.slice(until), caret: at + tok.length };
+  }
+
+  /* Marks for names the writer typed but never linked.
+   *
+   * A model rewrite hands back plain prose, and an old board never had marks at
+   * all, so the names are sitting there unlinked — which under the one rule
+   * above means no picture is sent for them. This finds them: the longest
+   * matching name wins, so "Ops lead" is not matched as "Ops", and a name
+   * already inside a mark is skipped. */
+  function unlinked(p, text) {
+    const s = String(text == null ? '' : text);
+    if (!s.trim()) return [];
+    const marks = parse(p, s);
+    const inside = function (i) {
+      return marks.some(function (m) { return i >= m.from && i < m.to; });
+    };
+    const names = SB.Personas.all(p)
+      .filter(function (x) { return (x.name || '').trim().length > 1; })
+      .sort(function (a, b) { return b.name.length - a.name.length; });
+
+    const out = [];
+    const taken = [];
+    names.forEach(function (per) {
+      const re = new RegExp('(?<![\\w@{])' +
+        per.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?![\\w}])', 'g');
+      let m;
+      while ((m = re.exec(s))) {
+        const a = m.index, b = a + m[0].length;
+        if (inside(a)) continue;
+        if (taken.some(function (t) { return a < t.to && b > t.from; })) continue;
+        taken.push({ from: a, to: b });
+        out.push({ id: per.id, name: per.name, from: a, to: b });
+      }
+    });
+    return out.sort(function (x, y) { return x.from - y.from; });
+  }
+
+  /* Link every unlinked name in one pass, back to front so the offsets hold. */
+  function linkAll(p, text) {
+    const hits = unlinked(p, text);
+    let s = String(text == null ? '' : text);
+    for (let i = hits.length - 1; i >= 0; i--) {
+      s = s.slice(0, hits[i].from) + mark(hits[i].id, hits[i].name) + s.slice(hits[i].to);
+    }
+    return s;
+  }
+
+  SB.Refs = {
+    MARK: MARK, mark: mark, parse: parse, plain: plain, has: has, target: target,
+    feed: feed, images: images, insert: insert, unlinked: unlinked, linkAll: linkAll
   };
 
 })(window.SB);
@@ -2816,13 +3116,10 @@ window.SB = window.SB || {};
 
     /* image N -> which subject, assigned before anything is written so the
      * per-kind sections can cite numbers the mapping will agree with */
-    const numbered = [];
-    cast.forEach(function (per) {
-      imagesOf(per).forEach(function (img) { numbered.push({ per: per, img: img }); });
-    });
+    const numbered = SB.Refs.images(p, shot);
     const rangeFor = function (per) {
-      const mine = [];
-      numbered.forEach(function (n, i) { if (n.per === per) mine.push(i + 1); });
+      const mine = numbered.filter(function (e) { return e.id === per.id; })
+        .map(function (e) { return e.n; });
       if (!mine.length) return '';
       if (mine.length === 1) return 'image ' + mine[0] + ' — ';
       return 'images ' + mine[0] + '–' + mine[mine.length - 1] + ' — ';
@@ -2859,10 +3156,12 @@ window.SB = window.SB || {};
       const names = cast.filter(hasImage).map(function (x) { return x.name; }).join(', ');
       lines.push(tpl.replace(/\{\{N\}\}/g, function () { return 'N'; })
         .replace(/\{\{NAME\}\}/g, names));
-      numbered.forEach(function (n, i) {
-        const lbl = (n.img && n.img.label || '').trim();
-        lines.push('  image ' + (i + 1) + ' = ' + (n.per.name || 'unnamed') +
-          (lbl ? ' (' + lbl + ')' : ''));
+      /* The mapping is the feed's, not this block's: a shot's own rendered
+         frame is a reference like any other, and the numbers have to agree
+         with the strip on the card and with the files the person is about to
+         drop in. */
+      SB.Refs.images(p, shot).forEach(function (e) {
+        lines.push('  image ' + e.n + ' = ' + e.label + (e.role ? ' (' + e.role + ')' : ''));
       });
       /* Several frames of one subject read as several subjects unless this is
        * said outright — the failure is a second person walking into the shot. */
@@ -2886,6 +3185,20 @@ window.SB = window.SB || {};
      * a writer looks like a manifest of who is in the picture — so somebody the
      * description had walking in later was drawn standing in the first frame.
      * What it actually answers is "how do they look", never "who is here". */
+    /* A frame of another shot in the feed is a reference the cast block knows
+       nothing about — it is not a person, it is a picture of an earlier moment.
+       Saying what it is turns "reverse of 1C" into an instruction. */
+    const shots = SB.Refs.feed(p, shot).filter(function (e) {
+      return e.kind === 'shot' && e.images.length;
+    });
+    if (shots.length) {
+      lines.push('EARLIER FRAMES SUPPLIED: ' + shots.map(function (e) {
+        return 'image ' + (e.numbers[0] || '?') + ' is the rendered frame of shot ' + e.label;
+      }).join('; ') + '. Treat it as the source this frame is derived from: keep its place, its ' +
+        'light, its wardrobe and its staging, and change only what the description asks you to ' +
+        'change. It is not a separate moment to include in the frame.');
+    }
+
     const late = arriving(p, shot);
     if (role === 'image' || role === 'both') {
       const who = role === 'both' ? 'In the FIRST-FRAME PROMPT, only' : 'Only';
@@ -2986,7 +3299,7 @@ window.SB = window.SB || {};
     const script = (p.master.text || '').trim();
     const descs = [];
     SB.Model.eachShot(p, function (sh) {
-      if (sh.description) descs.push(sh.description);
+      if (sh.description) descs.push(SB.Refs.plain(p, sh.description));
     });
     if (!script && !descs.length) {
       return Promise.reject(new Error('Nothing to work from yet — write some script or shot descriptions first.'));
@@ -3036,10 +3349,6 @@ window.SB = window.SB || {};
     readsAsArrival: readsAsArrival,
     touch: touch, editedAt: editedAt, staleFor: staleFor
   };
-
-  /* The panel, the board and the mentions popover all deal in subjects, not
-   * personas. Same object — the honest name for new code to read. */
-  SB.Refs = SB.Personas;
 
 })(window.SB);
 
@@ -5167,6 +5476,213 @@ window.SB = window.SB || {};
 
 </script>
 <script>
+/* ===== js/refbox.js ===== */
+/* refbox.js — a description box where a reference is visibly an object.
+ *
+ * A textarea can only hold letters, so a mark in one is either invisible or an
+ * "@" the writer has to decode. Neither says the thing that matters: THIS WORD
+ * IS A PICTURE THE MODEL WILL BE SHOWN. So the box is a contenteditable, and a
+ * mark is drawn as a link — themed, underlined, clickable through to whatever
+ * it points at. You can see, at a glance across a whole board, which cards are
+ * actually feeding references and which only think they are.
+ *
+ * The chips are contenteditable="false", so a mark behaves like one object:
+ * backspace takes the whole thing, not a letter off the end of somebody's name.
+ * The text is serialised straight back out of the DOM — chips emit their stored
+ * token, text nodes emit themselves — so what is stored is never a guess about
+ * what is on screen.
+ */
+(function (SB) {
+  'use strict';
+
+  /* ---- DOM <-> text ---- */
+
+  /* Walk the box and rebuild the stored string. Chips carry their own token, so
+   * a rename or a renumber between renders costs nothing here. */
+  function read(box) {
+    let out = '';
+    const walk = function (node) {
+      for (let n = node.firstChild; n; n = n.nextSibling) {
+        if (n.nodeType === 3) { out += n.nodeValue; continue; }
+        if (n.nodeType !== 1) continue;
+        if (n.dataset && n.dataset.mark) { out += n.dataset.mark; continue; }
+        if (n.tagName === 'BR') { out += '\n'; continue; }
+        /* a pasted block, or the browser's own line wrapper */
+        const block = /^(DIV|P|LI)$/.test(n.tagName);
+        if (block && out && !/\n$/.test(out)) out += '\n';
+        walk(n);
+      }
+    };
+    walk(box);
+    return out.replace(/ /g, ' ');
+  }
+
+  function chip(p, m) {
+    const a = SB.el('a', 'ref-link' + (m.dead ? ' dead' : '') +
+      (m.kind === 'shot' ? ' ref-shot' : ''), m.label);
+    a.dataset.mark = m.raw;
+    a.dataset.ref = m.id;
+    a.contentEditable = 'false';
+    a.title = m.dead
+      ? '“' + m.fallback + '” is gone — this is plain text now'
+      : (m.kind === 'shot'
+        ? 'Shot ' + m.label + ' — its frame is fed to the model. Click to go to it.'
+        : m.label + ' — its reference images are fed to the model. Click to open it.');
+    return a;
+  }
+
+  function write(box, p, text) {
+    box.innerHTML = '';
+    const s = String(text == null ? '' : text);
+    const marks = SB.Refs.parse(p, s);
+    let at = 0;
+    const put = function (str) {
+      if (str) box.appendChild(document.createTextNode(str));
+    };
+    marks.forEach(function (m) {
+      put(s.slice(at, m.from));
+      box.appendChild(chip(p, m));
+      at = m.to;
+    });
+    put(s.slice(at));
+    /* An empty contenteditable collapses and cannot be clicked into. */
+    if (!box.firstChild) box.appendChild(document.createTextNode(''));
+  }
+
+  /* ---- caret ----
+   *
+   * Re-rendering moves every node, so the caret is remembered as a character
+   * offset into the serialised text and put back the same way. A chip counts as
+   * its whole token, which is why a caret landing "inside" one lands after it. */
+  function caret(box) {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount || !box.contains(sel.anchorNode)) return null;
+    const r = sel.getRangeAt(0).cloneRange();
+    r.selectNodeContents(box);
+    r.setEnd(sel.getRangeAt(0).endContainer, sel.getRangeAt(0).endOffset);
+    const frag = document.createElement('div');
+    frag.appendChild(r.cloneContents());
+    return read(frag).length;
+  }
+
+  function setCaret(box, at) {
+    if (at == null) return;
+    let left = at;
+    const sel = window.getSelection();
+    const range = document.createRange();
+    let done = false;
+    const walk = function (node) {
+      for (let n = node.firstChild; n && !done; n = n.nextSibling) {
+        if (n.nodeType === 3) {
+          const len = n.nodeValue.length;
+          if (left <= len) { range.setStart(n, left); done = true; return; }
+          left -= len;
+          continue;
+        }
+        if (n.nodeType !== 1) continue;
+        if (n.dataset && n.dataset.mark) {
+          const len = n.dataset.mark.length;
+          if (left <= len) { range.setStartAfter(n); done = true; return; }
+          left -= len;
+          continue;
+        }
+        if (n.tagName === 'BR') {
+          if (left <= 1) { range.setStartAfter(n); done = true; return; }
+          left -= 1;
+          continue;
+        }
+        walk(n);
+      }
+    };
+    walk(box);
+    if (!done) range.selectNodeContents(box), range.collapse(false);
+    range.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }
+
+  /* ---- the box ----
+   *
+   * opts: { get(), set(text), placeholder, ctx } — ctx is what the @ popover
+   * needs to know (which shot this is), if anything.
+   */
+  function attach(host, opts) {
+    const p = function () { return SB.app.project; };
+    host.contentEditable = 'true';
+    host.spellcheck = true;
+    host.classList.add('ref-box');
+    if (opts.placeholder) host.dataset.placeholder = opts.placeholder;
+
+    let last = null;
+
+    const paint = function (keepCaret) {
+      const at = keepCaret ? caret(host) : null;
+      const text = opts.get() || '';
+      write(host, p(), text);
+      last = text;
+      host.classList.toggle('empty', !text);
+      if (keepCaret) setCaret(host, at);
+    };
+
+    /* Typing only ever changes text nodes, so the box is NOT repainted on every
+     * keystroke — that would fight the caret for no gain. It is repainted when
+     * a mark could have appeared or changed: after a pick, and on blur. */
+    host.addEventListener('input', function () {
+      const text = read(host);
+      last = text;
+      host.classList.toggle('empty', !text);
+      opts.set(text);
+    });
+
+    host.addEventListener('blur', function () {
+      /* a chip deleted mid-sentence can leave a half-token behind */
+      const text = read(host);
+      if (/@\{[^}]*$/.test(text) || text !== last) { opts.set(text); }
+      paint(false);
+    });
+
+    /* A link is a link: clicking one goes where it points rather than putting a
+     * caret in the middle of somebody's name. */
+    host.addEventListener('mousedown', function (ev) {
+      const a = ev.target.closest && ev.target.closest('.ref-link');
+      if (!a || a.classList.contains('dead')) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      go(a.dataset.ref);
+    });
+
+    if (SB.Mentions) SB.Mentions.attach(host, opts.ctx || {});
+
+    paint(false);
+    host.__refPaint = paint;
+    return { paint: paint, read: function () { return read(host); } };
+  }
+
+  /* Where a chip leads. */
+  function go(id) {
+    const p = SB.app.project;
+    const t = SB.Refs.target(p, id);
+    if (!t) return;
+    if (t.kind === 'shot') {
+      SB.PersonaPanel.close();
+      SB.Board.select(t.shot.id);
+      const el = document.querySelector('.card[data-shot="' + t.shot.id + '"]');
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+    SB.PersonaPanel.open();
+    setTimeout(function () {
+      const el = document.querySelector('.persona[data-id="' + id + '"]');
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 0);
+  }
+
+  SB.RefBox = { attach: attach, read: read, write: write, caret: caret, setCaret: setCaret, go: go };
+
+})(window.SB);
+
+</script>
+<script>
 /* ===== js/board.js ===== */
 /* board.js — scene list, scene blocks, shot cards, drag & drop. */
 (function (SB) {
@@ -5446,7 +5962,9 @@ window.SB = window.SB || {};
       let v = null;
       if (el.classList.contains('sh-heading')) v = f.scene.heading || '';
       else if (el.classList.contains('sh-desc')) v = f.scene.description || '';
-      if (v !== null && el.value !== v) el.value = v;
+      if (v === null) return;
+      if (el.__refPaint) { if (SB.RefBox.read(el) !== v) el.__refPaint(false); return; }
+      if (el.value !== v) el.value = v;
     });
   }
 
@@ -5529,7 +6047,7 @@ window.SB = window.SB || {};
       SB.Coverage.rewrite(P(), sc.id, '').then(function (next) {
         const f = SB.Model.findScene(P(), sc.id);
         if (!f) return;
-        f.scene.description = next;
+        f.scene.description = SB.Refs.linkAll(P(), next);   // it comes back as prose
         descEl.value = next;
         ai.prev = prev;
         syncSceneAi(sc.id);
@@ -5683,17 +6201,17 @@ window.SB = window.SB || {};
       sc.heading = h.value; SB.app.changed(false); renderSceneList();
       syncSceneFields(sc.id);
     });
-    const d = document.createElement('textarea');
-    d.className = 'sh-desc';
+    const d = SB.el('div', 'sh-desc');
     d.dataset.scene = sc.id;
-    d.rows = 1;
-    d.value = sc.description || '';
-    d.placeholder = 'Scene description';
-    d.addEventListener('input', function () {
-      sc.description = d.value; SB.app.changed(false);
-      syncSceneFields(sc.id);
+    SB.RefBox.attach(d, {
+      get: function () { return sc.description || ''; },
+      set: function (t) {
+        sc.description = t; SB.app.changed(false);
+        syncSceneFields(sc.id);
+      },
+      placeholder: 'Scene description',
+      ctx: { scene: sc }
     });
-    SB.Mentions.attach(d, { scene: sc });
     fields.appendChild(h); fields.appendChild(d);
     fields.appendChild(sceneAi(sc, d));
     /* Only once the scene actually claims something — an untied scene, which is
@@ -5957,6 +6475,40 @@ window.SB = window.SB || {};
 
     head.appendChild(SB.el('span', 'code', SB.Model.code(si, sj)));
 
+    /* Riffing is how a board actually gets made: you stand on a finished shot
+       and want the next one OFF it — the reverse, tighter, a moment later. The
+       new card arrives with this one already marked as a reference, so its
+       frame is fed and the description only has to say what changes. */
+    const riff = SB.el('button', 'mini card-riff', '▸ riff');
+    riff.title = 'New shot after this one, with this shot\'s frame as its reference. ' +
+      'Then just say what changes — "reverse angle", "push in on their face".';
+    riff.onclick = function (ev) {
+      ev.stopPropagation();
+      const made = SB.Model.addShot(P(), sc.id, { type: sh.type, color: sh.color });
+      if (!made) return;
+      /* straight after the one it came from, not at the end of the scene */
+      const at = sc.shots.indexOf(sh);
+      if (at >= 0) {
+        sc.shots.splice(sc.shots.indexOf(made), 1);
+        sc.shots.splice(at + 1, 0, made);
+      }
+      made.personaIds = (sh.personaIds || []).slice();
+      made.castEnters = (sh.castEnters || []).slice();
+      made.description = SB.Refs.mark(sh.id, SB.Model.code(si, sj)) + ' — ';
+      SB.app.selectedShotId = made.id;
+      SB.app.selection = [made.id];
+      SB.app.changed(true);
+      const box = document.querySelector('.card[data-shot="' + made.id + '"] .desc-box');
+      if (box) {
+        box.focus();
+        SB.RefBox.setCaret(box, (made.description || '').length);
+        box.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+      SB.toast('Riffing off ' + SB.Model.code(si, sj) + ' — say what changes' +
+        (sh.image ? '' : '. It has no frame yet, so render it first'), !sh.image);
+    };
+    head.appendChild(riff);
+
     const sel = document.createElement('select');
     sel.className = 'type';
     const types = P().settings.shotTypes.slice();
@@ -6076,31 +6628,41 @@ window.SB = window.SB || {};
     dl.appendChild(SB.el('span', null, 'description'));
     c.appendChild(dl);
 
-    const desc = document.createElement('textarea');
-    desc.className = 'desc-box';
-    desc.value = sh.description || '';
-    desc.placeholder = 'What we see. This is what the prompt writer reads.';
-    desc.addEventListener('input', function () { sh.description = desc.value; SB.app.changed(false); });
-    /* @ names somebody, somewhere or something — and casts them on this card,
-       which is the half that reaches the model. */
-    SB.Mentions.attach(desc, { shot: sh, code: SB.Model.code(si, sj) });
+    /* Not a textarea: a mark has to be visible as an object, because the whole
+       point of @ is that it means a picture is being handed over. */
+    const desc = SB.el('div', 'desc-box');
+    desc.dataset.shot = sh.id;
+    SB.RefBox.attach(desc, {
+      get: function () { return sh.description || ''; },
+      set: function (t) {
+        sh.description = t;
+        SB.app.changed(false);
+        refreshFeed(sh.id);
+      },
+      placeholder: 'What we see. @ anything the model should be shown.',
+      ctx: { shot: sh, code: SB.Model.code(si, sj) }
+    });
     c.appendChild(desc);
+
+    /* what this card will actually feed, in order */
+    c.appendChild(feedRow(sh));
 
     /* --- the project's own extra fields --- */
     SB.Fields.enabled(P()).forEach(function (f) {
       const lbl = SB.el('div', 'box-label');
       lbl.appendChild(SB.el('span', null, f.label));
       c.appendChild(lbl);
-      const ta = document.createElement('textarea');
-      ta.className = 'desc-box field-box';
+      const ta = SB.el('div', 'desc-box field-box');
       ta.dataset.field = f.id;
-      ta.value = SB.Fields.value(sh, f.id);
-      ta.placeholder = f.label;
-      ta.addEventListener('input', function () {
-        SB.Fields.set(sh, f.id, ta.value);
-        SB.app.changed(false);
+      SB.RefBox.attach(ta, {
+        get: function () { return SB.Fields.value(sh, f.id); },
+        set: function (t) {
+          SB.Fields.set(sh, f.id, t);
+          SB.app.changed(false);
+        },
+        placeholder: f.label,
+        ctx: { shot: sh, code: SB.Model.code(si, sj) }
       });
-      SB.Mentions.attach(ta, { shot: sh, code: SB.Model.code(si, sj) });
       c.appendChild(ta);
     });
 
@@ -6233,6 +6795,130 @@ window.SB = window.SB || {};
     return row;
   }
 
+  /* ---- the feed ----
+   *
+   * What this card hands the model, in order. This row is the whole reason @
+   * means "show the model a picture": the rule is invisible until its
+   * consequence is sitting on the card, numbered, with the images in the order
+   * the files go in. Somebody who has never used an image model can read this
+   * strip and drop the right files in the right order.
+   */
+  function feedRow(sh) {
+    const row = SB.el('div', 'feed-row');
+    row.dataset.feed = sh.id;
+    const list = SB.Refs.feed(P(), sh);
+
+    if (!list.length) {
+      /* Only worth saying on a card that has something to say it about. */
+      if ((sh.description || '').trim()) {
+        const hint = SB.el('span', 'feed-empty', 'no references — @ anything the model should see');
+        hint.title = 'Type @ in the description to name a person, a place, an object or another ' +
+          'shot. Whatever you @ is a picture the model gets handed.';
+        row.appendChild(hint);
+      }
+      return row;
+    }
+
+    row.appendChild(SB.el('span', 'feed-label', 'feed'));
+
+    list.forEach(function (e) {
+      const cell = SB.el('button', 'feed-cell' +
+        (e.mentioned ? '' : ' unmentioned') +
+        (e.images.length ? '' : ' empty'));
+      const n = e.numbers.length
+        ? (e.numbers.length === 1 ? e.numbers[0] : e.numbers[0] + '–' + e.numbers[e.numbers.length - 1])
+        : '–';
+      cell.appendChild(SB.el('span', 'feed-n', String(n)));
+
+      if (e.images.length) {
+        const t = SB.el('span', 'feed-thumb');
+        const im = document.createElement('img');
+        im.src = SB.Blobs.src(P(), e.images[0]);
+        t.appendChild(im);
+        if (e.images.length > 1) t.appendChild(SB.el('span', 'feed-more', '×' + e.images.length));
+        cell.appendChild(t);
+      } else {
+        cell.appendChild(SB.el('span', 'feed-thumb none', '?'));
+      }
+
+      cell.appendChild(SB.el('span', 'feed-name', e.label));
+      cell.title = e.label + (e.why ? ' — ' + e.why : '') +
+        (e.images.length ? '\nClick to open it.' : '\nClick to fix it.');
+      cell.onclick = function (ev) {
+        ev.stopPropagation();
+        SB.RefBox.go(e.id);
+      };
+      row.appendChild(cell);
+    });
+
+    const imgs = SB.Refs.images(P(), sh);
+    if (imgs.length > SB.Personas.IMAGE_ADVICE) {
+      const warn = SB.el('span', 'feed-warn', imgs.length + ' images');
+      warn.title = 'Past ' + SB.Personas.IMAGE_ADVICE + ' references most image models start ' +
+        'averaging them together instead of reading them. Drop a mark, or drop a frame off one ' +
+        'of these subjects.';
+      row.appendChild(warn);
+    }
+    if (imgs.length) {
+      const copy = SB.el('button', 'mini feed-copy', 'copy image set');
+      copy.title = 'Save all ' + imgs.length + ' reference images, numbered in feed order, ' +
+        'so they go into the model in the order the prompt promises.';
+      copy.onclick = function (ev) {
+        ev.stopPropagation();
+        saveFeed(sh, imgs);
+      };
+      row.appendChild(copy);
+    }
+
+    /* A name in the text that is not a mark feeds nothing — the exact mistake
+       this feature exists to stop, said where it happens. */
+    const loose = SB.Refs.unlinked(P(), sh.description);
+    if (loose.length) {
+      const fix = SB.el('button', 'mini feed-fix',
+        loose.length === 1 ? 'link 1 name' : 'link ' + loose.length + ' names');
+      fix.title = loose.map(function (x) { return x.name; }).join(', ') +
+        (loose.length === 1 ? ' is named' : ' are named') +
+        ' in the description but not referenced, so no picture is sent for ' +
+        (loose.length === 1 ? 'it' : 'them') + '. Click to link ' +
+        (loose.length === 1 ? 'it' : 'them') + '.';
+      fix.onclick = function (ev) {
+        ev.stopPropagation();
+        sh.description = SB.Refs.linkAll(P(), sh.description);
+        SB.app.changed(true);
+        SB.toast(loose.length + (loose.length === 1 ? ' name' : ' names') + ' linked');
+      };
+      row.appendChild(fix);
+    }
+    return row;
+  }
+
+  function refreshFeed(id) {
+    document.querySelectorAll('.feed-row[data-feed="' + id + '"]').forEach(function (row) {
+      const f = SB.Model.findShot(P(), id);
+      if (!f) return;
+      row.parentNode.replaceChild(feedRow(f.shot), row);
+    });
+  }
+
+  /* Hand the images over in feed order. Named 1_, 2_, … because the order is
+   * the promise the prompt's mapping makes, and a folder sorts by name. */
+  function saveFeed(sh, imgs) {
+    let n = 0;
+    imgs.forEach(function (e) {
+      const src = SB.Blobs.src(P(), e.img);
+      if (!src) return;
+      const a = document.createElement('a');
+      a.href = src;
+      a.download = e.n + '_' + String(e.label || 'ref').replace(/[^\w-]+/g, '-') +
+        (e.role ? '_' + String(e.role).replace(/[^\w-]+/g, '-') : '') + '.jpg';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      n++;
+    });
+    SB.toast(n + ' reference image' + (n === 1 ? '' : 's') + ' saved, numbered in feed order');
+  }
+
   function castPicker(anchor, sh) {
     const old = document.querySelector('.cast-pop');
     if (old) old.remove();
@@ -6285,6 +6971,7 @@ window.SB = window.SB || {};
       if (!f) return;
       const fresh = castRow(f.shot);
       row.parentNode.replaceChild(fresh, row);
+      refreshFeed(f.shot.id);      // who is cast decides what is fed
     });
   }
 
@@ -6516,6 +7203,7 @@ window.SB = window.SB || {};
     renderScriptWindows: renderScriptWindows,
     refreshCast: refreshCast,
     refreshCastRows: refreshCastRows, refreshPromptStale: refreshPromptStale,
+    refreshFeed: refreshFeed,
     setImage: setImage,
     swap: doSwap,
     armSwap: armSwap,
@@ -7201,7 +7889,8 @@ window.SB = window.SB || {};
       SCENE: f ? (f.scene.heading || '') : '',
       SCENE_DESC: f ? (f.scene.description || '') : '',
       SCRIPT: w.doc.text.slice(w.from, w.to),
-      DESCRIPTION: shot.description || '',
+      /* marks resolve to the names they have now — the writer gets prose */
+      DESCRIPTION: SB.Refs.plain(P(), shot.description),
       FIELDS: SB.Fields.promptBlock(P(), shot)
     };
     /* the project's own boxes, each usable on its own: {{ART_DIRECTION}} etc. */
@@ -7629,7 +8318,7 @@ window.SB = window.SB || {};
     return sc.shots.filter(function (sh) { return (sh.description || '').trim(); })
       .map(function (sh) {
         return '- ' + (sh.type || 'shot') + ': ' +
-          sh.description.replace(/\s+/g, ' ').trim().slice(0, 200);
+          SB.Refs.plain(p, sh.description).replace(/\s+/g, ' ').trim().slice(0, 200);
       });
   }
 
@@ -7951,9 +8640,12 @@ window.SB = window.SB || {};
           ? blank : SB.Model.addShot(p, sc.id, {});
         if (!sh) return;
         sh.type = type;
-        sh.description = description;
         const pid = idsFor(x);
         if (pid.length) sh.personaIds = pid;
+        /* The writer hands back prose naming the people it used. Linking those
+           names here is what makes a generated card arrive already saying which
+           pictures go with it, rather than looking finished and feeding none. */
+        sh.description = SB.Refs.linkAll(p, description);
         made.push(sh);
       });
       if (!made.length) {
@@ -8055,7 +8747,7 @@ window.SB = window.SB || {};
       return SB.Personas.kindOf(per).id === 'person';
     });
     if (!people.length) return null;
-    const terms = wardrobeTerms(sh.description);
+    const terms = wardrobeTerms(SB.Refs.plain(p, sh.description));
     return terms.length ? terms : null;
   }
 
@@ -8136,7 +8828,7 @@ window.SB = window.SB || {};
           return '- ' + (per.name || 'unnamed') + ': ' +
             (per.description || '').replace(/\s+/g, ' ').trim();
         }).join('\n') + '\n' : '',
-      'DESCRIPTION:\n' + (sh.description || '').trim()
+      'DESCRIPTION:\n' + SB.Refs.plain(p, sh.description).trim()
     ].filter(Boolean).join('\n');
   }
 
@@ -8155,9 +8847,9 @@ window.SB = window.SB || {};
     const queue = [];
     list.forEach(function (sh) {
       const cast = SB.Personas.forShot(p, sh);
-      const cut = stripCast(sh.description, cast);
-      if (cut !== (sh.description || '').trim() && !wardrobeTerms(cut).length) {
-        changes.push({ id: sh.id, from: sh.description, to: cut });
+      const cut = stripCast(SB.Refs.plain(p, sh.description), cast);
+      if (cut !== SB.Refs.plain(p, sh.description).trim() && !wardrobeTerms(cut).length) {
+        changes.push({ id: sh.id, from: sh.description, to: SB.Refs.linkAll(p, cut) });
         stripped++;
         return;
       }
@@ -8207,7 +8899,12 @@ window.SB = window.SB || {};
       return SB.Prompts.raw(cleanPrompt(p, j.shot, j.cast), CLEAN_SCHEMA, system)
         .then(function (out) {
           const next = String((out && out.description) || '').trim();
-          if (next) changes.push({ id: j.shot.id, from: j.shot.description, to: deprompt(next) });
+          if (next) {
+            changes.push({
+              id: j.shot.id, from: j.shot.description,
+              to: SB.Refs.linkAll(p, deprompt(next))     // the rewrite came back as prose
+            });
+          }
           else failed++;
         })
         .catch(function (e) {
@@ -9432,18 +10129,18 @@ window.SB = window.SB || {};
     });
     fields.appendChild(hd);
 
-    const d = document.createElement('textarea');
-    d.className = 'sh-desc';
-    d.rows = 3;
-    d.value = sc.description || '';
-    d.placeholder = 'Scene description — what happens here, in prose.';
+    const d = SB.el('div', 'sh-desc');
     d.dataset.scene = sc.id;
-    d.addEventListener('input', function () {
-      sc.description = d.value;
-      SB.app.changed(false);
-      SB.Board.syncSceneFields(sc.id);
+    SB.RefBox.attach(d, {
+      get: function () { return sc.description || ''; },
+      set: function (t) {
+        sc.description = t;
+        SB.app.changed(false);
+        SB.Board.syncSceneFields(sc.id);
+      },
+      placeholder: 'Scene description — what happens here, in prose.',
+      ctx: { scene: sc }
     });
-    SB.Mentions.attach(d, { scene: sc });
     fields.appendChild(d);
     fields.appendChild(SB.Board.sceneAi(sc, d));
     row.appendChild(fields);
@@ -9522,26 +10219,29 @@ window.SB = window.SB || {};
 </script>
 <script>
 /* ===== js/mentions.js ===== */
-/* mentions.js — type @ to name somebody, somewhere or something.
+/* mentions.js — the @ popover.
  *
- * Picking from the popover does two things, and the second one is the point:
+ * @ means one thing: THE MODEL WILL BE SHOWN A PICTURE OF THIS.
  *
- *   1. it writes the plain name into the text, so the description reads as
- *      prose — "Ops lead crouches beside the cabinet", not @[Ops lead](per_7).
- *      A sentinel would leak into every prompt and would have to be stripped
- *      out again in three places.
- *   2. it casts that subject on the shot.
+ *   @a subject  ->  its reference frames go into the feed
+ *   @a shot     ->  that shot's rendered frame goes into the feed
+ *   the order of the marks in the sentence is the order of the images
  *
- * (2) is what tells the model anything. The name in the description says who
- * is doing what; the cast block (personas.js) is what carries their face,
- * their wardrobe and the "image N" mapping, and it is declared authoritative
- * over the description precisely so the two cannot disagree. So @ is not a
- * link — it is the fastest way to attach the record that already exists.
+ * Picking from this list writes a mark (refs.js), which the box draws as a
+ * link and the card turns into a numbered feed strip. Knowing when to hand a
+ * model a reference image is the expertise this replaces; written as one rule
+ * with a visible consequence, it is something a person can follow on their
+ * first day.
  *
- * Only plain textareas are wired up. The master script and the tied scene
- * boxes are Doc-backed contenteditable, where every shot anchor is an offset
- * into the same string: inserting text behind SB.Doc.replace would desync the
- * whole file. That wants doing through the Doc primitive, and is its own job.
+ * The list also carries what a pick will actually feed — "2 frames", "no
+ * reference image", "not rendered yet" — because a mark that feeds nothing is
+ * the failure this is meant to prevent, and the moment to say so is now.
+ *
+ * Both kinds of box are driven: a plain textarea, and the contenteditable
+ * reference box (refbox.js) that renders marks as links. Not the master script
+ * or the tied scene boxes — those are Doc-backed, where every shot anchor is an
+ * offset into one shared string, and inserting text behind SB.Doc.replace would
+ * desync the file.
  */
 (function (SB) {
   'use strict';
@@ -9550,6 +10250,23 @@ window.SB = window.SB || {};
   let items = [], active = 0, at = -1, term = '';
 
   function P() { return SB.app.project; }
+
+  /* A textarea answers with .value and .selectionStart; the reference box has
+   * to be read out of the DOM. Everything below goes through these three, so
+   * the popover does not care which it is driving. */
+  function rich(el) { return el.isContentEditable; }
+  function val(el) { return rich(el) ? SB.RefBox.read(el) : el.value; }
+  function pos(el) { return rich(el) ? SB.RefBox.caret(el) : el.selectionStart; }
+  function put(el, text, at) {
+    if (rich(el)) {
+      SB.RefBox.write(el, P(), text);
+      SB.RefBox.setCaret(el, at);
+      el.classList.toggle('empty', !text);
+      return;
+    }
+    el.value = text;
+    el.setSelectionRange(at, at);
+  }
 
   /* An @ only opens the popover at the start of a word — mid-word it is an
    * email address or a handle somebody is quoting, and stealing those
@@ -9584,17 +10301,17 @@ window.SB = window.SB || {};
       if (ev.key !== '@') return;
     }
     if (ev.key !== '@') return;
-    const before = el.value.slice(0, el.selectionStart).slice(-1);
+    const before = String(val(el)).slice(0, pos(el)).slice(-1);
     if (!boundary(before)) return;
     /* The @ itself is typed as normal; the popover opens on the next tick with
        the caret already past it, so the offsets below are simple. */
     host = el;
     ctx = opts;
     setTimeout(function () {
-      const pos = el.selectionStart - 1;
-      if (el.value.charAt(pos) !== '@') { host = null; return; }
+      const at = pos(el) - 1;
+      if (String(val(el)).charAt(at) !== '@') { host = null; return; }
       term = '';
-      show(pos);
+      show(at);
     }, 0);
   }
 
@@ -9603,11 +10320,19 @@ window.SB = window.SB || {};
    * plainly not a mention). */
   function typed() {
     if (!host || at < 0) return null;
-    const caret = host.selectionStart;
-    if (caret <= at) return null;
-    const s = host.value.slice(at + 1, caret);
+    const caret = pos(host);
+    if (caret == null || caret <= at) return null;
+    const s = String(val(host)).slice(at + 1, caret);
     if (/[\n@]/.test(s) || s.length > 40) return null;
     return s;
+  }
+
+  /* What picking this would actually feed — said here, because a mark that
+   * feeds nothing is the whole failure this is meant to prevent. */
+  function note(per) {
+    const n = SB.Personas.imagesOf(per).length;
+    if (!n) return { text: 'no reference image', warn: true };
+    return { text: n === 1 ? '1 frame' : n + ' frames', warn: false };
   }
 
   function candidates() {
@@ -9617,15 +10342,34 @@ window.SB = window.SB || {};
     SB.Personas.KINDS.forEach(function (kind) {
       SB.Personas.ofKind(p, kind.id).forEach(function (per) {
         const name = (per.name || '').toLowerCase();
-        if (!t) { out.push({ per: per, kind: kind, rank: 1 }); return; }
+        const e = { per: per, kind: kind, id: per.id, label: per.name || 'unnamed', note: note(per) };
+        if (!t) { e.rank = 1; out.push(e); return; }
         const i = name.indexOf(t);
-        if (i === 0) out.push({ per: per, kind: kind, rank: 0 });
-        else if (i > 0) out.push({ per: per, kind: kind, rank: 1 });
-        else if ((per.description || '').toLowerCase().indexOf(t) >= 0) {
-          out.push({ per: per, kind: kind, rank: 2 });
-        }
+        if (i === 0) { e.rank = 0; out.push(e); }
+        else if (i > 0) { e.rank = 1; out.push(e); }
+        else if ((per.description || '').toLowerCase().indexOf(t) >= 0) { e.rank = 2; out.push(e); }
       });
     });
+
+    /* A shot is a reference image like any other: its rendered frame. This is
+       how you riff — "reverse of @1C" says the relation, the feed and the
+       prose in one line. The card being written is not offered to itself. */
+    SB.Model.eachShot(p, function (sh, sc, si, sj) {
+      if (ctx && ctx.shot && sh.id === ctx.shot.id) return;
+      const code = SB.Model.code(si, sj);
+      const desc = SB.Refs.plain(p, sh.description).replace(/\s+/g, ' ').trim();
+      const hay = (code + ' ' + (sh.type || '') + ' ' + desc).toLowerCase();
+      if (t && hay.indexOf(t) < 0) return;
+      out.push({
+        shot: sh, id: sh.id, label: code,
+        kind: { id: 'shot', label: 'Shot', one: 'shot' },
+        rank: t && code.toLowerCase().indexOf(t) === 0 ? 0 : 3,
+        sub: (sh.type ? sh.type + ' — ' : '') + (desc.slice(0, 48) || 'no description'),
+        note: sh.image ? { text: 'frame', warn: false }
+                       : { text: 'not rendered yet', warn: true }
+      });
+    });
+
     out.sort(function (a, b) { return a.rank - b.rank; });
     const list = out.slice(0, 8);
     /* Writing is when you find out somebody is missing, so minting one is on
@@ -9680,10 +10424,10 @@ window.SB = window.SB || {};
         row.appendChild(SB.el('span', 'men-kind', '+'));
         row.appendChild(SB.el('span', 'men-name', 'new ' + it.kind.one + ' “' + term.trim() + '”'));
       } else {
-        const n = SB.Personas.imagesOf(it.per).length;
         row.appendChild(SB.el('span', 'men-kind kind-' + it.kind.id, it.kind.label));
-        row.appendChild(SB.el('span', 'men-name', it.per.name || 'unnamed'));
-        if (n) row.appendChild(SB.el('span', 'men-img', n > 1 ? '◉ ×' + n : '◉'));
+        row.appendChild(SB.el('span', 'men-name', it.label));
+        if (it.sub) row.appendChild(SB.el('span', 'men-sub', it.sub));
+        row.appendChild(SB.el('span', 'men-img' + (it.note.warn ? ' warn' : ''), it.note.text));
       }
       row.addEventListener('mouseenter', function () {
         active = i;
@@ -9717,6 +10461,28 @@ window.SB = window.SB || {};
   }
 
   function caretPoint() {
+    /* A contenteditable will tell you where the caret is; a textarea will not,
+       which is what the mirror below is for. */
+    if (rich(host)) {
+      const sel = window.getSelection();
+      if (sel && sel.rangeCount) {
+        const r = sel.getRangeAt(0).cloneRange();
+        r.collapse(true);
+        let rect = r.getClientRects()[0];
+        if (!rect) {
+          const probe = document.createElement('span');
+          probe.textContent = '​';
+          r.insertNode(probe);
+          rect = probe.getBoundingClientRect();
+          probe.remove();
+        }
+        if (rect) {
+          const hb = host.getBoundingClientRect();
+          return { x: rect.left - hb.left, y: rect.top - hb.top, h: rect.height || 16 };
+        }
+      }
+      return { x: 0, y: 0, h: 16 };
+    }
     const cs = window.getComputedStyle(host);
     const mirror = SB.el('div', 'men-mirror');
     ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing',
@@ -9744,6 +10510,20 @@ window.SB = window.SB || {};
   function choose(it) {
     if (!host) return;
     const p = P();
+    /* a shot: its frame is the reference, and there is nothing to cast */
+    if (it.shot) {
+      const el = host;
+      const caret = pos(el);
+      const next = SB.Refs.insert(val(el), at, caret, it.shot.id, it.label);
+      hide();
+      put(el, next.text, next.caret);
+      el.focus();
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      SB.Store.touch();
+      SB.UsagePanel.badgeSoon();
+      if (!it.shot.image) SB.toast(it.label + ' has no frame yet — render it and this feeds it', true);
+      return;
+    }
     let per = it.per;
     if (it.make) {
       const nm = term.trim();
@@ -9755,13 +10535,12 @@ window.SB = window.SB || {};
     /* hide() forgets which box this was, so hold on to it first. */
     const el = host, where = ctx;
     const name = per.name || 'unnamed';
-    const caret = el.selectionStart;
-    const before = el.value.slice(0, at);
-    const after = el.value.slice(caret);
-    el.value = before + name + after;
-    const pos = before.length + name.length;
+    const caret = pos(el);
+    /* A mark, not a name: it carries the id, so renaming the subject or
+       renumbering the shot never has to touch a single description. */
+    const next = SB.Refs.insert(val(el), at, caret, per.id, name);
     hide();
-    el.setSelectionRange(pos, pos);
+    put(el, next.text, next.caret);
     el.focus();
 
     /* Fire the box's own input handler so whatever it writes to — a shot
@@ -10901,7 +11680,7 @@ window.SB = window.SB || {};
           color: sh.color || SB.Model.CARD_COLORS[0],
           img: sh.image ? SB.Blobs.src(p, sh.image) : null,
           script: SB.Doc.renderHTML(w.doc, w.from, w.to, null),
-          desc: sh.description || ''
+          desc: SB.Refs.plain(p, sh.description)
         });
         first = false;
       });

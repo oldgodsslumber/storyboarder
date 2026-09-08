@@ -1,23 +1,26 @@
-/* mentions.js — type @ to name somebody, somewhere or something.
+/* mentions.js — the @ popover.
  *
- * Picking from the popover does two things, and the second one is the point:
+ * @ means one thing: THE MODEL WILL BE SHOWN A PICTURE OF THIS.
  *
- *   1. it writes the plain name into the text, so the description reads as
- *      prose — "Ops lead crouches beside the cabinet", not @[Ops lead](per_7).
- *      A sentinel would leak into every prompt and would have to be stripped
- *      out again in three places.
- *   2. it casts that subject on the shot.
+ *   @a subject  ->  its reference frames go into the feed
+ *   @a shot     ->  that shot's rendered frame goes into the feed
+ *   the order of the marks in the sentence is the order of the images
  *
- * (2) is what tells the model anything. The name in the description says who
- * is doing what; the cast block (personas.js) is what carries their face,
- * their wardrobe and the "image N" mapping, and it is declared authoritative
- * over the description precisely so the two cannot disagree. So @ is not a
- * link — it is the fastest way to attach the record that already exists.
+ * Picking from this list writes a mark (refs.js), which the box draws as a
+ * link and the card turns into a numbered feed strip. Knowing when to hand a
+ * model a reference image is the expertise this replaces; written as one rule
+ * with a visible consequence, it is something a person can follow on their
+ * first day.
  *
- * Only plain textareas are wired up. The master script and the tied scene
- * boxes are Doc-backed contenteditable, where every shot anchor is an offset
- * into the same string: inserting text behind SB.Doc.replace would desync the
- * whole file. That wants doing through the Doc primitive, and is its own job.
+ * The list also carries what a pick will actually feed — "2 frames", "no
+ * reference image", "not rendered yet" — because a mark that feeds nothing is
+ * the failure this is meant to prevent, and the moment to say so is now.
+ *
+ * Both kinds of box are driven: a plain textarea, and the contenteditable
+ * reference box (refbox.js) that renders marks as links. Not the master script
+ * or the tied scene boxes — those are Doc-backed, where every shot anchor is an
+ * offset into one shared string, and inserting text behind SB.Doc.replace would
+ * desync the file.
  */
 (function (SB) {
   'use strict';
@@ -26,6 +29,23 @@
   let items = [], active = 0, at = -1, term = '';
 
   function P() { return SB.app.project; }
+
+  /* A textarea answers with .value and .selectionStart; the reference box has
+   * to be read out of the DOM. Everything below goes through these three, so
+   * the popover does not care which it is driving. */
+  function rich(el) { return el.isContentEditable; }
+  function val(el) { return rich(el) ? SB.RefBox.read(el) : el.value; }
+  function pos(el) { return rich(el) ? SB.RefBox.caret(el) : el.selectionStart; }
+  function put(el, text, at) {
+    if (rich(el)) {
+      SB.RefBox.write(el, P(), text);
+      SB.RefBox.setCaret(el, at);
+      el.classList.toggle('empty', !text);
+      return;
+    }
+    el.value = text;
+    el.setSelectionRange(at, at);
+  }
 
   /* An @ only opens the popover at the start of a word — mid-word it is an
    * email address or a handle somebody is quoting, and stealing those
@@ -60,17 +80,17 @@
       if (ev.key !== '@') return;
     }
     if (ev.key !== '@') return;
-    const before = el.value.slice(0, el.selectionStart).slice(-1);
+    const before = String(val(el)).slice(0, pos(el)).slice(-1);
     if (!boundary(before)) return;
     /* The @ itself is typed as normal; the popover opens on the next tick with
        the caret already past it, so the offsets below are simple. */
     host = el;
     ctx = opts;
     setTimeout(function () {
-      const pos = el.selectionStart - 1;
-      if (el.value.charAt(pos) !== '@') { host = null; return; }
+      const at = pos(el) - 1;
+      if (String(val(el)).charAt(at) !== '@') { host = null; return; }
       term = '';
-      show(pos);
+      show(at);
     }, 0);
   }
 
@@ -79,11 +99,19 @@
    * plainly not a mention). */
   function typed() {
     if (!host || at < 0) return null;
-    const caret = host.selectionStart;
-    if (caret <= at) return null;
-    const s = host.value.slice(at + 1, caret);
+    const caret = pos(host);
+    if (caret == null || caret <= at) return null;
+    const s = String(val(host)).slice(at + 1, caret);
     if (/[\n@]/.test(s) || s.length > 40) return null;
     return s;
+  }
+
+  /* What picking this would actually feed — said here, because a mark that
+   * feeds nothing is the whole failure this is meant to prevent. */
+  function note(per) {
+    const n = SB.Personas.imagesOf(per).length;
+    if (!n) return { text: 'no reference image', warn: true };
+    return { text: n === 1 ? '1 frame' : n + ' frames', warn: false };
   }
 
   function candidates() {
@@ -93,15 +121,34 @@
     SB.Personas.KINDS.forEach(function (kind) {
       SB.Personas.ofKind(p, kind.id).forEach(function (per) {
         const name = (per.name || '').toLowerCase();
-        if (!t) { out.push({ per: per, kind: kind, rank: 1 }); return; }
+        const e = { per: per, kind: kind, id: per.id, label: per.name || 'unnamed', note: note(per) };
+        if (!t) { e.rank = 1; out.push(e); return; }
         const i = name.indexOf(t);
-        if (i === 0) out.push({ per: per, kind: kind, rank: 0 });
-        else if (i > 0) out.push({ per: per, kind: kind, rank: 1 });
-        else if ((per.description || '').toLowerCase().indexOf(t) >= 0) {
-          out.push({ per: per, kind: kind, rank: 2 });
-        }
+        if (i === 0) { e.rank = 0; out.push(e); }
+        else if (i > 0) { e.rank = 1; out.push(e); }
+        else if ((per.description || '').toLowerCase().indexOf(t) >= 0) { e.rank = 2; out.push(e); }
       });
     });
+
+    /* A shot is a reference image like any other: its rendered frame. This is
+       how you riff — "reverse of @1C" says the relation, the feed and the
+       prose in one line. The card being written is not offered to itself. */
+    SB.Model.eachShot(p, function (sh, sc, si, sj) {
+      if (ctx && ctx.shot && sh.id === ctx.shot.id) return;
+      const code = SB.Model.code(si, sj);
+      const desc = SB.Refs.plain(p, sh.description).replace(/\s+/g, ' ').trim();
+      const hay = (code + ' ' + (sh.type || '') + ' ' + desc).toLowerCase();
+      if (t && hay.indexOf(t) < 0) return;
+      out.push({
+        shot: sh, id: sh.id, label: code,
+        kind: { id: 'shot', label: 'Shot', one: 'shot' },
+        rank: t && code.toLowerCase().indexOf(t) === 0 ? 0 : 3,
+        sub: (sh.type ? sh.type + ' — ' : '') + (desc.slice(0, 48) || 'no description'),
+        note: sh.image ? { text: 'frame', warn: false }
+                       : { text: 'not rendered yet', warn: true }
+      });
+    });
+
     out.sort(function (a, b) { return a.rank - b.rank; });
     const list = out.slice(0, 8);
     /* Writing is when you find out somebody is missing, so minting one is on
@@ -156,10 +203,10 @@
         row.appendChild(SB.el('span', 'men-kind', '+'));
         row.appendChild(SB.el('span', 'men-name', 'new ' + it.kind.one + ' “' + term.trim() + '”'));
       } else {
-        const n = SB.Personas.imagesOf(it.per).length;
         row.appendChild(SB.el('span', 'men-kind kind-' + it.kind.id, it.kind.label));
-        row.appendChild(SB.el('span', 'men-name', it.per.name || 'unnamed'));
-        if (n) row.appendChild(SB.el('span', 'men-img', n > 1 ? '◉ ×' + n : '◉'));
+        row.appendChild(SB.el('span', 'men-name', it.label));
+        if (it.sub) row.appendChild(SB.el('span', 'men-sub', it.sub));
+        row.appendChild(SB.el('span', 'men-img' + (it.note.warn ? ' warn' : ''), it.note.text));
       }
       row.addEventListener('mouseenter', function () {
         active = i;
@@ -193,6 +240,28 @@
   }
 
   function caretPoint() {
+    /* A contenteditable will tell you where the caret is; a textarea will not,
+       which is what the mirror below is for. */
+    if (rich(host)) {
+      const sel = window.getSelection();
+      if (sel && sel.rangeCount) {
+        const r = sel.getRangeAt(0).cloneRange();
+        r.collapse(true);
+        let rect = r.getClientRects()[0];
+        if (!rect) {
+          const probe = document.createElement('span');
+          probe.textContent = '​';
+          r.insertNode(probe);
+          rect = probe.getBoundingClientRect();
+          probe.remove();
+        }
+        if (rect) {
+          const hb = host.getBoundingClientRect();
+          return { x: rect.left - hb.left, y: rect.top - hb.top, h: rect.height || 16 };
+        }
+      }
+      return { x: 0, y: 0, h: 16 };
+    }
     const cs = window.getComputedStyle(host);
     const mirror = SB.el('div', 'men-mirror');
     ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing',
@@ -220,6 +289,20 @@
   function choose(it) {
     if (!host) return;
     const p = P();
+    /* a shot: its frame is the reference, and there is nothing to cast */
+    if (it.shot) {
+      const el = host;
+      const caret = pos(el);
+      const next = SB.Refs.insert(val(el), at, caret, it.shot.id, it.label);
+      hide();
+      put(el, next.text, next.caret);
+      el.focus();
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      SB.Store.touch();
+      SB.UsagePanel.badgeSoon();
+      if (!it.shot.image) SB.toast(it.label + ' has no frame yet — render it and this feeds it', true);
+      return;
+    }
     let per = it.per;
     if (it.make) {
       const nm = term.trim();
@@ -231,13 +314,12 @@
     /* hide() forgets which box this was, so hold on to it first. */
     const el = host, where = ctx;
     const name = per.name || 'unnamed';
-    const caret = el.selectionStart;
-    const before = el.value.slice(0, at);
-    const after = el.value.slice(caret);
-    el.value = before + name + after;
-    const pos = before.length + name.length;
+    const caret = pos(el);
+    /* A mark, not a name: it carries the id, so renaming the subject or
+       renumbering the shot never has to touch a single description. */
+    const next = SB.Refs.insert(val(el), at, caret, per.id, name);
     hide();
-    el.setSelectionRange(pos, pos);
+    put(el, next.text, next.caret);
     el.focus();
 
     /* Fire the box's own input handler so whatever it writes to — a shot

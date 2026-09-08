@@ -97,7 +97,7 @@
     return sc.shots.filter(function (sh) { return (sh.description || '').trim(); })
       .map(function (sh) {
         return '- ' + (sh.type || 'shot') + ': ' +
-          sh.description.replace(/\s+/g, ' ').trim().slice(0, 200);
+          SB.Refs.plain(p, sh.description).replace(/\s+/g, ' ').trim().slice(0, 200);
       });
   }
 
@@ -419,9 +419,12 @@
           ? blank : SB.Model.addShot(p, sc.id, {});
         if (!sh) return;
         sh.type = type;
-        sh.description = description;
         const pid = idsFor(x);
         if (pid.length) sh.personaIds = pid;
+        /* The writer hands back prose naming the people it used. Linking those
+           names here is what makes a generated card arrive already saying which
+           pictures go with it, rather than looking finished and feeding none. */
+        sh.description = SB.Refs.linkAll(p, description);
         made.push(sh);
       });
       if (!made.length) {
@@ -523,7 +526,7 @@
       return SB.Personas.kindOf(per).id === 'person';
     });
     if (!people.length) return null;
-    const terms = wardrobeTerms(sh.description);
+    const terms = wardrobeTerms(SB.Refs.plain(p, sh.description));
     return terms.length ? terms : null;
   }
 
@@ -604,7 +607,7 @@
           return '- ' + (per.name || 'unnamed') + ': ' +
             (per.description || '').replace(/\s+/g, ' ').trim();
         }).join('\n') + '\n' : '',
-      'DESCRIPTION:\n' + (sh.description || '').trim()
+      'DESCRIPTION:\n' + SB.Refs.plain(p, sh.description).trim()
     ].filter(Boolean).join('\n');
   }
 
@@ -623,9 +626,9 @@
     const queue = [];
     list.forEach(function (sh) {
       const cast = SB.Personas.forShot(p, sh);
-      const cut = stripCast(sh.description, cast);
-      if (cut !== (sh.description || '').trim() && !wardrobeTerms(cut).length) {
-        changes.push({ id: sh.id, from: sh.description, to: cut });
+      const cut = stripCast(SB.Refs.plain(p, sh.description), cast);
+      if (cut !== SB.Refs.plain(p, sh.description).trim() && !wardrobeTerms(cut).length) {
+        changes.push({ id: sh.id, from: sh.description, to: SB.Refs.linkAll(p, cut) });
         stripped++;
         return;
       }
@@ -675,7 +678,12 @@
       return SB.Prompts.raw(cleanPrompt(p, j.shot, j.cast), CLEAN_SCHEMA, system)
         .then(function (out) {
           const next = String((out && out.description) || '').trim();
-          if (next) changes.push({ id: j.shot.id, from: j.shot.description, to: deprompt(next) });
+          if (next) {
+            changes.push({
+              id: j.shot.id, from: j.shot.description,
+              to: SB.Refs.linkAll(p, deprompt(next))     // the rewrite came back as prose
+            });
+          }
           else failed++;
         })
         .catch(function (e) {

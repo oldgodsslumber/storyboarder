@@ -29,7 +29,8 @@
       SCENE: f ? (f.scene.heading || '') : '',
       SCENE_DESC: f ? (f.scene.description || '') : '',
       SCRIPT: w.doc.text.slice(w.from, w.to),
-      DESCRIPTION: shot.description || '',
+      /* marks resolve to the names they have now — the writer gets prose */
+      DESCRIPTION: SB.Refs.plain(P(), shot.description),
       FIELDS: SB.Fields.promptBlock(P(), shot)
     };
     /* the project's own boxes, each usable on its own: {{ART_DIRECTION}} etc. */

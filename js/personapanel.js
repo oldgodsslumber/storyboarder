@@ -832,18 +832,18 @@
     });
     fields.appendChild(hd);
 
-    const d = document.createElement('textarea');
-    d.className = 'sh-desc';
-    d.rows = 3;
-    d.value = sc.description || '';
-    d.placeholder = 'Scene description — what happens here, in prose.';
+    const d = SB.el('div', 'sh-desc');
     d.dataset.scene = sc.id;
-    d.addEventListener('input', function () {
-      sc.description = d.value;
-      SB.app.changed(false);
-      SB.Board.syncSceneFields(sc.id);
+    SB.RefBox.attach(d, {
+      get: function () { return sc.description || ''; },
+      set: function (t) {
+        sc.description = t;
+        SB.app.changed(false);
+        SB.Board.syncSceneFields(sc.id);
+      },
+      placeholder: 'Scene description — what happens here, in prose.',
+      ctx: { scene: sc }
     });
-    SB.Mentions.attach(d, { scene: sc });
     fields.appendChild(d);
     fields.appendChild(SB.Board.sceneAi(sc, d));
     row.appendChild(fields);

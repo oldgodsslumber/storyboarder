@@ -416,20 +416,52 @@ not change is the same problem as a face that must not change. Each holds a **na
 
 ### Typing @
 
-In any shot description, custom field or scene description, **@** opens a list of everything
-in the library, filtered as you keep typing. Picking one writes the plain name into the text
-*and casts that subject on the card*. If nothing matches, the last rows offer to mint a new
-person, location or object with the name you just typed — so the library grows while you
-write instead of on a separate trip.
+**@ means the model will be shown a picture of this.** One rule, and everything follows:
 
-The name in the description only says who is doing what. The casting is the half that
-reaches the model: the CAST block carries the appearance, the wardrobe and the image
-numbering, and it is declared authoritative over anything the description says about how
-things look. That is why @ attaches the record rather than writing a link.
+- `@a subject` — its reference frames go into the feed
+- `@another shot` — that shot's rendered frame goes into the feed
+- **the order of the marks in your sentence is the order of the images**
+- no mark — not shown, only described
+
+Type `@` in a shot description, a custom field or a scene description and the list opens,
+filtered as you keep typing, showing what each pick would actually feed — *2 frames*, *no
+reference image*, *not rendered yet*. If nothing matches, the last rows mint a new person,
+location or object with the name you just typed. A mark is drawn as an underlined link:
+click it to open the subject, or to jump to the shot.
+
+Knowing when to hand a model a reference image is expertise. Written as one rule with a
+visible consequence, it is a process somebody can follow on their first day — which is the
+whole point.
+
+Under every description is the **feed**: the images this card hands over, numbered in order,
+with thumbnails. **copy image set** saves them named `1_`, `2_`… so a folder sorts into the
+order the prompt promises. A mark with nothing behind it goes amber and takes no number. A
+name typed *without* a mark feeds nothing, so the card offers to **link** it. Past four
+images it says so, because that is where most models start averaging references instead of
+reading them.
+
+Marks are stored as ids, so renaming a subject or renumbering the board rewrites nothing.
+Deleting a subject leaves its last known name behind as ordinary prose. Nothing but prose
+ever reaches a model: the marks resolve on the way out.
 
 The master script and tied scene boxes are deliberately left out: every shot anchor there is
 an offset into one shared string, and inserting text behind that machinery would desync the
 file.
+
+### Riffing off a shot
+
+A board gets made by standing on a finished shot and wanting the next one *off* it — the
+reverse, tighter, a moment later. **▸ riff** on a card adds a shot straight after it,
+carrying its cast across and seeding the description with a reference to it. Then you only
+have to say what changes:
+
+> Reverse of **1C** — camera behind **Colleague**, looking back at **Writer**.
+
+That one line is the relation, the feed and the prose at once. The feed becomes `1 ▸ 1C's
+frame, 2 ▸ Colleague, 3 ▸ Writer`, and the request tells the model image 1 is the frame this
+one is derived from — keep its place, its light, its wardrobe and its staging, change only
+what the description asks. If the source has not been rendered yet, the card says so instead
+of feeding nothing.
 
 ### The scene organizer
 
@@ -653,7 +685,9 @@ js/brand.js       house style, scene context, gendered-language check
 js/personas.js    recurring people, places and things + reference-image wording
 js/fields.js      the extra card text boxes, per project
 js/personapanel.js the reference library + scene organizer
-js/mentions.js    the @ popover over plain textareas
+js/refs.js        marks, the feed, and the boundary a model reads
+js/refbox.js      the description box that draws a mark as a link
+js/mentions.js    the @ popover
 js/prompts.js     Gemini prompt writing
 js/coverage.js    scene description -> shots, and the description rewrite
 js/promptpanel.js the Prompts panel

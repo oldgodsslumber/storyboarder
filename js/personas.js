@@ -267,13 +267,10 @@
 
     /* image N -> which subject, assigned before anything is written so the
      * per-kind sections can cite numbers the mapping will agree with */
-    const numbered = [];
-    cast.forEach(function (per) {
-      imagesOf(per).forEach(function (img) { numbered.push({ per: per, img: img }); });
-    });
+    const numbered = SB.Refs.images(p, shot);
     const rangeFor = function (per) {
-      const mine = [];
-      numbered.forEach(function (n, i) { if (n.per === per) mine.push(i + 1); });
+      const mine = numbered.filter(function (e) { return e.id === per.id; })
+        .map(function (e) { return e.n; });
       if (!mine.length) return '';
       if (mine.length === 1) return 'image ' + mine[0] + ' — ';
       return 'images ' + mine[0] + '–' + mine[mine.length - 1] + ' — ';
@@ -310,10 +307,12 @@
       const names = cast.filter(hasImage).map(function (x) { return x.name; }).join(', ');
       lines.push(tpl.replace(/\{\{N\}\}/g, function () { return 'N'; })
         .replace(/\{\{NAME\}\}/g, names));
-      numbered.forEach(function (n, i) {
-        const lbl = (n.img && n.img.label || '').trim();
-        lines.push('  image ' + (i + 1) + ' = ' + (n.per.name || 'unnamed') +
-          (lbl ? ' (' + lbl + ')' : ''));
+      /* The mapping is the feed's, not this block's: a shot's own rendered
+         frame is a reference like any other, and the numbers have to agree
+         with the strip on the card and with the files the person is about to
+         drop in. */
+      SB.Refs.images(p, shot).forEach(function (e) {
+        lines.push('  image ' + e.n + ' = ' + e.label + (e.role ? ' (' + e.role + ')' : ''));
       });
       /* Several frames of one subject read as several subjects unless this is
        * said outright — the failure is a second person walking into the shot. */
@@ -337,6 +336,20 @@
      * a writer looks like a manifest of who is in the picture — so somebody the
      * description had walking in later was drawn standing in the first frame.
      * What it actually answers is "how do they look", never "who is here". */
+    /* A frame of another shot in the feed is a reference the cast block knows
+       nothing about — it is not a person, it is a picture of an earlier moment.
+       Saying what it is turns "reverse of 1C" into an instruction. */
+    const shots = SB.Refs.feed(p, shot).filter(function (e) {
+      return e.kind === 'shot' && e.images.length;
+    });
+    if (shots.length) {
+      lines.push('EARLIER FRAMES SUPPLIED: ' + shots.map(function (e) {
+        return 'image ' + (e.numbers[0] || '?') + ' is the rendered frame of shot ' + e.label;
+      }).join('; ') + '. Treat it as the source this frame is derived from: keep its place, its ' +
+        'light, its wardrobe and its staging, and change only what the description asks you to ' +
+        'change. It is not a separate moment to include in the frame.');
+    }
+
     const late = arriving(p, shot);
     if (role === 'image' || role === 'both') {
       const who = role === 'both' ? 'In the FIRST-FRAME PROMPT, only' : 'Only';
@@ -437,7 +450,7 @@
     const script = (p.master.text || '').trim();
     const descs = [];
     SB.Model.eachShot(p, function (sh) {
-      if (sh.description) descs.push(sh.description);
+      if (sh.description) descs.push(SB.Refs.plain(p, sh.description));
     });
     if (!script && !descs.length) {
       return Promise.reject(new Error('Nothing to work from yet — write some script or shot descriptions first.'));
@@ -487,9 +500,5 @@
     readsAsArrival: readsAsArrival,
     touch: touch, editedAt: editedAt, staleFor: staleFor
   };
-
-  /* The panel, the board and the mentions popover all deal in subjects, not
-   * personas. Same object — the honest name for new code to read. */
-  SB.Refs = SB.Personas;
 
 })(window.SB);

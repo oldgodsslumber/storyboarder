@@ -134,7 +134,7 @@
           color: sh.color || SB.Model.CARD_COLORS[0],
           img: sh.image ? SB.Blobs.src(p, sh.image) : null,
           script: SB.Doc.renderHTML(w.doc, w.from, w.to, null),
-          desc: sh.description || ''
+          desc: SB.Refs.plain(p, sh.description)
         });
         first = false;
       });

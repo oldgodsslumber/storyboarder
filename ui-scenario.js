@@ -410,6 +410,23 @@
       SB.PromptPanel.close();
 
       const pauseTop = function () { return new Promise(function (r) { setTimeout(r, 40); }); };
+      /* the description boxes are contenteditable now, so a test types the way
+         the app does: set the text, put the caret, dispatch input */
+      const boxSet = function (box, text) {
+        if (box.isContentEditable) {
+          SB.RefBox.write(box, P(), text);
+          SB.RefBox.setCaret(box, text.length);
+        } else {
+          box.value = text;
+          box.setSelectionRange(text.length, text.length);
+        }
+      };
+      const boxAdd = function (box, tail) {
+        boxSet(box, boxGet(box) + tail);
+      };
+      const boxGet = function (box) {
+        return box.isContentEditable ? SB.RefBox.read(box) : box.value;
+      };
       // personas
       t('no cast row until personas exist',
         document.querySelectorAll('.cast-row').length === 0, '');
@@ -471,6 +488,34 @@
       t('the chip shows on the card',
         /Ops lead/.test(document.querySelector('.card .cast-row').textContent), '');
       castPop.remove();
+
+      // riffing: the next shot off this one, with its frame as the reference
+      {
+        var rCard = document.querySelector('.card[data-shot="' + firstShot.id + '"]');
+        var before = P().scenes[0].shots.length;
+        var atIdx = P().scenes[0].shots.indexOf(firstShot);
+        firstShot.image = SB.Blobs.image(P(),
+          'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 4, 3);
+        rCard.querySelector('.card-riff').click();
+        var made = P().scenes[0].shots[atIdx + 1];
+        t('riff adds a shot straight after the one it came from',
+          P().scenes[0].shots.length === before + 1 && made && made.id !== firstShot.id,
+          P().scenes[0].shots.length + ' shots');
+        t('and seeds it with a reference to that shot',
+          SB.Refs.parse(P(), made.description)[0].id === firstShot.id,
+          JSON.stringify(made.description));
+        t('so its frame is the first thing the new card feeds',
+          SB.Refs.feed(P(), made)[0].kind === 'shot' &&
+          SB.Refs.feed(P(), made)[0].numbers[0] === 1, '');
+        t('the cast comes with it, arrival marks and all',
+          made.personaIds.join(',') === firstShot.personaIds.join(','), '');
+        var rFeed = document.querySelector('.feed-row[data-feed="' + made.id + '"]');
+        t('and the new card shows the source in its strip',
+          !!rFeed && /1A|1B|1C/.test(rFeed.textContent), rFeed ? rFeed.textContent : 'none');
+        SB.Model.deleteShot(P(), made.id);
+        firstShot.image = null;
+        SB.app.changed(true);
+      }
 
       // a first frame is one instant: a chip on the card says who is not there
       // yet when it opens
@@ -660,27 +705,24 @@
       {
         var mCard2 = document.querySelectorAll('.card')[0];
         var box2 = mCard2.querySelector('.desc-box');
-        var wasD2 = box2.value;
+        var wasD2 = boxGet(box2);
         box2.focus();
         var typeAt = async function (tail) {
           box2.dispatchEvent(new KeyboardEvent('keydown', { key: '@', bubbles: true }));
-          box2.value += '@';
-          box2.setSelectionRange(box2.value.length, box2.value.length);
+          boxAdd(box2, '@');
           await pauseTop();
           if (tail) {
-            box2.value += tail;
-            box2.setSelectionRange(box2.value.length, box2.value.length);
+            boxAdd(box2, tail);
             box2.dispatchEvent(new Event('input', { bubbles: true }));
           }
         };
-        box2.value = 'Two of them: ';
-        box2.setSelectionRange(box2.value.length, box2.value.length);
+        boxSet(box2, 'Two of them: ');
         await typeAt('Ops ');
         await typeAt(null);
         t('a second @ while the list is open re-anchors instead of killing it',
           !!document.querySelector('.men-pop'), '');
         SB.Mentions.hide();
-        box2.value = wasD2;
+        boxSet(box2, wasD2);
         box2.dispatchEvent(new Event('input', { bubbles: true }));
       }
 
@@ -696,26 +738,30 @@
         const mShotId = mCard.dataset.shot;
         const box = mCard.querySelector('.desc-box');
         box.focus();
-        box.value = 'A hand reaches for the ';
-        box.setSelectionRange(box.value.length, box.value.length);
+        boxSet(box, 'A hand reaches for the ');
         box.dispatchEvent(new KeyboardEvent('keydown', { key: '@', bubbles: true }));
-        box.value += '@';
-        box.setSelectionRange(box.value.length, box.value.length);
+        boxAdd(box, '@');
         await pause();
         t('typing @ opens the mention list', !!document.querySelector('.men-pop'), '');
-        box.value += 'Hand';
-        box.setSelectionRange(box.value.length, box.value.length);
+        boxAdd(box, 'Hand');
         box.dispatchEvent(new Event('input', { bubbles: true }));
         const rows = document.querySelectorAll('.men-pop .men-row');
         t('and filters it as you type',
           rows.length && /Handset/.test(rows[0].textContent), rows.length ? rows[0].textContent : 'none');
+        t('the list says what a pick would actually feed',
+          /no reference image|frame/.test(rows[0].textContent), rows[0].textContent);
         t('with a way to mint one that does not exist yet',
           !!document.querySelector('.men-pop .men-row.make'), '');
         /* the popover is rebuilt on every keystroke, so pick a live row */
         document.querySelectorAll('.men-pop .men-row')[0].click();
         const shB = SB.Model.findShot(P(), mShotId).shot;
-        t('picking writes the plain name into the description',
-          /reaches for the Handset$/.test(shB.description), JSON.stringify(shB.description));
+        t('picking writes a mark, which reads as the plain name',
+          /reaches for the Handset$/.test(SB.Refs.plain(P(), shB.description)),
+          JSON.stringify(shB.description));
+        t('and the mark carries the id, so a rename never touches the text',
+          SB.Refs.parse(P(), shB.description).length === 1, shB.description);
+        t('the box draws it as a link',
+          !!box.querySelector('.ref-link'), box.innerHTML.slice(0, 120));
         t('and casts it on the card, which is what reaches the model',
           (shB.personaIds || []).some(function (id) {
             return SB.Personas.find(P(), id).name === 'Handset';
@@ -723,6 +769,45 @@
         t('the list closes behind it', !document.querySelector('.men-pop'), '');
         t('and the object turns up in that card of the prompt',
           /OBJECTS/.test(SB.Personas.block(P(), shB, null)), '');
+
+        // the feed strip is the rule made visible
+        const fr = mCard.querySelector('.feed-row');
+        t('the card shows what it will feed', !!fr && !!fr.querySelector('.feed-cell'),
+          fr ? fr.textContent : 'no row');
+        t('a mark with no picture behind it is called out and takes no number',
+          !!fr.querySelector('.feed-cell.empty') &&
+          fr.querySelector('.feed-cell.empty .feed-n').textContent === '–', fr.textContent);
+        /* give it a frame and it takes its place in the order */
+        const handset = SB.Personas.all(P()).filter(function (x) { return x.name === 'Handset'; })[0];
+        SB.Personas.addImage(handset, SB.Blobs.image(P(),
+          'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 4, 3), 'front');
+        SB.Board.refreshFeed(mShotId);
+        const fr1 = mCard.querySelector('.feed-row');
+        t('numbered in the order the marks were written',
+          fr1.querySelector('.feed-n').textContent === '1',
+          fr1.querySelector('.feed-n').textContent);
+        t('and the image set can be handed over', !!fr1.querySelector('.feed-copy'), '');
+
+        // a name typed without an @ feeds nothing, and the card says so
+        boxSet(box, boxGet(box) + ' Ops lead watches.');
+        box.dispatchEvent(new Event('input', { bubbles: true }));
+        const fr2 = mCard.querySelector('.feed-row');
+        t('a name in the text with no mark is offered for linking',
+          !!fr2.querySelector('.feed-fix'), fr2.textContent);
+        fr2.querySelector('.feed-fix').click();
+        t('and linking it writes the mark',
+          SB.Refs.parse(P(), SB.Model.findShot(P(), mShotId).shot.description).length === 2,
+          SB.Model.findShot(P(), mShotId).shot.description);
+        t('while the prose still reads as prose',
+          /Ops lead watches\.$/.test(SB.Refs.plain(P(), SB.Model.findShot(P(), mShotId).shot.description)),
+          SB.Refs.plain(P(), SB.Model.findShot(P(), mShotId).shot.description));
+
+        // and no mark ever reaches the model
+        const mSys = SB.Prompts.jobsFor(SB.Model.findShot(P(), mShotId).shot,
+          SB.Model.imageModel(P()), null, { image: true })[0];
+        t('no mark token leaks into the request',
+          !/@\{/.test(mSys.text) && !/@\{/.test(mSys.system),
+          (mSys.text.match(/@\{[^}]*\}/) || [''])[0]);
       }
 
       // the house style actually rides along on the request
@@ -1132,7 +1217,7 @@
         /Art direction/.test(document.querySelector('.card').textContent) &&
         /SFX/.test(document.querySelector('.card').textContent), '');
       var fbox = document.querySelector('.card .field-box[data-field="artDirection"]');
-      fbox.value = 'Warm practicals only.';
+      boxSet(fbox, 'Warm practicals only.');
       fbox.dispatchEvent(new Event('input', { bubbles: true }));
       var firstShot2 = SB.Model.findShot(P(), document.querySelector('.card').dataset.shot).shot;
       t('typing in one stores it on the shot',
@@ -1400,8 +1485,8 @@
         await settle();
         t('rewrite replaces the description',
           /scuffed parcel/.test(sc.description), sc.description);
-        t('and the textarea shows it',
-          /scuffed parcel/.test(document.querySelector(sel + 'textarea.sh-desc').value), '');
+        t('and the box shows it',
+          /scuffed parcel/.test(SB.RefBox.read(document.querySelector(sel + '.sh-desc'))), '');
         const bRev = Array.prototype.filter.call(document.querySelectorAll(sel + '.sc-ai .mini'),
           function (b) { return b.textContent === 'revert'; })[0];
         t('revert is offered', bRev && !bRev.classList.contains('hidden'), '');

@@ -31,7 +31,7 @@ sandbox.window = sandbox;
 vm.createContext(sandbox);
 
 for (const f of ['js/util.js', 'js/doc.js', 'js/blobs.js', 'js/geminimodels.js', 'js/providers.js',
-  'js/brand.js', 'js/personas.js', 'js/fields.js', 'js/model.js', 'js/store.js', 'js/usage.js',
+  'js/brand.js', 'js/refs.js', 'js/personas.js', 'js/fields.js', 'js/model.js', 'js/store.js', 'js/usage.js',
   'js/coverage.js']) {
   vm.runInContext(readFileSync(join(root, f), 'utf8'), sandbox, { filename: f });
 }
@@ -622,6 +622,180 @@ console.log('\n— a model that takes no reference wording —');
 
   const model = SB.Model.newProject().settings.models[0];
   eq(typeof model.referenceTemplate, 'string', 'every shipped model has the field set');
+}
+
+console.log('\n— @ means the model will be shown a picture of this —');
+{
+  const R = SB.Refs, Per = SB.Personas;
+  const p = SB.Model.newProject();
+  const sc = p.scenes[0];
+  const a = sc.shots[0];
+  const img = function (c) { return SB.Blobs.image(p, 'data:image/jpeg;base64,' + c.repeat(80), 4, 3); };
+
+  const him = Per.add(p, { name: 'Writer', description: 'Charcoal knit.' });
+  const her = Per.add(p, { name: 'Colleague', description: 'Rust-orange jacket.' });
+  Per.addImage(him, img('A'), 'front');
+  Per.addImage(her, img('B'), 'front');
+  Per.addImage(her, img('C'), '3/4');
+
+  a.description = R.mark(him.id, 'Writer') + ' sits writing. ' +
+    R.mark(her.id, 'Colleague') + ' walks in behind him.';
+
+  /* the boundary: nothing downstream should ever see a mark */
+  eq(R.plain(p, a.description), 'Writer sits writing. Colleague walks in behind him.',
+    'a description reads as ordinary prose');
+  eq(R.parse(p, a.description).map(function (m) { return m.label; }), ['Writer', 'Colleague'],
+    'and the marks are known, in the order they were written');
+
+  /* the mark carries the id, so nothing has to be rewritten, ever */
+  him.name = 'The writer';
+  eq(R.plain(p, a.description), 'The writer sits writing. Colleague walks in behind him.',
+    'renaming a subject needs no text rewriting at all');
+  him.name = 'Writer';
+
+  /* order in the sentence is order in the feed — the one thing the writer controls */
+  a.personaIds = [her.id, him.id];               // cast in the other order on purpose
+  let f = R.feed(p, a);
+  eq(f.map(function (e) { return e.label; }), ['Writer', 'Colleague'],
+    'the feed follows the sentence, not the order they were cast');
+  eq(f[0].numbers, [1], 'the first mark takes image 1');
+  eq(f[1].numbers, [2, 3], 'and a subject with two frames takes the next two');
+  eq(R.images(p, a).map(function (e) { return e.n + ':' + e.label + ':' + e.role; }),
+    ['1:Writer:front', '2:Colleague:front', '3:Colleague:3/4'],
+    'which is the list of files to hand over, in order, labelled');
+
+  /* cast but never mentioned: still sent, because dropping it would change what
+     every board made before this sends — but called out */
+  const room = Per.add(p, { kind: 'place', name: 'The office', description: 'Night, one lamp.' });
+  Per.addImage(room, img('D'));
+  a.personaIds.push(room.id);
+  f = R.feed(p, a);
+  eq(f.length, 3, 'a cast subject nobody mentioned is still in the feed');
+  eq(f[2].mentioned, false, 'flagged as unmentioned');
+  eq(f[2].numbers, [4], 'and last in the order, since nobody chose its place');
+
+  /* a mark with nothing behind it takes no number — there is nothing to feed */
+  const ghost = Per.add(p, { kind: 'thing', name: 'Handset' });
+  a.description += ' A hand reaches for ' + R.mark(ghost.id, 'Handset') + '.';
+  f = R.feed(p, a);
+  const h = f.filter(function (e) { return e.label === 'Handset'; })[0];
+  eq(h.images.length, 0, 'a subject with no reference image feeds nothing');
+  eq(h.numbers, [], 'so it takes no image number');
+  eq(/no reference image/.test(h.why), true, 'and says why');
+
+  /* deleting the subject degrades the mention to plain prose */
+  Per.remove(p, ghost.id);
+  eq(/reaches for Handset\.$/.test(R.plain(p, a.description)), true,
+    'a deleted subject leaves its last known name behind as text');
+  eq(R.parse(p, a.description).filter(function (m) { return m.dead; }).length, 1,
+    'and the mark knows it is dead');
+}
+
+console.log('\n— a shot is a reference image too: that is riffing —');
+{
+  const R = SB.Refs, Per = SB.Personas;
+  const p = SB.Model.newProject();
+  const sc = p.scenes[0];
+  const a = sc.shots[0];
+  const b = SB.Model.addShot(p, sc.id, { type: 'Close-up' });
+  const img = function (c) { return SB.Blobs.image(p, 'data:image/jpeg;base64,' + c.repeat(80), 4, 3); };
+
+  const her = Per.add(p, { name: 'Colleague', description: 'Rust-orange jacket.' });
+  Per.addImage(her, img('B'), 'front');
+  a.image = img('Z');                               // 1A has been rendered
+  b.description = 'Push into ' + R.mark(a.id, '1A') + ' — tight on ' +
+    R.mark(her.id, 'Colleague') + ' as she smiles.';
+  b.personaIds = [her.id];
+
+  eq(R.plain(p, b.description), 'Push into 1A — tight on Colleague as she smiles.',
+    'the prose reads as a director would say it');
+  const f = R.feed(p, b);
+  eq(f[0].kind, 'shot', 'the shot it riffs on is the first thing fed');
+  eq(f[0].numbers, [1], 'as image 1 — the source');
+  eq(f[1].numbers, [2], 'and her face after it, which the source may not show');
+
+  /* the code is derived, so reordering never breaks a reference */
+  const sc2 = SB.Model.addScene(p);
+  SB.Model.moveScene(p, sc2.id, 0);
+  eq(/Push into 2A/.test(R.plain(p, b.description)), true,
+    'renumbering the board renumbers the reference with it');
+
+  /* a source with no frame is the failure worth naming */
+  a.image = null;
+  eq(/has no frame yet/.test(R.feed(p, b)[0].why), true,
+    'riffing on a shot nobody has rendered says so rather than feeding nothing');
+
+  const blk = Per.block(p, b, null, 'image');
+  eq(/EARLIER FRAMES SUPPLIED/.test(blk), false,
+    'with no frame there is nothing to tell the model about');
+  a.image = img('Z');
+  const blk2 = Per.block(p, b, null, 'image');
+  eq(/EARLIER FRAMES SUPPLIED/.test(blk2), true, 'with one, the source is declared');
+  eq(/keep its place, its light, its wardrobe and its staging/.test(blk2), true,
+    'as the frame this one is derived from, not a second moment to draw');
+  eq(/image 1 = 2A/.test(blk2), true, 'and the mapping agrees with the feed');
+  eq(/image 2 = Colleague \(front\)/.test(blk2), true, 'right down to the labels');
+}
+
+console.log('\n— a name typed without a mark feeds nothing, and that is findable —');
+{
+  const R = SB.Refs, Per = SB.Personas;
+  const p = SB.Model.newProject();
+  const sh = p.scenes[0].shots[0];
+  Per.add(p, { name: 'Ops' });
+  const lead = Per.add(p, { name: 'Ops lead' });
+
+  sh.description = 'Ops lead crosses to the rack while Ops watches.';
+  const loose = R.unlinked(p, sh.description);
+  eq(loose.length, 2, 'both names are found');
+  eq(loose[0].name, 'Ops lead', 'the longest name wins — "Ops lead" is not two references');
+  eq(loose[1].name, 'Ops', 'and the shorter one is still found on its own');
+
+  sh.description = R.linkAll(p, sh.description);
+  eq(R.parse(p, sh.description).length, 2, 'linking them writes both marks');
+  eq(R.plain(p, sh.description), 'Ops lead crosses to the rack while Ops watches.',
+    'and changes not one word of the prose');
+  eq(R.unlinked(p, sh.description).length, 0, 'with nothing left unlinked');
+  eq(R.linkAll(p, sh.description), sh.description, 'running it again does nothing');
+
+  /* a name inside another word is not a reference */
+  const p2 = SB.Model.newProject();
+  Per.add(p2, { name: 'Lead' });
+  eq(R.unlinked(p2, 'Leadership meets in the boardroom.').length, 0,
+    'a name inside a longer word is left alone');
+}
+
+console.log('\n— no mark ever reaches a model —');
+{
+  const R = SB.Refs, Per = SB.Personas;
+  const p = SB.Model.newProject();
+  SB.app = SB.app || {};
+  SB.app.project = p;
+  const sc = p.scenes[0];
+  const sh = sc.shots[0];
+  const her = Per.add(p, { name: 'Colleague', description: 'Rust-orange jacket.' });
+  const room = Per.add(p, { kind: 'place', name: 'The office', description: 'Night.' });
+  sh.type = 'Medium';
+  sh.description = R.mark(her.id, 'Colleague') + ' waits in ' + R.mark(room.id, 'The office') + '.';
+  sh.personaIds = [her.id, room.id];
+  const other = SB.Model.addShot(p, sc.id, {});
+  other.description = 'Reverse of ' + R.mark(sh.id, '1A') + '.';
+
+  /* jobsFor() is asserted clean in ui-scenario.js, against the built app —
+     prompts.js is not loaded in this sandbox. Here: every other place a
+     description is quoted for a machine. */
+  const sys = SB.Brand.systemFor(p, other, 'image');
+  eq(/@\{/.test(sys), false, 'the scene context quotes the other beats as prose');
+  eq(/Reverse of 1A\./.test(sys), true, 'resolved to the code that shot has now');
+
+  const blk = SB.Personas.block(p, sh, null, 'image');
+  eq(/@\{/.test(blk), false, 'and the cast block carries no tokens either');
+
+  /* the wardrobe detector reads prose too — a mark is not a garment */
+  sh.description = R.mark(her.id, 'Colleague') +
+    ' in a charcoal fleece and heavy boots, late thirties.';
+  eq(!!SB.Coverage.carriesWardrobe(p, sh), true,
+    'a description carrying a wardrobe is still caught through the marks');
 }
 
 console.log('\n— gendered language detector —');
@@ -1262,7 +1436,11 @@ console.log('\n— cleaning: free where it can be, a request only where it must 
   const r2 = await C.cleanWardrobe(p, [b]);
   eq(asked, 1, 'a copy that no longer matches costs exactly one request');
   eq(r2.stripped, 0, 'nothing could be stripped for free');
-  eq(b.description, 'Courier leans in as the screen blinks.', 'the rewrite lands on the card');
+  eq(SB.Refs.plain(p, b.description), 'Courier leans in as the screen blinks.',
+    'the rewrite lands on the card');
+  /* and the name it used comes back linked, so the card already says which
+     picture goes with it instead of looking finished and feeding none */
+  eq(SB.Refs.parse(p, b.description).length, 1, 'with the cast it named marked as a reference');
 
   /* a card with nobody on it is never touched, whatever it says */
   const c = SB.Model.addShot(p, sc.id, {});
