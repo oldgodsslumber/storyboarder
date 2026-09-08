@@ -260,6 +260,35 @@
     });
   }
 
+  /* One recurring subject, brought up to date.
+   *
+   * Two things moved after the first boards were written: a subject is now a
+   * person, a place or a thing, and it carries several reference frames rather
+   * than one. Boards predating either are the common case — everything ever
+   * written as a persona is a person, and its lone `image` becomes the first
+   * frame. Frozen version snapshots come through here too, so nothing
+   * downstream has to know which era a record was written in. */
+  function migratePersona(p, x) {
+    x.id = x.id || SB.uid('per');
+    x.kind = SB.Personas.kindOf(x).id;
+    x.name = x.name || 'Persona';
+    x.description = x.description || '';
+    x.imagePrompt = x.imagePrompt || '';
+    /* Left at 0 when a board predates the stamp: unknown, not "just edited",
+     * so no card is falsely flagged as behind. */
+    x.updatedAt = typeof x.updatedAt === 'number' ? x.updatedAt : 0;
+
+    const imgs = Array.isArray(x.images) ? x.images.slice() : [];
+    if (x.image) imgs.unshift(x.image);
+    delete x.image;
+    x.images = imgs.map(function (img) {
+      const a = SB.Blobs.adopt(p, img);
+      if (!a) return null;
+      a.label = typeof img.label === 'string' ? img.label : (a.label || '');
+      return a;
+    }).filter(Boolean);
+  }
+
   /* Fill in anything an older/hand-edited file is missing. */
   function migrate(p) {
     if (!p || typeof p !== 'object') throw new Error('not a Storyboarder project');
@@ -285,16 +314,7 @@
       c.broken = !!c.broken || c.to <= c.from;
     });
     p.personas = Array.isArray(p.personas) ? p.personas : [];
-    p.personas.forEach(function (x) {
-      x.id = x.id || SB.uid('per');
-      x.name = x.name || 'Persona';
-      x.description = x.description || '';
-      x.imagePrompt = x.imagePrompt || '';
-      /* Left at 0 when a board predates the stamp: unknown, not "just edited",
-       * so no card is falsely flagged as behind. */
-      x.updatedAt = typeof x.updatedAt === 'number' ? x.updatedAt : 0;
-      x.image = SB.Blobs.adopt(p, x.image);
-    });
+    p.personas.forEach(function (x) { migratePersona(p, x); });
     p.scenes = Array.isArray(p.scenes) ? p.scenes : [];
     if (!p.scenes.length) p.scenes.push(newScene('Scene one'));
     p.versionNumber = p.versionNumber || 1;
@@ -310,9 +330,7 @@
           sh.annotation = SB.Blobs.adopt(p, sh.annotation);
         });
       });
-      (v.snapshot.personas || []).forEach(function (per) {
-        per.image = SB.Blobs.adopt(p, per.image);
-      });
+      (v.snapshot.personas || []).forEach(function (per) { migratePersona(p, per); });
     });
     const s = p.settings = p.settings || {};
     s.shotTypes = (s.shotTypes && s.shotTypes.length) ? s.shotTypes : DEFAULT_SHOT_TYPES.slice();

@@ -420,19 +420,49 @@
         document.querySelectorAll('.cast-row').length === document.querySelectorAll('.card').length,
         document.querySelectorAll('.cast-row').length);
       SB.PersonaPanel.open();
-      t('persona panel opens', !document.getElementById('personaPanel').classList.contains('hidden'), '');
-      t('a card per persona', document.querySelectorAll('#personaBody .persona').length === 2,
-        document.querySelectorAll('#personaBody .persona').length);
+      t('the reference library takes over the page', !!document.querySelector('.lib-back'), '');
+      t('a card per subject', document.querySelectorAll('.lib-refs .persona').length === 2,
+        document.querySelectorAll('.lib-refs .persona').length);
       t('description and image-prompt fields',
-        document.querySelectorAll('#personaBody .persona')[0].querySelectorAll('textarea').length === 2, '');
-      t('generate-from-script controls',
-        /Generate/.test(document.querySelector('#personaBody .pp-actions').textContent), '');
+        document.querySelectorAll('.lib-refs .persona')[0].querySelectorAll('textarea').length === 2, '');
+      t('generate-from-script is demoted into the header',
+        /Generate from script/.test(document.querySelector('.lib-head').textContent), '');
+      t('all three sections are offered',
+        /Cast/.test(document.querySelector('.lib-tabs').textContent) &&
+        /Locations/.test(document.querySelector('.lib-tabs').textContent) &&
+        /Objects/.test(document.querySelector('.lib-tabs').textContent), '');
+      t('a persona from before kinds existed reads as a person',
+        document.querySelectorAll('.lib-refs .persona.kind-person').length === 2, '');
+      /* the old button said "remove image" across the middle of the face */
+      var rmBtn = document.querySelector('.lib-refs .persona-frame .frame-x');
+      t('the reference image is removed by an X in the corner',
+        !!rmBtn && rmBtn.textContent === '✕', rmBtn ? rmBtn.textContent : 'none');
+      t('and the frame carries a filmstrip with room for another',
+        !!document.querySelector('.lib-refs .persona-strip .strip-thumb.add'), '');
+
+      // a location and an object are subjects like anybody else
+      var place = SB.Personas.add(P(), { kind: 'place', name: 'Server room', description: 'Cold aisle, blue LEDs.' });
+      SB.Personas.add(P(), { kind: 'thing', name: 'Handset', description: 'Matte black, one green LED.' });
+      SB.PersonaPanel.refresh();
+      t('locations and objects get their own sections',
+        document.querySelectorAll('.lib-refs .persona.kind-place').length === 1 &&
+        document.querySelectorAll('.lib-refs .persona.kind-thing').length === 1, '');
+
+      // the scene organizer under it
+      t('the scenes are listed under the library',
+        document.querySelectorAll('.lib-scenes .sc-row').length === P().scenes.length,
+        document.querySelectorAll('.lib-scenes .sc-row').length);
+      t('and no shots are shown there',
+        document.querySelectorAll('.lib-scenes .card').length === 0, '');
+      t('each scene row carries its heading and description',
+        document.querySelector('.lib-scenes .sc-row .sh-heading').value === P().scenes[0].heading, '');
 
       var castBtn = document.querySelector('.card .cast-row .cast-edit');
       castBtn.click();
       var castPop = document.querySelector('.cast-pop');
-      t('cast picker lists the personas',
-        castPop && castPop.querySelectorAll('input[type=checkbox]').length === 2,
+      t('cast picker lists every subject, grouped by kind',
+        castPop && castPop.querySelectorAll('input[type=checkbox]').length === 4 &&
+        castPop.querySelectorAll('.cast-pop-head').length === 3,
         castPop ? castPop.querySelectorAll('input[type=checkbox]').length : 'none');
       castPop.querySelectorAll('input[type=checkbox]')[0].click();
       var firstShot = SB.Model.findShot(P(), document.querySelector('.card').dataset.shot).shot;
@@ -446,7 +476,53 @@
       t('cast reaches the prompt request', /CAST/.test(jobsCast[0].system), '');
       t('and carries the wardrobe', /Charcoal knit/.test(jobsCast[0].system), '');
       t('and the reference-image numbering', /image 1 = Ops lead/.test(jobsCast[0].system), '');
+      t('a location cast on a shot gets its own block',
+        (function () {
+          var sh2 = P().scenes[0].shots[1];
+          sh2.personaIds = [place.id];
+          return /LOCATIONS/.test(SB.Personas.block(P(), sh2, null)) &&
+            /Cold aisle/.test(SB.Personas.block(P(), sh2, null));
+        })(), '');
       SB.PersonaPanel.close();
+      t('closing the library takes the takeover off the page',
+        !document.querySelector('.lib-back'), '');
+
+      // @ names a subject in a description — and casts it, which is the half
+      // the model ever sees
+      {
+        const pause = function () { return new Promise(function (r) { setTimeout(r, 30); }); };
+        const mCard = document.querySelectorAll('.card')[2];
+        const mShotId = mCard.dataset.shot;
+        const box = mCard.querySelector('.desc-box');
+        box.focus();
+        box.value = 'A hand reaches for the ';
+        box.setSelectionRange(box.value.length, box.value.length);
+        box.dispatchEvent(new KeyboardEvent('keydown', { key: '@', bubbles: true }));
+        box.value += '@';
+        box.setSelectionRange(box.value.length, box.value.length);
+        await pause();
+        t('typing @ opens the mention list', !!document.querySelector('.men-pop'), '');
+        box.value += 'Hand';
+        box.setSelectionRange(box.value.length, box.value.length);
+        box.dispatchEvent(new Event('input', { bubbles: true }));
+        const rows = document.querySelectorAll('.men-pop .men-row');
+        t('and filters it as you type',
+          rows.length && /Handset/.test(rows[0].textContent), rows.length ? rows[0].textContent : 'none');
+        t('with a way to mint one that does not exist yet',
+          !!document.querySelector('.men-pop .men-row.make'), '');
+        /* the popover is rebuilt on every keystroke, so pick a live row */
+        document.querySelectorAll('.men-pop .men-row')[0].click();
+        const shB = SB.Model.findShot(P(), mShotId).shot;
+        t('picking writes the plain name into the description',
+          /reaches for the Handset$/.test(shB.description), JSON.stringify(shB.description));
+        t('and casts it on the card, which is what reaches the model',
+          (shB.personaIds || []).some(function (id) {
+            return SB.Personas.find(P(), id).name === 'Handset';
+          }), JSON.stringify(shB.personaIds));
+        t('the list closes behind it', !document.querySelector('.men-pop'), '');
+        t('and the object turns up in that card of the prompt',
+          /OBJECTS/.test(SB.Personas.block(P(), shB, null)), '');
+      }
 
       // the house style actually rides along on the request
       var im = SB.Model.imageModel(P()), vm = SB.Model.videoModel(P());

@@ -41,7 +41,9 @@
       }
     });
     (p.personas || []).forEach(function (per) {
-      if (per.image && per.image.ref && !kindOf[per.image.ref]) kindOf[per.image.ref] = 'refs';
+      SB.Personas.imagesOf(per).forEach(function (img) {
+        if (img && img.ref && !kindOf[img.ref]) kindOf[img.ref] = 'refs';
+      });
     });
 
     let frames = 0, framesN = 0, ink = 0, inkN = 0, refs = 0, refsN = 0, orphan = 0;
@@ -81,9 +83,12 @@
       }
     });
     (p.personas || []).forEach(function (per) {
-      if (per.image && per.image.ref && !named[per.image.ref]) {
-        named[per.image.ref] = (per.name || 'persona') + ' reference';
-      }
+      SB.Personas.imagesOf(per).forEach(function (img, n) {
+        if (!img || !img.ref || named[img.ref]) return;
+        const lbl = (img.label || '').trim();
+        named[img.ref] = (per.name || 'subject') + ' reference' +
+          (lbl ? ' (' + lbl + ')' : (n ? ' ' + (n + 1) : ''));
+      });
     });
     Object.keys(blobs).forEach(function (k) {
       heavy.push({ label: named[k] || 'kept for an older version', b: bytes(blobs[k]) });

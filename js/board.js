@@ -369,6 +369,7 @@
         SB.app.selection = [r.ids[0]];
         SB.app.changed(true);                 // rebuilds this row from ai state
         if (newCast.length) SB.PersonaPanel.refresh();
+        SB.PersonaPanel.refreshScenes();      // the shot count on this scene just moved
         SB.toast(ai.status + (r.beats.length ? ' — ' + r.beats.join(' → ') : ''));
       }).catch(function (e) { failed(e, runGen); });
     }
@@ -380,6 +381,7 @@
       ai.ids = null;
       ai.personaIds = null;
       if (hadCast) SB.PersonaPanel.refresh();
+      SB.PersonaPanel.refreshScenes();
       ai.status = 'generated shots removed';
       ai.err = false;
       SB.app.selectedShotId = null;
@@ -475,6 +477,7 @@
     d.value = sc.description || '';
     d.placeholder = 'Scene description';
     d.addEventListener('input', function () { sc.description = d.value; SB.app.changed(false); });
+    SB.Mentions.attach(d, { scene: sc });
     fields.appendChild(h); fields.appendChild(d);
     fields.appendChild(sceneAi(sc, d));
     /* Only once the scene actually claims something — an untied scene, which is
@@ -861,6 +864,9 @@
     desc.value = sh.description || '';
     desc.placeholder = 'What we see. This is what the prompt writer reads.';
     desc.addEventListener('input', function () { sh.description = desc.value; SB.app.changed(false); });
+    /* @ names somebody, somewhere or something — and casts them on this card,
+       which is the half that reaches the model. */
+    SB.Mentions.attach(desc, { shot: sh, code: SB.Model.code(si, sj) });
     c.appendChild(desc);
 
     /* --- the project's own extra fields --- */
@@ -877,6 +883,7 @@
         SB.Fields.set(sh, f.id, ta.value);
         SB.app.changed(false);
       });
+      SB.Mentions.attach(ta, { shot: sh, code: SB.Model.code(si, sj) });
       c.appendChild(ta);
     });
 
@@ -930,11 +937,14 @@
     row.dataset.shot = sh.id;
     const cast = SB.Personas.forShot(P(), sh);
     cast.forEach(function (per) {
-      const chip = SB.el('span', 'cast-chip' + (per.image ? ' has-img' : ''),
-        (per.image ? '◉ ' : '') + (per.name || 'unnamed'));
-      chip.title = per.image
-        ? (per.name + ' — reference image supplied')
-        : (per.name + ' — no reference image, described in full');
+      const kind = SB.Personas.kindOf(per);
+      const n = SB.Personas.imagesOf(per).length;
+      const chip = SB.el('span', 'cast-chip kind-' + kind.id + (n ? ' has-img' : ''),
+        (n ? '◉ ' : '') + (per.name || 'unnamed') + (n > 1 ? ' ×' + n : ''));
+      chip.title = n
+        ? (per.name + ' — ' + kind.label.toLowerCase() + ', ' +
+           (n === 1 ? 'one reference image' : n + ' reference images'))
+        : (per.name + ' — ' + kind.label.toLowerCase() + ', no reference image, described in full');
       row.appendChild(chip);
     });
     if (!cast.length) row.appendChild(SB.el('span', 'cast-empty', 'no cast'));
@@ -981,21 +991,31 @@
     const old = document.querySelector('.cast-pop');
     if (old) old.remove();
     const pop = SB.el('div', 'cast-pop');
-    SB.Personas.all(P()).forEach(function (per) {
-      const l = SB.el('label', 'cast-opt');
-      const cb = document.createElement('input');
-      cb.type = 'checkbox';
-      cb.checked = (sh.personaIds || []).indexOf(per.id) >= 0;
-      cb.onchange = function () {
-        SB.Personas.toggleOnShot(P(), sh, per.id);
-        SB.Store.touch();
-        refreshCast();
-      };
-      l.appendChild(cb);
-      l.appendChild(document.createTextNode(' ' + (per.name || 'unnamed')));
-      pop.appendChild(l);
+    /* Grouped, because "who is in this" and "where is this" are different
+       questions and a flat list of thirty names answers neither quickly. */
+    let any = false;
+    SB.Personas.KINDS.forEach(function (kind) {
+      const mine = SB.Personas.ofKind(P(), kind.id);
+      if (!mine.length) return;
+      any = true;
+      pop.appendChild(SB.el('div', 'cast-pop-head', kind.plural));
+      mine.forEach(function (per) {
+        const l = SB.el('label', 'cast-opt');
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.checked = (sh.personaIds || []).indexOf(per.id) >= 0;
+        cb.onchange = function () {
+          SB.Personas.toggleOnShot(P(), sh, per.id);
+          SB.Store.touch();
+          refreshCast();
+        };
+        l.appendChild(cb);
+        l.appendChild(document.createTextNode(' ' + (per.name || 'unnamed')));
+        pop.appendChild(l);
+      });
     });
-    const manage = SB.el('button', 'mini', 'manage personas…');
+    if (!any) pop.appendChild(SB.el('div', 'cast-pop-head', 'nothing on the board yet'));
+    const manage = SB.el('button', 'mini', 'open the reference library…');
     manage.onclick = function () { pop.remove(); SB.PersonaPanel.open(); };
     pop.appendChild(manage);
 
@@ -1242,6 +1262,7 @@
 
   SB.Board = {
     render: render,
+    sceneAi: sceneAi,
     renderSceneList: renderSceneList,
     renderScriptWindows: renderScriptWindows,
     refreshCast: refreshCast,

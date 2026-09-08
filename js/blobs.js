@@ -86,8 +86,14 @@
         });
       });
     };
+    /* Both shapes, deliberately: this sweep decides what gc() deletes, so a
+     * record that has not been through migrate() — a snapshot pasted in by
+     * hand, a fixture — must not cost somebody their reference frames. */
     const walkPersonas = function (list) {
-      (list || []).forEach(function (per) { mark(per.image); });
+      (list || []).forEach(function (per) {
+        mark(per.image);
+        (per.images || []).forEach(mark);
+      });
     };
     walkScenes(p.scenes);
     walkPersonas(p.personas);
@@ -129,12 +135,18 @@
         (sc.shots || []).forEach(function (sh) { count(sh.image); count(sh.annotation); });
       });
     };
+    const refsOf = function (list) {
+      (list || []).forEach(function (per) {
+        count(per.image);
+        (per.images || []).forEach(count);
+      });
+    };
     scenes(p.scenes);
-    (p.personas || []).forEach(function (per) { count(per.image); });
+    refsOf(p.personas);
     (p.versions || []).forEach(function (v) {
       if (!v.snapshot) return;
       scenes(v.snapshot.scenes);
-      (v.snapshot.personas || []).forEach(function (per) { count(per.image); });
+      refsOf(v.snapshot.personas);
     });
 
     return {

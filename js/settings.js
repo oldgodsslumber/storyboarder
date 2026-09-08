@@ -238,7 +238,7 @@
           tr.value = m.referenceTemplate || SB.Personas.DEFAULT_REF_TEMPLATE;
           tr.oninput = function () { m.referenceTemplate = tr.value; };
           const trF = field('reference-image wording — how THIS model expects to be told about ' +
-            'persona references ({{N}} = image number, {{NAME}} = names)', tr);
+            'reference images ({{N}} = image number, {{NAME}} = names)', tr);
           row.appendChild(trF);
           const trHint = SB.el('div', 'pp-note',
             'Only used on shots that have cast. Leave blank for a model that takes no references.');

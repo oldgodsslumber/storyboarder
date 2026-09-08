@@ -176,7 +176,7 @@ Under every scene description sit two writer-model actions. Both need a Google A
 
 Continuity is the point of the feature, so the subject is pinned down once and repeated in
 every description it writes — each shot's prompt is later written on its own and cannot see
-the others. If the scene's cards already have **personas** on them, those are the subject:
+the others. If the scene's cards already have **cast** on them, those are the subject:
 they're described back verbatim and attached to every generated shot instead of a new one
 being invented.
 
@@ -363,7 +363,7 @@ Two things the app adds that a style guide can't know on its own:
 - **Scene context.** Each request carries the scene heading and note, the scene's beat list
   in order, and which beat this frame is — so the writer isn't composing in a vacuum, and
   the location, lighting mood and grade stay coherent across a scene. "No shot" fragments
-  are left out. *Who* is in the frame is the personas layer's job, below.
+  are left out. *Who* and *what* is in the frame is the reference library's job, below.
 - **The no-gendered-language rule is verified, not just requested.** Returned prompts are
   scanned for gendered nouns, titles and pronouns; if any appear the app asks for one
   rewrite naming the offending words, and if they survive that, the prompt box gets a
@@ -372,28 +372,81 @@ Two things the app adds that a style guide can't know on its own:
 Video prompts get the same house style plus motion rules — wardrobe and location must not
 change mid-shot, camera moves stay restrained and motivated.
 
-## Personas
+## References — the library
 
-**Personas** (top bar) is how the same face and the same clothes come back shot after shot.
-Each persona holds a **name**, a **description carrying the wardrobe**, the **reference image
-prompt**, and the **reference frame** itself (dropped, pasted or loaded; stored as a ≤480p
-proxy like everything else).
+**References** (top bar) opens a full-page takeover holding the two things that are true of
+the whole board rather than of one card: every **recurring subject**, and the **scenes** in
+the order they play.
 
-- **Generate** reads the master script and the shot descriptions and invents recurring
-  people through the house style — names, full wardrobe descriptions, and a reference-frame
-  prompt for each. Everything is editable afterwards, and **+ Blank persona** skips the
-  model entirely.
-- **write it for me** on a persona turns its description into a reference-frame prompt;
-  **copy prompt** puts it on the clipboard for whichever image model you're using.
-- Cards get a **cast row**: click *+ cast* to tick who appears in that shot. The order you
-  add them is the order their reference images are fed.
+A subject is anything that has to look the same twice, and there are three kinds:
 
-When a shot has cast, its prompt request carries a CAST block — each person's description
-and wardrobe, plus the reference-image wording **that model expects**. That wording is a
-per-model field (Settings → Models & templates → *reference-image wording*), because models
-differ: Qwen wants "the person in image 1", others want them named. `{{N}}` is the image
-number and `{{NAME}}` the names; the app appends the actual mapping (`image 1 = Ops lead`).
-A persona with no reference image is described in full instead, so it still stays consistent.
+| | what it is | what the description carries |
+|---|---|---|
+| **Person** | who is on camera | age range, build, hair, and the exact outfit — fabric and colour |
+| **Location** | a place that recurs | architecture, surfaces, light sources, time of day — what never changes |
+| **Object** | a prop, product or screen | form, material, finish, and any logo or screen state that must be exact |
+
+They are one record with one set of behaviour, because to an image model a room that must
+not change is the same problem as a face that must not change. Each holds a **name**, a
+**description**, the **reference image prompt**, and its **reference frames**.
+
+- **Several frames per subject.** One angle rarely pins a face or a room down, so a subject
+  holds as many as it needs — drop, paste or load them into the filmstrip, label each one
+  ("front", "3/4", "wide establishing"), and click a thumbnail to promote it to the **hero**
+  frame, which is the one the board shows and the one a single-reference model gets. Past
+  four, the panel says so: most image models start averaging references together instead of
+  reading them.
+- **✦ Generate from script** reads the master script and the shot descriptions and invents
+  recurring people — or locations, or objects — through the house style. Everything is
+  editable afterwards, and **+ Person / + Location / + Object** skip the model entirely.
+- **write it for me** turns a description into a reference-frame prompt, worded for what
+  kind of thing it is; **copy prompt** puts it on the clipboard.
+- Cards get a **cast row**: click *+ cast* to tick what appears in that shot, grouped by
+  kind. The order you add them is the order their reference images are fed.
+- Renaming a subject offers to update the descriptions that spell out the old name. It never
+  does it behind your back.
+
+### Typing @
+
+In any shot description, custom field or scene description, **@** opens a list of everything
+in the library, filtered as you keep typing. Picking one writes the plain name into the text
+*and casts that subject on the card*. If nothing matches, the last rows offer to mint a new
+person, location or object with the name you just typed — so the library grows while you
+write instead of on a separate trip.
+
+The name in the description only says who is doing what. The casting is the half that
+reaches the model: the CAST block carries the appearance, the wardrobe and the image
+numbering, and it is declared authoritative over anything the description says about how
+things look. That is why @ attaches the record rather than writing a link.
+
+The master script and tied scene boxes are deliberately left out: every shot anchor there is
+an offset into one shared string, and inserting text behind that machinery would desync the
+file.
+
+### The scene organizer
+
+The lower half of the takeover lists every scene in order — number, heading, description,
+how many shots it holds and whether it claims a section of the script. **No shots are shown**:
+this is the shape of the film, and shots have a board. Drag a scene by its handle to
+reorder, click its shot count to jump to it, and the **✦ Rewrite** and **✦ Generate shots**
+buttons are the same ones that live under the scene banner. Drag the divider to give either
+half more room; where you leave it is remembered.
+
+### What the prompt gets
+
+When a shot has cast, its prompt request carries a **CAST** block, plus **LOCATIONS** and
+**OBJECTS** blocks for whatever else is on the card — each subject's description, and the
+reference-image wording **that model expects**. That wording is a per-model field (Settings →
+Models & templates → *reference-image wording*), because models differ: Qwen wants "the
+person in image 1", others want them named. `{{N}}` is the image number and `{{NAME}}` the
+names; the app appends the actual mapping (`image 1 = Ops lead (front)`), numbered once
+across the whole block in the order the images are handed over. Where a subject has more
+than one frame, the block says outright that they are the same subject from different
+angles — otherwise the second frame walks a second person into the shot. A subject with no
+reference image is described in full instead, so it still stays consistent.
+
+Boards written before any of this still open: every persona is a person, and its single
+image becomes the first frame.
 
 **Preview what a shot sends** in the Brand style tab shows the exact system instruction for
 the selected shot, continuity block included.
@@ -553,9 +606,10 @@ js/board.js       scenes, cards, drag & drop
 js/scriptmode.js  master script panel, capture, highlights
 js/comments.js    comment list + ink layer
 js/brand.js       house style, scene context, gendered-language check
-js/personas.js    recurring people + per-model reference-image wording
+js/personas.js    recurring people, places and things + reference-image wording
 js/fields.js      the extra card text boxes, per project
-js/personapanel.js the Personas panel
+js/personapanel.js the reference library + scene organizer
+js/mentions.js    the @ popover over plain textareas
 js/prompts.js     Gemini prompt writing
 js/coverage.js    scene description -> shots, and the description rewrite
 js/promptpanel.js the Prompts panel

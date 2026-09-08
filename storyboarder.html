@@ -630,32 +630,184 @@ button.linkish{
 .gm-picker select:focus,.gm-picker input:focus{outline:none;border-color:var(--accent)}
 .modal .gm-picker{width:100%}
 
-/* ---------- personas ---------- */
-#personaPanel{
-  flex:0 0 320px;background:var(--bg2);border-left:1px solid var(--line);
-  display:flex;flex-direction:column;min-height:0;overflow:auto;
+/* ---------- the reference library takeover ---------- */
+.lib-back{
+  position:fixed;inset:0;background:rgba(0,0,0,.62);display:flex;
+  align-items:center;justify-content:center;z-index:50;
 }
-.persona{border:1px solid var(--line);border-radius:6px;background:var(--bg3);padding:8px;margin-bottom:10px}
+.lib{
+  width:95vw;height:92vh;background:var(--bg);border:1px solid var(--line2);
+  border-radius:10px;display:flex;flex-direction:column;min-height:0;overflow:hidden;
+  box-shadow:0 20px 60px var(--shadow);
+}
+.lib-head{
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+  padding:8px 12px;border-bottom:1px solid var(--line);background:var(--bg2);
+}
+.lib-head h2{margin:0;font-size:15px;white-space:nowrap}
+.lib-tabs{display:flex;gap:2px;margin-left:6px}
+.lib-search{
+  width:230px;background:var(--input-bg);color:var(--fg);border:1px solid var(--line);
+  border-radius:4px;padding:3px 6px;font-size:12px;
+}
+.lib-search:focus{outline:none;border-color:var(--accent)}
+.lib-head .spacer{flex:1}
+.lib-x{font-size:13px;line-height:1}
+
+.lib-split{flex:1;min-height:0;display:flex;flex-direction:column}
+.lib-refs{flex:0 0 62%;min-height:0;overflow:auto;padding:10px 12px 16px}
+.lib-scenes{flex:1;min-height:0;overflow:auto;padding:10px 12px 16px;background:var(--bg2)}
+.lib-divider{
+  flex:0 0 7px;background:var(--bg2);border-top:1px solid var(--line);
+  border-bottom:1px solid var(--line);cursor:row-resize;position:relative;
+}
+.lib-divider::after{
+  content:"";position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+  width:44px;height:2px;border-radius:2px;background:var(--line2);
+}
+.lib-divider:hover::after{background:var(--accent)}
+.lib-status{padding:0 0 4px}
+.lib-section{margin-bottom:16px}
+.lib-section-head{
+  display:flex;align-items:center;gap:8px;margin:4px 0 8px;
+  border-bottom:1px solid var(--line);padding-bottom:4px;
+}
+.lib-section-head .t{
+  font-size:10px;text-transform:uppercase;letter-spacing:.7px;color:var(--fg-dim);font-weight:600;
+}
+.lib-section-head .n{font-size:11px;color:var(--fg-dim)}
+.lib-section-head .spacer{flex:1}
+.lib-empty{padding:2px 0 4px}
+.lib-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px}
+.lib-pop{
+  position:fixed;z-index:70;background:var(--bg2);border:1px solid var(--line2);
+  border-radius:6px;padding:8px;box-shadow:0 6px 20px var(--shadow);
+  width:300px;display:flex;flex-direction:column;gap:6px;
+}
+.lib-rename{
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:11.5px;
+  border:1px solid var(--accent2);border-radius:6px;padding:6px 8px;margin-bottom:10px;
+}
+
+/* ---------- one recurring subject ---------- */
+.persona{
+  border:1px solid var(--line);border-radius:6px;background:var(--bg3);padding:8px;
+  border-top:2px solid var(--line2);display:flex;flex-direction:column;
+}
+.persona.kind-person{border-top-color:var(--accent)}
+.persona.kind-place{border-top-color:var(--scene)}
+.persona.kind-thing{border-top-color:var(--accent2)}
 .persona-head{display:flex;align-items:center;gap:6px;margin-bottom:6px}
 .persona-name{
   flex:1;min-width:0;background:var(--input-bg);border:1px solid var(--line);
   border-radius:4px;padding:3px 5px;font-weight:600;
 }
 .persona-name:focus{outline:none;border-color:var(--accent)}
-.persona-used{color:var(--fg-dim);font-size:11px;white-space:nowrap}
+.persona-kind{flex:0 0 auto;font-size:11px;padding:2px 18px 2px 4px}
+.persona-used{
+  color:var(--fg-dim);font-size:11px;white-space:nowrap;background:none;
+  border:none;cursor:pointer;text-decoration:underline;padding:0;
+}
+.persona-used.none{text-decoration:none;cursor:default}
+.persona-used:hover:not(.none){color:var(--accent)}
 .persona-frame{
-  position:relative;background:var(--frame-bg);aspect-ratio:3/4;max-height:220px;
+  position:relative;background:var(--frame-bg);aspect-ratio:4/3;
   display:flex;align-items:center;justify-content:center;cursor:pointer;
   border-radius:5px;overflow:hidden;margin-bottom:4px;
 }
 .persona-frame img{width:100%;height:100%;object-fit:contain}
-.persona-frame.drag-over{outline:2px dashed var(--accent);outline-offset:-4px}
-.persona-clear{position:absolute;right:4px;top:4px}
+.persona-frame.drag-over,.strip-thumb.drag-over{outline:2px dashed var(--accent);outline-offset:-3px}
+/* An X in the corner. The old button said "remove image" straight across the
+   middle of whoever's face it happened to be sitting on. */
+.frame-x{
+  position:absolute;right:4px;top:4px;width:20px;height:20px;padding:0;line-height:1;
+  border-radius:50%;border:1px solid var(--line2);background:rgba(0,0,0,.55);
+  color:#fff;font-size:11px;cursor:pointer;opacity:0;transition:opacity .12s;
+}
+.frame-x.small{width:15px;height:15px;font-size:8px;right:2px;top:2px}
+.persona-frame:hover .frame-x,.strip-thumb:hover .frame-x,.frame-x:focus{opacity:1}
+.frame-x:hover{background:var(--danger);border-color:var(--danger)}
+
+.persona-strip{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:4px}
+.strip-cell{width:56px;display:flex;flex-direction:column;gap:2px}
+.strip-thumb{
+  position:relative;width:56px;height:42px;background:var(--frame-bg);
+  border:1px solid var(--line);border-radius:4px;overflow:hidden;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+}
+.strip-cell.hero .strip-thumb{border-color:var(--accent);cursor:default}
+.strip-thumb img{width:100%;height:100%;object-fit:cover}
+.strip-thumb.add{color:var(--fg-dim);font-size:16px;border-style:dashed}
+.strip-thumb.add:hover{color:var(--accent);border-color:var(--accent)}
+.strip-label{
+  width:56px;background:var(--input-bg);color:var(--fg);border:1px solid var(--line);
+  border-radius:3px;padding:1px 3px;font-size:9px;
+}
+.strip-label:focus{outline:none;border-color:var(--accent)}
+.pp-note.warn{color:var(--accent2)}
+
 .persona-text{
   width:100%;background:var(--input-bg);color:var(--fg);border:1px solid var(--line);
   border-radius:5px;padding:5px 6px;font-size:11.5px;resize:vertical;margin-bottom:6px;
 }
 .persona-text:focus{outline:none;border-color:var(--accent)}
+
+/* ---------- the scene organizer ---------- */
+.sc-list{display:flex;flex-direction:column;gap:6px;margin-bottom:8px}
+.sc-row{
+  display:flex;align-items:flex-start;gap:8px;padding:6px 8px;
+  border:1px solid var(--line);border-radius:6px;background:var(--bg3);
+}
+.sc-row.sel{border-color:var(--accent)}
+.sc-row.dragging{opacity:.4}
+.sc-row.drag-over{border-color:var(--accent);border-top-width:3px}
+.sc-grip{
+  cursor:grab;color:var(--fg-dim);font-size:14px;line-height:1.4;user-select:none;
+  padding:2px 2px 2px 0;
+}
+.sc-num{
+  flex:0 0 22px;text-align:center;font-size:11px;color:var(--fg-dim);
+  padding-top:4px;font-variant-numeric:tabular-nums;
+}
+.sc-fields{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
+.sc-fields .sh-heading{
+  width:100%;background:var(--input-bg);color:var(--fg);border:1px solid var(--line);
+  border-radius:4px;padding:3px 6px;font-weight:600;
+}
+.sc-fields .sh-desc{
+  width:100%;background:var(--input-bg);color:var(--fg);border:1px solid var(--line);
+  border-radius:4px;padding:4px 6px;font-size:11.5px;resize:vertical;
+}
+.sc-fields .sh-heading:focus,.sc-fields .sh-desc:focus{outline:none;border-color:var(--accent)}
+.sc-meta{
+  flex:0 0 108px;display:flex;flex-direction:column;align-items:flex-end;gap:4px;
+}
+.sc-claim{font-size:10px;color:var(--fg-dim);text-transform:uppercase;letter-spacing:.4px}
+.sc-claim.broken{color:var(--danger)}
+
+/* ---------- @ mentions ---------- */
+.men-pop{
+  position:fixed;z-index:80;background:var(--bg2);border:1px solid var(--line2);
+  border-radius:6px;padding:3px;box-shadow:0 6px 20px var(--shadow);
+  min-width:210px;max-width:320px;max-height:250px;overflow:auto;
+}
+.men-row{
+  display:flex;align-items:center;gap:6px;padding:3px 6px;border-radius:4px;
+  font-size:12px;cursor:pointer;white-space:nowrap;
+}
+.men-row.on{background:var(--hl2)}
+.men-row.make{color:var(--fg-dim);font-style:italic}
+.men-kind{
+  font-size:9px;text-transform:uppercase;letter-spacing:.4px;color:var(--fg-dim);
+  border:1px solid var(--line2);border-radius:3px;padding:0 3px;flex:0 0 auto;
+}
+.men-kind.kind-person{color:var(--accent);border-color:var(--accent)}
+.men-kind.kind-place{color:var(--scene);border-color:var(--scene)}
+.men-kind.kind-thing{color:var(--accent2);border-color:var(--accent2)}
+.men-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.men-img{color:var(--accent);font-size:10px}
+/* measures where the caret is; never seen */
+.men-mirror{position:absolute;left:-9999px;top:0;visibility:hidden}
 
 .cast-row{display:flex;flex-wrap:wrap;gap:4px;align-items:center;padding:4px 6px 0}
 .cast-chip{
@@ -663,6 +815,13 @@ button.linkish{
   border:1px solid var(--line2);color:var(--fg-dim);white-space:nowrap;
 }
 .cast-chip.has-img{border-color:var(--accent);color:var(--accent)}
+.cast-chip.kind-place.has-img{border-color:var(--scene);color:var(--scene)}
+.cast-chip.kind-thing.has-img{border-color:var(--accent2);color:var(--accent2)}
+.cast-pop-head{
+  font-size:9px;text-transform:uppercase;letter-spacing:.5px;color:var(--fg-dim);
+  margin:4px 0 1px;
+}
+.cast-pop-head:first-child{margin-top:0}
 .cast-empty{font-size:10px;color:var(--fg-dim);text-transform:uppercase;letter-spacing:.5px}
 .cast-edit{margin-left:auto}
 /* the description contradicts the cast above it — a repair, not an error */
@@ -723,7 +882,7 @@ body.comment-mode .frame{cursor:crosshair}
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-09-08 16:10 · 4c8b1fc+";</script>
+<script>window.SB_BUILD = "2026-09-08 22:13 · e4a9095+";</script>
 
 <div id="app">
 
@@ -746,7 +905,7 @@ body.comment-mode .frame{cursor:crosshair}
     <div class="tb-group">
       <button id="btnScript"  class="tb toggle">Script</button>
       <button id="btnComment" class="tb toggle">Comment mode</button>
-      <button id="btnPersonas" class="tb toggle">Personas</button>
+      <button id="btnPersonas" class="tb toggle" title="The cast, the locations, the objects — and the scenes in order">References</button>
       <button id="btnPrompts" class="tb toggle">Prompts</button>
     </div>
 
@@ -793,11 +952,6 @@ body.comment-mode .frame{cursor:crosshair}
       <div id="captureForm" class="capture-form hidden"></div>
       <div id="noteForm" class="capture-form hidden"></div>
       <div id="noteList" class="note-list hidden"></div>
-    </aside>
-
-    <aside id="personaPanel" class="hidden">
-      <div class="panel-head"><span>Personas</span></div>
-      <div id="personaBody" class="pp-body"></div>
     </aside>
 
     <aside id="promptPanel" class="hidden">
@@ -1464,8 +1618,14 @@ window.SB = window.SB || {};
         });
       });
     };
+    /* Both shapes, deliberately: this sweep decides what gc() deletes, so a
+     * record that has not been through migrate() — a snapshot pasted in by
+     * hand, a fixture — must not cost somebody their reference frames. */
     const walkPersonas = function (list) {
-      (list || []).forEach(function (per) { mark(per.image); });
+      (list || []).forEach(function (per) {
+        mark(per.image);
+        (per.images || []).forEach(mark);
+      });
     };
     walkScenes(p.scenes);
     walkPersonas(p.personas);
@@ -1507,12 +1667,18 @@ window.SB = window.SB || {};
         (sc.shots || []).forEach(function (sh) { count(sh.image); count(sh.annotation); });
       });
     };
+    const refsOf = function (list) {
+      (list || []).forEach(function (per) {
+        count(per.image);
+        (per.images || []).forEach(count);
+      });
+    };
     scenes(p.scenes);
-    (p.personas || []).forEach(function (per) { count(per.image); });
+    refsOf(p.personas);
     (p.versions || []).forEach(function (v) {
       if (!v.snapshot) return;
       scenes(v.snapshot.scenes);
-      (v.snapshot.personas || []).forEach(function (per) { count(per.image); });
+      refsOf(v.snapshot.personas);
     });
 
     return {
@@ -2327,14 +2493,20 @@ window.SB = window.SB || {};
 </script>
 <script>
 /* ===== js/personas.js ===== */
-/* personas.js — recurring people, so the same face and the same clothes come
- * back shot after shot.
+/* personas.js — the recurring subjects of a board: the people, the places and
+ * the things that have to come back looking the same shot after shot.
  *
- * A persona holds a description, the prompt that made its reference frame, and
- * the reference image itself (≤480p proxy, like every other image here). Shots
- * name the personas that appear in them; the prompt writer then gets both the
- * description AND the phrasing that particular model expects for reference
- * images — Qwen wants "the person in image 1", others want something else.
+ * One record covers all three. A subject holds a kind, a description, the
+ * prompt that makes its reference frame, and the reference images themselves
+ * (≤480p proxies, like every other image here) — several of them, because one
+ * angle rarely pins a person or a room down. Shots name the subjects that
+ * appear in them; the prompt writer then gets both the description AND the
+ * phrasing that particular model expects for reference images — Qwen wants
+ * "the person in image 1", others want something else.
+ *
+ * The storage key is still `personas` and shots still carry `personaIds`: the
+ * name is historical, the contents are not. Renaming it would churn migration,
+ * every frozen version snapshot and the blob walkers for no user-visible gain.
  */
 (function (SB) {
   'use strict';
@@ -2351,16 +2523,119 @@ window.SB = window.SB || {};
 
   const DEFAULT_REF_TEMPLATE = REF_TEMPLATES.numbered;
 
+  /* The three kinds of recurring subject. They differ only in what you are
+   * being asked to write down and how the block addresses them — the record,
+   * the reference images and the casting are identical, because to an image
+   * model a room that must not change is the same problem as a face that must
+   * not change. */
+  const KINDS = [
+    {
+      id: 'person', label: 'Person', plural: 'Cast', one: 'person',
+      heading: 'CAST — these people recur across the board. They must look the same every time.',
+      descLabel: 'description + wardrobe',
+      descHint: 'Age range, build, hair, and the exact outfit — fabric and colour.',
+      noImage: 'No reference image — describe this person fully and identically every time.',
+      refBrief: 'a clean, front-facing reference frame of this person: plain background, ' +
+        'natural light, full wardrobe visible, neutral expression'
+    },
+    {
+      id: 'place', label: 'Location', plural: 'Locations', one: 'location',
+      heading: 'LOCATIONS — these places recur across the board. They must look the same every time.',
+      descLabel: 'the place, and what is fixed about it',
+      descHint: 'Architecture, surfaces, furniture, light sources, time of day — what never changes.',
+      noImage: 'No reference image — describe this place fully and identically every time.',
+      refBrief: 'a clean establishing reference frame of this place: wide, eye level, ' +
+        'no people in shot, the light as it normally is there'
+    },
+    {
+      id: 'thing', label: 'Object', plural: 'Objects', one: 'object',
+      heading: 'OBJECTS — these props, products and screens recur across the board. ' +
+        'They must look the same every time.',
+      descLabel: 'the object, product or screen',
+      descHint: 'Form, size, material, finish, colour, and any logo or screen state that must be exact.',
+      noImage: 'No reference image — describe this object fully and identically every time.',
+      refBrief: 'a clean product-style reference frame of this object: plain background, ' +
+        'even light, three-quarter view, the whole object in frame'
+    }
+  ];
+
+  function kindOf(per) {
+    const k = per && per.kind;
+    return KINDS.filter(function (x) { return x.id === k; })[0] || KINDS[0];
+  }
+
+  /* More than this on one subject and most image models start averaging the
+   * references together instead of reading them. A warning, not a limit. */
+  const IMAGE_ADVICE = 4;
+
   function newPersona(opts) {
     opts = opts || {};
     return {
       id: SB.uid('per'),
-      name: opts.name || 'New persona',
+      kind: kindOf({ kind: opts.kind }).id,
+      name: opts.name || 'New ' + kindOf({ kind: opts.kind }).one,
       description: opts.description || '',
       imagePrompt: opts.imagePrompt || '',
-      image: opts.image || null,     // {ref,w,h} — the reference frame
+      /* [{ref,w,h,label}] — the reference frames. A lone `image` is still
+       * accepted: it is what every caller wrote before there could be more
+       * than one, and it costs a line to keep them working. */
+      images: (opts.images || []).slice().concat(opts.image ? [opts.image] : []),
       updatedAt: Date.now()
     };
+  }
+
+  /* ---- reference images ----
+   *
+   * Boards written before this held a single `image`. Reading through here
+   * rather than off the record means an unmigrated one — a hand-built test
+   * fixture, a snapshot restored out of an old file — still answers. */
+  function imagesOf(per) {
+    if (!per) return [];
+    if (per.images && per.images.length) return per.images;
+    return per.image ? [per.image] : [];
+  }
+  function hero(per) { return imagesOf(per)[0] || null; }
+  function hasImage(per) { return !!hero(per); }
+
+  function addImage(per, img, label) {
+    if (!per || !img) return null;
+    per.images = imagesOf(per).slice();
+    delete per.image;
+    const rec = { ref: img.ref, w: img.w, h: img.h, label: label || '' };
+    per.images.push(rec);
+    touch(per);
+    return rec;
+  }
+
+  function removeImage(per, idx) {
+    if (!per) return;
+    const list = imagesOf(per).slice();
+    if (idx < 0 || idx >= list.length) return;
+    list.splice(idx, 1);
+    per.images = list;
+    delete per.image;
+    touch(per);
+  }
+
+  /* The first image is the one the board shows and the one a single-reference
+   * model gets, so promoting is how you say "this is the shot of them". */
+  function makeHero(per, idx) {
+    if (!per) return;
+    const list = imagesOf(per).slice();
+    if (idx <= 0 || idx >= list.length) return;
+    list.unshift(list.splice(idx, 1)[0]);
+    per.images = list;
+    delete per.image;
+    touch(per);
+  }
+
+  function labelImage(per, idx, label) {
+    const list = imagesOf(per);
+    if (!list[idx]) return;
+    list[idx].label = label || '';
+    per.images = list;
+    delete per.image;
+    touch(per);
   }
 
   /* A prompt already written into a card is a snapshot of the persona as it read
@@ -2419,45 +2694,112 @@ window.SB = window.SB || {};
     else shot.personaIds.push(id);
   }
 
-  /* The CAST block appended to the system instruction for one job. */
+  /* Everything of one kind, in board order. */
+  function ofKind(p, kind) {
+    return all(p).filter(function (x) { return kindOf(x).id === kind; });
+  }
+
+  /* ---- the CAST block appended to the system instruction for one job ----
+   *
+   * Reference images are numbered once across the whole block, in cast order,
+   * because the number is a promise about the order the images are handed to
+   * the model — and that order does not restart per kind.
+   */
   function block(p, shot, model) {
     const cast = forShot(p, shot);
     if (!cast.length) return '';
-    const lines = ['CAST — these people recur across the board. They must look the same every time.'];
-    const withImages = cast.filter(function (x) { return !!x.image; });
 
-    cast.forEach(function (per, i) {
-      const bits = [];
-      bits.push((per.image ? 'image ' + (withImages.indexOf(per) + 1) + ' — ' : '') + (per.name || 'unnamed'));
-      const d = (per.description || '').replace(/\s+/g, ' ').trim();
-      bits.push(d || '(no description yet)');
-      lines.push('  ' + (i + 1) + '. ' + bits.join(': '));
-      if (!per.image) {
-        lines.push('     No reference image — describe this person fully and identically every time.');
-      }
+    /* image N -> which subject, assigned before anything is written so the
+     * per-kind sections can cite numbers the mapping will agree with */
+    const numbered = [];
+    cast.forEach(function (per) {
+      imagesOf(per).forEach(function (img) { numbered.push({ per: per, img: img }); });
+    });
+    const rangeFor = function (per) {
+      const mine = [];
+      numbered.forEach(function (n, i) { if (n.per === per) mine.push(i + 1); });
+      if (!mine.length) return '';
+      if (mine.length === 1) return 'image ' + mine[0] + ' — ';
+      return 'images ' + mine[0] + '–' + mine[mine.length - 1] + ' — ';
+    };
+
+    const lines = [];
+    let multi = false;
+    KINDS.forEach(function (kind) {
+      const mine = cast.filter(function (x) { return kindOf(x).id === kind.id; });
+      if (!mine.length) return;
+      lines.push(kind.heading);
+      mine.forEach(function (per, i) {
+        const bits = [];
+        bits.push(rangeFor(per) + (per.name || 'unnamed'));
+        const d = (per.description || '').replace(/\s+/g, ' ').trim();
+        bits.push(d || '(no description yet)');
+        lines.push('  ' + (i + 1) + '. ' + bits.join(': '));
+        if (!hasImage(per)) lines.push('     ' + kind.noImage);
+        if (imagesOf(per).length > 1) multi = true;
+      });
     });
 
-    if (withImages.length) {
+    if (numbered.length) {
       const tpl = (model && model.referenceTemplate) || DEFAULT_REF_TEMPLATE;
-      const names = withImages.map(function (x) { return x.name; }).join(', ');
+      const names = cast.filter(hasImage).map(function (x) { return x.name; }).join(', ');
       lines.push(tpl.replace(/\{\{N\}\}/g, function () { return 'N'; })
         .replace(/\{\{NAME\}\}/g, names));
-      withImages.forEach(function (per, i) {
-        lines.push('  image ' + (i + 1) + ' = ' + (per.name || 'unnamed'));
+      numbered.forEach(function (n, i) {
+        const lbl = (n.img && n.img.label || '').trim();
+        lines.push('  image ' + (i + 1) + ' = ' + (n.per.name || 'unnamed') +
+          (lbl ? ' (' + lbl + ')' : ''));
       });
+      /* Several frames of one subject read as several subjects unless this is
+       * said outright — the failure is a second person walking into the shot. */
+      if (multi) {
+        lines.push('Where more than one image is listed against the same name, they are the SAME ' +
+          'subject seen from different angles — not different subjects. Do not add anybody or ' +
+          'anything to the shot on account of the extra frames.');
+      }
     }
     /* The shot description may itself name a wardrobe — older boards baked the
      * subject into every description, and that copy went stale the moment the
      * persona was edited. This block is the live record, so it is declared to
      * win outright rather than deferring to whatever the description says. */
     lines.push('The descriptions above are the CURRENT and AUTHORITATIVE record of how these ' +
-      'people look and what they wear. Where the shot description says anything different about ' +
-      'their appearance, hair or wardrobe, it is out of date — follow this block and ignore it. ' +
-      'The shot description still governs what they are DOING and where.');
+      'people, places and things look. Where the shot description says anything different about ' +
+      'their appearance, hair, wardrobe or surroundings, it is out of date — follow this block ' +
+      'and ignore it. The shot description still governs what they are DOING and where.');
     return lines.join('\n');
   }
 
-  /* ---- generate personas from the brand + the master script ---- */
+  /* ---- generate subjects from the brand + the master script ---- */
+
+  /* What the writer is being asked for, per kind. The name is always a board
+   * handle rather than whatever the script calls the thing, because the handle
+   * is what gets typed after an @ for the rest of the project. */
+  const GEN_BRIEF = {
+    person: {
+      ask: 'recurring on-camera',
+      unit: ['person', 'people'],
+      name: 'a short label for the board (not a character name in the script — a handle like "Ops lead").',
+      desc: 'who they are on camera and, critically, exactly what they look like and are WEARING. ' +
+        'Age range, build, hair, skin tone, and a specific outfit described down to fabric and colour. ' +
+        'This text is what keeps them identical from shot to shot, so be concrete and complete. ' +
+        'No gendered language.'
+    },
+    place: {
+      ask: 'recurring',
+      unit: ['location', 'locations'],
+      name: 'a short label for the board — a handle like "Server room" or "Loading bay".',
+      desc: 'what the place is and exactly what it looks like: architecture, surfaces, furniture, ' +
+        'light sources, time of day, and anything fixed that must not drift between shots. ' +
+        'Describe the room, not the action in it.'
+    },
+    thing: {
+      ask: 'recurring',
+      unit: ['object, product or screen', 'objects, products or screens'],
+      name: 'a short label for the board — a handle like "Handset" or "Dashboard".',
+      desc: 'what the object is and exactly what it looks like: form, size, material, finish, ' +
+        'colour, and any logo, label or on-screen state that has to be identical every time.'
+    }
+  };
 
   const GEN_SCHEMA = {
     type: 'OBJECT',
@@ -2478,7 +2820,9 @@ window.SB = window.SB || {};
     required: ['personas']
   };
 
-  function generate(p, count, extraNote) {
+  function generate(p, count, extraNote, kind) {
+    const k = kindOf({ kind: kind });
+    const brief = GEN_BRIEF[k.id];
     const script = (p.master.text || '').trim();
     const descs = [];
     SB.Model.eachShot(p, function (sh) {
@@ -2490,17 +2834,14 @@ window.SB = window.SB || {};
 
     const model = SB.Model.imageModel(p);
     const text = [
-      'Read the script below and invent ' + count + ' recurring on-camera ' +
-      (count === 1 ? 'person' : 'people') + ' for this video.',
+      'Read the script below and invent ' + count + ' ' + brief.ask + ' ' +
+      (count === 1 ? brief.unit[0] : brief.unit[1]) + ' for this video.',
       '',
       'For each one return:',
-      '- name: a short label for the board (not a character name in the script — a handle like "Ops lead").',
-      '- description: who they are on camera and, critically, exactly what they look like and are WEARING. ' +
-      'Age range, build, hair, skin tone, and a specific outfit described down to fabric and colour. ' +
-      'This text is what keeps them identical from shot to shot, so be concrete and complete. No gendered language.',
-      '- imagePrompt: a single still-image prompt that would produce a clean, front-facing reference frame of ' +
-      'this person for ' + (model ? model.name : 'an image model') + ' — plain background, natural light, ' +
-      'full wardrobe visible, neutral expression. It must obey the house style.',
+      '- name: ' + brief.name,
+      '- description: ' + brief.desc,
+      '- imagePrompt: a single still-image prompt that would produce ' + k.refBrief +
+      ', for ' + (model ? model.name : 'an image model') + '. It must obey the house style.',
       '',
       extraNote ? 'Additional direction: ' + extraNote + '\n' : '',
       script ? 'SCRIPT:\n' + script.slice(0, 12000) : '',
@@ -2514,10 +2855,10 @@ window.SB = window.SB || {};
     return SB.Prompts.raw(text, GEN_SCHEMA, system).then(function (out) {
       const made = (out.personas || []).map(function (x) {
         return add(p, {
-          name: x.name, description: x.description, imagePrompt: x.imagePrompt
+          kind: k.id, name: x.name, description: x.description, imagePrompt: x.imagePrompt
         });
       });
-      if (!made.length) throw new Error('No personas came back');
+      if (!made.length) throw new Error('Nothing came back');
       return made;
     });
   }
@@ -2525,10 +2866,17 @@ window.SB = window.SB || {};
   SB.Personas = {
     REF_TEMPLATES: REF_TEMPLATES,
     DEFAULT_REF_TEMPLATE: DEFAULT_REF_TEMPLATE,
+    KINDS: KINDS, kindOf: kindOf, ofKind: ofKind, IMAGE_ADVICE: IMAGE_ADVICE,
     newPersona: newPersona, all: all, find: find, add: add, remove: remove,
+    imagesOf: imagesOf, hero: hero, hasImage: hasImage,
+    addImage: addImage, removeImage: removeImage, makeHero: makeHero, labelImage: labelImage,
     forShot: forShot, toggleOnShot: toggleOnShot, block: block, generate: generate,
     touch: touch, editedAt: editedAt, staleFor: staleFor
   };
+
+  /* The panel, the board and the mentions popover all deal in subjects, not
+   * personas. Same object — the honest name for new code to read. */
+  SB.Refs = SB.Personas;
 
 })(window.SB);
 
@@ -2914,6 +3262,35 @@ window.SB = window.SB || {};
     });
   }
 
+  /* One recurring subject, brought up to date.
+   *
+   * Two things moved after the first boards were written: a subject is now a
+   * person, a place or a thing, and it carries several reference frames rather
+   * than one. Boards predating either are the common case — everything ever
+   * written as a persona is a person, and its lone `image` becomes the first
+   * frame. Frozen version snapshots come through here too, so nothing
+   * downstream has to know which era a record was written in. */
+  function migratePersona(p, x) {
+    x.id = x.id || SB.uid('per');
+    x.kind = SB.Personas.kindOf(x).id;
+    x.name = x.name || 'Persona';
+    x.description = x.description || '';
+    x.imagePrompt = x.imagePrompt || '';
+    /* Left at 0 when a board predates the stamp: unknown, not "just edited",
+     * so no card is falsely flagged as behind. */
+    x.updatedAt = typeof x.updatedAt === 'number' ? x.updatedAt : 0;
+
+    const imgs = Array.isArray(x.images) ? x.images.slice() : [];
+    if (x.image) imgs.unshift(x.image);
+    delete x.image;
+    x.images = imgs.map(function (img) {
+      const a = SB.Blobs.adopt(p, img);
+      if (!a) return null;
+      a.label = typeof img.label === 'string' ? img.label : (a.label || '');
+      return a;
+    }).filter(Boolean);
+  }
+
   /* Fill in anything an older/hand-edited file is missing. */
   function migrate(p) {
     if (!p || typeof p !== 'object') throw new Error('not a Storyboarder project');
@@ -2939,16 +3316,7 @@ window.SB = window.SB || {};
       c.broken = !!c.broken || c.to <= c.from;
     });
     p.personas = Array.isArray(p.personas) ? p.personas : [];
-    p.personas.forEach(function (x) {
-      x.id = x.id || SB.uid('per');
-      x.name = x.name || 'Persona';
-      x.description = x.description || '';
-      x.imagePrompt = x.imagePrompt || '';
-      /* Left at 0 when a board predates the stamp: unknown, not "just edited",
-       * so no card is falsely flagged as behind. */
-      x.updatedAt = typeof x.updatedAt === 'number' ? x.updatedAt : 0;
-      x.image = SB.Blobs.adopt(p, x.image);
-    });
+    p.personas.forEach(function (x) { migratePersona(p, x); });
     p.scenes = Array.isArray(p.scenes) ? p.scenes : [];
     if (!p.scenes.length) p.scenes.push(newScene('Scene one'));
     p.versionNumber = p.versionNumber || 1;
@@ -2964,9 +3332,7 @@ window.SB = window.SB || {};
           sh.annotation = SB.Blobs.adopt(p, sh.annotation);
         });
       });
-      (v.snapshot.personas || []).forEach(function (per) {
-        per.image = SB.Blobs.adopt(p, per.image);
-      });
+      (v.snapshot.personas || []).forEach(function (per) { migratePersona(p, per); });
     });
     const s = p.settings = p.settings || {};
     s.shotTypes = (s.shotTypes && s.shotTypes.length) ? s.shotTypes : DEFAULT_SHOT_TYPES.slice();
@@ -4025,7 +4391,9 @@ window.SB = window.SB || {};
       }
     });
     (p.personas || []).forEach(function (per) {
-      if (per.image && per.image.ref && !kindOf[per.image.ref]) kindOf[per.image.ref] = 'refs';
+      SB.Personas.imagesOf(per).forEach(function (img) {
+        if (img && img.ref && !kindOf[img.ref]) kindOf[img.ref] = 'refs';
+      });
     });
 
     let frames = 0, framesN = 0, ink = 0, inkN = 0, refs = 0, refsN = 0, orphan = 0;
@@ -4065,9 +4433,12 @@ window.SB = window.SB || {};
       }
     });
     (p.personas || []).forEach(function (per) {
-      if (per.image && per.image.ref && !named[per.image.ref]) {
-        named[per.image.ref] = (per.name || 'persona') + ' reference';
-      }
+      SB.Personas.imagesOf(per).forEach(function (img, n) {
+        if (!img || !img.ref || named[img.ref]) return;
+        const lbl = (img.label || '').trim();
+        named[img.ref] = (per.name || 'subject') + ' reference' +
+          (lbl ? ' (' + lbl + ')' : (n ? ' ' + (n + 1) : ''));
+      });
     });
     Object.keys(blobs).forEach(function (k) {
       heavy.push({ label: named[k] || 'kept for an older version', b: bytes(blobs[k]) });
@@ -4963,6 +5334,7 @@ window.SB = window.SB || {};
         SB.app.selection = [r.ids[0]];
         SB.app.changed(true);                 // rebuilds this row from ai state
         if (newCast.length) SB.PersonaPanel.refresh();
+        SB.PersonaPanel.refreshScenes();      // the shot count on this scene just moved
         SB.toast(ai.status + (r.beats.length ? ' — ' + r.beats.join(' → ') : ''));
       }).catch(function (e) { failed(e, runGen); });
     }
@@ -4974,6 +5346,7 @@ window.SB = window.SB || {};
       ai.ids = null;
       ai.personaIds = null;
       if (hadCast) SB.PersonaPanel.refresh();
+      SB.PersonaPanel.refreshScenes();
       ai.status = 'generated shots removed';
       ai.err = false;
       SB.app.selectedShotId = null;
@@ -5069,6 +5442,7 @@ window.SB = window.SB || {};
     d.value = sc.description || '';
     d.placeholder = 'Scene description';
     d.addEventListener('input', function () { sc.description = d.value; SB.app.changed(false); });
+    SB.Mentions.attach(d, { scene: sc });
     fields.appendChild(h); fields.appendChild(d);
     fields.appendChild(sceneAi(sc, d));
     /* Only once the scene actually claims something — an untied scene, which is
@@ -5455,6 +5829,9 @@ window.SB = window.SB || {};
     desc.value = sh.description || '';
     desc.placeholder = 'What we see. This is what the prompt writer reads.';
     desc.addEventListener('input', function () { sh.description = desc.value; SB.app.changed(false); });
+    /* @ names somebody, somewhere or something — and casts them on this card,
+       which is the half that reaches the model. */
+    SB.Mentions.attach(desc, { shot: sh, code: SB.Model.code(si, sj) });
     c.appendChild(desc);
 
     /* --- the project's own extra fields --- */
@@ -5471,6 +5848,7 @@ window.SB = window.SB || {};
         SB.Fields.set(sh, f.id, ta.value);
         SB.app.changed(false);
       });
+      SB.Mentions.attach(ta, { shot: sh, code: SB.Model.code(si, sj) });
       c.appendChild(ta);
     });
 
@@ -5524,11 +5902,14 @@ window.SB = window.SB || {};
     row.dataset.shot = sh.id;
     const cast = SB.Personas.forShot(P(), sh);
     cast.forEach(function (per) {
-      const chip = SB.el('span', 'cast-chip' + (per.image ? ' has-img' : ''),
-        (per.image ? '◉ ' : '') + (per.name || 'unnamed'));
-      chip.title = per.image
-        ? (per.name + ' — reference image supplied')
-        : (per.name + ' — no reference image, described in full');
+      const kind = SB.Personas.kindOf(per);
+      const n = SB.Personas.imagesOf(per).length;
+      const chip = SB.el('span', 'cast-chip kind-' + kind.id + (n ? ' has-img' : ''),
+        (n ? '◉ ' : '') + (per.name || 'unnamed') + (n > 1 ? ' ×' + n : ''));
+      chip.title = n
+        ? (per.name + ' — ' + kind.label.toLowerCase() + ', ' +
+           (n === 1 ? 'one reference image' : n + ' reference images'))
+        : (per.name + ' — ' + kind.label.toLowerCase() + ', no reference image, described in full');
       row.appendChild(chip);
     });
     if (!cast.length) row.appendChild(SB.el('span', 'cast-empty', 'no cast'));
@@ -5575,21 +5956,31 @@ window.SB = window.SB || {};
     const old = document.querySelector('.cast-pop');
     if (old) old.remove();
     const pop = SB.el('div', 'cast-pop');
-    SB.Personas.all(P()).forEach(function (per) {
-      const l = SB.el('label', 'cast-opt');
-      const cb = document.createElement('input');
-      cb.type = 'checkbox';
-      cb.checked = (sh.personaIds || []).indexOf(per.id) >= 0;
-      cb.onchange = function () {
-        SB.Personas.toggleOnShot(P(), sh, per.id);
-        SB.Store.touch();
-        refreshCast();
-      };
-      l.appendChild(cb);
-      l.appendChild(document.createTextNode(' ' + (per.name || 'unnamed')));
-      pop.appendChild(l);
+    /* Grouped, because "who is in this" and "where is this" are different
+       questions and a flat list of thirty names answers neither quickly. */
+    let any = false;
+    SB.Personas.KINDS.forEach(function (kind) {
+      const mine = SB.Personas.ofKind(P(), kind.id);
+      if (!mine.length) return;
+      any = true;
+      pop.appendChild(SB.el('div', 'cast-pop-head', kind.plural));
+      mine.forEach(function (per) {
+        const l = SB.el('label', 'cast-opt');
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.checked = (sh.personaIds || []).indexOf(per.id) >= 0;
+        cb.onchange = function () {
+          SB.Personas.toggleOnShot(P(), sh, per.id);
+          SB.Store.touch();
+          refreshCast();
+        };
+        l.appendChild(cb);
+        l.appendChild(document.createTextNode(' ' + (per.name || 'unnamed')));
+        pop.appendChild(l);
+      });
     });
-    const manage = SB.el('button', 'mini', 'manage personas…');
+    if (!any) pop.appendChild(SB.el('div', 'cast-pop-head', 'nothing on the board yet'));
+    const manage = SB.el('button', 'mini', 'open the reference library…');
     manage.onclick = function () { pop.remove(); SB.PersonaPanel.open(); };
     pop.appendChild(manage);
 
@@ -5836,6 +6227,7 @@ window.SB = window.SB || {};
 
   SB.Board = {
     render: render,
+    sceneAi: sceneAi,
     renderSceneList: renderSceneList,
     renderScriptWindows: renderScriptWindows,
     refreshCast: refreshCast,
@@ -7372,7 +7764,13 @@ window.SB = window.SB || {};
    * it out would lose the shot. */
   function carriesWardrobe(p, sh) {
     if (!(sh.description || '').trim()) return null;
-    if (!SB.Personas.forShot(p, sh).length) return null;
+    /* People only. A location or an object cast on the card says nothing about
+     * whose clothes the description is describing, and a "vest" in a shot with
+     * only a room attached is somebody's prose, not a stale copy. */
+    const people = SB.Personas.forShot(p, sh).filter(function (per) {
+      return SB.Personas.kindOf(per).id === 'person';
+    });
+    if (!people.length) return null;
     const terms = wardrobeTerms(sh.description);
     return terms.length ? terms : null;
   }
@@ -7916,23 +8314,265 @@ window.SB = window.SB || {};
 </script>
 <script>
 /* ===== js/personapanel.js ===== */
-/* personapanel.js — add, edit and maintain the people who recur on the board. */
+/* personapanel.js — the reference library.
+ *
+ * A full-page takeover holding the two things that are true of the whole board
+ * rather than of one card: every recurring subject (the cast, the locations,
+ * the objects) and the scenes in the order they play. Both are answers to
+ * "what is this film made of", which is a question you ask with your head up,
+ * away from the cards — so it gets the whole window rather than a 320px column
+ * squeezed in beside the board.
+ *
+ * The scenes here are deliberately shot-free: this is the shape of the film,
+ * not its contents. Shots have a board.
+ */
 (function (SB) {
   'use strict';
 
-  let panel, bodyEl, statusEl;
+  const SPLIT_KEY = 'sb.library.split';
+
+  let root = null;          // the overlay, while it is open
+  let refsEl, scenesEl, statusEl, searchEl;
+  let filter = 'all';       // which kind the library is showing
+  let query = '';
 
   function P() { return SB.app.project; }
 
-  function init() {
-    panel = document.getElementById('personaPanel');
-    bodyEl = document.getElementById('personaBody');
-  }
+  function init() { /* nothing to bind — the takeover is built when it opens */ }
 
   function setStatus(txt, isErr) {
     if (!statusEl) return;
     statusEl.textContent = txt || '';
     statusEl.classList.toggle('err', !!isErr);
+  }
+
+  /* ---------------------------------------------------------------- shell */
+
+  function open() {
+    if (root) { render(); return; }
+
+    root = SB.el('div', 'lib-back');
+    const lib = SB.el('div', 'lib');
+
+    lib.appendChild(head());
+
+    const split = SB.el('div', 'lib-split');
+    refsEl = SB.el('section', 'lib-refs');
+    scenesEl = SB.el('section', 'lib-scenes');
+    const divider = SB.el('div', 'lib-divider');
+    divider.title = 'Drag to give more room to either half';
+    split.appendChild(refsEl);
+    split.appendChild(divider);
+    split.appendChild(scenesEl);
+    lib.appendChild(split);
+    dragDivider(divider, refsEl);
+
+    root.appendChild(lib);
+    root.addEventListener('mousedown', function (ev) { if (ev.target === root) close(); });
+    document.addEventListener('keydown', onKey);
+    document.getElementById('modalRoot').appendChild(root);
+    document.getElementById('btnPersonas').classList.add('on');
+
+    const saved = parseFloat(localStorage.getItem(SPLIT_KEY) || '');
+    if (saved > 20 && saved < 90) refsEl.style.flexBasis = saved + '%';
+
+    render();
+    if (searchEl) searchEl.focus();
+  }
+
+  /* Esc closes, but not out from under a popover or a confirm inside it. */
+  function onKey(e) {
+    if (e.key !== 'Escape' || !root) return;
+    if (document.querySelector('.modal-back')) return;   // a dialog owns Esc first
+    if (document.querySelector('.lib-pop')) return;
+    close();
+  }
+
+  function close() {
+    if (!root) return;
+    root.remove();
+    root = null;
+    refsEl = scenesEl = statusEl = searchEl = null;
+    document.removeEventListener('keydown', onKey);
+    document.getElementById('btnPersonas').classList.remove('on');
+  }
+
+  function toggle() { root ? close() : open(); }
+  function isOpen() { return !!root; }
+  function refresh() { if (root) render(); }
+  function refreshScenes() { if (root) renderScenes(); }
+  /* Just the library half — so something minted while typing in the scene
+     organizer appears without rebuilding the box being typed into. */
+  function refreshRefs() { if (root) renderRefs(); }
+
+  /* The divider writes a percentage rather than pixels, so the split survives
+   * the window being resized between sessions. */
+  function dragDivider(divider, upper) {
+    divider.addEventListener('mousedown', function (ev) {
+      ev.preventDefault();
+      const box = divider.parentNode.getBoundingClientRect();
+      const move = function (m) {
+        const pct = SB.clamp((m.clientY - box.top) / box.height * 100, 22, 88);
+        upper.style.flexBasis = pct + '%';
+      };
+      const up = function () {
+        document.removeEventListener('mousemove', move);
+        document.removeEventListener('mouseup', up);
+        try { localStorage.setItem(SPLIT_KEY, parseFloat(upper.style.flexBasis)); } catch (e) { /* private mode */ }
+      };
+      document.addEventListener('mousemove', move);
+      document.addEventListener('mouseup', up);
+    });
+  }
+
+  function head() {
+    const h = SB.el('header', 'lib-head');
+    h.appendChild(SB.el('h2', null, 'Reference library'));
+
+    const tabs = SB.el('div', 'lib-tabs');
+    const tab = function (id, label) {
+      const b = SB.el('button', 'tb toggle' + (filter === id ? ' on' : ''), label);
+      b.onclick = function () {
+        filter = id;
+        tabs.querySelectorAll('button').forEach(function (x) { x.classList.remove('on'); });
+        b.classList.add('on');
+        renderRefs();
+      };
+      return b;
+    };
+    tabs.appendChild(tab('all', 'All'));
+    SB.Personas.KINDS.forEach(function (k) { tabs.appendChild(tab(k.id, k.plural)); });
+    h.appendChild(tabs);
+
+    searchEl = document.createElement('input');
+    searchEl.type = 'text';
+    searchEl.className = 'lib-search';
+    searchEl.placeholder = 'Search names and descriptions';
+    searchEl.value = query;
+    searchEl.addEventListener('input', function () {
+      query = searchEl.value.trim().toLowerCase();
+      renderRefs();
+    });
+    h.appendChild(searchEl);
+
+    h.appendChild(SB.el('span', 'spacer'));
+
+    SB.Personas.KINDS.forEach(function (k) {
+      const b = SB.el('button', 'tb', '+ ' + k.label);
+      b.onclick = function () {
+        const per = SB.Personas.add(P(), { kind: k.id });
+        SB.app.changed(true);
+        filter = 'all'; query = ''; searchEl.value = '';
+        renderRefs();
+        focusName(per.id);
+      };
+      h.appendChild(b);
+    });
+
+    /* Demoted on purpose: generating a cast is what you do once, and it had no
+       business owning the top of this panel for the rest of the project. */
+    const bGen = SB.el('button', 'tb', '✦ Generate from script ▾');
+    bGen.onclick = function (ev) { ev.stopPropagation(); generatePop(bGen); };
+    h.appendChild(bGen);
+
+    const x = SB.el('button', 'tb lib-x', '✕');
+    x.title = 'Close (Esc)';
+    x.onclick = close;
+    h.appendChild(x);
+    return h;
+  }
+
+  function focusName(id) {
+    const el = root && root.querySelector('.persona[data-id="' + id + '"] .persona-name');
+    if (el) { el.focus(); el.select(); }
+  }
+
+  /* ------------------------------------------------------ generate popover */
+
+  function generatePop(anchor) {
+    const old = document.querySelector('.lib-pop');
+    if (old) old.remove();
+    const pop = SB.el('div', 'lib-pop');
+    pop.addEventListener('mousedown', function (ev) { ev.stopPropagation(); });
+
+    const kindRow = SB.el('div', 'pp-row');
+    kindRow.appendChild(SB.el('label', null, 'What'));
+    const kind = document.createElement('select');
+    SB.Personas.KINDS.forEach(function (k) {
+      const o = document.createElement('option');
+      o.value = k.id; o.textContent = k.plural;
+      kind.appendChild(o);
+    });
+    kindRow.appendChild(kind);
+    pop.appendChild(kindRow);
+
+    const row = SB.el('div', 'pp-row');
+    row.appendChild(SB.el('label', null, 'How many'));
+    const count = document.createElement('select');
+    [1, 2, 3, 4, 5].forEach(function (n) {
+      const o = document.createElement('option');
+      o.value = n; o.textContent = n;
+      if (n === 2) o.selected = true;
+      count.appendChild(o);
+    });
+    row.appendChild(count);
+    pop.appendChild(row);
+
+    const note = document.createElement('input');
+    note.type = 'text';
+    note.placeholder = 'optional direction — “one on-site technician”';
+    const nRow = SB.el('div', 'pp-row');
+    nRow.appendChild(SB.el('label', null, 'Direction'));
+    nRow.appendChild(note);
+    pop.appendChild(nRow);
+
+    const acts = SB.el('div', 'pp-actions');
+    const go = SB.el('button', 'tb on', 'Generate');
+    go.onclick = function () {
+      go.disabled = true;
+      setStatus('reading the script…');
+      SB.Personas.generate(P(), parseInt(count.value, 10) || 1, note.value.trim(), kind.value)
+        .then(function (made) {
+          pop.remove();
+          SB.app.changed(true);
+          filter = 'all';
+          render();
+          setStatus('added ' + made.length + ' — edit anything that is not right.');
+        })
+        .catch(function (e) {
+          go.disabled = false;
+          if (SB.apiBlocked(e, function () { go.onclick(); })) {
+            setStatus('blocked — see the dialog', true);
+            return;
+          }
+          setStatus(e.message || String(e), true);
+        });
+    };
+    acts.appendChild(go);
+    pop.appendChild(acts);
+    pop.appendChild(SB.el('div', 'pp-note',
+      'Read from the master script and the shot descriptions. Nothing is replaced — ' +
+      'whatever comes back is added to what is already here.'));
+
+    document.body.appendChild(pop);
+    const r = anchor.getBoundingClientRect();
+    pop.style.left = Math.min(r.left, window.innerWidth - pop.offsetWidth - 8) + 'px';
+    pop.style.top = Math.min(r.bottom + 4, window.innerHeight - pop.offsetHeight - 8) + 'px';
+    setTimeout(function () {
+      document.addEventListener('mousedown', function away(ev) {
+        if (pop.contains(ev.target)) return;
+        pop.remove();
+        document.removeEventListener('mousedown', away);
+      });
+    }, 0);
+  }
+
+  /* --------------------------------------------------------------- render */
+
+  function render() {
+    if (!root || !P()) return;
+    renderRefs();
+    renderScenes();
   }
 
   /* A board-wide sweep for descriptions that still carry a wardrobe. It lives
@@ -7968,8 +8608,8 @@ window.SB = window.SB || {};
         onProgress: function (done, total) { say('cleaning ' + done + '/' + total + '…'); }
       }).then(function (r) {
         SB.app.changed(true);
-        render();
-        /* render() has rebuilt the panel by now — the sweep block is gone once
+        renderRefs();
+        /* renderRefs() has rebuilt this by now — the sweep block is gone once
            everything is clean, so anything left to say goes to the toast. */
         SB.toast(r.cleaned + ' description' + (r.cleaned === 1 ? '' : 's') + ' cleaned' +
           (r.stripped ? ' (' + r.stripped + ' without a request)' : '') +
@@ -7986,111 +8626,120 @@ window.SB = window.SB || {};
     return box;
   }
 
-  function render() {
-    if (!panel || !P()) return;
-    const p = P();
-    bodyEl.innerHTML = '';
-
-    const sweep = sweepBlock(p);
-    if (sweep) bodyEl.appendChild(sweep);
-
-    /* --- generate --- */
-    const gen = SB.el('div', 'pp-block');
-    gen.appendChild(SB.el('div', 't', 'generate from the script'));
-
-    const row = SB.el('div', 'pp-row');
-    row.appendChild(SB.el('label', null, 'How many'));
-    const count = document.createElement('select');
-    [1, 2, 3, 4, 5].forEach(function (n) {
-      const o = document.createElement('option');
-      o.value = n; o.textContent = n;
-      if (n === 2) o.selected = true;
-      count.appendChild(o);
-    });
-    row.appendChild(count);
-    gen.appendChild(row);
-
-    const note = document.createElement('input');
-    note.type = 'text';
-    note.placeholder = 'optional direction — “one on-site technician”';
-    const nRow = SB.el('div', 'pp-row');
-    nRow.appendChild(SB.el('label', null, 'Direction'));
-    nRow.appendChild(note);
-    gen.appendChild(nRow);
-
-    const acts = SB.el('div', 'pp-actions');
-    const bGen = SB.el('button', 'tb on', 'Generate');
-    bGen.onclick = function () {
-      bGen.disabled = true;
-      setStatus('reading the script…');
-      SB.Personas.generate(p, parseInt(count.value, 10) || 1, note.value.trim())
-        .then(function (made) {
-          bGen.disabled = false;
-          SB.app.changed(true);
-          render();
-          setStatus('added ' + made.length + ' — edit anything that is not right.');
-        })
-        .catch(function (e) {
-          bGen.disabled = false;
-          if (SB.apiBlocked(e, function () { bGen.onclick(); })) {
-            setStatus('blocked — see the dialog', true);
-            return;
-          }
-          setStatus(e.message || String(e), true);
-        });
-    };
-    const bAdd = SB.el('button', 'tb', '+ Blank persona');
-    bAdd.onclick = function () {
-      SB.Personas.add(p, {});
-      SB.app.changed(true);
-      render();
-    };
-    acts.appendChild(bGen);
-    acts.appendChild(bAdd);
-    gen.appendChild(acts);
-
-    statusEl = SB.el('div', 'pp-status');
-    gen.appendChild(statusEl);
-    gen.appendChild(SB.el('div', 'pp-note',
-      'Descriptions carry the wardrobe. That text plus the reference image is what keeps ' +
-      'a person identical from shot to shot.'));
-    bodyEl.appendChild(gen);
-
-    /* --- the personas themselves --- */
-    const list = SB.Personas.all(p);
-    if (!list.length) {
-      bodyEl.appendChild(SB.el('div', 'pp-note', 'No personas yet.'));
-    }
-    list.forEach(function (per, i) { bodyEl.appendChild(card(per, i)); });
+  function matches(per) {
+    if (!query) return true;
+    return ((per.name || '') + ' ' + (per.description || '')).toLowerCase().indexOf(query) >= 0;
   }
 
-  function card(per, idx) {
+  function renderRefs() {
+    if (!refsEl || !P()) return;
     const p = P();
-    const wrap = SB.el('div', 'persona');
+    refsEl.innerHTML = '';
 
+    statusEl = SB.el('div', 'pp-status lib-status');
+    refsEl.appendChild(statusEl);
+
+    const sweep = sweepBlock(p);
+    if (sweep) refsEl.appendChild(sweep);
+
+    let shown = 0;
+    SB.Personas.KINDS.forEach(function (kind) {
+      if (filter !== 'all' && filter !== kind.id) return;
+      const mine = SB.Personas.ofKind(p, kind.id).filter(matches);
+      const sec = SB.el('div', 'lib-section');
+      const h = SB.el('div', 'lib-section-head');
+      h.appendChild(SB.el('span', 't', kind.plural));
+      h.appendChild(SB.el('span', 'n', mine.length ? String(mine.length) : ''));
+      sec.appendChild(h);
+
+      if (!mine.length) {
+        sec.appendChild(SB.el('div', 'pp-note lib-empty',
+          query ? 'Nothing here matches “' + query + '”.'
+                : 'No ' + kind.plural.toLowerCase() + ' yet.'));
+      } else {
+        const grid = SB.el('div', 'lib-grid');
+        mine.forEach(function (per) { grid.appendChild(card(per)); });
+        sec.appendChild(grid);
+        shown += mine.length;
+      }
+      refsEl.appendChild(sec);
+    });
+
+    if (!shown && !query) {
+      refsEl.appendChild(SB.el('div', 'pp-note',
+        'A subject here is anything that has to look the same twice — a person, a room, ' +
+        'a product. Descriptions carry the wardrobe; the description plus the reference ' +
+        'images is what keeps it identical from shot to shot.'));
+    }
+  }
+
+  /* ------------------------------------------------------------ one subject */
+
+  function card(per) {
+    const p = P();
+    const kind = SB.Personas.kindOf(per);
+    const wrap = SB.el('div', 'persona kind-' + kind.id);
+    wrap.dataset.id = per.id;
+
+    /* ---- head: name, kind, usage, delete ---- */
     const head = SB.el('div', 'persona-head');
     const name = document.createElement('input');
     name.type = 'text';
     name.className = 'persona-name';
     name.value = per.name || '';
     name.placeholder = 'Name';
+    let wasNamed = per.name || '';
     name.addEventListener('input', function () {
       per.name = name.value;
       SB.Personas.touch(per);
       SB.Store.touch();
-      /* Rows only — refreshCast() re-renders this panel, which would rebuild
-         the very input being typed into and drop focus after each keystroke. */
+      /* Rows only — re-rendering this panel would rebuild the very input being
+         typed into and drop focus after each keystroke. */
       SB.Board.refreshCastRows();
+    });
+    /* The name is written into descriptions by hand and by @, so a rename
+       leaves copies of the old one lying around. Offered, never automatic. */
+    name.addEventListener('blur', function () {
+      const was = wasNamed, now = per.name || '';
+      wasNamed = now;
+      if (!was || !now || was === now) return;
+      offerRename(per, was, now);
     });
     head.appendChild(name);
 
+    const sel = document.createElement('select');
+    sel.className = 'persona-kind';
+    sel.title = 'What this is. It changes how the prompt writer is told about it.';
+    SB.Personas.KINDS.forEach(function (k) {
+      const o = document.createElement('option');
+      o.value = k.id; o.textContent = k.label;
+      if (k.id === kind.id) o.selected = true;
+      sel.appendChild(o);
+    });
+    sel.onchange = function () {
+      per.kind = sel.value;
+      SB.Personas.touch(per);
+      SB.app.changed(true);
+      renderRefs();
+    };
+    head.appendChild(sel);
+
     const used = countShots(per.id);
-    head.appendChild(SB.el('span', 'persona-used', used + (used === 1 ? ' shot' : ' shots')));
+    const usedEl = SB.el('button', 'persona-used', used + (used === 1 ? ' shot' : ' shots'));
+    if (used) {
+      usedEl.title = 'Go to the first card this is on';
+      usedEl.onclick = function () { jumpToFirst(per.id); };
+    } else {
+      usedEl.classList.add('none');
+      usedEl.title = 'Not on any card yet';
+      usedEl.disabled = true;
+    }
+    head.appendChild(usedEl);
 
     const del = SB.el('button', 'mini danger', '✕');
-    del.title = 'Remove this persona and take it off every shot';
+    del.title = 'Remove this and take it off every shot';
     del.onclick = function () {
-      if (!confirm('Remove “' + (per.name || 'persona') + '”? It comes off ' + used + ' shot(s).')) return;
+      if (!confirm('Remove “' + (per.name || kind.one) + '”? It comes off ' + used + ' shot(s).')) return;
       SB.Personas.remove(p, per.id);
       SB.app.changed(true);
       render();
@@ -8098,71 +8747,34 @@ window.SB = window.SB || {};
     head.appendChild(del);
     wrap.appendChild(head);
 
-    /* reference frame */
-    const frame = SB.el('div', 'persona-frame');
-    if (per.image) {
-      const img = document.createElement('img');
-      img.src = SB.Blobs.src(P(), per.image);
-      frame.appendChild(img);
-    } else {
-      frame.appendChild(SB.el('div', 'drop-hint', 'drop the reference frame here, or click to load'));
-    }
-    frame.onclick = function () {
-      SB.pickImageFile().then(function (f) { if (f) setImage(per, f); });
-    };
-    frame.addEventListener('dragover', function (ev) {
-      ev.preventDefault();
-      frame.classList.add('drag-over');
-    });
-    frame.addEventListener('dragleave', function () { frame.classList.remove('drag-over'); });
-    frame.addEventListener('drop', function (ev) {
-      ev.preventDefault();
-      frame.classList.remove('drag-over');
-      SB.imageFromTransfer(ev.dataTransfer).then(function (src) {
-        if (src) setImage(per, src);
-        else SB.toast('No image in that drop', true);
-      });
-    });
-    if (per.image) {
-      const rm = SB.el('button', 'mini danger persona-clear', 'remove image');
-      rm.onclick = function (ev) {
-        ev.stopPropagation();
-        per.image = null;
-        SB.Personas.touch(per);
-        SB.app.changed(true);
-        render();
-      };
-      frame.appendChild(rm);
-    }
-    wrap.appendChild(frame);
-    wrap.appendChild(SB.el('div', 'pp-note',
-      per.image
-        ? 'Fed to the model as image ' + imageIndex(per) + ' wherever this persona appears.'
-        : 'No reference image — prompts will describe this person in full instead.'));
+    /* ---- reference frames ---- */
+    wrap.appendChild(frames(per, kind));
 
-    wrap.appendChild(SB.el('div', 'box-label', 'description + wardrobe'));
+    /* ---- description ---- */
+    wrap.appendChild(SB.el('div', 'box-label', kind.descLabel));
     const d = document.createElement('textarea');
     d.className = 'persona-text';
     d.rows = 4;
     d.value = per.description || '';
-    d.placeholder = 'Age range, build, hair, and the exact outfit — fabric and colour.';
+    d.placeholder = kind.descHint;
     d.addEventListener('input', function () {
       per.description = d.value;
       SB.Personas.touch(per);
       SB.Store.touch();
-      /* the cards carrying this person may now be showing a prompt written
-         against the old wardrobe */
+      /* the cards carrying this may now be showing a prompt written against
+         the old wardrobe */
       SB.Board.refreshCastRows();
       SB.Board.refreshPromptStale();
     });
     wrap.appendChild(d);
 
+    /* ---- reference-image prompt ---- */
     wrap.appendChild(SB.el('div', 'box-label', 'reference image prompt'));
     const ip = document.createElement('textarea');
     ip.className = 'persona-text';
-    ip.rows = 4;
+    ip.rows = 3;
     ip.value = per.imagePrompt || '';
-    ip.placeholder = 'The prompt that makes this person’s reference frame.';
+    ip.placeholder = 'The prompt that makes this reference frame.';
     ip.addEventListener('input', function () {
       per.imagePrompt = ip.value;
       SB.Personas.touch(per);
@@ -8189,9 +8801,8 @@ window.SB = window.SB || {};
         ? 'HOUSE STYLE — obey this.\n\n' + SB.Brand.brandOf(P()).text : '';
       SB.Prompts.raw(
         'Write one still-image prompt for ' + (m ? m.name : 'an image model') +
-        ' that produces a clean, front-facing reference frame of this person: plain background, ' +
-        'natural light, full wardrobe visible, neutral expression. No gendered language.\n\n' +
-        'PERSON:\n' + per.description,
+        ' that produces ' + kind.refBrief + '. No gendered language.\n\n' +
+        kind.label.toUpperCase() + ':\n' + per.description,
         { type: 'OBJECT', properties: { imagePrompt: { type: 'STRING' } }, required: ['imagePrompt'] },
         sys
       ).then(function (out) {
@@ -8211,10 +8822,290 @@ window.SB = window.SB || {};
     return wrap;
   }
 
-  function imageIndex(per) {
-    const withImg = SB.Personas.all(P()).filter(function (x) { return !!x.image; });
-    return withImg.indexOf(per) + 1;
+  /* One angle rarely pins a face or a room down, so a subject holds as many
+   * frames as it needs. The first is the hero: it is what the board shows and
+   * what a single-reference model gets handed. */
+  function frames(per, kind) {
+    const box = SB.el('div', 'persona-frames');
+    const list = SB.Personas.imagesOf(per);
+
+    const big = SB.el('div', 'persona-frame');
+    if (list.length) {
+      const img = document.createElement('img');
+      img.src = SB.Blobs.src(P(), list[0]);
+      big.appendChild(img);
+      const rm = SB.el('button', 'frame-x', '✕');
+      rm.title = 'Remove this reference image';
+      rm.onclick = function (ev) {
+        ev.stopPropagation();
+        SB.Personas.removeImage(per, 0);
+        SB.app.changed(true);
+        renderRefs();
+      };
+      big.appendChild(rm);
+    } else {
+      big.appendChild(SB.el('div', 'drop-hint', 'drop the reference frame here, or click to load'));
+    }
+    dropTarget(big, per);
+    box.appendChild(big);
+
+    const strip = SB.el('div', 'persona-strip');
+    list.forEach(function (img, i) {
+      const cell = SB.el('div', 'strip-cell' + (i === 0 ? ' hero' : ''));
+      const t = SB.el('div', 'strip-thumb');
+      const im = document.createElement('img');
+      im.src = SB.Blobs.src(P(), img);
+      t.appendChild(im);
+      t.title = i === 0 ? 'The hero frame' : 'Make this the hero frame';
+      if (i > 0) {
+        t.onclick = function () {
+          SB.Personas.makeHero(per, i);
+          SB.app.changed(true);
+          renderRefs();
+        };
+      }
+      const x = SB.el('button', 'frame-x small', '✕');
+      x.title = 'Remove this reference image';
+      x.onclick = function (ev) {
+        ev.stopPropagation();
+        SB.Personas.removeImage(per, i);
+        SB.app.changed(true);
+        renderRefs();
+      };
+      t.appendChild(x);
+      cell.appendChild(t);
+
+      /* The label is what the prompt block cites — "image 2 = Ops lead (3/4)" —
+         so it is worth a box of its own rather than being guessed at. */
+      const lb = document.createElement('input');
+      lb.type = 'text';
+      lb.className = 'strip-label';
+      lb.value = img.label || '';
+      lb.placeholder = i === 0 ? 'hero' : 'label';
+      lb.title = 'What this angle is: front, 3/4, wardrobe detail, wide…';
+      lb.addEventListener('input', function () {
+        SB.Personas.labelImage(per, i, lb.value);
+        SB.Store.touch();
+      });
+      cell.appendChild(lb);
+      strip.appendChild(cell);
+    });
+
+    const add = SB.el('div', 'strip-cell');
+    const plus = SB.el('div', 'strip-thumb add', '+');
+    plus.title = 'Add another reference image';
+    plus.onclick = function () {
+      SB.pickImageFile().then(function (f) { if (f) addImage(per, f); });
+    };
+    dropTarget(plus, per);
+    add.appendChild(plus);
+    strip.appendChild(add);
+    box.appendChild(strip);
+
+    const n = list.length;
+    let note;
+    if (!n) note = 'No reference image — prompts will describe this in full instead.';
+    else note = (n === 1 ? 'One frame' : n + ' frames') + ', fed in this order wherever ' +
+      (per.name || 'this') + ' appears.';
+    if (n > SB.Personas.IMAGE_ADVICE) {
+      note += ' Past ' + SB.Personas.IMAGE_ADVICE + ', most image models start averaging ' +
+        'references together instead of reading them.';
+    }
+    box.appendChild(SB.el('div', 'pp-note' + (n > SB.Personas.IMAGE_ADVICE ? ' warn' : ''), note));
+    return box;
   }
+
+  function dropTarget(el, per) {
+    el.onclick = el.onclick || function () {
+      SB.pickImageFile().then(function (f) { if (f) addImage(per, f); });
+    };
+    el.addEventListener('dragover', function (ev) {
+      ev.preventDefault();
+      el.classList.add('drag-over');
+    });
+    el.addEventListener('dragleave', function () { el.classList.remove('drag-over'); });
+    el.addEventListener('drop', function (ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      el.classList.remove('drag-over');
+      SB.imageFromTransfer(ev.dataTransfer).then(function (src) {
+        if (src) addImage(per, src);
+        else SB.toast('No image in that drop', true);
+      });
+    });
+  }
+
+  function addImage(per, src) {
+    return SB.downscaleImage(src).then(function (img) {
+      SB.Personas.addImage(per, SB.Blobs.image(P(), img.data, img.w, img.h));
+      SB.app.changed(true);
+      renderRefs();
+    }).catch(function (e) { SB.toast('Image failed: ' + e.message, true); });
+  }
+
+  /* ---- renaming leaves copies of the old name in descriptions ---- */
+
+  function offerRename(per, was, now) {
+    const re = new RegExp('\\b' + was.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'g');
+    const hits = [];
+    SB.Model.eachShot(P(), function (sh) {
+      if ((sh.personaIds || []).indexOf(per.id) < 0) return;
+      if (re.test(sh.description || '')) hits.push(sh);
+      re.lastIndex = 0;
+    });
+    if (!hits.length) return;
+
+    setStatus('');
+    const bar = SB.el('div', 'lib-rename');
+    bar.appendChild(SB.el('span', null,
+      '“' + was + '” is written into ' + hits.length +
+      (hits.length === 1 ? ' description' : ' descriptions') + '.'));
+    const b = SB.el('button', 'mini primary', 'Update ' + (hits.length === 1 ? 'it' : 'them') +
+      ' to “' + now + '”');
+    b.onclick = function () {
+      hits.forEach(function (sh) {
+        sh.description = (sh.description || '').replace(re, now);
+      });
+      bar.remove();
+      SB.app.changed(true);
+      SB.toast(hits.length + (hits.length === 1 ? ' description' : ' descriptions') + ' updated');
+    };
+    const no = SB.el('button', 'mini link', 'leave them');
+    no.onclick = function () { bar.remove(); };
+    bar.appendChild(b);
+    bar.appendChild(no);
+    statusEl.parentNode.insertBefore(bar, statusEl.nextSibling);
+  }
+
+  /* --------------------------------------------------------------- scenes */
+
+  /* The shape of the film. Headings and descriptions, in order, with no shots
+   * under them — the board is where shots live, and putting them here would
+   * make this a second board instead of a way to see the whole thing at once. */
+  function renderScenes() {
+    if (!scenesEl || !P()) return;
+    const p = P();
+    scenesEl.innerHTML = '';
+
+    const h = SB.el('div', 'lib-section-head');
+    h.appendChild(SB.el('span', 't', 'Scenes'));
+    h.appendChild(SB.el('span', 'n', String(p.scenes.length)));
+    h.appendChild(SB.el('span', 'spacer'));
+    const add = SB.el('button', 'tb', '+ Scene');
+    add.onclick = function () {
+      const sc = SB.Model.addScene(p);
+      SB.app.selectedSceneId = sc.id;
+      SB.app.changed(true);
+      renderScenes();
+      const el = scenesEl.querySelector('.sc-row[data-id="' + sc.id + '"] .sh-heading');
+      if (el) { el.focus(); el.select(); }
+    };
+    h.appendChild(add);
+    scenesEl.appendChild(h);
+
+    const list = SB.el('div', 'sc-list');
+    p.scenes.forEach(function (sc, i) { list.appendChild(sceneRow(sc, i)); });
+    scenesEl.appendChild(list);
+    scenesEl.appendChild(SB.el('div', 'pp-note',
+      'Drag a scene by its handle to reorder the film. Shots stay with their scene.'));
+  }
+
+  function sceneRow(sc, idx) {
+    const p = P();
+    const row = SB.el('div', 'sc-row' + (SB.app.selectedSceneId === sc.id ? ' sel' : ''));
+    row.dataset.id = sc.id;
+
+    const grip = SB.el('div', 'sc-grip', '⠿');
+    grip.title = 'Drag to reorder';
+    grip.draggable = true;
+    grip.addEventListener('dragstart', function (ev) {
+      ev.dataTransfer.setData('text/sb-scene', sc.id);
+      ev.dataTransfer.effectAllowed = 'move';
+      row.classList.add('dragging');
+    });
+    grip.addEventListener('dragend', function () { row.classList.remove('dragging'); });
+    row.appendChild(grip);
+
+    row.addEventListener('dragover', function (ev) {
+      if (ev.dataTransfer.types.indexOf('text/sb-scene') < 0) return;
+      ev.preventDefault();
+      row.classList.add('drag-over');
+    });
+    row.addEventListener('dragleave', function () { row.classList.remove('drag-over'); });
+    row.addEventListener('drop', function (ev) {
+      row.classList.remove('drag-over');
+      const id = ev.dataTransfer.getData('text/sb-scene');
+      if (!id || id === sc.id) return;
+      ev.preventDefault();
+      SB.Model.moveScene(p, id, idx);
+      SB.app.changed(true);
+      renderScenes();
+      SB.Board.renderSceneList();
+    });
+
+    const num = SB.el('div', 'sc-num', String(idx + 1));
+    row.appendChild(num);
+
+    const fields = SB.el('div', 'sc-fields');
+    const hd = document.createElement('input');
+    hd.type = 'text';
+    hd.className = 'sh-heading';
+    hd.value = sc.heading || '';
+    hd.placeholder = 'Scene heading';
+    hd.addEventListener('input', function () {
+      sc.heading = hd.value;
+      SB.app.changed(false);
+      SB.Board.renderSceneList();
+    });
+    fields.appendChild(hd);
+
+    const d = document.createElement('textarea');
+    d.className = 'sh-desc';
+    d.rows = 3;
+    d.value = sc.description || '';
+    d.placeholder = 'Scene description — what happens here, in prose.';
+    d.addEventListener('input', function () { sc.description = d.value; SB.app.changed(false); });
+    SB.Mentions.attach(d, { scene: sc });
+    fields.appendChild(d);
+    fields.appendChild(SB.Board.sceneAi(sc, d));
+    row.appendChild(fields);
+
+    /* The only nod to shots: how many, and whether the scene claims a section
+       of the script. Both are answers about the scene, not about its contents. */
+    const meta = SB.el('div', 'sc-meta');
+    const claim = sc.link && !sc.broken ? 'section'
+      : (sc.broken ? 'section broken' : (sc.local ? 'own section' : 'untied'));
+    const go = SB.el('button', 'mini', sc.shots.length +
+      (sc.shots.length === 1 ? ' shot' : ' shots'));
+    go.title = 'Show this scene on the board';
+    go.onclick = function () {
+      close();
+      SB.app.selectedSceneId = sc.id;
+      SB.Board.renderSceneList();
+      const blk = document.querySelector('.scene-block[data-scene="' + sc.id + '"]');
+      if (blk) blk.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+    meta.appendChild(go);
+    meta.appendChild(SB.el('div', 'sc-claim' + (sc.broken ? ' broken' : ''), claim));
+
+    const del = SB.el('button', 'mini danger', '✕');
+    del.title = 'Delete this scene';
+    del.onclick = function () {
+      if (p.scenes.length < 2) { SB.toast('A board keeps at least one scene', true); return; }
+      if (sc.shots.length && !confirm('Delete “' + (sc.heading || 'this scene') + '” and its ' +
+        sc.shots.length + ' shot(s)?')) return;
+      SB.Model.deleteScene(p, sc.id);
+      SB.app.changed(true);
+      renderScenes();
+      SB.Board.renderSceneList();
+    };
+    meta.appendChild(del);
+    row.appendChild(meta);
+
+    return row;
+  }
+
+  /* ---------------------------------------------------------------- utils */
 
   function countShots(id) {
     let n = 0;
@@ -8224,30 +9115,279 @@ window.SB = window.SB || {};
     return n;
   }
 
-  function setImage(per, src) {
-    return SB.downscaleImage(src).then(function (img) {
-      per.image = SB.Blobs.image(P(), img.data, img.w, img.h);
-      SB.app.changed(true);
-      render();
-    }).catch(function (e) { SB.toast('Image failed: ' + e.message, true); });
+  function jumpToFirst(id) {
+    let found = null;
+    SB.Model.eachShot(P(), function (sh) {
+      if (!found && (sh.personaIds || []).indexOf(id) >= 0) found = sh;
+    });
+    if (!found) return;
+    close();
+    SB.Board.select(found.id);
+    const el = document.querySelector('.card[data-shot="' + found.id + '"]');
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
-
-  function open() {
-    panel.classList.remove('hidden');
-    document.getElementById('btnPersonas').classList.add('on');
-    render();
-  }
-  function close() {
-    panel.classList.add('hidden');
-    document.getElementById('btnPersonas').classList.remove('on');
-  }
-  function toggle() { panel.classList.contains('hidden') ? open() : close(); }
-  function isOpen() { return panel && !panel.classList.contains('hidden'); }
-  function refresh() { if (isOpen()) render(); }
 
   SB.PersonaPanel = {
-    init: init, open: open, close: close, toggle: toggle, isOpen: isOpen, refresh: refresh
+    init: init, open: open, close: close, toggle: toggle, isOpen: isOpen,
+    refresh: refresh, refreshScenes: refreshScenes, refreshRefs: refreshRefs
   };
+
+})(window.SB);
+
+</script>
+<script>
+/* ===== js/mentions.js ===== */
+/* mentions.js — type @ to name somebody, somewhere or something.
+ *
+ * Picking from the popover does two things, and the second one is the point:
+ *
+ *   1. it writes the plain name into the text, so the description reads as
+ *      prose — "Ops lead crouches beside the cabinet", not @[Ops lead](per_7).
+ *      A sentinel would leak into every prompt and would have to be stripped
+ *      out again in three places.
+ *   2. it casts that subject on the shot.
+ *
+ * (2) is what tells the model anything. The name in the description says who
+ * is doing what; the cast block (personas.js) is what carries their face,
+ * their wardrobe and the "image N" mapping, and it is declared authoritative
+ * over the description precisely so the two cannot disagree. So @ is not a
+ * link — it is the fastest way to attach the record that already exists.
+ *
+ * Only plain textareas are wired up. The master script and the tied scene
+ * boxes are Doc-backed contenteditable, where every shot anchor is an offset
+ * into the same string: inserting text behind SB.Doc.replace would desync the
+ * whole file. That wants doing through the Doc primitive, and is its own job.
+ */
+(function (SB) {
+  'use strict';
+
+  let pop = null, host = null, ctx = null;
+  let items = [], active = 0, at = -1, term = '';
+
+  function P() { return SB.app.project; }
+
+  /* An @ only opens the popover at the start of a word — mid-word it is an
+   * email address or a handle somebody is quoting, and stealing those
+   * keystrokes would be worse than not offering the list at all. */
+  function boundary(ch) { return !ch || /[\s(\[\-—"'“‘]/.test(ch); }
+
+  function attach(el, opts) {
+    if (!el) return;
+    el.addEventListener('keydown', function (ev) { onKey(ev, el, opts || {}); }, true);
+    el.addEventListener('input', function () { if (pop && host === el) update(); });
+    el.addEventListener('blur', function () { setTimeout(hide, 120); });
+    el.addEventListener('scroll', hide);
+  }
+
+  function onKey(ev, el, opts) {
+    if (pop && host === el) {
+      if (ev.key === 'ArrowDown') { ev.preventDefault(); move(1); return; }
+      if (ev.key === 'ArrowUp') { ev.preventDefault(); move(-1); return; }
+      if (ev.key === 'Enter' || ev.key === 'Tab') {
+        if (items.length) { ev.preventDefault(); ev.stopPropagation(); choose(items[active]); }
+        return;
+      }
+      if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); hide(); return; }
+      return;
+    }
+    if (ev.key !== '@') return;
+    const before = el.value.slice(0, el.selectionStart).slice(-1);
+    if (!boundary(before)) return;
+    /* The @ itself is typed as normal; the popover opens on the next tick with
+       the caret already past it, so the offsets below are simple. */
+    host = el;
+    ctx = opts;
+    setTimeout(function () {
+      const pos = el.selectionStart - 1;
+      if (el.value.charAt(pos) !== '@') { host = null; return; }
+      term = '';
+      show(pos);
+    }, 0);
+  }
+
+  /* What has been typed since the @, or null once it stops looking like a name
+   * being written (a newline, a second @, or a run long enough that this was
+   * plainly not a mention). */
+  function typed() {
+    if (!host || at < 0) return null;
+    const caret = host.selectionStart;
+    if (caret <= at) return null;
+    const s = host.value.slice(at + 1, caret);
+    if (/[\n@]/.test(s) || s.length > 40) return null;
+    return s;
+  }
+
+  function candidates() {
+    const p = P();
+    const t = term.trim().toLowerCase();
+    const out = [];
+    SB.Personas.KINDS.forEach(function (kind) {
+      SB.Personas.ofKind(p, kind.id).forEach(function (per) {
+        const name = (per.name || '').toLowerCase();
+        if (!t) { out.push({ per: per, kind: kind, rank: 1 }); return; }
+        const i = name.indexOf(t);
+        if (i === 0) out.push({ per: per, kind: kind, rank: 0 });
+        else if (i > 0) out.push({ per: per, kind: kind, rank: 1 });
+        else if ((per.description || '').toLowerCase().indexOf(t) >= 0) {
+          out.push({ per: per, kind: kind, rank: 2 });
+        }
+      });
+    });
+    out.sort(function (a, b) { return a.rank - b.rank; });
+    const list = out.slice(0, 8);
+    /* Writing is when you find out somebody is missing, so minting one is on
+       the list rather than behind a trip to the library. */
+    if (t) {
+      SB.Personas.KINDS.forEach(function (kind) {
+        list.push({ make: kind, kind: kind });
+      });
+    }
+    return list;
+  }
+
+  /* The @ position is set after the teardown, not before it: hide() forgets
+     where the last one was, and that includes the one being opened. */
+  function show(pos) {
+    hide(true);
+    at = pos;
+    pop = SB.el('div', 'men-pop');
+    pop.addEventListener('mousedown', function (ev) { ev.preventDefault(); });   // keep the caret
+    document.body.appendChild(pop);
+    active = 0;
+    update();
+  }
+
+  function update() {
+    if (!pop) return;
+    const t = typed();
+    if (t === null) { hide(); return; }
+    term = t;
+    items = candidates();
+    if (!items.length) { hide(); return; }
+    if (active >= items.length) active = items.length - 1;
+
+    pop.innerHTML = '';
+    items.forEach(function (it, i) {
+      const row = SB.el('div', 'men-row' + (i === active ? ' on' : ''));
+      if (it.make) {
+        row.classList.add('make');
+        row.appendChild(SB.el('span', 'men-kind', '+'));
+        row.appendChild(SB.el('span', 'men-name', 'new ' + it.kind.one + ' “' + term.trim() + '”'));
+      } else {
+        const n = SB.Personas.imagesOf(it.per).length;
+        row.appendChild(SB.el('span', 'men-kind kind-' + it.kind.id, it.kind.label));
+        row.appendChild(SB.el('span', 'men-name', it.per.name || 'unnamed'));
+        if (n) row.appendChild(SB.el('span', 'men-img', n > 1 ? '◉ ×' + n : '◉'));
+      }
+      row.addEventListener('mouseenter', function () {
+        active = i;
+        pop.querySelectorAll('.men-row').forEach(function (r, j) { r.classList.toggle('on', i === j); });
+      });
+      row.addEventListener('click', function () { choose(it); });
+      pop.appendChild(row);
+    });
+    place();
+  }
+
+  function move(d) {
+    if (!items.length) return;
+    active = (active + d + items.length) % items.length;
+    pop.querySelectorAll('.men-row').forEach(function (r, i) { r.classList.toggle('on', i === active); });
+    const on = pop.querySelector('.men-row.on');
+    if (on && on.scrollIntoView) on.scrollIntoView({ block: 'nearest' });
+  }
+
+  /* Anchored to the caret, which a textarea will not tell you about — so the
+   * text up to the caret is measured in a mirror styled like the box. */
+  function place() {
+    const r = host.getBoundingClientRect();
+    const c = caretPoint();
+    let left = r.left + c.x;
+    let top = r.top + c.y + c.h;
+    left = Math.min(left, window.innerWidth - pop.offsetWidth - 8);
+    if (top + pop.offsetHeight > window.innerHeight - 8) top = r.top + c.y - pop.offsetHeight - 2;
+    pop.style.left = Math.max(8, left) + 'px';
+    pop.style.top = Math.max(8, top) + 'px';
+  }
+
+  function caretPoint() {
+    const cs = window.getComputedStyle(host);
+    const mirror = SB.el('div', 'men-mirror');
+    ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing',
+      'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
+      'borderTopWidth', 'borderLeftWidth', 'whiteSpace', 'wordWrap'].forEach(function (k) {
+        mirror.style[k] = cs[k];
+      });
+    mirror.style.width = host.clientWidth + 'px';
+    mirror.style.whiteSpace = 'pre-wrap';
+    mirror.style.wordWrap = 'break-word';
+    mirror.textContent = host.value.slice(0, at + 1);
+    const dot = SB.el('span', null, '​');
+    mirror.appendChild(dot);
+    document.body.appendChild(mirror);
+    const mb = mirror.getBoundingClientRect(), db = dot.getBoundingClientRect();
+    const out = {
+      x: db.left - mb.left,
+      y: db.top - mb.top - host.scrollTop,
+      h: parseFloat(cs.lineHeight) || 16
+    };
+    mirror.remove();
+    return out;
+  }
+
+  function choose(it) {
+    if (!host) return;
+    const p = P();
+    let per = it.per;
+    if (it.make) {
+      const nm = term.trim();
+      if (!nm) return;
+      per = SB.Personas.add(p, { kind: it.kind.id, name: nm });
+      SB.toast('Added ' + it.kind.one + ' “' + nm + '” — give it a description in the library');
+    }
+
+    /* hide() forgets which box this was, so hold on to it first. */
+    const el = host, where = ctx;
+    const name = per.name || 'unnamed';
+    const caret = el.selectionStart;
+    const before = el.value.slice(0, at);
+    const after = el.value.slice(caret);
+    el.value = before + name + after;
+    const pos = before.length + name.length;
+    hide();
+    el.setSelectionRange(pos, pos);
+    el.focus();
+
+    /* Fire the box's own input handler so whatever it writes to — a shot
+       description, a custom field, a scene — stores the text the same way it
+       would have if this had been typed. */
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+
+    /* And the part that actually reaches the model. */
+    if (where && where.shot) {
+      const ids = where.shot.personaIds = where.shot.personaIds || [];
+      if (ids.indexOf(per.id) < 0) {
+        ids.push(per.id);
+        SB.Board.refreshCastRows();
+        SB.toast(name + ' cast on ' + (where.code || 'this card'));
+      }
+    }
+    /* Never app.changed(true) from here: a structural change rebuilds every
+       card, and the box this was typed into is one of them. The cast rows are
+       refreshed by hand above precisely so the caret can stay where it is. */
+    SB.PersonaPanel.refreshRefs();
+    SB.Store.touch();
+    SB.UsagePanel.badgeSoon();
+  }
+
+  function hide(keepHost) {
+    if (pop) { pop.remove(); pop = null; }
+    items = [];
+    at = -1;
+    if (!keepHost) { host = null; ctx = null; }
+  }
+
+  SB.Mentions = { attach: attach, hide: hide };
 
 })(window.SB);
 
@@ -8665,7 +9805,7 @@ window.SB = window.SB || {};
           tr.value = m.referenceTemplate || SB.Personas.DEFAULT_REF_TEMPLATE;
           tr.oninput = function () { m.referenceTemplate = tr.value; };
           const trF = field('reference-image wording — how THIS model expects to be told about ' +
-            'persona references ({{N}} = image number, {{NAME}} = names)', tr);
+            'reference images ({{N}} = image number, {{NAME}} = names)', tr);
           row.appendChild(trF);
           const trHint = SB.el('div', 'pp-note',
             'Only used on shots that have cast. Leave blank for a model that takes no references.');

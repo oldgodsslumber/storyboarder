@@ -516,7 +516,13 @@
    * it out would lose the shot. */
   function carriesWardrobe(p, sh) {
     if (!(sh.description || '').trim()) return null;
-    if (!SB.Personas.forShot(p, sh).length) return null;
+    /* People only. A location or an object cast on the card says nothing about
+     * whose clothes the description is describing, and a "vest" in a shot with
+     * only a room attached is somebody's prose, not a stale copy. */
+    const people = SB.Personas.forShot(p, sh).filter(function (per) {
+      return SB.Personas.kindOf(per).id === 'person';
+    });
+    if (!people.length) return null;
     const terms = wardrobeTerms(sh.description);
     return terms.length ? terms : null;
   }

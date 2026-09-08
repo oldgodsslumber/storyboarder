@@ -322,6 +322,90 @@ console.log('\n— personas —');
     'models ship with a default reference wording');
 }
 
+console.log('\n— people, places and things are one record —');
+{
+  const Per = SB.Personas;
+  const p = SB.Model.newProject();
+  const shot = p.scenes[0].shots[0];
+
+  const lead = Per.add(p, { kind: 'person', name: 'Ops lead', description: 'Charcoal knit.' });
+  const room = Per.add(p, { kind: 'place', name: 'Server room', description: 'Cold aisle, blue LEDs.' });
+  const set = Per.add(p, { kind: 'thing', name: 'Handset', description: 'Matte black, one green LED.' });
+
+  eq(Per.add(p, {}).kind, 'person', 'a subject with no kind named is a person');
+  eq(Per.kindOf({ kind: 'nonsense' }).id, 'person', 'and so is one with a kind nobody recognises');
+  eq(Per.ofKind(p, 'place').length, 1, 'kinds can be asked for on their own');
+  eq(Per.ofKind(p, 'person').length, 2, 'and everything else stays where it was');
+
+  shot.personaIds = [lead.id, room.id, set.id];
+  const blk = Per.block(p, shot, null);
+  eq(/CAST/.test(blk) && /LOCATIONS/.test(blk) && /OBJECTS/.test(blk), true,
+    'each kind gets its own labelled block');
+  eq(blk.indexOf('CAST') < blk.indexOf('LOCATIONS'), true, 'in a fixed order, whatever order they were cast in');
+  eq(/Cold aisle/.test(blk) && /green LED/.test(blk), true,
+    'a place and a thing carry their description exactly as a person does');
+  eq(/people, places and things/.test(blk), true,
+    'and the block claims authority over all three, not just the wardrobe');
+
+  /* a wardrobe repair is about people — a room on the card says nothing about
+     whose clothes a description is describing */
+  const other = p.scenes[0].shots[0];
+  other.description = 'Late thirties, in a charcoal fleece and heavy boots, at the rack.';
+  other.personaIds = [room.id];
+  eq(SB.Coverage.carriesWardrobe(p, other), null,
+    'a shot cast with only a location is never flagged as carrying a wardrobe');
+  other.personaIds = [lead.id];
+  eq(!!SB.Coverage.carriesWardrobe(p, other), true, 'with a person on it, it is');
+}
+
+console.log('\n— a subject holds as many reference frames as it needs —');
+{
+  const Per = SB.Personas;
+  const p = SB.Model.newProject();
+  const shot = p.scenes[0].shots[0];
+  const img = function (c) { return SB.Blobs.image(p, 'data:image/jpeg;base64,' + c.repeat(80), 4, 3); };
+
+  const per = Per.add(p, { name: 'Ops lead', description: 'Charcoal knit.' });
+  eq(Per.hasImage(per), false, 'a new subject has no frames');
+
+  Per.addImage(per, img('A'), 'front');
+  Per.addImage(per, img('B'), '3/4');
+  eq(Per.imagesOf(per).length, 2, 'frames are added in order');
+  eq(Per.hero(per).label, 'front', 'and the first one is the hero');
+
+  Per.makeHero(per, 1);
+  eq(Per.hero(per).label, '3/4', 'promoting a frame moves it to the front');
+  Per.labelImage(per, 1, 'front view');
+  eq(Per.imagesOf(per)[1].label, 'front view', 'labels are editable in place');
+
+  const mate = Per.add(p, { name: 'Technician', description: 'Navy work shirt.' });
+  Per.addImage(mate, img('C'));
+  shot.personaIds = [per.id, mate.id];
+
+  const blk = Per.block(p, shot, null);
+  eq(/images 1–2 — Ops lead/.test(blk), true, 'a subject with several frames cites the range');
+  eq(/image 3 — Technician/.test(blk), true, 'and numbering runs on across subjects');
+  eq(/image 2 = Ops lead \(front view\)/.test(blk), true, 'the mapping names the angle');
+  eq(/SAME\b[\s\S]*subject seen from different angles/.test(blk), true,
+    'and says outright that several frames are not several people');
+
+  Per.removeImage(per, 0);
+  eq(Per.imagesOf(per).length, 1, 'a frame can be taken off');
+  eq(/SAME\b[\s\S]*different angles/.test(Per.block(p, shot, null)), false,
+    'and the warning goes with it once nobody has two');
+
+  /* what gc() deletes is decided by the blob sweep, so every extra frame has
+     to be visible to it or somebody loses their references */
+  SB.Blobs.gc(p);                                  // the frame removed above goes here
+  const before = Object.keys(p.blobs).length;
+  eq(before, 2, 'the two frames still pointed at are the two that are kept');
+  SB.Blobs.gc(p);
+  eq(Object.keys(p.blobs).length, before, 'every reference frame survives a second collection');
+  Per.removeImage(mate, 0);
+  SB.Blobs.gc(p);
+  eq(Object.keys(p.blobs).length, before - 1, 'and one nothing points at any more does not');
+}
+
 console.log('\n— gendered language detector —');
 {
   const g = SB.Brand.genderedTerms;
@@ -388,7 +472,9 @@ console.log('\n— old boards migrate, and versions stop duplicating frames —'
   const p = SB.Model.migrate(old);
   eq(!!(p.scenes[0].shots[0].image.ref), true, 'shot frames become references');
   eq(!!(p.scenes[0].shots[0].annotation.ref), true, 'ink becomes a reference');
-  eq(!!(p.personas[0].image.ref), true, 'persona references migrate too');
+  eq(!!(p.personas[0].images[0].ref), true, 'persona references migrate too');
+  eq(p.personas[0].image, undefined, 'and the lone image field is retired, not left to drift');
+  eq(p.personas[0].kind, 'person', 'a persona written before there were kinds is a person');
   eq(!!(p.versions[0].snapshot.scenes[0].shots[0].image.ref), true, 'so do frozen versions');
   eq(Object.keys(p.blobs).length, 2,
     'four copies of two pictures collapse to two stored blobs');
@@ -687,7 +773,7 @@ console.log('\n— boards saved by older builds still open —');
   v3.settings.imageModelId = 'm_old';
   v3.settings.videoModelId = 'm_old';
   const p3 = SB.Model.migrate(v3);
-  eq(SB.Blobs.src(p3, p3.personas[0].image), frame, 'a persona reference image migrates');
+  eq(SB.Blobs.src(p3, p3.personas[0].images[0]), frame, 'a persona reference image migrates');
   eq(p3.scenes[0].shots[0].personaIds, ['p1'], 'cast assignments survive');
   eq(SB.Brand.brandOf(p3).text === SB.Brand.DEFAULT, true,
     'an unedited old house style is replaced by the current one');
