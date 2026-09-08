@@ -36,8 +36,12 @@
     if (!el) return;
     el.addEventListener('keydown', function (ev) { onKey(ev, el, opts || {}); }, true);
     el.addEventListener('input', function () { if (pop && host === el) update(); });
-    el.addEventListener('blur', function () { setTimeout(hide, 120); });
-    el.addEventListener('scroll', hide);
+    /* Deferred so a click on a row lands first — but only ever closing this
+       box's own popover. Unconditional, it reached across and killed a list
+       that had already been opened in whichever box was focused next. */
+    el.addEventListener('blur', function () {
+      setTimeout(function () { if (host === el) hide(); }, 120);
+    });
   }
 
   function onKey(ev, el, opts) {
@@ -49,7 +53,11 @@
         return;
       }
       if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); hide(); return; }
-      return;
+      /* A second @ is somebody starting again — naming a second person in the
+         same sentence, or giving up on the first attempt. Fall through and
+         re-anchor to it. Without this the list died on the new @ and would not
+         come back until the character was deleted and retyped. */
+      if (ev.key !== '@') return;
     }
     if (ev.key !== '@') return;
     const before = el.value.slice(0, el.selectionStart).slice(-1);
@@ -108,12 +116,25 @@
 
   /* The @ position is set after the teardown, not before it: hide() forgets
      where the last one was, and that includes the one being opened. */
+  /* Any scroll between the caret and the viewport moves the box — the board,
+   * the takeover's own panes, the textarea itself. Captured, because scroll
+   * does not bubble, and the popover is stranded at a stale position
+   * otherwise: it stays put while the box it belongs to slides away. */
+  function onScroll() {
+    if (!pop || !host) return;
+    const r = host.getBoundingClientRect();
+    if (r.bottom < 0 || r.top > window.innerHeight) { hide(); return; }
+    place();
+  }
+
   function show(pos) {
     hide(true);
     at = pos;
     pop = SB.el('div', 'men-pop');
     pop.addEventListener('mousedown', function (ev) { ev.preventDefault(); });   // keep the caret
     document.body.appendChild(pop);
+    document.addEventListener('scroll', onScroll, true);
+    window.addEventListener('resize', onScroll);
     active = 0;
     update();
   }
@@ -242,7 +263,12 @@
   }
 
   function hide(keepHost) {
-    if (pop) { pop.remove(); pop = null; }
+    if (pop) {
+      pop.remove();
+      pop = null;
+      document.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('resize', onScroll);
+    }
     items = [];
     at = -1;
     if (!keepHost) { host = null; ctx = null; }

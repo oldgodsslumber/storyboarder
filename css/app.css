@@ -688,6 +688,7 @@ button.linkish{
   border:1px solid var(--line);border-radius:6px;background:var(--bg3);padding:8px;
   border-top:2px solid var(--line2);display:flex;flex-direction:column;
 }
+.persona.target{box-shadow:0 0 0 1px var(--accent) inset}
 .persona.kind-person{border-top-color:var(--accent)}
 .persona.kind-place{border-top-color:var(--scene)}
 .persona.kind-thing{border-top-color:var(--accent2)}
@@ -705,7 +706,7 @@ button.linkish{
 .persona-used.none{text-decoration:none;cursor:default}
 .persona-used:hover:not(.none){color:var(--accent)}
 .persona-frame{
-  position:relative;background:var(--frame-bg);aspect-ratio:4/3;
+  position:relative;background:var(--frame-bg);aspect-ratio:4/3;max-height:150px;
   display:flex;align-items:center;justify-content:center;cursor:pointer;
   border-radius:5px;overflow:hidden;margin-bottom:4px;
 }
@@ -723,9 +724,9 @@ button.linkish{
 .frame-x:hover{background:var(--danger);border-color:var(--danger)}
 
 .persona-strip{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:4px}
-.strip-cell{width:56px;display:flex;flex-direction:column;gap:2px}
+.strip-cell{width:64px;display:flex;flex-direction:column;gap:2px}
 .strip-thumb{
-  position:relative;width:56px;height:42px;background:var(--frame-bg);
+  position:relative;width:64px;height:48px;background:var(--frame-bg);
   border:1px solid var(--line);border-radius:4px;overflow:hidden;cursor:pointer;
   display:flex;align-items:center;justify-content:center;
 }
@@ -734,7 +735,7 @@ button.linkish{
 .strip-thumb.add{color:var(--fg-dim);font-size:16px;border-style:dashed}
 .strip-thumb.add:hover{color:var(--accent);border-color:var(--accent)}
 .strip-label{
-  width:56px;background:var(--input-bg);color:var(--fg);border:1px solid var(--line);
+  width:64px;background:var(--input-bg);color:var(--fg);border:1px solid var(--line);
   border-radius:3px;padding:1px 3px;font-size:9px;
 }
 .strip-label:focus{outline:none;border-color:var(--accent)}

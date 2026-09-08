@@ -409,6 +409,7 @@
 
       SB.PromptPanel.close();
 
+      const pauseTop = function () { return new Promise(function (r) { setTimeout(r, 40); }); };
       // personas
       t('no cast row until personas exist',
         document.querySelectorAll('.cast-row').length === 0, '');
@@ -483,6 +484,176 @@
           return /LOCATIONS/.test(SB.Personas.block(P(), sh2, null)) &&
             /Cold aisle/.test(SB.Personas.block(P(), sh2, null));
         })(), '');
+      // a rename leaves the old name written into the descriptions it was
+      // typed into. The offer has to survive the panel re-rendering under it.
+      {
+        var rShot = P().scenes[0].shots[0];
+        var rWasIds = (rShot.personaIds || []).slice();
+        var rWasDesc = rShot.description;
+        rShot.personaIds = [per1.id];
+        rShot.description = 'Ops lead crosses to the rack.';
+        SB.PersonaPanel.refresh();
+        var nameBox = document.querySelector('.persona[data-id="' + per1.id + '"] .persona-name');
+        nameBox.dispatchEvent(new Event('focus'));
+        per1.name = 'Floor lead';
+        nameBox.value = 'Floor lead';
+        nameBox.dispatchEvent(new Event('input', { bubbles: true }));
+        nameBox.dispatchEvent(new Event('blur'));
+        t('renaming offers to update the descriptions carrying the old name',
+          !!document.querySelector('.lib-rename'), '');
+        // the offer used to be inserted by the blur that a re-render caused,
+        // which put it into a tree that had already been thrown away
+        document.querySelector('.lib-tabs button[data-kind="thing"]').click();
+        document.querySelector('.lib-tabs button[data-kind="all"]').click();
+        t('and survives the panel being re-rendered under it',
+          !!document.querySelector('.lib-rename'), '');
+        t('the kind tabs highlight whatever is actually being shown',
+          document.querySelector('.lib-tabs button.on').dataset.kind === 'all',
+          document.querySelector('.lib-tabs button.on').dataset.kind);
+        document.querySelector('.lib-rename .primary').click();
+        t('taking the offer rewrites them',
+          rShot.description === 'Floor lead crosses to the rack.', rShot.description);
+        t('and the offer goes away once it is taken',
+          !document.querySelector('.lib-rename'), '');
+        per1.name = 'Ops lead';
+        rShot.personaIds = rWasIds;
+        rShot.description = rWasDesc;
+      }
+
+      // a paste must not reach through the takeover and overwrite a card
+      {
+        SB.app.selectedShotId = P().scenes[0].shots[0].id;
+        var beforeImg = P().scenes[0].shots[0].image;
+        var beforeRefs = SB.Personas.imagesOf(per2).length;
+        document.querySelector('.persona[data-id="' + per2.id + '"]')
+          .dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+        var dt = new DataTransfer();
+        var gifB = atob('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7');
+        var gifU = new Uint8Array(gifB.length);
+        for (var gi = 0; gi < gifB.length; gi++) gifU[gi] = gifB.charCodeAt(gi);
+        dt.items.add(new File([gifU], 'x.gif', { type: 'image/gif' }));
+        document.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+        await pauseTop(); await pauseTop();
+        t('pasting into the library never touches the card behind it',
+          P().scenes[0].shots[0].image === beforeImg, 'the card frame was replaced');
+        t('it lands on the subject you last touched instead',
+          SB.Personas.imagesOf(per2).length === beforeRefs + 1,
+          SB.Personas.imagesOf(per2).length + ' vs ' + beforeRefs);
+      }
+
+      // the scene organizer and the board banner are two windows onto one
+      // scene. Whichever you are not typing into used to hold a stale copy,
+      // and its next keystroke wrote that copy back over the newer text.
+      {
+        var oSc = P().scenes[0];
+        var oWasH = oSc.heading, oWasD = oSc.description;
+        var orgH = document.querySelector('.lib-scenes .sh-heading[data-scene="' + oSc.id + '"]');
+        orgH.value = 'EDITED IN THE ORGANIZER';
+        orgH.dispatchEvent(new Event('input', { bubbles: true }));
+        var banH = document.querySelector('.scene-head .sh-heading[data-scene="' + oSc.id + '"]');
+        t('an organizer edit reaches the board banner',
+          banH.value === 'EDITED IN THE ORGANIZER', JSON.stringify(banH.value));
+        banH.value = banH.value + '!';
+        banH.dispatchEvent(new Event('input', { bubbles: true }));
+        t('so typing in the banner afterwards does not clobber it',
+          oSc.heading === 'EDITED IN THE ORGANIZER!', JSON.stringify(oSc.heading));
+        t('and the edit travels back the other way',
+          document.querySelector('.lib-scenes .sh-heading[data-scene="' + oSc.id + '"]').value ===
+          'EDITED IN THE ORGANIZER!', '');
+        oSc.heading = oWasH; oSc.description = oWasD;
+        SB.PersonaPanel.refreshScenes();
+        SB.Board.render();
+      }
+
+      // dropping on the lower half of a row means the slot AFTER it — without
+      // that a one-step drag downward did nothing and the last slot was
+      // unreachable
+      {
+        var names = function () { return P().scenes.map(function (x) { return x.heading; }).join(','); };
+        var wasOrder = P().scenes.slice();
+        var wasHeads = P().scenes.map(function (x) { return x.heading; });
+        while (P().scenes.length < 3) SB.Model.addScene(P());
+        P().scenes[0].heading = 'A'; P().scenes[1].heading = 'B'; P().scenes[2].heading = 'C';
+        SB.PersonaPanel.refreshScenes();
+        var rows = document.querySelectorAll('.lib-scenes .sc-row');
+        var dropOn = function (row, lower) {
+          var r = row.getBoundingClientRect();
+          var dt = new DataTransfer();
+          dt.setData('text/sb-scene', P().scenes[0].id);
+          row.dispatchEvent(new DragEvent('drop', {
+            dataTransfer: dt, bubbles: true, cancelable: true,
+            clientY: r.top + (lower ? r.height * 0.8 : r.height * 0.2)
+          }));
+        };
+        dropOn(rows[1], true);
+        t('dragging a scene onto the lower half of the next row moves it past',
+          names() === 'B,A,C', names());
+        rows = document.querySelectorAll('.lib-scenes .sc-row');
+        var dt2 = new DataTransfer();
+        dt2.setData('text/sb-scene', P().scenes[1].id);
+        var lr = rows[2].getBoundingClientRect();
+        rows[2].dispatchEvent(new DragEvent('drop', {
+          dataTransfer: dt2, bubbles: true, cancelable: true, clientY: lr.top + lr.height * 0.8
+        }));
+        t('and a scene can reach the last slot',
+          names() === 'B,C,A', names());
+        t('the left navigator agrees',
+          document.querySelectorAll('#sceneList .scene-item .ttl')[0].textContent === 'B',
+          document.querySelectorAll('#sceneList .scene-item .ttl')[0].textContent);
+        /* put the board back the way the rest of the scenario expects it */
+        P().scenes = wasOrder;                 // the ones this test invented go too
+        wasOrder.forEach(function (x, i) { x.heading = wasHeads[i]; });
+        SB.app.changed(true);
+      }
+
+      // a scene holding a claim on the script but no cards used to delete silently
+      {
+        var tSc = SB.Model.addScene(P());          // its own, so nothing real is emptied
+        tSc.heading = 'Tied and empty';
+        tSc.local = SB.Doc.make('a section of its own');
+        SB.app.changed(true);
+        var tScenes = P().scenes.length;
+        var asked = 0;
+        var realConfirm = window.confirm;
+        window.confirm = function () { asked++; return false; };
+        SB.PersonaPanel.refreshScenes();
+        document.querySelectorAll('.lib-scenes .sc-row')[P().scenes.length - 1]
+          .querySelector('.sc-meta .danger').click();
+        window.confirm = realConfirm;
+        t('deleting a tied but empty scene asks about its claim first',
+          asked === 1 && P().scenes.length === tScenes, asked + ' asked, ' + P().scenes.length + ' left');
+        SB.Model.deleteScene(P(), tSc.id);
+        SB.app.changed(true);
+      }
+
+      // a second @ starts again rather than killing the list
+      {
+        var mCard2 = document.querySelectorAll('.card')[0];
+        var box2 = mCard2.querySelector('.desc-box');
+        var wasD2 = box2.value;
+        box2.focus();
+        var typeAt = async function (tail) {
+          box2.dispatchEvent(new KeyboardEvent('keydown', { key: '@', bubbles: true }));
+          box2.value += '@';
+          box2.setSelectionRange(box2.value.length, box2.value.length);
+          await pauseTop();
+          if (tail) {
+            box2.value += tail;
+            box2.setSelectionRange(box2.value.length, box2.value.length);
+            box2.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+        };
+        box2.value = 'Two of them: ';
+        box2.setSelectionRange(box2.value.length, box2.value.length);
+        await typeAt('Ops ');
+        await typeAt(null);
+        t('a second @ while the list is open re-anchors instead of killing it',
+          !!document.querySelector('.men-pop'), '');
+        SB.Mentions.hide();
+        box2.value = wasD2;
+        box2.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+
       SB.PersonaPanel.close();
       t('closing the library takes the takeover off the page',
         !document.querySelector('.lib-back'), '');

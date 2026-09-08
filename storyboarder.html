@@ -694,6 +694,7 @@ button.linkish{
   border:1px solid var(--line);border-radius:6px;background:var(--bg3);padding:8px;
   border-top:2px solid var(--line2);display:flex;flex-direction:column;
 }
+.persona.target{box-shadow:0 0 0 1px var(--accent) inset}
 .persona.kind-person{border-top-color:var(--accent)}
 .persona.kind-place{border-top-color:var(--scene)}
 .persona.kind-thing{border-top-color:var(--accent2)}
@@ -711,7 +712,7 @@ button.linkish{
 .persona-used.none{text-decoration:none;cursor:default}
 .persona-used:hover:not(.none){color:var(--accent)}
 .persona-frame{
-  position:relative;background:var(--frame-bg);aspect-ratio:4/3;
+  position:relative;background:var(--frame-bg);aspect-ratio:4/3;max-height:150px;
   display:flex;align-items:center;justify-content:center;cursor:pointer;
   border-radius:5px;overflow:hidden;margin-bottom:4px;
 }
@@ -729,9 +730,9 @@ button.linkish{
 .frame-x:hover{background:var(--danger);border-color:var(--danger)}
 
 .persona-strip{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:4px}
-.strip-cell{width:56px;display:flex;flex-direction:column;gap:2px}
+.strip-cell{width:64px;display:flex;flex-direction:column;gap:2px}
 .strip-thumb{
-  position:relative;width:56px;height:42px;background:var(--frame-bg);
+  position:relative;width:64px;height:48px;background:var(--frame-bg);
   border:1px solid var(--line);border-radius:4px;overflow:hidden;cursor:pointer;
   display:flex;align-items:center;justify-content:center;
 }
@@ -740,7 +741,7 @@ button.linkish{
 .strip-thumb.add{color:var(--fg-dim);font-size:16px;border-style:dashed}
 .strip-thumb.add:hover{color:var(--accent);border-color:var(--accent)}
 .strip-label{
-  width:56px;background:var(--input-bg);color:var(--fg);border:1px solid var(--line);
+  width:64px;background:var(--input-bg);color:var(--fg);border:1px solid var(--line);
   border-radius:3px;padding:1px 3px;font-size:9px;
 }
 .strip-label:focus{outline:none;border-color:var(--accent)}
@@ -882,7 +883,7 @@ body.comment-mode .frame{cursor:crosshair}
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-09-08 22:13 · e4a9095+";</script>
+<script>window.SB_BUILD = "2026-09-08 22:44 · 62ef98e+";</script>
 
 <div id="app">
 
@@ -2681,10 +2682,18 @@ window.SB = window.SB || {};
     });
   }
 
-  /* The personas in a shot, in the order their reference images should be fed. */
+  /* The subjects in a shot, in the order their reference images should be fed.
+   * Deduped: a file written by hand or by another tool can name the same
+   * subject twice, which listed them twice in the block and made a nonsense of
+   * the image numbering ("images 1–3" for a subject holding images 1 and 3). */
   function forShot(p, shot) {
+    const seen = {};
     return (shot.personaIds || []).map(function (id) { return find(p, id); })
-      .filter(Boolean);
+      .filter(function (per) {
+        if (!per || seen[per.id]) return false;
+        seen[per.id] = 1;
+        return true;
+      });
   }
 
   function toggleOnShot(p, shot, id) {
@@ -4415,7 +4424,7 @@ window.SB = window.SB || {};
 
     const sections = [
       { key: 'frames', label: 'Shot frames', n: framesN, b: frames, color: SECTION_COLORS[0] },
-      { key: 'refs', label: 'Persona references', n: refsN, b: refs, color: SECTION_COLORS[1] },
+      { key: 'refs', label: 'Reference images', n: refsN, b: refs, color: SECTION_COLORS[1] },
       { key: 'ink', label: 'Comment ink', n: inkN, b: ink, color: SECTION_COLORS[2] },
       { key: 'versions', label: 'Saved versions', n: (p.versions || []).length, b: versions, color: SECTION_COLORS[3] },
       { key: 'text', label: 'Script, prompts, structure', n: shots, b: rest, color: SECTION_COLORS[4] }
@@ -5223,6 +5232,40 @@ window.SB = window.SB || {};
     }
   }
 
+  /* A scene's heading and description are on screen in two places at once —
+   * the banner over its cards, and the row in the reference library's scene
+   * organizer. Both write straight to the same object, so whichever one you
+   * are not typing into is holding a copy that went stale the moment you
+   * touched the other. Left alone, the next keystroke in the stale box wrote
+   * its whole outdated string back over the newer text.
+   *
+   * Every box carries its scene id, so both sides can be brought up to date
+   * from the model. The focused one is never touched: it is the one that is
+   * right, and writing to it would move the caret. */
+  function syncSceneFields(id) {
+    const f = SB.Model.findScene(P(), id);
+    if (!f) return;
+    document.querySelectorAll('[data-scene="' + id + '"]').forEach(function (el) {
+      if (el === document.activeElement) return;
+      let v = null;
+      if (el.classList.contains('sh-heading')) v = f.scene.heading || '';
+      else if (el.classList.contains('sh-desc')) v = f.scene.description || '';
+      if (v !== null && el.value !== v) el.value = v;
+    });
+  }
+
+  /* Whether the way back from a rewrite, or the way out of a generate, is
+   * offered — on every copy of the buttons, not just the one clicked. */
+  function syncSceneAi(id) {
+    const ai = aiOf(id);
+    document.querySelectorAll('.sc-revert[data-scene="' + id + '"]').forEach(function (b) {
+      b.classList.toggle('hidden', ai.prev == null);
+    });
+    document.querySelectorAll('.sc-undo[data-scene="' + id + '"]').forEach(function (b) {
+      b.classList.toggle('hidden', !(ai.ids && ai.ids.length));
+    });
+  }
+
   /* The two writer-model actions that belong to the scene description itself:
    * sharpen the draft, and turn it into a run of shots. */
   function sceneAi(sc, descEl) {
@@ -5231,7 +5274,8 @@ window.SB = window.SB || {};
 
     const bRw = SB.el('button', 'mini', '✦ Rewrite');
     bRw.title = 'Rewrite this description as something shootable — same facts, sharper';
-    const bRev = SB.el('button', 'mini link' + (ai.prev == null ? ' hidden' : ''), 'revert');
+    const bRev = SB.el('button', 'mini link sc-revert' + (ai.prev == null ? ' hidden' : ''), 'revert');
+    bRev.dataset.scene = sc.id;
     bRev.title = 'Put the previous description back';
 
     const cnt = document.createElement('select');
@@ -5247,7 +5291,8 @@ window.SB = window.SB || {};
 
     const bGen = SB.el('button', 'mini primary', '✦ Generate shots');
     bGen.title = 'Board this description as consecutive beats of one moment';
-    const bUndo = SB.el('button', 'mini link' + (ai.ids && ai.ids.length ? '' : ' hidden'), 'undo');
+    const bUndo = SB.el('button', 'mini link sc-undo' + (ai.ids && ai.ids.length ? '' : ' hidden'), 'undo');
+    bUndo.dataset.scene = sc.id;
     bUndo.title = 'Remove the shots that were just generated';
 
     const st = SB.el('span', 'sc-ai-status' + (ai.err ? ' err' : ''), ai.status || '');
@@ -5262,7 +5307,7 @@ window.SB = window.SB || {};
     descEl.addEventListener('input', function () {
       if (ai.prev == null) return;
       ai.prev = null;
-      bRev.classList.add('hidden');
+      syncSceneAi(sc.id);
     });
 
     function busy(on, msg, isErr) {
@@ -5291,7 +5336,8 @@ window.SB = window.SB || {};
         f.scene.description = next;
         descEl.value = next;
         ai.prev = prev;
-        bRev.classList.remove('hidden');
+        syncSceneAi(sc.id);
+        syncSceneFields(sc.id);
         busy(false, 'rewritten');
         SB.app.changed(false);
       }).catch(function (e) { failed(e, bRw.onclick); });
@@ -5303,7 +5349,8 @@ window.SB = window.SB || {};
       f.scene.description = ai.prev;
       descEl.value = ai.prev;
       ai.prev = null;
-      bRev.classList.add('hidden');
+      syncSceneAi(sc.id);
+      syncSceneFields(sc.id);
       busy(false, '');
       SB.app.changed(false);
     };
@@ -5345,10 +5392,12 @@ window.SB = window.SB || {};
       SB.Coverage.undo(P(), ai.ids, ai.personaIds);
       ai.ids = null;
       ai.personaIds = null;
-      if (hadCast) SB.PersonaPanel.refresh();
-      SB.PersonaPanel.refreshScenes();
+      /* the status is what the rebuilt row reads, so it is set before the
+         rebuild — otherwise the organizer redraws still saying "3 shots added" */
       ai.status = 'generated shots removed';
       ai.err = false;
+      if (hadCast) SB.PersonaPanel.refresh();
+      SB.PersonaPanel.refreshScenes();
       SB.app.selectedShotId = null;
       SB.app.selection = [];
       SB.app.changed(true);
@@ -5431,17 +5480,23 @@ window.SB = window.SB || {};
     const fields = SB.el('div', 'fields');
     const h = document.createElement('input');
     h.className = 'sh-heading';
+    h.dataset.scene = sc.id;
     h.value = sc.heading || '';
     h.placeholder = 'Scene heading';
     h.addEventListener('input', function () {
       sc.heading = h.value; SB.app.changed(false); renderSceneList();
+      syncSceneFields(sc.id);
     });
     const d = document.createElement('textarea');
     d.className = 'sh-desc';
+    d.dataset.scene = sc.id;
     d.rows = 1;
     d.value = sc.description || '';
     d.placeholder = 'Scene description';
-    d.addEventListener('input', function () { sc.description = d.value; SB.app.changed(false); });
+    d.addEventListener('input', function () {
+      sc.description = d.value; SB.app.changed(false);
+      syncSceneFields(sc.id);
+    });
     SB.Mentions.attach(d, { scene: sc });
     fields.appendChild(h); fields.appendChild(d);
     fields.appendChild(sceneAi(sc, d));
@@ -5480,6 +5535,7 @@ window.SB = window.SB || {};
           (sc.shots.length ? ' and its ' + sc.shots.length + ' shot(s)' : '') +
           '? Script text stays in the master script.')) return;
       SB.Model.deleteScene(P(), sc.id);
+      delete AI[sc.id];                  // its session state goes with it
       SB.app.changed(true);
     };
     acts.appendChild(bAdd); acts.appendChild(bAddScene); acts.appendChild(bDel);
@@ -6228,6 +6284,9 @@ window.SB = window.SB || {};
   SB.Board = {
     render: render,
     sceneAi: sceneAi,
+    syncSceneFields: syncSceneFields,
+    syncSceneAi: syncSceneAi,
+    forgetScene: function (id) { delete AI[id]; },
     renderSceneList: renderSceneList,
     renderScriptWindows: renderScriptWindows,
     refreshCast: refreshCast,
@@ -8332,9 +8391,14 @@ window.SB = window.SB || {};
   const SPLIT_KEY = 'sb.library.split';
 
   let root = null;          // the overlay, while it is open
-  let refsEl, scenesEl, statusEl, searchEl;
+  let refsEl, scenesEl, statusEl, searchEl, tabsEl;
   let filter = 'all';       // which kind the library is showing
   let query = '';
+  let targetId = null;      // the subject a paste would land on
+  /* A rename offer outlives the input that raised it: closing the panel, or
+   * anything that re-renders it, detaches that input and fires its blur. The
+   * offer is state, and the bar is drawn from it. */
+  let pendingRename = null;
 
   function P() { return SB.app.project; }
 
@@ -8429,20 +8493,16 @@ window.SB = window.SB || {};
     const h = SB.el('header', 'lib-head');
     h.appendChild(SB.el('h2', null, 'Reference library'));
 
-    const tabs = SB.el('div', 'lib-tabs');
+    tabsEl = SB.el('div', 'lib-tabs');
     const tab = function (id, label) {
-      const b = SB.el('button', 'tb toggle' + (filter === id ? ' on' : ''), label);
-      b.onclick = function () {
-        filter = id;
-        tabs.querySelectorAll('button').forEach(function (x) { x.classList.remove('on'); });
-        b.classList.add('on');
-        renderRefs();
-      };
+      const b = SB.el('button', 'tb toggle', label);
+      b.dataset.kind = id;
+      b.onclick = function () { filter = id; renderRefs(); };
       return b;
     };
-    tabs.appendChild(tab('all', 'All'));
-    SB.Personas.KINDS.forEach(function (k) { tabs.appendChild(tab(k.id, k.plural)); });
-    h.appendChild(tabs);
+    tabsEl.appendChild(tab('all', 'All'));
+    SB.Personas.KINDS.forEach(function (k) { tabsEl.appendChild(tab(k.id, k.plural)); });
+    h.appendChild(tabsEl);
 
     searchEl = document.createElement('input');
     searchEl.type = 'text';
@@ -8465,6 +8525,7 @@ window.SB = window.SB || {};
         filter = 'all'; query = ''; searchEl.value = '';
         renderRefs();
         focusName(per.id);
+        targetId = per.id;
       };
       h.appendChild(b);
     });
@@ -8636,8 +8697,20 @@ window.SB = window.SB || {};
     const p = P();
     refsEl.innerHTML = '';
 
+    /* The filter moves for reasons other than a tab being clicked — adding a
+       subject, a generate run finishing — so the highlight is set from the
+       filter every time, not by the click that happened to change it. */
+    if (tabsEl) {
+      tabsEl.querySelectorAll('button').forEach(function (b) {
+        b.classList.toggle('on', b.dataset.kind === filter);
+      });
+    }
+
     statusEl = SB.el('div', 'pp-status lib-status');
     refsEl.appendChild(statusEl);
+
+    const bar = renameBar();
+    if (bar) refsEl.appendChild(bar);
 
     const sweep = sweepBlock(p);
     if (sweep) refsEl.appendChild(sweep);
@@ -8678,8 +8751,17 @@ window.SB = window.SB || {};
   function card(per) {
     const p = P();
     const kind = SB.Personas.kindOf(per);
-    const wrap = SB.el('div', 'persona kind-' + kind.id);
+    const wrap = SB.el('div', 'persona kind-' + kind.id + (targetId === per.id ? ' target' : ''));
     wrap.dataset.id = per.id;
+    /* Whatever you last touched is what a pasted image belongs to. */
+    const claim = function () {
+      if (targetId === per.id) return;
+      targetId = per.id;
+      refsEl.querySelectorAll('.persona.target').forEach(function (x) { x.classList.remove('target'); });
+      wrap.classList.add('target');
+    };
+    wrap.addEventListener('mousedown', claim);
+    wrap.addEventListener('focusin', claim);
 
     /* ---- head: name, kind, usage, delete ---- */
     const head = SB.el('div', 'persona-head');
@@ -8688,7 +8770,9 @@ window.SB = window.SB || {};
     name.className = 'persona-name';
     name.value = per.name || '';
     name.placeholder = 'Name';
-    let wasNamed = per.name || '';
+    /* what the name was when this edit started, so a rename can be spotted */
+    let nameWas = per.name || '';
+    name.addEventListener('focus', function () { nameWas = per.name || ''; });
     name.addEventListener('input', function () {
       per.name = name.value;
       SB.Personas.touch(per);
@@ -8700,10 +8784,13 @@ window.SB = window.SB || {};
     /* The name is written into descriptions by hand and by @, so a rename
        leaves copies of the old one lying around. Offered, never automatic. */
     name.addEventListener('blur', function () {
-      const was = wasNamed, now = per.name || '';
-      wasNamed = now;
+      const was = nameWas, now = per.name || '';
+      nameWas = now;
       if (!was || !now || was === now) return;
-      offerRename(per, was, now);
+      pendingRename = { id: per.id, was: was };
+      /* This blur may be the panel tearing the input out from under the user
+         — a tab, the kind select, the ✕. Redraw only if it was not. */
+      if (root && refsEl && refsEl.querySelector('.persona[data-id="' + per.id + '"]')) renderRefs();
     });
     head.appendChild(name);
 
@@ -8754,7 +8841,7 @@ window.SB = window.SB || {};
     wrap.appendChild(SB.el('div', 'box-label', kind.descLabel));
     const d = document.createElement('textarea');
     d.className = 'persona-text';
-    d.rows = 4;
+    d.rows = 3;
     d.value = per.description || '';
     d.placeholder = kind.descHint;
     d.addEventListener('input', function () {
@@ -8772,7 +8859,7 @@ window.SB = window.SB || {};
     wrap.appendChild(SB.el('div', 'box-label', 'reference image prompt'));
     const ip = document.createElement('textarea');
     ip.className = 'persona-text';
-    ip.rows = 3;
+    ip.rows = 2;
     ip.value = per.imagePrompt || '';
     ip.placeholder = 'The prompt that makes this reference frame.';
     ip.addEventListener('input', function () {
@@ -8846,6 +8933,7 @@ window.SB = window.SB || {};
     } else {
       big.appendChild(SB.el('div', 'drop-hint', 'drop the reference frame here, or click to load'));
     }
+    big.title = list.length ? 'Drop or click to add another reference image' : '';
     dropTarget(big, per);
     box.appendChild(big);
 
@@ -8882,9 +8970,10 @@ window.SB = window.SB || {};
       lb.className = 'strip-label';
       lb.value = img.label || '';
       lb.placeholder = i === 0 ? 'hero' : 'label';
-      lb.title = 'What this angle is: front, 3/4, wardrobe detail, wide…';
+      lb.title = (img.label || '') || 'What this angle is: front, 3/4, wardrobe detail, wide…';
       lb.addEventListener('input', function () {
         SB.Personas.labelImage(per, i, lb.value);
+        lb.title = lb.value || 'What this angle is: front, 3/4, wardrobe detail, wide…';
         SB.Store.touch();
       });
       cell.appendChild(lb);
@@ -8945,36 +9034,62 @@ window.SB = window.SB || {};
 
   /* ---- renaming leaves copies of the old name in descriptions ---- */
 
-  function offerRename(per, was, now) {
+  /* Built from `pendingRename` on every render rather than inserted by the blur
+   * that raised it: that blur is often the panel tearing the input out from
+   * under the user (a tab, the kind select, the ✕), and a bar inserted then
+   * went into a tree that had already been thrown away. Held as state, the
+   * offer survives a re-render and a close, and the hits are counted fresh
+   * each time so it never offers to repair something already repaired. */
+  function renameBar() {
+    if (!pendingRename) return null;
+    const per = SB.Personas.find(P(), pendingRename.id);
+    const was = pendingRename.was;
+    const now = per ? (per.name || '') : '';
+    if (!per || !was || !now || was === now) { pendingRename = null; return null; }
+
     const re = new RegExp('\\b' + was.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'g');
     const hits = [];
     SB.Model.eachShot(P(), function (sh) {
       if ((sh.personaIds || []).indexOf(per.id) < 0) return;
-      if (re.test(sh.description || '')) hits.push(sh);
       re.lastIndex = 0;
+      if (re.test(sh.description || '')) hits.push(sh);
     });
-    if (!hits.length) return;
+    if (!hits.length) { pendingRename = null; return null; }
 
-    setStatus('');
     const bar = SB.el('div', 'lib-rename');
     bar.appendChild(SB.el('span', null,
-      '“' + was + '” is written into ' + hits.length +
+      '“' + was + '” is still written into ' + hits.length +
       (hits.length === 1 ? ' description' : ' descriptions') + '.'));
     const b = SB.el('button', 'mini primary', 'Update ' + (hits.length === 1 ? 'it' : 'them') +
       ' to “' + now + '”');
     b.onclick = function () {
       hits.forEach(function (sh) {
+        re.lastIndex = 0;
         sh.description = (sh.description || '').replace(re, now);
       });
-      bar.remove();
+      pendingRename = null;
       SB.app.changed(true);
+      renderRefs();
       SB.toast(hits.length + (hits.length === 1 ? ' description' : ' descriptions') + ' updated');
     };
     const no = SB.el('button', 'mini link', 'leave them');
-    no.onclick = function () { bar.remove(); };
+    no.onclick = function () { pendingRename = null; renderRefs(); };
     bar.appendChild(b);
     bar.appendChild(no);
-    statusEl.parentNode.insertBefore(bar, statusEl.nextSibling);
+    return bar;
+  }
+
+  /* ---- a pasted image belongs to the subject you last touched ---- */
+
+  function pasteImage(blob) {
+    if (!blob) return;
+    const per = targetId ? SB.Personas.find(P(), targetId) : null;
+    if (!per) {
+      SB.toast('Click the subject you want it on first, then paste', true);
+      return;
+    }
+    addImage(per, blob);
+    SB.toast('Added to ' + (per.name || 'that subject'));
   }
 
   /* --------------------------------------------------------------- scenes */
@@ -8985,6 +9100,12 @@ window.SB = window.SB || {};
   function renderScenes() {
     if (!scenesEl || !P()) return;
     const p = P();
+    /* This is called from under the user's hands — a generate finishing, an
+       undo — so where the caret was is remembered across the rebuild. */
+    const act = document.activeElement;
+    const keep = (act && scenesEl.contains(act) && act.dataset && act.dataset.scene)
+      ? { scene: act.dataset.scene, cls: act.className, at: act.selectionStart, to: act.selectionEnd }
+      : null;
     scenesEl.innerHTML = '';
 
     const h = SB.el('div', 'lib-section-head');
@@ -9008,6 +9129,15 @@ window.SB = window.SB || {};
     scenesEl.appendChild(list);
     scenesEl.appendChild(SB.el('div', 'pp-note',
       'Drag a scene by its handle to reorder the film. Shots stay with their scene.'));
+
+    if (keep) {
+      const back = scenesEl.querySelector(
+        '[data-scene="' + keep.scene + '"].' + keep.cls.split(' ').join('.'));
+      if (back) {
+        back.focus();
+        try { back.setSelectionRange(keep.at, keep.to); } catch (e) { /* not a text box */ }
+      }
+    }
   }
 
   function sceneRow(sc, idx) {
@@ -9037,7 +9167,13 @@ window.SB = window.SB || {};
       const id = ev.dataTransfer.getData('text/sb-scene');
       if (!id || id === sc.id) return;
       ev.preventDefault();
-      SB.Model.moveScene(p, id, idx);
+      /* moveScene inserts BEFORE the index it is given, so dropping on the
+         lower half of a row has to mean the slot after it — without this you
+         could never drag a scene to the end, and a one-step drag downward
+         quietly did nothing at all. */
+      const r = row.getBoundingClientRect();
+      const after = ev.clientY > r.top + r.height / 2;
+      SB.Model.moveScene(p, id, after ? idx + 1 : idx);
       SB.app.changed(true);
       renderScenes();
       SB.Board.renderSceneList();
@@ -9052,10 +9188,12 @@ window.SB = window.SB || {};
     hd.className = 'sh-heading';
     hd.value = sc.heading || '';
     hd.placeholder = 'Scene heading';
+    hd.dataset.scene = sc.id;
     hd.addEventListener('input', function () {
       sc.heading = hd.value;
       SB.app.changed(false);
       SB.Board.renderSceneList();
+      SB.Board.syncSceneFields(sc.id);
     });
     fields.appendChild(hd);
 
@@ -9064,7 +9202,12 @@ window.SB = window.SB || {};
     d.rows = 3;
     d.value = sc.description || '';
     d.placeholder = 'Scene description — what happens here, in prose.';
-    d.addEventListener('input', function () { sc.description = d.value; SB.app.changed(false); });
+    d.dataset.scene = sc.id;
+    d.addEventListener('input', function () {
+      sc.description = d.value;
+      SB.app.changed(false);
+      SB.Board.syncSceneFields(sc.id);
+    });
     SB.Mentions.attach(d, { scene: sc });
     fields.appendChild(d);
     fields.appendChild(SB.Board.sceneAi(sc, d));
@@ -9092,9 +9235,15 @@ window.SB = window.SB || {};
     del.title = 'Delete this scene';
     del.onclick = function () {
       if (p.scenes.length < 2) { SB.toast('A board keeps at least one scene', true); return; }
-      if (sc.shots.length && !confirm('Delete “' + (sc.heading || 'this scene') + '” and its ' +
-        sc.shots.length + ' shot(s)?')) return;
+      /* The claim on the script is worth as much as the cards are, and it is
+         the thing you cannot see from here — so it is asked about too. */
+      const what = [];
+      if (sc.shots.length) what.push(sc.shots.length + ' shot' + (sc.shots.length === 1 ? '' : 's'));
+      if (SB.Model.sceneTied(sc)) what.push('its claim on the script');
+      if (what.length && !confirm('Delete “' + (sc.heading || 'this scene') + '” and ' +
+        what.join(' and ') + '?')) return;
       SB.Model.deleteScene(p, sc.id);
+      SB.Board.forgetScene(sc.id);
       SB.app.changed(true);
       renderScenes();
       SB.Board.renderSceneList();
@@ -9129,7 +9278,8 @@ window.SB = window.SB || {};
 
   SB.PersonaPanel = {
     init: init, open: open, close: close, toggle: toggle, isOpen: isOpen,
-    refresh: refresh, refreshScenes: refreshScenes, refreshRefs: refreshRefs
+    refresh: refresh, refreshScenes: refreshScenes, refreshRefs: refreshRefs,
+    pasteImage: pasteImage
   };
 
 })(window.SB);
@@ -9175,8 +9325,12 @@ window.SB = window.SB || {};
     if (!el) return;
     el.addEventListener('keydown', function (ev) { onKey(ev, el, opts || {}); }, true);
     el.addEventListener('input', function () { if (pop && host === el) update(); });
-    el.addEventListener('blur', function () { setTimeout(hide, 120); });
-    el.addEventListener('scroll', hide);
+    /* Deferred so a click on a row lands first — but only ever closing this
+       box's own popover. Unconditional, it reached across and killed a list
+       that had already been opened in whichever box was focused next. */
+    el.addEventListener('blur', function () {
+      setTimeout(function () { if (host === el) hide(); }, 120);
+    });
   }
 
   function onKey(ev, el, opts) {
@@ -9188,7 +9342,11 @@ window.SB = window.SB || {};
         return;
       }
       if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); hide(); return; }
-      return;
+      /* A second @ is somebody starting again — naming a second person in the
+         same sentence, or giving up on the first attempt. Fall through and
+         re-anchor to it. Without this the list died on the new @ and would not
+         come back until the character was deleted and retyped. */
+      if (ev.key !== '@') return;
     }
     if (ev.key !== '@') return;
     const before = el.value.slice(0, el.selectionStart).slice(-1);
@@ -9247,12 +9405,25 @@ window.SB = window.SB || {};
 
   /* The @ position is set after the teardown, not before it: hide() forgets
      where the last one was, and that includes the one being opened. */
+  /* Any scroll between the caret and the viewport moves the box — the board,
+   * the takeover's own panes, the textarea itself. Captured, because scroll
+   * does not bubble, and the popover is stranded at a stale position
+   * otherwise: it stays put while the box it belongs to slides away. */
+  function onScroll() {
+    if (!pop || !host) return;
+    const r = host.getBoundingClientRect();
+    if (r.bottom < 0 || r.top > window.innerHeight) { hide(); return; }
+    place();
+  }
+
   function show(pos) {
     hide(true);
     at = pos;
     pop = SB.el('div', 'men-pop');
     pop.addEventListener('mousedown', function (ev) { ev.preventDefault(); });   // keep the caret
     document.body.appendChild(pop);
+    document.addEventListener('scroll', onScroll, true);
+    window.addEventListener('resize', onScroll);
     active = 0;
     update();
   }
@@ -9381,7 +9552,12 @@ window.SB = window.SB || {};
   }
 
   function hide(keepHost) {
-    if (pop) { pop.remove(); pop = null; }
+    if (pop) {
+      pop.remove();
+      pop = null;
+      document.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('resize', onScroll);
+    }
     items = [];
     at = -1;
     if (!keepHost) { host = null; ctx = null; }
@@ -11154,6 +11330,15 @@ window.SB = window.SB || {};
         return i.kind === 'file' && /^image\//.test(i.type);
       })[0];
       if (!file) return;
+      /* Whatever is on top owns the clipboard. Without this the paste went
+       * straight through an open takeover and replaced the frame of a card
+       * nobody could see — no toast, no undo, and the work was gone. */
+      if (SB.PersonaPanel.isOpen()) {
+        ev.preventDefault();
+        SB.PersonaPanel.pasteImage(file.getAsFile());
+        return;
+      }
+      if (document.querySelector('.modal-back')) return;
       if (!app.selectedShotId) { SB.toast('Select a card first, then paste', true); return; }
       const f = SB.Model.findShot(app.project, app.selectedShotId);
       if (!f) return;

@@ -258,6 +258,40 @@
     }
   }
 
+  /* A scene's heading and description are on screen in two places at once —
+   * the banner over its cards, and the row in the reference library's scene
+   * organizer. Both write straight to the same object, so whichever one you
+   * are not typing into is holding a copy that went stale the moment you
+   * touched the other. Left alone, the next keystroke in the stale box wrote
+   * its whole outdated string back over the newer text.
+   *
+   * Every box carries its scene id, so both sides can be brought up to date
+   * from the model. The focused one is never touched: it is the one that is
+   * right, and writing to it would move the caret. */
+  function syncSceneFields(id) {
+    const f = SB.Model.findScene(P(), id);
+    if (!f) return;
+    document.querySelectorAll('[data-scene="' + id + '"]').forEach(function (el) {
+      if (el === document.activeElement) return;
+      let v = null;
+      if (el.classList.contains('sh-heading')) v = f.scene.heading || '';
+      else if (el.classList.contains('sh-desc')) v = f.scene.description || '';
+      if (v !== null && el.value !== v) el.value = v;
+    });
+  }
+
+  /* Whether the way back from a rewrite, or the way out of a generate, is
+   * offered — on every copy of the buttons, not just the one clicked. */
+  function syncSceneAi(id) {
+    const ai = aiOf(id);
+    document.querySelectorAll('.sc-revert[data-scene="' + id + '"]').forEach(function (b) {
+      b.classList.toggle('hidden', ai.prev == null);
+    });
+    document.querySelectorAll('.sc-undo[data-scene="' + id + '"]').forEach(function (b) {
+      b.classList.toggle('hidden', !(ai.ids && ai.ids.length));
+    });
+  }
+
   /* The two writer-model actions that belong to the scene description itself:
    * sharpen the draft, and turn it into a run of shots. */
   function sceneAi(sc, descEl) {
@@ -266,7 +300,8 @@
 
     const bRw = SB.el('button', 'mini', '✦ Rewrite');
     bRw.title = 'Rewrite this description as something shootable — same facts, sharper';
-    const bRev = SB.el('button', 'mini link' + (ai.prev == null ? ' hidden' : ''), 'revert');
+    const bRev = SB.el('button', 'mini link sc-revert' + (ai.prev == null ? ' hidden' : ''), 'revert');
+    bRev.dataset.scene = sc.id;
     bRev.title = 'Put the previous description back';
 
     const cnt = document.createElement('select');
@@ -282,7 +317,8 @@
 
     const bGen = SB.el('button', 'mini primary', '✦ Generate shots');
     bGen.title = 'Board this description as consecutive beats of one moment';
-    const bUndo = SB.el('button', 'mini link' + (ai.ids && ai.ids.length ? '' : ' hidden'), 'undo');
+    const bUndo = SB.el('button', 'mini link sc-undo' + (ai.ids && ai.ids.length ? '' : ' hidden'), 'undo');
+    bUndo.dataset.scene = sc.id;
     bUndo.title = 'Remove the shots that were just generated';
 
     const st = SB.el('span', 'sc-ai-status' + (ai.err ? ' err' : ''), ai.status || '');
@@ -297,7 +333,7 @@
     descEl.addEventListener('input', function () {
       if (ai.prev == null) return;
       ai.prev = null;
-      bRev.classList.add('hidden');
+      syncSceneAi(sc.id);
     });
 
     function busy(on, msg, isErr) {
@@ -326,7 +362,8 @@
         f.scene.description = next;
         descEl.value = next;
         ai.prev = prev;
-        bRev.classList.remove('hidden');
+        syncSceneAi(sc.id);
+        syncSceneFields(sc.id);
         busy(false, 'rewritten');
         SB.app.changed(false);
       }).catch(function (e) { failed(e, bRw.onclick); });
@@ -338,7 +375,8 @@
       f.scene.description = ai.prev;
       descEl.value = ai.prev;
       ai.prev = null;
-      bRev.classList.add('hidden');
+      syncSceneAi(sc.id);
+      syncSceneFields(sc.id);
       busy(false, '');
       SB.app.changed(false);
     };
@@ -380,10 +418,12 @@
       SB.Coverage.undo(P(), ai.ids, ai.personaIds);
       ai.ids = null;
       ai.personaIds = null;
-      if (hadCast) SB.PersonaPanel.refresh();
-      SB.PersonaPanel.refreshScenes();
+      /* the status is what the rebuilt row reads, so it is set before the
+         rebuild — otherwise the organizer redraws still saying "3 shots added" */
       ai.status = 'generated shots removed';
       ai.err = false;
+      if (hadCast) SB.PersonaPanel.refresh();
+      SB.PersonaPanel.refreshScenes();
       SB.app.selectedShotId = null;
       SB.app.selection = [];
       SB.app.changed(true);
@@ -466,17 +506,23 @@
     const fields = SB.el('div', 'fields');
     const h = document.createElement('input');
     h.className = 'sh-heading';
+    h.dataset.scene = sc.id;
     h.value = sc.heading || '';
     h.placeholder = 'Scene heading';
     h.addEventListener('input', function () {
       sc.heading = h.value; SB.app.changed(false); renderSceneList();
+      syncSceneFields(sc.id);
     });
     const d = document.createElement('textarea');
     d.className = 'sh-desc';
+    d.dataset.scene = sc.id;
     d.rows = 1;
     d.value = sc.description || '';
     d.placeholder = 'Scene description';
-    d.addEventListener('input', function () { sc.description = d.value; SB.app.changed(false); });
+    d.addEventListener('input', function () {
+      sc.description = d.value; SB.app.changed(false);
+      syncSceneFields(sc.id);
+    });
     SB.Mentions.attach(d, { scene: sc });
     fields.appendChild(h); fields.appendChild(d);
     fields.appendChild(sceneAi(sc, d));
@@ -515,6 +561,7 @@
           (sc.shots.length ? ' and its ' + sc.shots.length + ' shot(s)' : '') +
           '? Script text stays in the master script.')) return;
       SB.Model.deleteScene(P(), sc.id);
+      delete AI[sc.id];                  // its session state goes with it
       SB.app.changed(true);
     };
     acts.appendChild(bAdd); acts.appendChild(bAddScene); acts.appendChild(bDel);
@@ -1263,6 +1310,9 @@
   SB.Board = {
     render: render,
     sceneAi: sceneAi,
+    syncSceneFields: syncSceneFields,
+    syncSceneAi: syncSceneAi,
+    forgetScene: function (id) { delete AI[id]; },
     renderSceneList: renderSceneList,
     renderScriptWindows: renderScriptWindows,
     refreshCast: refreshCast,

@@ -65,7 +65,7 @@
 
     const sections = [
       { key: 'frames', label: 'Shot frames', n: framesN, b: frames, color: SECTION_COLORS[0] },
-      { key: 'refs', label: 'Persona references', n: refsN, b: refs, color: SECTION_COLORS[1] },
+      { key: 'refs', label: 'Reference images', n: refsN, b: refs, color: SECTION_COLORS[1] },
       { key: 'ink', label: 'Comment ink', n: inkN, b: ink, color: SECTION_COLORS[2] },
       { key: 'versions', label: 'Saved versions', n: (p.versions || []).length, b: versions, color: SECTION_COLORS[3] },
       { key: 'text', label: 'Script, prompts, structure', n: shots, b: rest, color: SECTION_COLORS[4] }

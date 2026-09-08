@@ -186,10 +186,18 @@
     });
   }
 
-  /* The personas in a shot, in the order their reference images should be fed. */
+  /* The subjects in a shot, in the order their reference images should be fed.
+   * Deduped: a file written by hand or by another tool can name the same
+   * subject twice, which listed them twice in the block and made a nonsense of
+   * the image numbering ("images 1–3" for a subject holding images 1 and 3). */
   function forShot(p, shot) {
+    const seen = {};
     return (shot.personaIds || []).map(function (id) { return find(p, id); })
-      .filter(Boolean);
+      .filter(function (per) {
+        if (!per || seen[per.id]) return false;
+        seen[per.id] = 1;
+        return true;
+      });
   }
 
   function toggleOnShot(p, shot, id) {

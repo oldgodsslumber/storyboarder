@@ -406,6 +406,31 @@ console.log('\n— a subject holds as many reference frames as it needs —');
   eq(Object.keys(p.blobs).length, before - 1, 'and one nothing points at any more does not');
 }
 
+console.log('\n— a shot naming the same subject twice ——');
+{
+  const Per = SB.Personas;
+  const p = SB.Model.newProject();
+  const sh = p.scenes[0].shots[0];
+  const img = function (c) { return SB.Blobs.image(p, 'data:image/jpeg;base64,' + c.repeat(80), 4, 3); };
+
+  const dup = Per.add(p, { name: 'Dup', description: 'Twice named.' });
+  const other = Per.add(p, { name: 'Other', description: 'Once named.' });
+  Per.addImage(dup, img('A'));
+  Per.addImage(other, img('B'));
+
+  /* not reachable through the UI — toggleOnShot and coverage both dedupe — but
+     a hand-edited or third-party file can say this, and it used to produce
+     "images 1–3" for a subject holding images 1 and 3 */
+  sh.personaIds = [dup.id, other.id, dup.id];
+  eq(Per.forShot(p, sh).length, 2, 'a subject named twice on one shot is only cast once');
+
+  const blk = Per.block(p, sh, null);
+  eq((blk.match(/^ +\d+\. /gm) || []).length, 2, 'and the block lists two subjects, not three');
+  eq(/image 1 = Dup/.test(blk) && /image 2 = Other/.test(blk), true,
+    'so the image numbering stays honest');
+  eq(/images 1–3/.test(blk), false, 'no range is claimed across somebody else’s image');
+}
+
 console.log('\n— gendered language detector —');
 {
   const g = SB.Brand.genderedTerms;

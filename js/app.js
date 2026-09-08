@@ -279,6 +279,15 @@
         return i.kind === 'file' && /^image\//.test(i.type);
       })[0];
       if (!file) return;
+      /* Whatever is on top owns the clipboard. Without this the paste went
+       * straight through an open takeover and replaced the frame of a card
+       * nobody could see — no toast, no undo, and the work was gone. */
+      if (SB.PersonaPanel.isOpen()) {
+        ev.preventDefault();
+        SB.PersonaPanel.pasteImage(file.getAsFile());
+        return;
+      }
+      if (document.querySelector('.modal-back')) return;
       if (!app.selectedShotId) { SB.toast('Select a card first, then paste', true); return; }
       const f = SB.Model.findShot(app.project, app.selectedShotId);
       if (!f) return;
