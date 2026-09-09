@@ -496,7 +496,7 @@
         .map(function (x) { return SB.Renders.pad(x.serial); });
       if (sers.length) it.appendChild(SB.el('span', 'feed-ser', sers.join(' ')));
       it.title = e.label + (e.why ? ' — ' + e.why : '') +
-        (sers.length ? '\nFull-size: ' + sers.join(', ') : '');
+        (sers.length ? '\nFull-size ' + sers.join(', ') + ' if the folder still has it.' : '');
       wrap.appendChild(it);
     });
 

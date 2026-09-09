@@ -1189,7 +1189,8 @@
       }
       cell.title = e.label + (e.why ? ' — ' + e.why : '') +
         (sers.length
-          ? '\nFull-size: ' + sers.join(', ')
+          ? '\nFull-size ' + sers.join(', ') + ' is used if the renders folder still has it, ' +
+            'and the board copy if it does not.'
           : (e.images.length ? '\nBoard copy only (854×480) — no original kept.' : '')) +
         (e.images.length ? '\nClick to open it.' : '\nClick to fix it.');
       cell.onclick = function (ev) {
@@ -1220,7 +1221,10 @@
                 'Settings to keep the originals.');
       copy.onclick = function (ev) {
         ev.stopPropagation();
-        saveFeed(sh, imgs, SB.Model.code(si, sj));
+        /* the code is looked up rather than closed over: feedRow is rebuilt on
+           its own by refreshFeed, which has no scene/shot indices to hand */
+        const f = SB.Model.findShot(P(), sh.id);
+        saveFeed(sh, imgs, f ? f.code : 'shot');
       };
       row.appendChild(copy);
     }
@@ -1252,6 +1256,25 @@
     return row;
   }
 
+  /* The number on the card head, once the original has been filed. It arrives
+   * after the picture does, so it is put in place rather than waiting for
+   * whatever redraws the board next. */
+  function refreshSerial(id) {
+    const f = SB.Model.findShot(P(), id);
+    const head = document.querySelector('.card[data-shot="' + id + '"] .card-head');
+    if (!f || !head) return;
+    const old = head.querySelector('.code-serial');
+    if (old) old.remove();
+    const r = f.shot.render;
+    if (!r || !r.serial) return;
+    const ser = SB.el('span', 'code-serial', SB.Renders.pad(r.serial));
+    ser.title = 'The full-size render of this shot is ' +
+      SB.Renders.fileName(r.serial, r.ext) + ' in the renders folder.';
+    const code = head.querySelector('.code');
+    if (code && code.nextSibling) head.insertBefore(ser, code.nextSibling);
+    else head.appendChild(ser);
+  }
+
   function refreshFeed(id) {
     document.querySelectorAll('.feed-row[data-feed="' + id + '"]').forEach(function (row) {
       const f = SB.Model.findShot(P(), id);
@@ -1267,15 +1290,22 @@
    * files you can drag in one gesture; without one it falls back to the
    * browser's downloads, which is the old behaviour and still the proxies. */
   function saveFeed(sh, imgs, code) {
-    if (SB.Renders.isConnected()) {
-      SB.Renders.writeFeed(P(), sh, code, imgs).then(function (r) {
+    /* Asked, not assumed: isConnected() only knows about a folder once
+       something has been to look for it, and on a fresh page nothing has — so
+       the first export of every session used to fall back to downloads even
+       with a folder connected. This is a click, so it is allowed to ask for
+       permission if the handle needs re-granting. */
+    SB.Renders.ready(true).then(function (h) {
+      if (!h) { downloadFeed(imgs); return; }
+      return SB.Renders.writeFeed(P(), sh, code, imgs).then(function (r) {
         if (!r) { downloadFeed(imgs); return; }
-        SB.toast(r.wrote + ' reference image' + (r.wrote === 1 ? '' : 's') + ' written to ' +
-          r.path + (r.full ? ' — ' + r.full + ' full-size' : ' — all at board size'));
-      }).catch(function () { downloadFeed(imgs); });
-      return;
-    }
-    downloadFeed(imgs);
+        const short = r.total - r.wrote;
+        SB.toast(r.wrote + ' of ' + r.total + ' reference image' + (r.total === 1 ? '' : 's') +
+          ' written to ' + r.path +
+          (r.full ? ' — ' + r.full + ' full-size' : ' — all at board size') +
+          (short ? ' · ' + short + ' had no picture to write' : ''), !!short);
+      });
+    }).catch(function () { downloadFeed(imgs); });
   }
 
   function downloadFeed(imgs) {
@@ -1533,6 +1563,7 @@
       sh.render = rec;
       SB.Store.touch();
       SB.Board.refreshFeed(sh.id);
+      refreshSerial(sh.id);
     });
     return SB.downscaleImage(src).then(function (img) {
       sh.image = SB.Blobs.image(P(), img.data, img.w, img.h);
@@ -1592,6 +1623,7 @@
     refreshCast: refreshCast,
     refreshCastRows: refreshCastRows, refreshPromptStale: refreshPromptStale,
     refreshFeed: refreshFeed,
+    refreshSerial: refreshSerial,
     saveFeed: saveFeed,
     setImage: setImage,
     swap: doSwap,

@@ -976,6 +976,75 @@ console.log('\n— a filename is only ever one of ours —');
   eq(R.folderName({ name: 'x'.repeat(200) }).length, 100, 'and a very long one is cut short');
 }
 
+console.log('\n— a folder name a filesystem will actually accept —');
+{
+  const R = SB.Renders;
+  /* the clamp used to run last, so a 100th character that was a dot or a space
+     came back on the end — and Windows refuses both, silently, forever */
+  const long = R.folderName({ name: 'x'.repeat(99) + '. tail' });
+  eq(long.length <= 100, true, 'a long name is cut to length');
+  eq(/[.\s]$/.test(long), false, 'and never ends in a dot or a space');
+  eq(/[.\s]$/.test(R.folderName({ name: 'y'.repeat(99) + ' more' })), false, 'either of them');
+
+  eq(R.folderName({ name: 'CON.txt' }), 'CON.txt_',
+    'a reserved device name is reserved with an extension too');
+  eq(R.folderName({ name: 'a b\nc' }), 'abc', 'control characters are not filenames');
+  eq(R.folderName({ name: 'A/B:C' }), 'A_B_C', 'and the illegal ones still become underscores');
+}
+
+console.log('\n— a serial is a whole number or it is not a serial —');
+{
+  const p = SB.Model.newProject();
+  const sc = p.scenes[0];
+  const a = sc.shots[0];
+  const b = SB.Model.addShot(p, sc.id, {});
+  const c = SB.Model.addShot(p, sc.id, {});
+  a.render = { serial: 'abc', ext: 'png' };      // padded to 0000 and collided
+  b.render = { serial: 3.7, ext: 'png' };
+  c.render = { serial: -2, ext: 'png' };
+  const d = SB.Model.addShot(p, sc.id, {});
+  d.render = { serial: '12', ext: 'png' };       // a number written as text is still a number
+
+  SB.Model.migrate(p);
+  eq(a.render, null, 'a serial that is not a number is not kept');
+  eq(b.render, null, 'nor a fraction — it cannot name a file');
+  eq(c.render, null, 'nor a negative one');
+  eq(d.render.serial, 12, 'a numeric string is read as the number it is');
+  eq(p.renderSeq, 12, 'and only real serials raise the counter');
+}
+
+console.log('\n— a picture that could not be filed does not spend a number —');
+{
+  const R = SB.Renders;
+  const p = SB.Model.newProject();
+  p.renderSeq = 4;
+  const serial = R.claim(p);
+  eq(serial, 5, 'the number is taken to write under');
+  /* keep() hands it back when the write fails and it is still the last out —
+     a counter that climbs on failures makes the folder read as if pictures are
+     missing that were never there */
+  eq(p.renderSeq, 5, 'while the write is in flight it is spent');
+}
+
+console.log('\n— an extension we can actually name a file with —');
+{
+  const R = SB.Renders;
+  eq(R.extOf({ type: 'image/svg+xml' }), 'svg', 'an svg is written as one');
+  eq(R.extOf({ type: 'image/x-icon' }), 'ico', 'and an icon too');
+  eq(R.extOf({ type: 'image/webp' }), 'webp', 'webp is passed through');
+  eq(R.extOf({ type: 'image/png' }), 'png', 'and png');
+}
+
+console.log('\n— a name is a name in any script —');
+{
+  const R = SB.Renders;
+  eq(R.slug('Ops lead'), 'Ops-lead', 'spaces become dashes');
+  eq(R.slug('Операторская'), 'Операторская', 'Cyrillic survives');
+  eq(R.slug('技術者'), '技術者', 'and so does Japanese');
+  eq(R.slug('!!!'), '', 'punctuation alone leaves nothing, and the caller falls back');
+  eq(R.slug('../escape'), 'escape', 'a path traversal cannot survive it');
+}
+
 console.log('\n— gendered language detector —');
 {
   const g = SB.Brand.genderedTerms;

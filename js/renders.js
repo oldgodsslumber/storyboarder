@@ -40,37 +40,61 @@
   const hasFS = typeof window.showDirectoryPicker === 'function';
 
   let root = null;            // the chosen root, once it is known
-  let looked = false;         // ...and whether we have been to look for it
+  let looking = null;         // the in-flight lookup, so two callers share one
+  let looked = false;         // ...and whether it has ever finished
   let denied = false;         // permission refused this session; stop asking
 
   function P() { return SB.app.project; }
 
   /* ---------- the root ---------- */
 
+  /* Two images dropped together both land here in the same tick. Marking the
+   * lookup done before it finished handed the second one a null root, and its
+   * original was thrown away with nothing said — so the in-flight promise is
+   * shared instead. */
   function remember() {
     if (looked) return Promise.resolve(root);
-    looked = true;
-    return SB.Store.idbGet(KEY_ROOT).then(function (h) {
+    if (looking) return looking;
+    looking = SB.Store.idbGet(KEY_ROOT).then(function (h) {
       root = h || null;
+      looked = true;
+      looking = null;
       return root;
-    }).catch(function () { return null; });
+    }).catch(function () {
+      looked = true;
+      looking = null;
+      return null;
+    });
+    return looking;
+  }
+
+  /* Is a folder remembered at all, whatever its permission says? Settings needs
+   * this to tell "never chosen" from "chosen, but Chrome wants a click". */
+  function isRemembered() {
+    return remember().then(function (h) { return !!h; });
   }
 
   /* Chrome will not hand back a persisted handle's permission without a user
    * gesture, so `interactive` says whether we are inside one. */
+  /* Chrome hands a persisted handle back in the "prompt" state after a
+   * restart, so a folder that is remembered perfectly well is unusable until
+   * somebody asks — and nothing did. Every call that can only happen inside a
+   * user gesture (dropping a picture, clicking copy image set) asks; a refused
+   * request latches, so it is asked once and then left alone. */
   function ready(interactive) {
     if (!hasFS) return Promise.resolve(null);
     return remember().then(function (h) {
       if (!h) return null;
-      if (denied && !interactive) return null;
+      if (denied) return null;
       return SB.Store.ensurePermission(h, !!interactive).then(function (ok) {
-        if (!ok) { denied = !interactive ? denied : true; return null; }
-        denied = false;
-        return h;
+        if (ok) { denied = false; return h; }
+        if (interactive) denied = true;    // asked, and told no
+        return null;
       }).catch(function () { return null; });
     });
   }
 
+  /* A fresh choice clears the refusal — it is a new answer to the question. */
   function connect() {
     if (!hasFS) {
       return Promise.reject(new Error('This browser has no directory access. Use Chrome or Edge.'));
@@ -79,6 +103,7 @@
       .then(function (h) {
         root = h;
         looked = true;
+        looking = null;
         denied = false;
         return SB.Store.idbPut(KEY_ROOT, h).then(function () { return h; });
       });
@@ -87,6 +112,8 @@
   function disconnect() {
     root = null;
     looked = true;
+    looking = null;
+    denied = false;
     return SB.Store.idbPut(KEY_ROOT, null);
   }
 
@@ -101,16 +128,24 @@
   const RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
   function folderName(p) {
     let n = String((p && p.name) || 'Untitled project')
+      /* control characters are illegal too, and invisible in a project name */
+      .replace(/[\u0000-\u001f\u007f]+/g, '')
       .replace(/[\\/:*?"<>|]+/g, '_')
+      .trim()
+      /* cut BEFORE stripping the tail: clamping afterwards could put a dot or
+       * a space back on the end, which Windows will not accept, and the whole
+       * folder then silently failed to open */
+      .slice(0, 100)
       .replace(/[\s.]+$/, '')
       .trim();
     if (!n) n = 'Untitled project';
-    if (RESERVED.test(n)) n = n + '_';
-    return n.slice(0, 100);
+    /* reserved with an extension is reserved too: CON.txt is refused as well */
+    if (RESERVED.test(n.replace(/\..*$/, ''))) n = n + '_';
+    return n;
   }
 
-  function folder(p, create) {
-    return ready().then(function (h) {
+  function folder(p, create, interactive) {
+    return ready(interactive).then(function (h) {
       if (!h) return null;
       return h.getDirectoryHandle(folderName(p), { create: create !== false })
         .catch(function () { return null; });
@@ -136,13 +171,16 @@
 
   function extOf(blobOrName) {
     const t = (blobOrName && blobOrName.type) || '';
-    const m = /^image\/([a-z0-9+]+)/i.exec(t);
+    /* the subtype can carry a hyphen or a dot — image/x-icon, image/vnd.… */
+    const m = /^image\/([a-z0-9+.-]+)/i.exec(t);
     let e = m ? m[1].toLowerCase() : '';
     if (!e && blobOrName && blobOrName.name) {
       const d = /\.([a-z0-9]+)$/i.exec(blobOrName.name);
       if (d) e = d[1].toLowerCase();
     }
     if (e === 'jpeg') e = 'jpg';
+    if (e === 'svg+xml') e = 'svg';
+    if (e === 'x-icon' || e === 'vnd.microsoft.icon') e = 'ico';
     return /^[a-z0-9]{2,5}$/.test(e) ? e : 'png';
   }
 
@@ -172,13 +210,25 @@
       return fh.getFile().then(function (f) {
         return sub(dir, VERSIONS).then(function (vd) {
           if (!vd) return null;
+          /* to the millisecond: stamped to the second, two takes inside one
+             second produced the same name and the second overwrote the first —
+             destroying exactly the version this exists to keep */
           const stamp = new Date(f.lastModified || Date.now()).toISOString()
-            .replace(/[:T]/g, '-').replace(/\..+$/, '');
+            .replace(/[:T]/g, '-').replace(/[.Z]/g, '');
           const dot = name.lastIndexOf('.');
-          const kept = (dot > 0 ? name.slice(0, dot) : name) + '__' + stamp +
-            (dot > 0 ? name.slice(dot) : '');
-          return writeFile(vd, kept, f).then(function () {
-            return dir.removeEntry(name).catch(function () { });
+          const base = (dot > 0 ? name.slice(0, dot) : name) + '__' + stamp;
+          const ext = dot > 0 ? name.slice(dot) : '';
+          /* and if even that collides, keep going rather than overwrite */
+          const free = function (n) {
+            const kept = base + (n ? '_' + n : '') + ext;
+            return vd.getFileHandle(kept).then(function () {
+              return n > 20 ? kept : free(n + 1);
+            }, function () { return kept; });
+          };
+          return free(0).then(function (kept) {
+            return writeFile(vd, kept, f).then(function () {
+              return dir.removeEntry(name).catch(function () { });
+            });
           });
         });
       });
@@ -190,7 +240,7 @@
    * either way, so nothing downstream has to care. */
   function keep(p, src, existing) {
     if (!hasFS) return Promise.resolve(null);
-    return folder(p).then(function (dir) {
+    return folder(p, true, true).then(function (dir) {
       if (!dir) return null;
       return toBlob(src).then(function (blob) {
         if (!blob || !blob.size) return null;
@@ -199,6 +249,7 @@
         const name = fileName(serial, ext);
         /* an earlier take under this serial, and any take under another
            extension, both step aside */
+        const fresh = !(existing && existing.serial);
         const older = (existing && existing.ext && existing.ext !== ext)
           ? archive(dir, fileName(serial, existing.ext)) : Promise.resolve();
         return older.then(function () { return archive(dir, name); })
@@ -206,7 +257,14 @@
           .then(function () {
             return { serial: serial, ext: ext, bytes: blob.size, at: Date.now() };
           })
-          .catch(function () { return null; });
+          .catch(function () {
+            /* nothing was written, so give the number back if it is still the
+               last one out — it is only ever a high-water mark, but a counter
+               that climbs on failures makes the folder read as if pictures are
+               missing */
+            if (fresh && p.renderSeq === serial) p.renderSeq = serial - 1;
+            return null;
+          });
       });
     }).catch(function () { return null; });
   }
@@ -241,7 +299,12 @@
    * the set is always complete and never silently short.
    */
   function slug(t) {
-    return String(t || '').replace(/[^\w-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
+    let s = String(t || '');
+    /* letters and digits in any script — dropping everything non-ASCII turned a
+     * subject named in Cyrillic or Japanese into "ref" */
+    try { s = s.replace(/[^\p{L}\p{N}_-]+/gu, '-'); }
+    catch (e) { s = s.replace(/[^\w-]+/g, '-'); }
+    return s.replace(/^-+|-+$/g, '').slice(0, 40);
   }
 
   /* Empty it first: a set left over from a previous run, with an entry since
@@ -269,9 +332,14 @@
           if (!od) return null;
           return clear(od).then(function () {
             let wrote = 0, full = 0;
+            const missing = [];
             const step = function (i) {
               if (i >= entries.length) {
-                return { dir: od, wrote: wrote, full: full, path: folderName(p) + '/' + FEED + '/' + code };
+                return {
+                  dir: od, wrote: wrote, full: full, total: entries.length,
+                  missing: missing,
+                  path: folderName(p) + '/' + FEED + '/' + slug(code)
+                };
               }
               const e = entries[i];
               const name = e.n + '_' + (e.render ? pad(e.render.serial) + '_' : '') +
@@ -279,15 +347,21 @@
               /* the original if there is one, the proxy if there is not */
               return file(p, e.render).then(function (f) {
                 if (f) {
-                  full++;
-                  return writeFile(od, name + '.' + (e.render.ext || 'png'), f);
+                  return writeFile(od, name + '.' + (e.render.ext || 'png'), f)
+                    .then(function () { full++; wrote++; });
                 }
                 const src = SB.Blobs.src(p, e.img);
-                if (!src) return null;
+                if (!src) { missing.push(e.n); return null; }
                 return toBlob(src).then(function (b) {
-                  return b ? writeFile(od, name + '.jpg', b) : null;
+                  if (!b) { missing.push(e.n); return null; }
+                  return writeFile(od, name + '.jpg', b).then(function () { wrote++; });
                 });
-              }).then(function () { wrote++; return step(i + 1); });
+              }).catch(function () { missing.push(e.n); })
+                /* Counting every entry whether or not anything reached the disk
+                   reported a complete set while leaving a hole in the numbering
+                   — so image 2 on disk was what the prompt calls image 3, and
+                   nothing said so. */
+                .then(function () { return step(i + 1); });
             };
             return step(0);
           });
@@ -299,7 +373,8 @@
   SB.Renders = {
     hasFS: hasFS,
     connect: connect, disconnect: disconnect, ready: ready,
-    isConnected: isConnected, rootName: rootName, folderName: folderName,
+    isConnected: isConnected, isRemembered: isRemembered,
+    rootName: rootName, folderName: folderName,
     folder: folder, sub: sub, writeFile: writeFile,
     claim: claim, pad: pad, fileName: fileName, extOf: extOf,
     keep: keep, file: file, has: has, writeFeed: writeFeed, slug: slug,

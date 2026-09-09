@@ -592,6 +592,25 @@
         SB.app.changed(true);
       }
 
+      // copy image set: it threw on every click, because feedRow has no scene
+      // or shot index to build a code from
+      {
+        var cShot = P().scenes[0].shots[0];
+        var cWas = cShot.description;
+        cShot.description = SB.Refs.mark(per1.id, 'Ops lead') + ' at the rack.';
+        SB.app.changed(true);
+        var cRow = document.querySelector('.feed-row[data-feed="' + cShot.id + '"]');
+        var cBtn = cRow && cRow.querySelector('.feed-copy');
+        t('a card with references offers its image set', !!cBtn, cRow ? cRow.textContent : 'no row');
+        var threw = null;
+        var realErr = window.onerror;
+        try { cBtn.click(); } catch (e) { threw = e.message; }
+        t('and clicking it does not throw', !threw, String(threw));
+        window.onerror = realErr;
+        cShot.description = cWas;
+        SB.app.changed(true);
+      }
+
       // riffing: the next shot off this one, with its frame as the reference
       {
         var rCard = document.querySelector('.card[data-shot="' + firstShot.id + '"]');

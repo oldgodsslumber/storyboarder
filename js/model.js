@@ -284,6 +284,18 @@
     });
   }
 
+  /* A render record, or null. The serial is a filename on somebody's disk and
+   * the promise that a number is never reused, so anything that is not a whole
+   * positive number is not one: "abc" padded to 0000, and two such records
+   * collided on the same file. */
+  function goodRender(r) {
+    if (!r) return null;
+    const n = typeof r.serial === 'number' ? r.serial : parseFloat(r.serial);
+    if (!isFinite(n) || n < 1 || Math.floor(n) !== n) return null;
+    r.serial = n;
+    return r;
+  }
+
   /* One recurring subject, brought up to date.
    *
    * Two things moved after the first boards were written: a subject is now a
@@ -309,8 +321,8 @@
       const a = SB.Blobs.adopt(p, img);
       if (!a) return null;
       a.label = typeof img.label === 'string' ? img.label : (a.label || '');
-      a.render = (img.render && img.render.serial) ? img.render : (a.render || null);
-      if (a.render) p.renderSeq = Math.max(p.renderSeq | 0, a.render.serial | 0);
+      a.render = goodRender(img.render) || goodRender(a.render);
+      if (a.render) p.renderSeq = Math.max(p.renderSeq | 0, a.render.serial);
       return a;
     }).filter(Boolean);
   }
@@ -364,8 +376,8 @@
       (v.snapshot.scenes || []).forEach(function (sc) {
         (sc.shots || []).forEach(function (sh) {
           /* the arrival marks are a subset of the cast here too */
-          sh.render = (sh.render && sh.render.serial) ? sh.render : null;
-        if (sh.render) p.renderSeq = Math.max(p.renderSeq | 0, sh.render.serial | 0);
+          sh.render = goodRender(sh.render);
+        if (sh.render) p.renderSeq = Math.max(p.renderSeq | 0, sh.render.serial);
         sh.personaIds = Array.isArray(sh.personaIds) ? sh.personaIds : [];
           sh.castEnters = (Array.isArray(sh.castEnters) ? sh.castEnters : [])
             .filter(function (id) { return sh.personaIds.indexOf(id) >= 0; });
@@ -493,8 +505,8 @@
         sh.fields = (sh.fields && typeof sh.fields === 'object') ? sh.fields : {};
         sh.comments = Array.isArray(sh.comments) ? sh.comments : [];
         sh.prompts = sh.prompts || {};
-        sh.render = (sh.render && sh.render.serial) ? sh.render : null;
-        if (sh.render) p.renderSeq = Math.max(p.renderSeq | 0, sh.render.serial | 0);
+        sh.render = goodRender(sh.render);
+        if (sh.render) p.renderSeq = Math.max(p.renderSeq | 0, sh.render.serial);
         sh.personaIds = Array.isArray(sh.personaIds) ? sh.personaIds : [];
         /* Empty for every board written before this, which is the right answer:
            nobody was marked as arriving, so everybody was already there. */

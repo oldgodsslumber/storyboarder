@@ -21,7 +21,7 @@
     const state = SB.el('div', 'pp-note');
     const acts = SB.el('div', 'pp-actions');
 
-    const draw = function () {
+    const draw = function (remembered) {
       const p = P();
       if (!SB.Renders.hasFS) {
         state.textContent = 'This browser cannot hold a folder. Chrome or Edge can.';
@@ -36,12 +36,33 @@
           SB.Renders.folderName(p) + '. The board still holds its own small copies, so it opens ' +
           'anywhere with or without this folder.';
         const ch = SB.el('button', 'tb', 'Change…');
-        ch.onclick = function () { SB.Renders.connect().then(draw).catch(function () { }); };
+        ch.onclick = function () {
+          SB.Renders.connect().then(function () { draw(false); }).catch(function () { });
+        };
         const off = SB.el('button', 'tb', 'Disconnect');
         off.title = 'Stop keeping originals. Nothing already written is touched.';
-        off.onclick = function () { SB.Renders.disconnect().then(draw); };
+        off.onclick = function () { SB.Renders.disconnect().then(function () { draw(false); }); };
         acts.appendChild(ch);
         acts.appendChild(off);
+      } else if (remembered) {
+        /* Chrome hands a persisted handle back needing permission again after a
+           restart. The folder IS remembered — saying "not set" here sent people
+           off to pick the same folder a second time. */
+        state.classList.add('warn');
+        state.textContent = 'A folder is remembered, but this browser wants permission again ' +
+          'before it can be written to. Dropping a picture or copying an image set will ask; ' +
+          'or reconnect it here.';
+        const b = SB.el('button', 'tb on', 'Reconnect');
+        b.onclick = function () {
+          SB.Renders.ready(true).then(function (h) {
+            if (h) { SB.toast('Renders folder reconnected'); draw(true); return; }
+            SB.Renders.connect().then(function () { draw(false); }).catch(function () { });
+          });
+        };
+        acts.appendChild(b);
+        const ch = SB.el('button', 'tb', 'Choose another…');
+        ch.onclick = function () { SB.Renders.connect().then(function () { draw(false); }).catch(function () { }); };
+        acts.appendChild(ch);
       } else {
         state.classList.remove('warn');
         state.textContent = 'Not set. Every picture you drop is shrunk to 854×480 for the board ' +
@@ -50,7 +71,7 @@
         const b = SB.el('button', 'tb on', 'Choose a folder…');
         b.onclick = function () {
           SB.Renders.connect().then(function () {
-            draw();
+            draw(false);
             SB.toast('Renders will be kept in ' + SB.Renders.rootName());
           }).catch(function (e) {
             if (e && e.name === 'AbortError') return;
@@ -63,9 +84,14 @@
 
     box.appendChild(state);
     box.appendChild(acts);
-    /* the handle is remembered across sessions, so ask before drawing */
-    SB.Renders.ready().then(draw);
-    draw();
+    draw(false);
+    /* the handle is remembered across sessions, so look before saying anything:
+       "connected", "remembered but needs a click", and "never chosen" are three
+       different states and only the first two have a folder behind them */
+    SB.Renders.ready().then(function (h) {
+      if (h) { draw(false); return; }
+      SB.Renders.isRemembered().then(draw);
+    });
     return box;
   }
 
