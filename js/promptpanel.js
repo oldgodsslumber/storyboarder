@@ -413,6 +413,11 @@
     return row;
   }
 
+  /* The box comes first in every column, so the three of them start on the same
+   * line. With the badges and the generate button above it, the two prompt
+   * boxes sat a row lower than the description beside them and the whole table
+   * read as if it were out of register. Everything that acts on a prompt now
+   * sits under it, which is also the order you use it in: read, then act. */
   function promptCell(sh, m, field) {
     const cell = SB.el('div', 'pt-cell pt-prompt');
     if (!m) {
@@ -421,47 +426,10 @@
     }
     const pr = sh.prompts[m.id] || null;
 
-    const bar = SB.el('div', 'pt-bar');
-    const flagged = (pr && pr.flagged && pr.flagged[field]) || null;
-    if (flagged && flagged.length) {
-      const warn = SB.el('span', 'badge warn', 'gendered');
-      warn.title = 'This prompt still contains: ' + flagged.join(', ') +
-        '. Edit it or generate again.';
-      bar.appendChild(warn);
-    }
-    if (pr && pr[field] && SB.Personas.staleFor(P(), sh, pr.at)) {
-      const b = SB.el('span', 'badge warn stale', 'cast changed');
-      b.title = 'Something on this card was edited after this prompt was written.';
-      bar.appendChild(b);
-    }
-    bar.appendChild(SB.el('span', 'spacer'));
-    const gen = SB.el('button', 'mini primary', '✦ generate');
-    gen.disabled = running || !!sh.noShot || !(sh.description || '').trim();
-    if (gen.disabled) {
-      gen.title = running ? 'A run is in flight'
-        : sh.noShot ? 'A “no shot” card never generates'
-          : 'Write a description first — there is nothing for the writer to work from';
-    }
-    gen.onclick = function () {
-      gen.disabled = true;
-      gen.textContent = '…';
-      const roles = field === 'imagePrompt' ? { image: true } : { video: true };
-      SB.Prompts.generateFor([sh], { roles: roles }).then(function () {
-        render();
-      }).catch(function (e) {
-        gen.disabled = false;
-        gen.textContent = '✦ generate';
-        if (SB.apiBlocked(e, function () { gen.onclick(); })) return;
-        SB.toast(e.message || String(e), true);
-      });
-    };
-    bar.appendChild(gen);
-    cell.appendChild(bar);
-
     const ta = document.createElement('textarea');
     ta.className = 'pt-text';
     ta.value = (pr && pr[field]) || '';
-    ta.placeholder = sh.noShot ? '(“no shot” — never generated)' : 'not generated yet';
+    ta.placeholder = sh.noShot ? '(\u201cno shot\u201d \u2014 never generated)' : 'not generated yet';
     ta.addEventListener('input', function () {
       sh.prompts[m.id] = sh.prompts[m.id] || { imagePrompt: '', videoPrompt: '', modelName: m.name };
       sh.prompts[m.id][field] = ta.value;
@@ -475,13 +443,55 @@
     cell.appendChild(ta);
 
     const foot = SB.el('div', 'pt-foot');
+
+    const flagged = (pr && pr.flagged && pr.flagged[field]) || null;
+    if (flagged && flagged.length) {
+      const warn = SB.el('span', 'badge warn', 'gendered');
+      warn.title = 'This prompt still contains: ' + flagged.join(', ') +
+        '. Edit it or generate again.';
+      foot.appendChild(warn);
+    }
+    if (pr && pr[field] && SB.Personas.staleFor(P(), sh, pr.at)) {
+      const b = SB.el('span', 'badge warn stale', 'cast changed');
+      b.title = 'Something on this card was edited after this prompt was written.';
+      foot.appendChild(b);
+    }
+
     const copy = SB.el('button', 'mini', 'copy');
+    copy.disabled = !ta.value;
     copy.onclick = function () {
       navigator.clipboard.writeText(ta.value || '').then(function () {
         SB.toast('Prompt copied');
       }).catch(function () { SB.toast('Could not copy', true); });
     };
     foot.appendChild(copy);
+
+    foot.appendChild(SB.el('span', 'spacer'));
+
+    const gen = SB.el('button', 'mini primary', '\u2726 generate');
+    gen.disabled = running || !!sh.noShot || !(sh.description || '').trim();
+    if (gen.disabled) {
+      gen.title = running ? 'A run is in flight'
+        : sh.noShot ? 'A \u201cno shot\u201d card never generates'
+          : 'Write a description first \u2014 there is nothing for the writer to work from';
+    } else if (ta.value) {
+      gen.title = 'Write this one again, replacing what is there';
+    }
+    gen.onclick = function () {
+      gen.disabled = true;
+      gen.textContent = '\u2026';
+      const roles = field === 'imagePrompt' ? { image: true } : { video: true };
+      SB.Prompts.generateFor([sh], { roles: roles }).then(function () {
+        render();
+      }).catch(function (e) {
+        gen.disabled = false;
+        gen.textContent = '\u2726 generate';
+        if (SB.apiBlocked(e, function () { gen.onclick(); })) return;
+        SB.toast(e.message || String(e), true);
+      });
+    };
+    foot.appendChild(gen);
+
     cell.appendChild(foot);
     return cell;
   }

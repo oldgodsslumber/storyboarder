@@ -898,22 +898,21 @@ button.linkish{
 /* the description, as a reference box so marks stay live */
 .pt-desc{
   background:var(--input-bg);border:1px solid var(--line);border-radius:5px;
-  padding:5px 6px;font-size:12px;min-height:96px;max-height:220px;overflow:auto;
+  padding:6px 7px;font-size:12px;min-height:120px;max-height:220px;overflow:auto;
   white-space:pre-wrap;overflow-wrap:break-word;
 }
 .pt-desc:focus{outline:none;border-color:var(--accent)}
 
 /* the two prompt boxes — the reason this screen exists */
-.pt-prompt{display:flex;flex-direction:column;gap:4px}
-.pt-bar{display:flex;align-items:center;gap:5px;min-height:18px}
-.pt-bar .spacer{flex:1}
+.pt-prompt{display:flex;flex-direction:column;gap:5px}
 .pt-text{
   width:100%;background:var(--input-bg);color:var(--fg);border:1px solid var(--line);
   border-radius:5px;padding:6px 7px;font-size:12px;line-height:1.5;
   min-height:120px;resize:vertical;
 }
 .pt-text:focus{outline:none;border-color:var(--accent)}
-.pt-foot{display:flex;gap:5px}
+.pt-foot{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+.pt-foot .spacer{flex:1}
 .pt-none{font-size:10px;color:var(--fg-dim);font-style:italic;padding:2px 0}
 
 /* the feed, down the column */
