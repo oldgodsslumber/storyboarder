@@ -1122,7 +1122,7 @@ body.comment-mode .frame{cursor:crosshair}
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-09-09 19:47 · e91eb4c+";</script>
+<script>window.SB_BUILD = "2026-09-09 20:10 · d7d9296+";</script>
 
 <div id="app">
 
@@ -2638,7 +2638,6 @@ window.SB = window.SB || {};
 
   const DEFAULT_BRAND = [
     'CONSTRAINTS',
-    '- No gender references: do not mention or imply gender. Avoid gendered nouns, adjectives, titles and pronouns. Use only neutral language — "the subject", "the person", "they" — or omit pronouns entirely.',
     '- Cinematic + technical: maintain professional photographic detail — focal length, aperture, distance/angle, depth of field, and lighting notes for the frame.',
     '- Vary angles subtly (slight high/low tilt, over-shoulder, profile, foreground obstructions) while staying coherent with the rest of the scene.',
     '- Include tactile props or environmental elements that support the story (fabric, glass, rain, reflections, paper, steam).',
@@ -2750,33 +2749,12 @@ window.SB = window.SB || {};
     '- Hold the natural-light look and the clean exposure through the whole move.'
   ].join('\n');
 
-  /* Gendered language the "no gender references" rule forbids. Word-bounded, so
-   * "human", "manager" and "therapist" are safe. */
-  const GENDERED = new RegExp('\\b(' + [
-    'he', 'him', 'his', 'himself', 'she', 'her', 'hers', 'herself',
-    'man', 'men', "man's", 'woman', 'women', "woman's",
-    'male', 'males', 'female', 'females',
-    'boy', 'boys', 'girl', 'girls', 'guy', 'guys', 'gal', 'gals',
-    'lady', 'ladies', 'gentleman', 'gentlemen',
-    'businessman', 'businesswoman', 'businessmen', 'businesswomen',
-    'salesman', 'saleswoman', 'spokesman', 'spokeswoman', 'chairman', 'chairwoman',
-    'mr', 'mrs', 'ms', 'miss', 'sir', 'madam', "ma'am",
-    'husband', 'wife', 'mother', 'father', 'mom', 'mum', 'dad',
-    'son', 'daughter', 'brother', 'sister', 'aunt', 'uncle',
-    'actress', 'waitress', 'hostess', 'stewardess'
-  ].join('|') + ')\\b', 'gi');
-
-  /* Which gendered words a written prompt actually used (deduped, lowercase). */
-  function genderedTerms(text) {
-    const hits = String(text || '').match(GENDERED);
-    if (!hits) return [];
-    const seen = {}, out = [];
-    hits.forEach(function (h) {
-      const k = h.toLowerCase();
-      if (!seen[k]) { seen[k] = 1; out.push(k); }
-    });
-    return out;
-  }
+  /* There was a no-gendered-language rule here, enforced with a word list and
+   * a corrective rewrite. It is gone on purpose. Stripping the gender out of a
+   * subject's description does not make the picture neutral — it makes the
+   * image model guess, and it guesses male. A reference frame has to be
+   * allowed to say what the person it is a reference FOR actually looks like.
+   */
 
   /* A board only stores the house style once someone has edited it. Boards on
    * the stock text follow the app, so a correction here reaches them. */
@@ -2877,10 +2855,10 @@ window.SB = window.SB || {};
       ? 'Fold these requirements into the prompt itself as concrete description, but ONLY where ' +
         'they describe what this frame CHANGES. Everything inherited from the supplied source ' +
         'frame — the place, the lighting, the lens, the grade, the wardrobe — is already in that ' +
-        'image and must not be restated. Do not quote the rules back, do not add headings or ' +
-        'commentary, and never use gendered language.'
+        'image and must not be restated. Do not quote the rules back, and do not add headings ' +
+        'or commentary.'
       : 'Fold these requirements into the prompt itself as concrete description — ' +
-        'do not quote the rules back, do not add headings or commentary, and never use gendered language.');
+        'do not quote the rules back, and do not add headings or commentary.');
     return parts.join('\n');
   }
 
@@ -2892,8 +2870,7 @@ window.SB = window.SB || {};
     REFERENCE_RIDER: REFERENCE_RIDER,
     brandOf: brandOf,
     systemFor: systemFor,
-    sequenceBlock: sequenceBlock,
-    genderedTerms: genderedTerms
+    sequenceBlock: sequenceBlock
   };
 
 })(window.SB);
@@ -4098,8 +4075,7 @@ window.SB = window.SB || {};
         'like "Ops lead" when the script leaves them unnamed.',
       desc: 'who they are on camera and, critically, exactly what they look like and are WEARING. ' +
         'Age range, build, hair, skin tone, and a specific outfit described down to fabric and colour. ' +
-        'This text is what keeps them identical from shot to shot, so be concrete and complete. ' +
-        'No gendered language.'
+        'This text is what keeps them identical from shot to shot, so be concrete and complete.'
     },
     place: {
       ask: 'recurring',
@@ -7884,14 +7860,6 @@ window.SB = window.SB || {};
     const t = SB.el('div', 'ptitle');
     t.appendChild(SB.el('span', null, title + ' · ' + m.name));
 
-    /* the brand forbids gendered language; say so if some got through */
-    const flagged = (pr && pr.flagged && pr.flagged[field]) || null;
-    if (flagged && flagged.length) {
-      const warn = SB.el('span', 'badge warn', 'gendered');
-      warn.title = 'This prompt still contains: ' + flagged.join(', ') +
-        '. The rewrite pass could not clear it — edit it or generate again.';
-      t.appendChild(warn);
-    }
     const st = staleBadge(sh, m, field);
     if (st) t.appendChild(st);
     const gen = SB.el('button', 'mini', 'generate');
@@ -8938,46 +8906,12 @@ window.SB = window.SB || {};
     return ask(text, { type: 'OBJECT', properties: props, required: keys }, system);
   }
 
-  function store(shot, model, field, value, flagged) {
+  function store(shot, model, field, value) {
     const cur = shot.prompts[model.id] || { imagePrompt: '', videoPrompt: '' };
     cur[field] = value || '';
     cur.modelName = model.name;
     cur.at = Date.now();
-    cur.flagged = cur.flagged || {};
-    if (flagged && flagged.length) cur.flagged[field] = flagged;
-    else delete cur.flagged[field];
     shot.prompts[model.id] = cur;
-  }
-
-  /* "No gender references" is a hard brand rule, so it gets verified rather
-   * than hoped for: one corrective rewrite, then a visible flag on the card if
-   * the writer still won't let go of it. */
-  function enforceNeutral(job, res) {
-    if (!SB.Brand.brandOf(P()).enabled) return Promise.resolve({ res: res, flags: {} });
-    const bad = {};
-    let any = false;
-    job.keys.forEach(function (k) {
-      const terms = SB.Brand.genderedTerms(res[k]);
-      if (terms.length) { bad[k] = terms; any = true; }
-    });
-    if (!any) return Promise.resolve({ res: res, flags: {} });
-
-    const all = Object.keys(bad).reduce(function (a, k) { return a.concat(bad[k]); }, []);
-    const fix = job.text +
-      '\n\nYour previous draft used gendered language (' + all.join(', ') + '). ' +
-      'Rewrite it with no gendered nouns, adjectives, titles or pronouns — ' +
-      'use "the subject", "the person", or no pronoun at all. Keep everything else the same.';
-
-    return callWriter(fix, job.keys, job.system).then(function (res2) {
-      const still = {};
-      job.keys.forEach(function (k) {
-        const terms = SB.Brand.genderedTerms(res2[k]);
-        if (terms.length) still[k] = terms;
-      });
-      return { res: res2, flags: still };
-    }).catch(function () {
-      return { res: res, flags: bad };   // rewrite failed — keep the draft, flag it
-    });
   }
 
   /* Write the prompts for ONE shot.
@@ -9023,10 +8957,8 @@ window.SB = window.SB || {};
       if (lastError && SB.netKind(lastError)) return Promise.resolve();
       const j = jobs[i];
       return callWriter(j.text, j.keys, j.system).then(function (res) {
-        return enforceNeutral({ shot: shot, keys: j.keys, system: j.system, text: j.text }, res);
-      }).then(function (out) {
         j.targets.forEach(function (t) {
-          store(shot, t.model, t.field, out.res[t.field], out.flags[t.field]);
+          store(shot, t.model, t.field, res[t.field]);
           written.push(t.field);
         });
       }).catch(function (e) {
@@ -9287,7 +9219,7 @@ window.SB = window.SB || {};
       'not a character name), a description covering age range, build, hair, skin tone and a ' +
       'specific outfit down to fabric and colour, and an imagePrompt that would produce a clean ' +
       'front-facing reference frame of them — plain background, natural light, full wardrobe ' +
-      'visible, neutral expression. No gendered language.',
+      'visible, neutral expression.',
       '- Keep the cast as small as the scene honestly needs. Reuse beats inventing, every time.',
       '- Name the people each shot contains in that shot\'s own "cast" array, by the same names.',
       '',
@@ -9474,7 +9406,7 @@ window.SB = window.SB || {};
        * folding it into the descriptions is what made them read as prompts. */
       brand.enabled ? '\nHOUSE STYLE — nothing you describe may contradict this.\n\n' + brand.text : '',
       brand.enabled ? '\nDo not quote these rules back or write them into the descriptions — the ' +
-        'prompt writer applies them later. Never use gendered language.' : ''
+        'prompt writer applies them later.' : ''
     ].filter(Boolean).join('\n');
 
     return SB.Prompts.raw(text, GEN_SCHEMA, system).then(function (out) {
@@ -9782,8 +9714,7 @@ window.SB = window.SB || {};
     const brand = SB.Brand.brandOf(p);
     const system = [
       'You edit storyboard shot descriptions. You return the rewritten description only — ' +
-      'no commentary, no headings.',
-      brand.enabled ? '\nNever use gendered language.' : ''
+      'no commentary, no headings.'
     ].filter(Boolean).join('\n');
 
     tick();
@@ -9862,8 +9793,7 @@ window.SB = window.SB || {};
     const system = [
       'You sharpen scene descriptions for a storyboard. You return the rewritten ' +
       'description only — no commentary, no headings.',
-      brand.enabled ? '\nHOUSE STYLE — the rewrite must obey this.\n\n' + brand.text : '',
-      brand.enabled ? '\nNever use gendered language.' : ''
+      brand.enabled ? '\nHOUSE STYLE — the rewrite must obey this.\n\n' + brand.text : ''
     ].filter(Boolean).join('\n');
 
     return SB.Prompts.raw(text.join('\n'), REWRITE_SCHEMA, system).then(function (out) {
@@ -10334,13 +10264,6 @@ window.SB = window.SB || {};
 
     const foot = SB.el('div', 'pt-foot');
 
-    const flagged = (pr && pr.flagged && pr.flagged[field]) || null;
-    if (flagged && flagged.length) {
-      const warn = SB.el('span', 'badge warn', 'gendered');
-      warn.title = 'This prompt still contains: ' + flagged.join(', ') +
-        '. Edit it or generate again.';
-      foot.appendChild(warn);
-    }
     if (pr && pr[field] && SB.Personas.staleFor(P(), sh, pr.at)) {
       const b = SB.el('span', 'badge warn stale', 'cast changed');
       b.title = 'Something on this card was edited after this prompt was written.';
@@ -11098,7 +11021,7 @@ window.SB = window.SB || {};
         : SB.Brand.REFERENCE_RIDER;
       SB.Prompts.raw(
         'Write one still-image prompt for ' + (m ? m.name : 'an image model') +
-        ' that produces ' + kind.refBrief + '. No gendered language.\n\n' +
+        ' that produces ' + kind.refBrief + '.\n\n' +
         kind.label.toUpperCase() + ':\n' + per.description,
         { type: 'OBJECT', properties: { imagePrompt: { type: 'STRING' } }, required: ['imagePrompt'] },
         sys
@@ -12179,8 +12102,7 @@ window.SB = window.SB || {};
     panels.brand.appendChild(SB.el('div', 'pp-note',
       'Rides along with every prompt the app writes, on top of the per-model templates. ' +
       'The app adds the scene’s beat list underneath it automatically, so “same subject, same ' +
-      'wardrobe, same location across the sequence” is something the writer can actually act on. ' +
-      'The no-gendered-language rule is verified on the way back, not just requested.'));
+      'wardrobe, same location across the sequence” is something the writer can actually act on.'));
 
     const bText = document.createElement('textarea');
     bText.rows = 22;

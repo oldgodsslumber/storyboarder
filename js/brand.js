@@ -13,7 +13,6 @@
 
   const DEFAULT_BRAND = [
     'CONSTRAINTS',
-    '- No gender references: do not mention or imply gender. Avoid gendered nouns, adjectives, titles and pronouns. Use only neutral language — "the subject", "the person", "they" — or omit pronouns entirely.',
     '- Cinematic + technical: maintain professional photographic detail — focal length, aperture, distance/angle, depth of field, and lighting notes for the frame.',
     '- Vary angles subtly (slight high/low tilt, over-shoulder, profile, foreground obstructions) while staying coherent with the rest of the scene.',
     '- Include tactile props or environmental elements that support the story (fabric, glass, rain, reflections, paper, steam).',
@@ -125,33 +124,12 @@
     '- Hold the natural-light look and the clean exposure through the whole move.'
   ].join('\n');
 
-  /* Gendered language the "no gender references" rule forbids. Word-bounded, so
-   * "human", "manager" and "therapist" are safe. */
-  const GENDERED = new RegExp('\\b(' + [
-    'he', 'him', 'his', 'himself', 'she', 'her', 'hers', 'herself',
-    'man', 'men', "man's", 'woman', 'women', "woman's",
-    'male', 'males', 'female', 'females',
-    'boy', 'boys', 'girl', 'girls', 'guy', 'guys', 'gal', 'gals',
-    'lady', 'ladies', 'gentleman', 'gentlemen',
-    'businessman', 'businesswoman', 'businessmen', 'businesswomen',
-    'salesman', 'saleswoman', 'spokesman', 'spokeswoman', 'chairman', 'chairwoman',
-    'mr', 'mrs', 'ms', 'miss', 'sir', 'madam', "ma'am",
-    'husband', 'wife', 'mother', 'father', 'mom', 'mum', 'dad',
-    'son', 'daughter', 'brother', 'sister', 'aunt', 'uncle',
-    'actress', 'waitress', 'hostess', 'stewardess'
-  ].join('|') + ')\\b', 'gi');
-
-  /* Which gendered words a written prompt actually used (deduped, lowercase). */
-  function genderedTerms(text) {
-    const hits = String(text || '').match(GENDERED);
-    if (!hits) return [];
-    const seen = {}, out = [];
-    hits.forEach(function (h) {
-      const k = h.toLowerCase();
-      if (!seen[k]) { seen[k] = 1; out.push(k); }
-    });
-    return out;
-  }
+  /* There was a no-gendered-language rule here, enforced with a word list and
+   * a corrective rewrite. It is gone on purpose. Stripping the gender out of a
+   * subject's description does not make the picture neutral — it makes the
+   * image model guess, and it guesses male. A reference frame has to be
+   * allowed to say what the person it is a reference FOR actually looks like.
+   */
 
   /* A board only stores the house style once someone has edited it. Boards on
    * the stock text follow the app, so a correction here reaches them. */
@@ -252,10 +230,10 @@
       ? 'Fold these requirements into the prompt itself as concrete description, but ONLY where ' +
         'they describe what this frame CHANGES. Everything inherited from the supplied source ' +
         'frame — the place, the lighting, the lens, the grade, the wardrobe — is already in that ' +
-        'image and must not be restated. Do not quote the rules back, do not add headings or ' +
-        'commentary, and never use gendered language.'
+        'image and must not be restated. Do not quote the rules back, and do not add headings ' +
+        'or commentary.'
       : 'Fold these requirements into the prompt itself as concrete description — ' +
-        'do not quote the rules back, do not add headings or commentary, and never use gendered language.');
+        'do not quote the rules back, and do not add headings or commentary.');
     return parts.join('\n');
   }
 
@@ -267,8 +245,7 @@
     REFERENCE_RIDER: REFERENCE_RIDER,
     brandOf: brandOf,
     systemFor: systemFor,
-    sequenceBlock: sequenceBlock,
-    genderedTerms: genderedTerms
+    sequenceBlock: sequenceBlock
   };
 
 })(window.SB);

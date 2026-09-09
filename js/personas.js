@@ -459,8 +459,7 @@
         'like "Ops lead" when the script leaves them unnamed.',
       desc: 'who they are on camera and, critically, exactly what they look like and are WEARING. ' +
         'Age range, build, hair, skin tone, and a specific outfit described down to fabric and colour. ' +
-        'This text is what keeps them identical from shot to shot, so be concrete and complete. ' +
-        'No gendered language.'
+        'This text is what keeps them identical from shot to shot, so be concrete and complete.'
     },
     place: {
       ask: 'recurring',

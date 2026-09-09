@@ -126,37 +126,31 @@
         window.__calls.length === 2 && !window.__calls[1].body.generationConfig.responseSchema, '');
       window.__reply = null;
 
-      /* ---------- gendered language is rewritten, then flagged ---------- */
-      window.__calls = [];
-      window.__reply = function (n) {
-        return { ok: true, status: 200, text: JSON.stringify({
-          candidates: [{ content: { parts: [{ text: JSON.stringify({
-            imagePrompt: n === 1
-              ? 'A businessman adjusts his tie by the window.'
-              : 'The subject adjusts a collar by the window.' }) }] } }] }) };
-      };
-      await SB.Prompts.generateFor(shots.a, { image: true });
-      t('a gendered draft triggers one rewrite', window.__calls.length === 2,
-        window.__calls.length);
-      t('and the clean rewrite is what gets stored',
-        shots.a.prompts[im.id].imagePrompt.indexOf('businessman') < 0,
-        shots.a.prompts[im.id].imagePrompt);
-      t('the rewrite request names the offending words',
-        /businessman/.test(window.__calls[1].body.contents[0].parts[0].text), '');
-      t('nothing is flagged when the rewrite works',
-        !(shots.a.prompts[im.id].flagged || {}).imagePrompt, '');
-
+      /* ---------- a written prompt is stored as written ----------
+         The app used to scan every draft for gendered words and spend a second
+         call rewriting them out. It neutered the descriptions the reference
+         frames are generated from, and a model handed a genderless person
+         draws a man — so the rule, the scan and the rewrite are all gone. */
       window.__calls = [];
       window.__reply = function () {
         return { ok: true, status: 200, text: JSON.stringify({
           candidates: [{ content: { parts: [{ text: JSON.stringify({
-            imagePrompt: 'He stands by the window.' }) }] } }] }) };
+            imagePrompt: 'A businesswoman adjusts her collar by the window.' }) }] } }] }) };
       };
       await SB.Prompts.generateFor(shots.a, { image: true });
-      t('a draft that stays gendered is flagged for the user',
-        (shots.a.prompts[im.id].flagged || {}).imagePrompt &&
-        shots.a.prompts[im.id].flagged.imagePrompt.indexOf('he') >= 0,
-        JSON.stringify(shots.a.prompts[im.id].flagged));
+      t('a prompt naming a woman costs one call, not two', window.__calls.length === 1,
+        window.__calls.length);
+      t('and it is stored exactly as written',
+        shots.a.prompts[im.id].imagePrompt.indexOf('businesswoman') >= 0,
+        shots.a.prompts[im.id].imagePrompt);
+      t('nothing is flagged, because nothing is policed',
+        !(shots.a.prompts[im.id].flagged || {}).imagePrompt,
+        JSON.stringify(shots.a.prompts[im.id].flagged || {}));
+      /* "Diversity across age, gender presentation…" is a casting note and
+         stays; what had to go is the instruction never to say so. */
+      t('and nothing in the system message forbids gendered language',
+        !/gendered language|no gender references/i.test(
+          SB.Brand.systemFor(SB.app.project, shots.a, 'image')), '');
       window.__reply = null;
 
       /* ---------- the failure paths say what to do ---------- */

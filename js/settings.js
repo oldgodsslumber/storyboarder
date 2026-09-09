@@ -226,8 +226,7 @@
     panels.brand.appendChild(SB.el('div', 'pp-note',
       'Rides along with every prompt the app writes, on top of the per-model templates. ' +
       'The app adds the scene’s beat list underneath it automatically, so “same subject, same ' +
-      'wardrobe, same location across the sequence” is something the writer can actually act on. ' +
-      'The no-gendered-language rule is verified on the way back, not just requested.'));
+      'wardrobe, same location across the sequence” is something the writer can actually act on.'));
 
     const bText = document.createElement('textarea');
     bText.rows = 22;

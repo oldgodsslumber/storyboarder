@@ -233,7 +233,7 @@
       'not a character name), a description covering age range, build, hair, skin tone and a ' +
       'specific outfit down to fabric and colour, and an imagePrompt that would produce a clean ' +
       'front-facing reference frame of them — plain background, natural light, full wardrobe ' +
-      'visible, neutral expression. No gendered language.',
+      'visible, neutral expression.',
       '- Keep the cast as small as the scene honestly needs. Reuse beats inventing, every time.',
       '- Name the people each shot contains in that shot\'s own "cast" array, by the same names.',
       '',
@@ -420,7 +420,7 @@
        * folding it into the descriptions is what made them read as prompts. */
       brand.enabled ? '\nHOUSE STYLE — nothing you describe may contradict this.\n\n' + brand.text : '',
       brand.enabled ? '\nDo not quote these rules back or write them into the descriptions — the ' +
-        'prompt writer applies them later. Never use gendered language.' : ''
+        'prompt writer applies them later.' : ''
     ].filter(Boolean).join('\n');
 
     return SB.Prompts.raw(text, GEN_SCHEMA, system).then(function (out) {
@@ -728,8 +728,7 @@
     const brand = SB.Brand.brandOf(p);
     const system = [
       'You edit storyboard shot descriptions. You return the rewritten description only — ' +
-      'no commentary, no headings.',
-      brand.enabled ? '\nNever use gendered language.' : ''
+      'no commentary, no headings.'
     ].filter(Boolean).join('\n');
 
     tick();
@@ -808,8 +807,7 @@
     const system = [
       'You sharpen scene descriptions for a storyboard. You return the rewritten ' +
       'description only — no commentary, no headings.',
-      brand.enabled ? '\nHOUSE STYLE — the rewrite must obey this.\n\n' + brand.text : '',
-      brand.enabled ? '\nNever use gendered language.' : ''
+      brand.enabled ? '\nHOUSE STYLE — the rewrite must obey this.\n\n' + brand.text : ''
     ].filter(Boolean).join('\n');
 
     return SB.Prompts.raw(text.join('\n'), REWRITE_SCHEMA, system).then(function (out) {

@@ -245,7 +245,8 @@ console.log('\n— brand style —');
 
   const sys = B.systemFor(p, b, 'image');
   eq(/HOUSE STYLE/.test(sys), true, 'system instruction carries the house style');
-  eq(/No gender references/i.test(sys), true, 'the no-gender rule is in there');
+  eq(/No gender references|gendered language/i.test(sys), false,
+    'and no longer forbids saying what a subject looks like');
   eq(/SCENE CONTEXT/.test(sys), true, 'the scene context block is added');
   eq(/beat 2 of 2/.test(sys), true, 'the shot knows which beat it is');
   eq(/Scene 1: Opening/.test(sys), true, 'scene heading is passed through');
@@ -1176,18 +1177,6 @@ console.log('\n— a description is prose, not a prompt —');
   eq(C.deprompt('The shallow depth of field keeps her face sharp.'),
     'The shallow depth of field keeps her face sharp.',
     'and the only sentence there is is never taken away');
-}
-
-console.log('\n— gendered language detector —');
-{
-  const g = SB.Brand.genderedTerms;
-  eq(g('The subject leans in, they adjust the lens.'), [], 'neutral copy passes');
-  eq(g('He adjusts his cuff while she waits.'), ['he', 'his', 'she'], 'pronouns are caught');
-  eq(g('A businessman greets the ladies.'), ['businessman', 'ladies'], 'gendered nouns are caught');
-  eq(g('Human hands, a manager mid-thought, therapist listening.'), [],
-    'human / manager / therapist are not false positives');
-  eq(g('MAN in frame'), ['man'], 'case-insensitive');
-  eq(g(''), [], 'empty text is fine');
 }
 
 console.log('\n— images are stored once, under a hash —');

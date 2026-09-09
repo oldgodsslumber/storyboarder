@@ -585,7 +585,7 @@
         : SB.Brand.REFERENCE_RIDER;
       SB.Prompts.raw(
         'Write one still-image prompt for ' + (m ? m.name : 'an image model') +
-        ' that produces ' + kind.refBrief + '. No gendered language.\n\n' +
+        ' that produces ' + kind.refBrief + '.\n\n' +
         kind.label.toUpperCase() + ':\n' + per.description,
         { type: 'OBJECT', properties: { imagePrompt: { type: 'STRING' } }, required: ['imagePrompt'] },
         sys

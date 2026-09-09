@@ -443,13 +443,6 @@
 
     const foot = SB.el('div', 'pt-foot');
 
-    const flagged = (pr && pr.flagged && pr.flagged[field]) || null;
-    if (flagged && flagged.length) {
-      const warn = SB.el('span', 'badge warn', 'gendered');
-      warn.title = 'This prompt still contains: ' + flagged.join(', ') +
-        '. Edit it or generate again.';
-      foot.appendChild(warn);
-    }
     if (pr && pr[field] && SB.Personas.staleFor(P(), sh, pr.at)) {
       const b = SB.el('span', 'badge warn stale', 'cast changed');
       b.title = 'Something on this card was edited after this prompt was written.';

@@ -224,46 +224,12 @@
     return ask(text, { type: 'OBJECT', properties: props, required: keys }, system);
   }
 
-  function store(shot, model, field, value, flagged) {
+  function store(shot, model, field, value) {
     const cur = shot.prompts[model.id] || { imagePrompt: '', videoPrompt: '' };
     cur[field] = value || '';
     cur.modelName = model.name;
     cur.at = Date.now();
-    cur.flagged = cur.flagged || {};
-    if (flagged && flagged.length) cur.flagged[field] = flagged;
-    else delete cur.flagged[field];
     shot.prompts[model.id] = cur;
-  }
-
-  /* "No gender references" is a hard brand rule, so it gets verified rather
-   * than hoped for: one corrective rewrite, then a visible flag on the card if
-   * the writer still won't let go of it. */
-  function enforceNeutral(job, res) {
-    if (!SB.Brand.brandOf(P()).enabled) return Promise.resolve({ res: res, flags: {} });
-    const bad = {};
-    let any = false;
-    job.keys.forEach(function (k) {
-      const terms = SB.Brand.genderedTerms(res[k]);
-      if (terms.length) { bad[k] = terms; any = true; }
-    });
-    if (!any) return Promise.resolve({ res: res, flags: {} });
-
-    const all = Object.keys(bad).reduce(function (a, k) { return a.concat(bad[k]); }, []);
-    const fix = job.text +
-      '\n\nYour previous draft used gendered language (' + all.join(', ') + '). ' +
-      'Rewrite it with no gendered nouns, adjectives, titles or pronouns — ' +
-      'use "the subject", "the person", or no pronoun at all. Keep everything else the same.';
-
-    return callWriter(fix, job.keys, job.system).then(function (res2) {
-      const still = {};
-      job.keys.forEach(function (k) {
-        const terms = SB.Brand.genderedTerms(res2[k]);
-        if (terms.length) still[k] = terms;
-      });
-      return { res: res2, flags: still };
-    }).catch(function () {
-      return { res: res, flags: bad };   // rewrite failed — keep the draft, flag it
-    });
   }
 
   /* Write the prompts for ONE shot.
@@ -309,10 +275,8 @@
       if (lastError && SB.netKind(lastError)) return Promise.resolve();
       const j = jobs[i];
       return callWriter(j.text, j.keys, j.system).then(function (res) {
-        return enforceNeutral({ shot: shot, keys: j.keys, system: j.system, text: j.text }, res);
-      }).then(function (out) {
         j.targets.forEach(function (t) {
-          store(shot, t.model, t.field, out.res[t.field], out.flags[t.field]);
+          store(shot, t.model, t.field, res[t.field]);
           written.push(t.field);
         });
       }).catch(function (e) {
