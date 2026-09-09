@@ -40,52 +40,38 @@
    * its own reference labels, relationship markers and shot syntax; a prose
    * prompt is simply the wrong shape for it. Everything below is that format. */
   const H3_VID_TPL =
-    'Write a single image-to-video prompt for {{MODEL}}, starting from the first frame described below.\n' +
-    'H3 takes a full-reference rewrite, NOT a paragraph. Emit exactly these six sections, ' +
-    'in this order, each introduced on its own line as "name:" followed by its content:\n' +
-    '  subject_definitions, summary, retention_analysis, detailed_description, ' +
-    'overall_soundscape, non_diegetic_music\n\n' +
-    'FORMAT RULES\n' +
-    '- English throughout. Keep dialogue and lyrics in their original language inside ' +
-    '<d>[Language] ...</d>, and keep visible on-screen text as it reads.\n' +
-    '- Reference labels: <Subject N> for reusable visible content (a person, a place, a ' +
-    'costume, a prop, a style, an action), <Picture N> for an image used as a concrete frame ' +
-    'or composition anchor, <Video N> for a source video, <Audio N> for a copied or referenced ' +
-    'audio signal. The supplied first frame is <Picture 1>. Define each label once in ' +
-    'subject_definitions, then reuse it unchanged everywhere after. An image that only ' +
-    'establishes a character, wardrobe or style gets no <Picture N> line of its own — cite it ' +
-    'inside that <Subject N> definition instead.\n' +
-    '- summary: one short paragraph opening with a bracketed task type. A supplied first frame ' +
-    'is [keyframe completion]; add reference generation when character or style references are ' +
-    'also supplied. Join multiple types with " + " and never repeat one. Introduce no new labels here.\n' +
-    '- retention_analysis: one line per label, e.g. "<Subject 1> (appears in [Shot 1]): ' +
-    'fully_preserved - ...". Visible content uses fully_preserved, partially_preserved, ' +
-    'attribute_transfer or weak_reference; audio uses fully_copy, partially_copy, reference or ' +
-    'weak_reference. Never write a speaker ID in this section.\n' +
-    '- detailed_description: one or two sentences of style FIRST, then the shots in playback ' +
-    'order. [Shot 1] carries no timestamp; each later shot opens "[Shot N] At MM:SS.mmm, ...". ' +
-    'Treat this as one continuous shot unless the description below calls for a cut. State that ' +
-    'the shot begins from <Picture 1>, then give composition, subject appearance and position, ' +
-    'environment and lighting, the action and every state change, the camera move (type, ' +
-    'amplitude and speed, written as natural English), the sound, and the moment each reference ' +
-    'takes effect. 350-500 words. Do not reduce it to a plot summary or a list of reference ' +
-    'relationships.\n' +
-    '- Speakers take stable IDs in the order they first speak: "<Subject 2> (S1) turns and says, ' +
-    '<d>[English] ...</d>". Mark unseen speech off-screen. Use <scenetrans> for dialogue carrying ' +
-    'across a cut and <cutoff> for a line the shot ends on.\n' +
-    '- overall_soundscape: ambience and physical sound across the whole clip. ' +
-    'non_diegetic_music: audience-only score — instrumentation, tempo, dynamics — or N/A. ' +
-    'Neither section repeats dialogue or lyrics.\n' +
-    '- No preamble, no commentary, no markdown fences.\n\n' +
+    'Write the prose of a MiniMax H3 full-reference video prompt, starting from the first frame ' +
+    'described below.\n' +
+    'The app has already written subject_definitions and retention_analysis from the board, so ' +
+    'the labels below are FIXED. Use them exactly; never invent a <Subject N>, <Picture N>, ' +
+    '<Video N> or <Audio N> that is not in this table, and never redefine one.\n\n' +
+    'LABELS\n{{H3_LABELS}}\n\n' +
+    'Return JSON with exactly two keys:\n' +
+    '- "summary": one short paragraph opening with the bracketed task type {{H3_TASK}} exactly as ' +
+    'written, then what the target video shows and the main reference relationships, in the ' +
+    'labels above. Introduce nothing new here.\n' +
+    '- "detailed_description": one or two sentences of overall style and look FIRST, then ' +
+    '"[Shot 1]" and the shot itself. Treat this as one continuous shot with no cut unless the ' +
+    'description below calls for one; a later shot opens "[Shot N] At MM:SS.mmm, ...". State that ' +
+    'the shot begins from <Picture 1>, then give composition, each subject\'s appearance and ' +
+    'position, environment and lighting, the action and every state change, and the camera move ' +
+    '(type, amplitude and speed, in natural English). Say where each reference takes effect. ' +
+    'Introduce each subject at its first clear appearance by its label, then reuse the label. ' +
+    '350-500 words.\n\n' +
+    'THIS VIDEO IS SILENT. There is no dialogue, no speaker IDs, no <d>...</d>, and nothing about ' +
+    'sound in either key — the sound sections are written by the app.\n' +
+    'English throughout. No preamble, no commentary, no markdown fences, and do not write the ' +
+    'section names — return the two values only.\n\n' +
     'Shot type: {{SHOT_TYPE}}. Scene: {{SCENE}}.\n\n' +
-    'SHOT DESCRIPTION:\n{{DESCRIPTION}}';
+    'SHOT DESCRIPTION:\n{{DESCRIPTION}}\n\n' +
+    'THE SCRIPT THIS SHOT COVERS — what is happening, for action and timing only. The video is ' +
+    'silent, so none of it is spoken aloud in what you write:\n{{SCRIPT}}';
 
   const H3_REF_TPL =
-    'Reference images are supplied in order. Give each recurring subject its own <Subject N> ' +
-    'line in subject_definitions, citing the image it comes from ("<Subject 1> is the woman in ' +
-    'reference image {{N}}, with ..."), and keep face, hair and wardrobe exactly as in that ' +
-    'image. Reuse the same <Subject N> label in summary, retention_analysis and ' +
-    'detailed_description. Named subjects: {{NAME}}.';
+    'Reference images are supplied in the numbered order above. Their <Picture N> labels and the ' +
+    '<Subject N> each one defines have already been assigned by the app and are listed in the ' +
+    'LABELS table — use those labels exactly, and keep face, hair and wardrobe as the image and ' +
+    'the description above have them. Named subjects: {{NAME}}.';
 
   /* Templates a specific model needs instead of the generic pair, keyed by the
    * name it ships under in defaultModels(). */

@@ -61,23 +61,50 @@
     return '=== FIRST-FRAME IMAGE PROMPT — INSTRUCTIONS ===\n' +
       fill(m.imageTemplate, ctx) + extras(shot, m.imageTemplate) + '\n';
   }
-  function videoBlock(shot, m) {
+  function videoBlock(shot, m, sc) {
     const ctx = contextFor(shot); ctx.MODEL = m.name;
+    /* The H3 template works from a label table the app has already assigned,
+       so the writer never has to invent one. */
+    if (sc) {
+      ctx.H3_LABELS = sc.labels || '(none — describe the shot in plain terms)';
+      ctx.H3_TASK = sc.taskTypes.length ? '[' + sc.taskTypes.join(' + ') + ']' : '';
+    }
     return '=== IMAGE-TO-VIDEO PROMPT — INSTRUCTIONS ===\n' +
       fill(m.videoTemplate, ctx) + extras(shot, m.videoTemplate) + '\n';
+  }
+
+  /* The H3 job: two prose keys instead of one prompt, and the six sections
+   * sewn together here once they come back. */
+  function h3Job(shot, vm) {
+    const sc = SB.H3.scaffold(P(), shot);
+    return {
+      text: PREAMBLE + 'Return JSON with the keys "summary" and "detailed_description".\n\n' +
+        videoBlock(shot, vm, sc),
+      keys: SB.H3.WRITTEN,
+      system: sysFor(shot, 'video', vm),
+      targets: [{ model: vm, field: 'videoPrompt' }],
+      /* what actually gets stored is the assembled six-section prompt */
+      map: function (res) { return { videoPrompt: SB.H3.assemble(sc, res) }; },
+      check: function (res) { return SB.H3.problems(sc, res); }
+    };
+  }
+
+  function sysFor(shot, role, model) {
+    const parts = [SB.Brand.systemFor(P(), shot, role)];
+    const cast = SB.Personas.block(P(), shot, model, role);
+    if (cast) parts.push(cast);
+    return parts.filter(Boolean).join('\n\n');
   }
 
   /* Build the request list for one shot given the selected roles. */
   function jobsFor(shot, im, vm, roles) {
     const jobs = [];
     const wantI = roles.image && im, wantV = roles.video && vm;
-    const sys = function (role, model) {
-      const parts = [SB.Brand.systemFor(P(), shot, role)];
-      const cast = SB.Personas.block(P(), shot, model, role);
-      if (cast) parts.push(cast);
-      return parts.filter(Boolean).join('\n\n');
-    };
-    if (wantI && wantV && im.id === vm.id) {
+    const sys = function (role, model) { return sysFor(shot, role, model); };
+    /* H3 is written in its own shape, so it never shares a call with the
+       still — even in the unlikely case of one model being picked for both. */
+    const h3 = wantV && SB.H3.stock(vm);
+    if (wantI && wantV && im.id === vm.id && !h3) {
       jobs.push({
         text: PREAMBLE + 'Return JSON with the keys "imagePrompt" and "videoPrompt".\n\n' +
           imageBlock(shot, im) + '\n' + videoBlock(shot, vm),
@@ -96,7 +123,7 @@
       });
     }
     if (wantV) {
-      jobs.push({
+      jobs.push(h3 ? h3Job(shot, vm) : {
         text: PREAMBLE + 'Return JSON with the key "videoPrompt".\n\n' + videoBlock(shot, vm),
         keys: ['videoPrompt'],
         system: sys('video', vm),
@@ -232,6 +259,20 @@
     shot.prompts[model.id] = cur;
   }
 
+  /* A job that knows what a valid answer looks like gets one corrective pass.
+   * This is a format check, not a taste check: a label the writer invented is
+   * a subject nobody cast, and it is worth one more call to lose it. */
+  function verify(job, res) {
+    if (!job.check) return Promise.resolve(res);
+    const bad = job.check(res);
+    if (!bad.length) return Promise.resolve(res);
+    return callWriter(
+      job.text + '\n\nYour previous answer did not follow the format: ' + bad.join(' ') +
+      ' Write it again, correctly. Keep everything else the same.',
+      job.keys, job.system
+    ).catch(function () { return res; });   // the draft is better than nothing
+  }
+
   /* Write the prompts for ONE shot.
    *
    * There used to be a batch here: a queue, three lanes, a canary first request
@@ -275,8 +316,11 @@
       if (lastError && SB.netKind(lastError)) return Promise.resolve();
       const j = jobs[i];
       return callWriter(j.text, j.keys, j.system).then(function (res) {
+        return verify(j, res);
+      }).then(function (res) {
+        const vals = j.map ? j.map(res) : res;
         j.targets.forEach(function (t) {
-          store(shot, t.model, t.field, res[t.field]);
+          store(shot, t.model, t.field, vals[t.field]);
           written.push(t.field);
         });
       }).catch(function (e) {

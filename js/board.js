@@ -1293,8 +1293,13 @@
     if (imgs.length) {
       const full = imgs.filter(function (e) { return !!e.render; }).length;
       const copy = SB.el('button', 'mini feed-copy', 'copy image set');
+      /* H3 opens on the shot's own frame, so its prompt calls that <Picture 1>
+         and these references start at 2 — say so where the numbers are. */
+      const h3 = SB.H3.stock(SB.Model.videoModel(P()));
       copy.title = 'Write all ' + imgs.length + ' reference images out, numbered in feed order, ' +
         'so they go into the model in the order the prompt promises.' +
+        (h3 ? '\nFor MiniMax H3 the first frame of this card is <Picture 1>, so these are ' +
+          '<Picture 2>–<Picture ' + (imgs.length + 1) + '> — feed the frame first.' : '') +
         (full ? '\n' + full + ' of them full-size from the renders folder.'
               : '\nAll of them are the board’s 854×480 copies — connect a renders folder in ' +
                 'Settings to keep the originals.');

@@ -347,24 +347,125 @@
           return m.name === 'MiniMax H3 (Hailuo)'; })[0];
         t('the MiniMax model ships as H3', !!h3,
           P().settings.models.map(function (m) { return m.name; }).join(','));
-        const six = ['subject_definitions', 'summary', 'retention_analysis',
-          'detailed_description', 'overall_soundscape', 'non_diegetic_music'];
-        t('its video template asks for the six-section rewrite',
-          !!h3 && six.every(function (k) { return h3.videoTemplate.indexOf(k) >= 0; }),
+        t('its video template asks only for the two prose sections',
+          !!h3 && /"summary"/.test(h3.videoTemplate) &&
+          /"detailed_description"/.test(h3.videoTemplate) &&
+          h3.videoTemplate.indexOf('overall_soundscape') < 0,
           h3 && h3.videoTemplate.slice(0, 60));
-        t('and it carries the reference labels',
-          !!h3 && /<Subject N>/.test(h3.videoTemplate) && /<Picture 1>/.test(h3.videoTemplate),
+        t('and it hands over a fixed label table',
+          !!h3 && /\{\{H3_LABELS\}\}/.test(h3.videoTemplate) &&
+          /never invent a <Subject N>/.test(h3.videoTemplate),
           h3 && h3.videoTemplate.slice(0, 60));
-        t('its persona wording is the H3 one, not the generic numbered line',
-          !!h3 && /<Subject N>/.test(h3.referenceTemplate),
+        t('its persona wording points at the assigned labels',
+          !!h3 && /<Picture N>/.test(h3.referenceTemplate),
           h3 && h3.referenceTemplate);
+
+        /* a cast with pictures, and a first frame to open on */
+        const png = 'data:image/gif;base64,R0lGODlhAQABAAAAACw=';
+        const lead = SB.Personas.add(P(), { name: 'Ops lead',
+          description: 'Charcoal knit, cropped hair.' });
+        SB.Personas.addImage(lead, SB.Blobs.image(P(), png, 270, 480), 'front');
+        SB.Personas.addImage(lead, SB.Blobs.image(P(), png, 270, 480), '3/4');
+        const tech = SB.Personas.add(P(), { name: 'Technician',
+          description: 'Navy work shirt.' });
+        SB.Personas.addImage(tech, SB.Blobs.image(P(), png, 854, 480), 'front');
+        shots.a.personaIds = [lead.id, tech.id];
+        SB.Personas.setEnters(shots.a, tech.id, true);
+        shots.a.image = SB.Blobs.image(P(), png, 854, 480);
+
+        const sc = SB.H3.scaffold(P(), shots.a);
+        t('the first frame is <Picture 1>', /<Picture 1> is the first frame/.test(sc.definitions),
+          sc.definitions.split('\n')[0]);
+        t('each subject gets one label, however many angles it has',
+          sc.subjects.length === 2 && sc.subjects[0].pictures.length === 2,
+          JSON.stringify(sc.subjects.map(function (x) { return x.pictures.length; })));
+        t('and cites every picture that defines it',
+          /<Subject 1> is Ops lead, seen in <Picture 2> and <Picture 3>: Charcoal knit/
+            .test(sc.definitions), sc.definitions);
+        t('retention_analysis is written from the board, not asked for',
+          /<Subject 1> \(appears in \[Shot 1\]\): fully_preserved/.test(sc.retention) &&
+          /<Picture 1> \(appears in \[Shot 1\]\): fully_preserved/.test(sc.retention),
+          sc.retention);
+        t('the task type is computed from what is actually supplied',
+          sc.taskTypes.join(' + ') === 'keyframe completion + reference generation',
+          sc.taskTypes.join(' + '));
+        t('somebody arriving mid-shot is marked in the label table',
+          /<Subject 2> = Technician[\s\S]*ARRIVES DURING THE SHOT/.test(sc.labels), sc.labels);
 
         P().settings.videoModelId = h3.id;
         window.__calls = [];
+        window.__reply = function () {
+          return { ok: true, status: 200, text: JSON.stringify({
+            candidates: [{ content: { parts: [{ text: JSON.stringify({
+              summary: '[keyframe completion + reference generation] <Subject 1> walks toward ' +
+                'camera as <Subject 2> arrives.',
+              detailed_description: 'Documentary realism, warm daylight. [Shot 1] The shot ' +
+                'begins from <Picture 1>. ' + 'word '.repeat(200) }) }] } }] }) };
+        };
         await SB.Prompts.generateFor(shots.a, { video: true });
-        const sent = JSON.stringify(window.__calls[0].body);
-        t('the format reaches the request', sent.indexOf('retention_analysis') > 0,
-          sent.slice(0, 80));
+        t('one call writes the whole H3 prompt', window.__calls.length === 1,
+          window.__calls.length);
+        const sent = window.__calls[0].body.contents[0].parts[0].text;
+        t('the label table reaches the request', sent.indexOf('<Subject 1> = Ops lead') > 0,
+          sent.slice(0, 120));
+        t('and so does the script the shot covers',
+          sent.indexOf('Wide of the office floor') > 0, '');
+        t('the writer is asked for two keys, not six',
+          window.__calls[0].body.generationConfig.responseSchema.required.join() ===
+          'summary,detailed_description',
+          JSON.stringify(window.__calls[0].body.generationConfig.responseSchema.required));
+
+        const built = shots.a.prompts[h3.id].videoPrompt;
+        const six = ['subject_definitions', 'summary', 'retention_analysis',
+          'detailed_description', 'overall_soundscape', 'non_diegetic_music'];
+        let order = true, at = -1;
+        six.forEach(function (k) {
+          const n = built.indexOf(k + ':');
+          if (n <= at) order = false;
+          at = n;
+        });
+        t('the stored prompt is all six sections in order', order, built.slice(0, 200));
+        t('with the scaffold sewn in, not a guess at it',
+          built.indexOf('<Subject 1> is Ops lead') > 0 &&
+          built.indexOf('fully_preserved') > 0, built.slice(0, 200));
+        t('and silence written into both sound sections',
+          /overall_soundscape:\nN\/A - the target video has no audio\./.test(built) &&
+          /non_diegetic_music:\nN\/A/.test(built), built.slice(-120));
+
+        /* a label nobody defined is the one failure worth another call */
+        window.__calls = [];
+        let nth = 0;
+        window.__reply = function () {
+          nth++;
+          return { ok: true, status: 200, text: JSON.stringify({
+            candidates: [{ content: { parts: [{ text: JSON.stringify({
+              summary: '[keyframe completion + reference generation] a summary.',
+              detailed_description: 'Style sentence. [Shot 1] The shot begins from <Picture 1>. ' +
+                (nth === 1 ? '<Subject 7> appears. ' : '<Subject 2> appears. ') +
+                'word '.repeat(200) }) }] } }] }) };
+        };
+        await SB.Prompts.generateFor(shots.a, { video: true });
+        t('an invented label is caught and rewritten once', window.__calls.length === 2,
+          window.__calls.length);
+        t('the correction says which labels actually exist',
+          /no subject_definitions line defines/.test(
+            window.__calls[1].body.contents[0].parts[0].text), '');
+        t('and the corrected answer is what gets stored',
+          shots.a.prompts[h3.id].videoPrompt.indexOf('<Subject 7>') < 0, '');
+        window.__reply = null;
+
+        /* a template the user rewrote is theirs, and takes the plain path */
+        const was = h3.videoTemplate;
+        h3.videoTemplate = 'Write a video prompt for {{MODEL}}: {{DESCRIPTION}}';
+        window.__calls = [];
+        await SB.Prompts.generateFor(shots.a, { video: true });
+        t('an edited H3 template opts out of the scaffold',
+          window.__calls[0].body.generationConfig.responseSchema.required.join() === 'videoPrompt',
+          JSON.stringify(window.__calls[0].body.generationConfig.responseSchema.required));
+        h3.videoTemplate = was;
+        P().settings.videoModelId = null;
+        shots.a.personaIds = [];
+        shots.a.image = null;
       }
 
       /* ---------- and an existing board is carried over to it ---------- */
