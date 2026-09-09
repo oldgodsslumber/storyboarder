@@ -657,8 +657,15 @@
         t('so its frame is the first thing the new card feeds',
           SB.Refs.feed(P(), made)[0].kind === 'shot' &&
           SB.Refs.feed(P(), made)[0].numbers[0] === 1, '');
-        t('the cast comes with it, arrival marks and all',
-          made.personaIds.join(',') === firstShot.personaIds.join(','), '');
+        /* deliberately NOT the cast: a riff is an edit of the frame before it,
+           and that frame already holds everybody in it. Carrying them across
+           put unmentioned references into a feed that needed one, and arrival
+           marks told the writer to leave the new shot's own subject out. */
+        t('the cast is not dragged along with it',
+          (made.personaIds || []).length === 0 && (made.castEnters || []).length === 0,
+          JSON.stringify(made.personaIds) + ' / ' + JSON.stringify(made.castEnters));
+        t('so the source frame is the only thing it feeds',
+          SB.Refs.feed(P(), made).length === 1, SB.Refs.feed(P(), made).length + ' entries');
         var rFeed = document.querySelector('.feed-row[data-feed="' + made.id + '"]');
         t('and the new card shows the source in its strip',
           !!rFeed && /1A|1B|1C/.test(rFeed.textContent), rFeed ? rFeed.textContent : 'none');

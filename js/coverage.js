@@ -301,11 +301,55 @@
     'hyper ?realistic', 'ultra[- ]detailed', 'highly detailed', 'masterpiece',
     'award[- ]winning', 'depth of field', 'shot on \\w+', '\\d+ ?mm lens',
     'f/?\\d(?:\\.\\d)?', 'aspect ratio', 'sharp focus', 'volumetric', 'film grain',
-    'anamorphic', 'in the style of [^.]+', 'colou?r graded'
+    'anamorphic', 'in the style of [^.]+', 'colou?r graded',
+    /* the default house style's own Finishing line, which the writer kept
+     * transcribing into descriptions verbatim */
+    'capture raw', 'muted professional grade', 'professional grade', 'tonal roll ?off',
+    'smooth tonal', 'cinematic grain', 'subtle grain', 'controlled contrast',
+    'natural light only', 'clean exposure', 'soft contrast', 'shallow (?:depth|focus)'
   ].join('|') + ')\\b', 'i');
 
+  /* A whole sentence whose only content is the look — "The shallow depth of
+   * field keeps the focus sharp on her face." — is not a description of
+   * anything happening, and the prompt writer adds it again downstream. The
+   * tail-stripper above only walks off comma fragments, so this takes the
+   * sentence. Never the only sentence: something is better than nothing. */
+  /* A sentence whose SUBJECT is the look — "The shallow depth of field keeps
+   * the focus sharp on her face." — or which is a bare finishing instruction —
+   * "Capture RAW, muted professional grade." — is not a description of anything
+   * happening. The prompt writer applies the house style downstream anyway, so
+   * leaving these in puts the grade on the picture twice and puts it in front
+   * of a human reading the card. Never the last one standing: something is
+   * better than nothing.
+   */
+  const STYLE_SUBJECT = new RegExp('^(?:the|a|an)\\s+(?:\\w+\\s+){0,2}(?:' + [
+    'depth of field', 'bokeh', 'grain', 'grade', 'grading', 'contrast', 'exposure',
+    'lighting', 'light', 'palette', 'focus', 'framing', 'composition', 'lens',
+    'colou?r(?: palette)?', 'tonal roll ?off', 'aperture'
+  ].join('|') + ')\\b', 'i');
+
+  const STYLE_IMPERATIVE = /^(?:capture[ds]?|shot|shoot|rendered?|lit|graded?|finish(?:ed|ing)|film(?:ed)?)\b/i;
+
+  function dropStyleSentences(desc) {
+    const d = String(desc || '').trim();
+    if (!d) return '';
+    const parts = d.match(/[^.!?]+[.!?]*\s*/g) || [d];
+    if (parts.length < 2) return d;
+    const kept = parts.filter(function (s) {
+      const t = s.trim();
+      if (!t) return false;
+      if (!TAG_WORDS.test(t)) return true;
+      if (STYLE_SUBJECT.test(t) || STYLE_IMPERATIVE.test(t)) return false;
+      /* or it is mostly look and little else once the look is taken out */
+      const rest = t.replace(TAG_WORDS, ' ').replace(/[^\w\s]+/g, ' ')
+        .split(/\s+/).filter(Boolean);
+      return rest.length >= 5;
+    });
+    return (kept.length ? kept : parts).join('').trim();
+  }
+
   function deprompt(desc) {
-    let d = String(desc || '').replace(/\s+/g, ' ').trim();
+    let d = dropStyleSentences(String(desc || '').replace(/\s+/g, ' ').trim());
     if (!d) return '';
     /* "--ar 16:9", "::2" and friends are never part of a sentence. */
     d = d.replace(/\s*(?:--|——)\w+[^,.]*$/, '').trim();
@@ -357,6 +401,20 @@
     const system = [
       'You are a director laying out coverage for a short video. You answer with shots, ' +
       'not with commentary.',
+      /* First, not last. Said at the end it read as a footnote to the house
+       * style and was ignored on every shot: descriptions came back carrying
+       * "Capture RAW, muted professional grade" and "shallow depth of field",
+       * which then get applied AGAIN by the prompt writer downstream. */
+      'Name the places and things you use exactly as they are named in the roster above, so ' +
+      'the board can attach their reference pictures. Do not rename them or describe them ' +
+      'generically.',
+      'Name the places and things you use exactly as they are named in the roster above, so ' +
+      'the board can attach their reference pictures. Do not rename them or describe them ' +
+      'generically.',
+      'A DESCRIPTION IS PROSE, NOT A PROMPT. Write what happens and where, as a director would ' +
+      'say it to a crew. Never write the grade, the grain, the contrast, the lens, the focal ' +
+      'length, the aperture, the depth of field or any finishing instruction into a description. ' +
+      'Those are applied later by something else, and writing them here puts them in twice.',
       /* The house style belongs to the prompt writer, which is shown it again
        * downstream. Here it is a constraint, not something to transcribe —
        * folding it into the descriptions is what made them read as prompts. */
@@ -765,6 +823,7 @@
     MIN: MIN, MAX: MAX,
     generate: generate, rewrite: rewrite, undo: undo,
     matchType: matchType, deprompt: deprompt, isBlank: isBlank,
+    dropStyleSentences: dropStyleSentences,
     wardrobeTerms: wardrobeTerms, carriesWardrobe: carriesWardrobe,
     shotsCarryingWardrobe: shotsCarryingWardrobe, stripCast: stripCast,
     cleanWardrobe: cleanWardrobe,

@@ -1045,6 +1045,139 @@ console.log('\n— a name is a name in any script —');
   eq(R.slug('../escape'), 'escape', 'a path traversal cannot survive it');
 }
 
+console.log('\n— a prompt goes stale when anything it feeds changes —');
+{
+  const Per = SB.Personas, R = SB.Refs;
+  const p = SB.Model.newProject();
+  const sc = p.scenes[0];
+  const a = sc.shots[0];
+  const b = SB.Model.addShot(p, sc.id, {});
+  const img = function (c) { return SB.Blobs.image(p, 'data:image/jpeg;base64,' + c.repeat(80), 4, 3); };
+
+  const her = Per.add(p, { name: 'Mara', description: 'Navy depot fleece.' });
+  const booth = Per.add(p, { kind: 'place', name: 'The booth', description: 'Glass, one lamp.' });
+  Per.addImage(her, img('A'));
+  Per.addImage(booth, img('B'));
+  a.image = img('Z');
+  a.render = { serial: 1, ext: 'png', bytes: 9, at: 1000 };
+  /* stamps in the past, so "written at 5000" means written after all of it */
+  her.updatedAt = 1000;
+  booth.updatedAt = 1000;
+
+  /* b riffs off a, and marks a subject it never casts */
+  b.description = 'Reverse of ' + R.mark(a.id, '1A') + ' — ' + R.mark(booth.id, 'The booth') + ' behind.';
+  b.personaIds = [her.id];
+  const written = 5000;
+
+  eq(Per.staleFor(p, b, written), false, 'a prompt written after everything is not stale');
+
+  /* the cast is the case that always worked */
+  her.updatedAt = 6000;
+  eq(Per.staleFor(p, b, written), true, 'editing somebody cast on the card makes it stale');
+  her.updatedAt = 1000;
+  eq(Per.staleFor(p, b, written), false, 'and back');
+
+  /* ...and the two it used to miss */
+  booth.updatedAt = 7000;
+  eq(Per.staleFor(p, b, written), true,
+    'editing a subject the card MARKS but never cast makes it stale too');
+  booth.updatedAt = 1000;
+
+  a.render = { serial: 1, ext: 'png', bytes: 9, at: 8000 };
+  eq(Per.staleFor(p, b, written), true,
+    'and re-rendering the frame this shot is derived from — the prompt describes a picture ' +
+    'that no longer exists');
+}
+
+console.log('\n— a riff inherits the frame, not the cast —');
+{
+  const Per = SB.Personas, R = SB.Refs;
+  const p = SB.Model.newProject();
+  const sc = p.scenes[0];
+  const a = sc.shots[0];
+  const her = Per.add(p, { name: 'Mara', description: 'Fleece.' });
+  a.personaIds = [her.id];
+  Per.setEnters(a, her.id, true);
+
+  /* what the riff button builds */
+  const made = SB.Model.addShot(p, sc.id, { type: a.type, color: a.color });
+  made.description = R.mark(a.id, '1A') + ' — ';
+
+  eq((made.personaIds || []).length, 0,
+    'the cast is not dragged across: the source frame already holds them');
+  eq((made.castEnters || []).length, 0,
+    'and never the arrival marks — a riff is the shot AFTER its source, so ' +
+    'anyone arriving has arrived');
+}
+
+console.log('\n— the arrival nudge is about people —');
+{
+  const Per = SB.Personas;
+  const p = SB.Model.newProject();
+  const sh = p.scenes[0].shots[0];
+  /* the commonest insert phrasing there is */
+  eq(Per.readsAsArrival('The scanner on the desk. A hand comes into frame and picks it up.'),
+    false, 'a hand coming into frame is not somebody arriving');
+  eq(Per.readsAsArrival('Mara walks into frame behind him.'), true,
+    'while somebody walking into frame still is');
+  eq(Per.readsAsArrival('Dev steps into the bay.'), true, 'and stepping into a place');
+}
+
+console.log('\n— a dead reference can be taken out —');
+{
+  const R = SB.Refs, Per = SB.Personas;
+  const p = SB.Model.newProject();
+  const sh = p.scenes[0].shots[0];
+  const thing = Per.add(p, { kind: 'thing', name: 'Scanner' });
+  sh.description = 'She turns the ' + R.mark(thing.id, 'Scanner') + ' over.';
+  Per.remove(p, thing.id);
+
+  eq(R.parse(p, sh.description)[0].dead, true, 'the mark outlives what it pointed at');
+  sh.description = R.unmark(p, sh.description, thing.id);
+  eq(sh.description, 'She turns the Scanner over.',
+    'and taking it out leaves the name it was showing, as ordinary prose');
+  eq(R.parse(p, sh.description).length, 0, 'with no mark left behind');
+}
+
+console.log('\n— a name the writer wrote in prose is still found —');
+{
+  const R = SB.Refs, Per = SB.Personas;
+  const p = SB.Model.newProject();
+  const sh = p.scenes[0].shots[0];
+  Per.add(p, { kind: 'thing', name: 'Industrial Scanner' });
+  /* the shot generator writes prose, and prose does not capitalise mid-sentence */
+  sh.description = 'She picks up the industrial scanner and turns it over.';
+  const loose = R.unlinked(p, sh.description);
+  eq(loose.length, 1, 'a lower-case mention of a subject is found');
+  eq(R.parse(p, R.linkAll(p, sh.description)).length, 1, 'and can be linked');
+}
+
+console.log('\n— the house style does not put a grade on a reference frame —');
+{
+  const B = SB.Brand;
+  eq(/EXEMPT FROM THE HOUSE STYLE/.test(B.REFERENCE_RIDER), true,
+    'a reference frame is told it is exempt');
+  eq(/no focal length, no f-number/.test(B.REFERENCE_RIDER), true,
+    'in the specific terms the house style uses');
+}
+
+console.log('\n— a description is prose, not a prompt —');
+{
+  const C = SB.Coverage;
+  eq(C.deprompt('Mara turns the scanner over. Capture RAW, muted professional grade.'),
+    'Mara turns the scanner over.',
+    'a finishing instruction is not part of what happens');
+  eq(C.deprompt('Mara holds the scanner. The shallow depth of field keeps her face sharp.'),
+    'Mara holds the scanner.',
+    'nor is a sentence whose subject is the look');
+  eq(C.deprompt('Dev checks his phone under the sodium light of the roller door.'),
+    'Dev checks his phone under the sodium light of the roller door.',
+    'while light that is part of the scene stays');
+  eq(C.deprompt('The shallow depth of field keeps her face sharp.'),
+    'The shallow depth of field keeps her face sharp.',
+    'and the only sentence there is is never taken away');
+}
+
 console.log('\n— gendered language detector —');
 {
   const g = SB.Brand.genderedTerms;

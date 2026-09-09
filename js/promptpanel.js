@@ -70,6 +70,9 @@
   function setStatus(txt, isErr) {
     if (!statusEl) return;
     statusEl.textContent = txt || '';
+    /* the line is one row and ellipsised, and errors are the longest thing it
+       ever holds — so the whole of it is on the hover */
+    statusEl.title = txt || '';
     statusEl.classList.toggle('err', !!isErr);
   }
 
@@ -90,10 +93,20 @@
   }
 
   function isMissing(r, im, vm) {
-    if (r.shot.noShot) return false;
+    return missingCount(r, im, vm) > 0;
+  }
+
+  /* How many prompts this row still needs. Counting rows meant the number did
+   * not move when you finished one of a row's two prompts — on the one screen
+   * whose job is "what is left to do". */
+  function missingCount(r, im, vm) {
+    if (r.shot.noShot) return 0;
     const pi = im && r.shot.prompts[im.id];
     const pv = vm && r.shot.prompts[vm.id];
-    return (im && !(pi && pi.imagePrompt)) || (vm && !(pv && pv.videoPrompt));
+    let n = 0;
+    if (im && !(pi && pi.imagePrompt)) n++;
+    if (vm && !(pv && pv.videoPrompt)) n++;
+    return n;
   }
 
   function isStale(r, im, vm) {
@@ -165,7 +178,8 @@
     const all = allRows();
     const counts = {
       all: all.length,
-      missing: all.filter(function (r) { return isMissing(r, im, vm); }).length,
+      /* prompts left to write, not rows with something left */
+      missing: all.reduce(function (n, r) { return n + missingCount(r, im, vm); }, 0),
       stale: all.filter(function (r) { return isStale(r, im, vm); }).length,
       scene: all.filter(function (r) { return r.scene.id === SB.app.selectedSceneId; }).length
     };

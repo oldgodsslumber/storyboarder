@@ -458,7 +458,18 @@
     const del = SB.el('button', 'mini danger', '✕');
     del.title = 'Remove this and take it off every shot';
     del.onclick = function () {
-      if (!confirm('Remove “' + (per.name || kind.one) + '”? It comes off ' + used + ' shot(s).')) return;
+      /* This cannot be undone — structural changes are deliberately outside the
+         undo stack — and it takes more with it than the cards it is on. */
+      const frames = SB.Personas.imagesOf(per).length;
+      const marked = markedIn(per.id);
+      const takes = [];
+      if (used) takes.push('comes off ' + used + ' card' + (used === 1 ? '' : 's'));
+      if (frames) takes.push('deletes ' + frames + ' reference image' + (frames === 1 ? '' : 's'));
+      if (marked) takes.push(marked + ' description' + (marked === 1 ? '' : 's') +
+        ' will keep the name as plain text');
+      if (!confirm('Remove “' + (per.name || kind.one) + '”?' +
+        (takes.length ? '\n\nIt ' + takes.join(', ') + '.' : '') +
+        '\n\nThis cannot be undone.')) return;
       SB.Personas.remove(p, per.id);
       SB.app.changed(true);
       render();
@@ -516,8 +527,10 @@
       if (!(per.description || '').trim()) { SB.toast('Write a description first', true); return; }
       write.disabled = true;
       const m = SB.Model.imageModel(P());
-      const sys = SB.Brand.brandOf(P()).enabled
-        ? 'HOUSE STYLE — obey this.\n\n' + SB.Brand.brandOf(P()).text : '';
+      const brand = SB.Brand.brandOf(P());
+      const sys = brand.enabled
+        ? 'HOUSE STYLE\n\n' + brand.text + '\n\n' + SB.Brand.REFERENCE_RIDER
+        : SB.Brand.REFERENCE_RIDER;
       SB.Prompts.raw(
         'Write one still-image prompt for ' + (m ? m.name : 'an image model') +
         ' that produces ' + kind.refBrief + '. No gendered language.\n\n' +
@@ -878,7 +891,14 @@
       if (blk) blk.scrollIntoView({ behavior: 'smooth', block: 'start' });
     };
     meta.appendChild(go);
-    meta.appendChild(SB.el('div', 'sc-claim' + (sc.broken ? ' broken' : ''), claim));
+    const claimEl = SB.el('div', 'sc-claim' + (sc.broken ? ' broken' : ''), claim);
+    claimEl.title = sc.broken
+      ? 'This scene claimed a stretch of the master script, and the text it pointed at has moved.'
+      : (sc.link || sc.local
+        ? 'This scene claims a stretch of the master script.'
+        : 'This scene claims no part of the master script — which is normal. ' +
+          'Claiming one is a deliberate act: select the text in the Script panel and Capture.');
+    meta.appendChild(claimEl);
 
     const del = SB.el('button', 'mini danger', '✕');
     del.title = 'Delete this scene';
@@ -904,6 +924,16 @@
   }
 
   /* ---------------------------------------------------------------- utils */
+
+  /* How many descriptions carry a mark for this subject — they do not break
+   * when it goes, but they stop feeding a picture. */
+  function markedIn(id) {
+    let n = 0;
+    SB.Model.eachShot(P(), function (sh) {
+      if (SB.Refs.parse(P(), sh.description).some(function (m) { return m.id === id; })) n++;
+    });
+    return n;
+  }
 
   function countShots(id) {
     let n = 0;

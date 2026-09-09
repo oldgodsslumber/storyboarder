@@ -97,9 +97,15 @@
     });
   }
 
-  /* Is there a mark for this id in here already? */
-  function has(text, id) {
-    return parse(null, text).some(function (x) { return x.id === id; });
+  /* Take one subject's marks out, leaving the name they were showing as plain
+   * prose. What a mark whose target is gone actually needs. */
+  function unmark(p, text, id) {
+    let s = String(text == null ? '' : text);
+    const marks = parse(p, s).filter(function (m) { return m.id === id; });
+    for (let i = marks.length - 1; i >= 0; i--) {
+      s = s.slice(0, marks[i].from) + marks[i].label + s.slice(marks[i].to);
+    }
+    return s;
   }
 
   /* ---- the feed ----
@@ -247,8 +253,12 @@
     const out = [];
     const taken = [];
     names.forEach(function (per) {
+      /* case-insensitively: the shot generator writes prose, and "the
+       * industrial scanner" in a sentence never matched the subject
+       * "Industrial Scanner" — so the one thing that would have caught it
+       * silently found nothing. */
       const re = new RegExp('(?<![\\w@{])' +
-        per.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?![\\w}])', 'g');
+        per.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?![\\w}])', 'gi');
       let m;
       while ((m = re.exec(s))) {
         const a = m.index, b = a + m[0].length;
@@ -325,7 +335,7 @@
   }
 
   SB.Refs = {
-    mark: mark, parse: parse, plain: plain, target: target,
+    mark: mark, parse: parse, plain: plain, target: target, unmark: unmark, unmark: unmark,
     feed: feed, images: images, insert: insert,
     unlinked: unlinked, linkAll: linkAll, proseHits: proseHits,
     relink: relink, lostIn: lostIn

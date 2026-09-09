@@ -725,6 +725,52 @@
 
   /* ---------------- one card ---------------- */
 
+  /* The card's window onto the stretch of master script it claims. */
+  function scriptSection(sh) {
+    const c = SB.el('div', 'script-section');
+    const linked = !!sh.link;
+    const lbl = SB.el('div', 'box-label');
+    const dot = SB.el('span', 'link-dot' + (sh.broken ? ' broken' : (linked ? '' : ' free')));
+    lbl.appendChild(dot);
+    lbl.appendChild(SB.el('span', null,
+      sh.broken ? 'script — link broken' : (linked ? 'script — linked' : 'script — freestanding')));
+    const la = SB.el('div', 'lbl-actions');
+    if (linked) {
+      const bl = SB.el('button', null, 'break link');
+      bl.title = 'Stop syncing with the master script; keep the text as this shot’s own';
+      bl.onclick = function () { SB.Model.breakLink(P(), sh); SB.app.changed(true); };
+      la.appendChild(bl);
+      const go = SB.el('button', null, 'show');
+      go.onclick = function () {
+        SB.app.selectedShotId = sh.id;
+        SB.ScriptMode.open();
+        SB.ScriptMode.scrollTo(sh);
+      };
+      la.appendChild(go);
+    }
+    lbl.appendChild(la);
+    c.appendChild(lbl);
+
+    const box = SB.el('div', 'script-box' + (sh.broken ? ' broken' : ''));
+    box.dataset.shot = sh.id;
+    B.scriptEls[sh.id] = box;
+    B.scriptEditors[sh.id] = SB.Editor.attach(box, {
+      get: function () {
+        const f = SB.Model.findShot(P(), sh.id);
+        return f ? SB.Model.windowFor(P(), f.shot) : null;
+      },
+      edit: function (s, e, t) { SB.Model.applyShotEdit(P(), sh, s, e, t); },
+      toggle: function (type, s, e) {
+        const w = SB.Model.windowFor(P(), sh);
+        SB.Doc.toggleMark(w.doc, type, w.from + s, w.from + e);
+      },
+      after: function () { SB.app.scriptChanged(); }
+    });
+    c.appendChild(box);
+
+    return c;
+  }
+
   function card(sh, sc, si, sj) {
     const c = SB.el('div', 'card' + (sh.noShot ? ' noshot' : '') +
       (isSelected(sh.id) ? ' sel' : '') +
@@ -823,8 +869,15 @@
         sc.shots.splice(sc.shots.indexOf(made), 1);
         sc.shots.splice(at + 1, 0, made);
       }
-      made.personaIds = (sh.personaIds || []).slice();
-      made.castEnters = (sh.castEnters || []).slice();
+      /* Deliberately NOT the cast. A riff is an edit of the frame before it,
+         and that frame already contains everybody in it — carrying the cast
+         across put four unmentioned references into a feed that needed one,
+         and every one of them was numbered in the prompt's mapping. @ whoever
+         the change is actually about; the source frame brings the rest.
+
+         And never the arrival marks: a riff is the shot AFTER its source, so
+         anyone marked as arriving has already arrived. Inherited, they told
+         the writer to leave the new shot's own subject out of it. */
       made.description = SB.Refs.mark(sh.id, SB.Model.code(si, sj)) + ' — ';
       SB.app.selectedShotId = made.id;
       SB.app.selection = [made.id];
@@ -913,46 +966,18 @@
     /* --- cast --- */
     if (SB.Personas.all(P()).length) c.appendChild(castRow(sh));
 
-    /* --- script box --- */
-    const linked = !!sh.link;
-    const lbl = SB.el('div', 'box-label');
-    const dot = SB.el('span', 'link-dot' + (sh.broken ? ' broken' : (linked ? '' : ' free')));
-    lbl.appendChild(dot);
-    lbl.appendChild(SB.el('span', null,
-      sh.broken ? 'script — link broken' : (linked ? 'script — linked' : 'script — freestanding')));
-    const la = SB.el('div', 'lbl-actions');
-    if (linked) {
-      const bl = SB.el('button', null, 'break link');
-      bl.title = 'Stop syncing with the master script; keep the text as this shot’s own';
-      bl.onclick = function () { SB.Model.breakLink(P(), sh); SB.app.changed(true); };
-      la.appendChild(bl);
-      const go = SB.el('button', null, 'show');
-      go.onclick = function () {
-        SB.app.selectedShotId = sh.id;
-        SB.ScriptMode.open();
-        SB.ScriptMode.scrollTo(sh);
-      };
-      la.appendChild(go);
+    /* --- script box ---
+     *
+     * Only once there is something to show. A card that has never claimed a
+     * stretch of the master script used to carry a labelled box reading
+     * "(empty)" for the life of the project — and on a board written straight
+     * into the cards, which is most of them, that is every card saying the
+     * script is empty when the script is not. Claiming a stretch is a
+     * deliberate act (select in the script panel, then Capture); until
+     * somebody does it, the box has nothing to be. */
+    if (sh.link || sh.broken || (sh.local && (sh.local.text || '').trim())) {
+      c.appendChild(scriptSection(sh));
     }
-    lbl.appendChild(la);
-    c.appendChild(lbl);
-
-    const box = SB.el('div', 'script-box' + (sh.broken ? ' broken' : ''));
-    box.dataset.shot = sh.id;
-    B.scriptEls[sh.id] = box;
-    B.scriptEditors[sh.id] = SB.Editor.attach(box, {
-      get: function () {
-        const f = SB.Model.findShot(P(), sh.id);
-        return f ? SB.Model.windowFor(P(), f.shot) : null;
-      },
-      edit: function (s, e, t) { SB.Model.applyShotEdit(P(), sh, s, e, t); },
-      toggle: function (type, s, e) {
-        const w = SB.Model.windowFor(P(), sh);
-        SB.Doc.toggleMark(w.doc, type, w.from + s, w.from + e);
-      },
-      after: function () { SB.app.scriptChanged(); }
-    });
-    c.appendChild(box);
 
     /* --- description --- */
     const dl = SB.el('div', 'box-label');
@@ -1104,7 +1129,12 @@
 
     /* The nudge, in the shape the board already uses for a description that
        contradicts its cast: say it where the mistake is, and fix it in a click. */
-    if (cast.length > 1 && !SB.Personas.arriving(P(), sh).length &&
+    /* People, not subjects: an insert of one hand and one scanner is two
+       "cast", and the nudge asked which of them makes an entrance. */
+    const people = cast.filter(function (per) {
+      return SB.Personas.kindOf(per).id === 'person';
+    });
+    if (people.length > 1 && !SB.Personas.arriving(P(), sh).length &&
         SB.Personas.readsAsArrival(SB.Refs.plain(P(), sh.description))) {
       const nudge = SB.el('button', 'mini cast-late', 'someone arrives?');
       nudge.title = 'This description reads as somebody turning up partway through, but ' +
@@ -1188,13 +1218,24 @@
         cell.appendChild(SB.el('span', 'feed-ser', sers.join(' ')));
       }
       cell.title = e.label + (e.why ? ' — ' + e.why : '') +
+        (e.kind === 'dead' ? '\nClick to take the reference out and keep the name as text.' : '') +
+        (e.kind === 'dead' ? '\nClick to take the reference out and keep the name as text.' : '') +
         (sers.length
           ? '\nFull-size ' + sers.join(', ') + ' is used if the renders folder still has it, ' +
             'and the board copy if it does not.'
           : (e.images.length ? '\nBoard copy only (854×480) — no original kept.' : '')) +
-        (e.images.length ? '\nClick to open it.' : '\nClick to fix it.');
+        (e.kind === 'dead' ? ''
+          : e.images.length ? '\nClick to open it.' : '\nClick to fix it.');
       cell.onclick = function (ev) {
         ev.stopPropagation();
+        /* Nothing to open — what it needs is the mark taken out, leaving the
+           name it had as ordinary prose. */
+        if (e.kind === 'dead') {
+          sh.description = SB.Refs.unmark(P(), sh.description, e.id);
+          SB.app.changed(true);
+          SB.toast('“' + e.label + '” is plain text now');
+          return;
+        }
         SB.RefBox.go(e.id);
       };
       row.appendChild(cell);

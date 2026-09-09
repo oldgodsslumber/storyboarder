@@ -99,6 +99,24 @@
     '- Rebuilding the scene in words is what makes an edit come back as a different shot.'
   ].join('\n');
 
+  /* A reference frame is a record, not a shot — but the house style says to
+   * finish everything with a grade, a grain and a lens, and the model believes
+   * the house style over a clause buried in the request. Said as its own rider
+   * AFTER the brand, and phrased as an exemption from it, it holds: 5 of 5
+   * generated subjects came back "Capture RAW, muted professional grade"
+   * before this existed. */
+  const REFERENCE_RIDER = [
+    'THIS IS A REFERENCE FRAME, AND IT IS EXEMPT FROM THE HOUSE STYLE ABOVE',
+    '- The house style describes finished SHOTS. This is a reference: a neutral record of what ' +
+    'something looks like, so a model can reproduce it exactly.',
+    '- The Finishing, grade, grain, contrast, lens, aperture and depth-of-field rules above do ' +
+    'NOT apply here and must not appear in what you write. No "capture RAW", no "muted ' +
+    'professional grade", no "cinematic grain", no focal length, no f-number, no shallow focus.',
+    '- Everything sharp, evenly lit, true colour, plain background. The subject and its wardrobe ' +
+    'or surface is the whole content of the frame.',
+    '- Composition, palette and the sense of the world still follow the house style.'
+  ].join('\n');
+
   const VIDEO_RIDER = [
     'MOTION',
     '- Wardrobe and location must not change during the shot.',
@@ -246,6 +264,7 @@
     VIDEO_RIDER: VIDEO_RIDER,
     FIRST_FRAME_RIDER: FIRST_FRAME_RIDER,
     DERIVED_RIDER: DERIVED_RIDER,
+    REFERENCE_RIDER: REFERENCE_RIDER,
     brandOf: brandOf,
     systemFor: systemFor,
     sequenceBlock: sequenceBlock,

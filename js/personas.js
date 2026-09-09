@@ -164,13 +164,33 @@
     if (per) per.updatedAt = Date.now();
   }
 
-  /* The newest edit among the people on this shot, or 0 if none of them has
+  /* The newest edit among everything this shot FEEDS, or 0 if none of it has
    * ever been stamped (a board written before this was recorded — unknowable,
-   * so it is never reported as stale). */
+   * so it is never reported as stale).
+   *
+   * The feed, not the cast, because those two stopped being the same thing:
+   * a subject can be marked without being cast, and a shot riffing off another
+   * feeds that shot's rendered frame. Both were invisible here — so the two
+   * changes most likely to invalidate a derived prompt (a retake of the source
+   * frame, an edit to a marked-but-uncast subject) were the two this did not
+   * notice. */
   function editedAt(p, shot) {
-    return forShot(p, shot).reduce(function (a, per) {
-      return Math.max(a, per.updatedAt || 0);
-    }, 0);
+    let at = 0;
+    const seen = {};
+    forShot(p, shot).forEach(function (per) {
+      seen[per.id] = 1;
+      at = Math.max(at, per.updatedAt || 0);
+    });
+    (SB.Refs ? SB.Refs.feed(p, shot) : []).forEach(function (e) {
+      if (e.kind === 'subject' && e.subject && !seen[e.subject.id]) {
+        at = Math.max(at, e.subject.updatedAt || 0);
+      }
+      /* a source frame that has been re-rendered since */
+      if (e.kind === 'shot' && e.renders) {
+        e.renders.forEach(function (r) { if (r) at = Math.max(at, r.at || 0); });
+      }
+    });
+    return at;
   }
 
   /* Has this shot's stored prompt fallen behind its cast? `at` is the stamp the
@@ -366,6 +386,10 @@
           'look off-screen. The frame is what the camera sees before they arrive.');
       }
     }
+    if (numbered.length && (role === 'video' || role === 'both')) {
+      lines.push('The image-to-video call is given ONE picture — the first frame — so the video ' +
+        'prompt must not refer to image numbers. Name people and things by name there.');
+    }
     if (late.length && (role === 'video' || role === 'both')) {
       lines.push('ARRIVING DURING THE SHOT: ' +
         late.map(function (x) { return x.name || 'unnamed'; }).join(', ') +
@@ -411,7 +435,9 @@
   const ARRIVAL_RE = new RegExp('\\b(' + [
     'walks? in', 'walks? into', 'steps? in', 'steps? into', 'comes? in', 'enters?', 'entering',
     'arrives?', 'arriving', 'appears?', 'joins?', 'approaches?', 'crosses into',
-    'moves? into (?:the )?(?:frame|shot)', 'into (?:frame|shot)'
+    /* verb-anchored only: a bare "into frame" matched "a hand comes into
+     * frame", which is the commonest insert phrasing there is */
+    'moves? into (?:the )?(?:frame|shot)'
   ].join('|') + ')\\b', 'i');
 
   /* True when the text reads as somebody turning up partway through. */
@@ -428,7 +454,9 @@
     person: {
       ask: 'recurring on-camera',
       unit: ['person', 'people'],
-      name: 'a short label for the board (not a character name in the script — a handle like "Ops lead").',
+      name: 'a short label for the board. If the script names this person, USE THAT NAME — it is ' +
+        'what somebody will type after an @ for the rest of the project. Only invent a handle ' +
+        'like "Ops lead" when the script leaves them unnamed.',
       desc: 'who they are on camera and, critically, exactly what they look like and are WEARING. ' +
         'Age range, build, hair, skin tone, and a specific outfit described down to fabric and colour. ' +
         'This text is what keeps them identical from shot to shot, so be concrete and complete. ' +
@@ -437,7 +465,8 @@
     place: {
       ask: 'recurring',
       unit: ['location', 'locations'],
-      name: 'a short label for the board — a handle like "Server room" or "Loading bay".',
+      name: 'a short label for the board — the script\'s own name for the place if it has one, ' +
+        'otherwise a handle like "Server room" or "Loading bay".',
       desc: 'what the place is and exactly what it looks like: architecture, surfaces, furniture, ' +
         'light sources, time of day, and anything fixed that must not drift between shots. ' +
         'Describe the room, not the action in it.'
@@ -445,7 +474,8 @@
     thing: {
       ask: 'recurring',
       unit: ['object, product or screen', 'objects, products or screens'],
-      name: 'a short label for the board — a handle like "Handset" or "Dashboard".',
+      name: 'a short label for the board — the script\'s own name for it if it has one, ' +
+        'otherwise a handle like "Handset" or "Dashboard".',
       desc: 'what the object is and exactly what it looks like: form, size, material, finish, ' +
         'colour, and any logo, label or on-screen state that has to be identical every time. ' +
         'Do not invent a brand name, logo, model number or asset tag: if the script does not ' +
@@ -500,9 +530,12 @@
       descs.length ? '\n\nSHOT DESCRIPTIONS:\n- ' + descs.slice(0, 40).join('\n- ') : ''
     ].join('\n');
 
-    const system = SB.Brand.brandOf(p).enabled
-      ? 'HOUSE STYLE — the reference frames you describe must obey this.\n\n' + SB.Brand.brandOf(p).text
-      : '';
+    /* The exemption comes after the brand, because the last word wins and the
+     * brand's Finishing line would otherwise put a grade on every record. */
+    const brand = SB.Brand.brandOf(p);
+    const system = brand.enabled
+      ? 'HOUSE STYLE\n\n' + brand.text + '\n\n' + SB.Brand.REFERENCE_RIDER
+      : SB.Brand.REFERENCE_RIDER;
 
     return SB.Prompts.raw(text, GEN_SCHEMA, system).then(function (out) {
       const made = (out.personas || []).map(function (x) {

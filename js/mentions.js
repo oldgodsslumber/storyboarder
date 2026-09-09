@@ -128,7 +128,11 @@
         const i = name.indexOf(t);
         if (i === 0) { e.rank = 0; out.push(e); }
         else if (i > 0) { e.rank = 1; out.push(e); }
-        else if ((per.description || '').toLowerCase().indexOf(t) >= 0) { e.rank = 2; out.push(e); }
+        else if ((per.description || '').toLowerCase().indexOf(t) >= 0) {
+          /* matched on what it IS, not what it is called — say so, or it reads
+             as the list offering something at random */
+          e.rank = 2; e.sub = 'matches its description'; out.push(e);
+        }
       });
     });
 
@@ -138,21 +142,25 @@
     SB.Model.eachShot(p, function (sh, sc, si, sj) {
       if (ctx && ctx.shot && sh.id === ctx.shot.id) return;
       const code = SB.Model.code(si, sj);
-      const desc = SB.Refs.plain(p, sh.description).replace(/\s+/g, ' ').trim();
-      const hay = (code + ' ' + (sh.type || '') + ' ' + desc).toLowerCase();
+      const full = SB.Refs.plain(p, sh.description).replace(/\s+/g, ' ').trim();
+      const desc = full.length > 48 ? full.slice(0, 48) + '\u2026' : full;
+      const hay = (code + ' ' + (sh.type || '') + ' ' + full).toLowerCase();
       if (t && hay.indexOf(t) < 0) return;
       out.push({
         shot: sh, id: sh.id, label: code,
         kind: { id: 'shot', label: 'Shot', one: 'shot' },
         rank: t && code.toLowerCase().indexOf(t) === 0 ? 0 : 3,
-        sub: (sh.type ? sh.type + ' — ' : '') + (desc.slice(0, 48) || 'no description'),
+        sub: (sh.type ? sh.type + ' — ' : '') + (desc || 'no description'),
         note: sh.image ? { text: 'frame', warn: false }
                        : { text: 'not rendered yet', warn: true }
       });
     });
 
     out.sort(function (a, b) { return a.rank - b.rank; });
-    const list = out.slice(0, 8);
+    /* Room for the mint rows: with eight matches plus three of those, the
+       "+ new person" row — the whole point of typing a name that does not
+       exist yet — sat permanently below the fold. */
+    const list = out.slice(0, t ? 5 : 8);
     /* Writing is when you find out somebody is missing, so minting one is on
        the list rather than behind a trip to the library. */
     if (t) {
