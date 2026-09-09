@@ -1485,6 +1485,14 @@
   }
 
   function setImage(sh, src) {
+    /* The proxy is what the board shows and stores; the original goes to the
+       renders folder, if one is connected. Before this, it was thrown away. */
+    SB.Renders.keep(P(), src, sh.render).then(function (rec) {
+      if (!rec) return;
+      sh.render = rec;
+      SB.Store.touch();
+      SB.Board.refreshFeed(sh.id);
+    });
     return SB.downscaleImage(src).then(function (img) {
       sh.image = SB.Blobs.image(P(), img.data, img.w, img.h);
       SB.app.changed(true);

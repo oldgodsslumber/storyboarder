@@ -31,7 +31,7 @@ sandbox.window = sandbox;
 vm.createContext(sandbox);
 
 for (const f of ['js/util.js', 'js/doc.js', 'js/blobs.js', 'js/geminimodels.js', 'js/providers.js',
-  'js/brand.js', 'js/refs.js', 'js/personas.js', 'js/fields.js', 'js/model.js', 'js/store.js', 'js/usage.js',
+  'js/brand.js', 'js/renders.js', 'js/refs.js', 'js/personas.js', 'js/fields.js', 'js/model.js', 'js/store.js', 'js/usage.js',
   'js/coverage.js']) {
   vm.runInContext(readFileSync(join(root, f), 'utf8'), sandbox, { filename: f });
 }
@@ -898,6 +898,82 @@ console.log('\n— a reference that feeds nothing still says so —');
   c.description = 'Reverse of ' + R.mark(c.id, '1B') + '.';
   eq(R.feed(p, c).length, 0,
     'a card referencing its own frame is not fed to itself');
+}
+
+console.log('\n— serials: a number never moves and is never reused —');
+{
+  const R = SB.Renders;
+  const p = SB.Model.newProject();
+  eq(p.renderSeq, 0, 'a new board has handed out no numbers');
+
+  const a = R.claim(p), b = R.claim(p);
+  eq([a, b], [1, 2], 'they come out in order');
+  eq(R.pad(a), '0001', 'and read as four digits on disk');
+  eq(R.pad(137), '0137', 'padded to the same width');
+  eq(R.fileName(7, 'png'), '0007.png', 'which is the whole filename');
+
+  /* the number is the thing that never has to be renamed, so it must never
+     come back around: a file already dragged into an editor keeps meaning
+     what it meant */
+  p.renderSeq = 9;
+  eq(R.claim(p), 10, 'the counter carries on from wherever it was');
+  const before = p.renderSeq;
+  SB.Model.migrate(p);
+  eq(p.renderSeq >= before, true, 'and migration never winds it back');
+}
+
+console.log('\n— the counter survives a file written by an older build —');
+{
+  const p = SB.Model.newProject();
+  const sc = p.scenes[0];
+  /* a board saved with renders, whose counter was lost or never written */
+  sc.shots[0].render = { serial: 12, ext: 'png', bytes: 4, at: 1 };
+  const s2 = SB.Model.addShot(p, sc.id, {});
+  s2.render = { serial: 40, ext: 'jpg', bytes: 4, at: 1 };
+  const per = SB.Personas.add(p, { name: 'Ops lead' });
+  per.images = [{ ref: 'x', w: 4, h: 3, label: '', render: { serial: 77, ext: 'png' } }];
+  p.renderSeq = 0;
+
+  SB.Model.migrate(p);
+  eq(p.renderSeq, 77, 'the counter is raised past every serial already in the file');
+  eq(SB.Renders.claim(p), 78, 'so nothing already on disk can be overwritten');
+}
+
+console.log('\n— a render rides with the picture, not with the card —');
+{
+  const p = SB.Model.newProject();
+  const sc = p.scenes[0];
+  const a = sc.shots[0];
+  const b = SB.Model.addShot(p, sc.id, {});
+  a.description = 'first';
+  a.render = { serial: 3, ext: 'png', bytes: 9, at: 1 };
+  b.description = 'second';
+
+  /* swapping two cards moves the content between them — the render has to go
+     with it, or 0003.png would be left describing the wrong shot and the file
+     would have to be rewritten on disk */
+  SB.Model.swapShotContent(p, a.id, b.id);
+  eq(a.description, 'second', 'the descriptions swap');
+  eq(!!b.render && b.render.serial === 3, true, 'and the render goes with its picture');
+  eq(a.render, null, 'leaving the other card with none');
+}
+
+console.log('\n— a filename is only ever one of ours —');
+{
+  const R = SB.Renders;
+  eq(R.extOf({ type: 'image/png' }), 'png', 'the type decides the extension');
+  eq(R.extOf({ type: 'image/jpeg' }), 'jpg', 'jpeg is written jpg');
+  eq(R.extOf({ type: '', name: 'shot.WEBP' }), 'webp', 'falling back to the name');
+  eq(R.extOf({ type: 'text/plain', name: 'x' }), 'png', 'and to png when it is neither');
+  eq(R.extOf(null), 'png', 'never undefined');
+
+  /* the folder is named for the project, and Windows is the strict one */
+  eq(R.folderName({ name: 'A/B:C*D?"E<F>G|H' }), 'A_B_C_D_E_F_G_H', 'illegal characters go');
+  eq(R.folderName({ name: 'trailing dots... ' }), 'trailing dots', 'as do trailing dots and space');
+  eq(R.folderName({ name: '   ' }), 'Untitled project', 'an empty name still gets a folder');
+  eq(R.folderName({}), 'Untitled project', 'and so does no name at all');
+  eq(R.folderName({ name: 'CON' }), 'CON_', 'a reserved device name is made safe');
+  eq(R.folderName({ name: 'x'.repeat(200) }).length, 100, 'and a very long one is cut short');
 }
 
 console.log('\n— gendered language detector —');

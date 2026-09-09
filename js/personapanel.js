@@ -659,10 +659,14 @@
   }
 
   function addImage(per, src) {
-    return SB.downscaleImage(src).then(function (img) {
-      SB.Personas.addImage(per, SB.Blobs.image(P(), img.data, img.w, img.h));
-      SB.app.changed(true);
-      renderRefs();
+    /* the full-size original goes to the renders folder; the board keeps the
+       proxy, exactly as it always has */
+    return SB.Renders.keep(P(), src, null).then(function (rec) {
+      return SB.downscaleImage(src).then(function (img) {
+        SB.Personas.addImage(per, SB.Blobs.image(P(), img.data, img.w, img.h), '', rec);
+        SB.app.changed(true);
+        renderRefs();
+      });
     }).catch(function (e) { SB.toast('Image failed: ' + e.message, true); });
   }
 

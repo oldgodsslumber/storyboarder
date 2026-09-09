@@ -11,6 +11,64 @@
     return l;
   }
 
+
+  /* Where the full-size renders live. The handle is per-browser and is kept the
+   * way the project file's handle is — never in the .storyboard, because it is a
+   * fact about this machine. */
+  function rendersBlock() {
+    const box = SB.el('div', 'pp-block');
+    box.appendChild(SB.el('div', 't', 'renders folder'));
+    const state = SB.el('div', 'pp-note');
+    const acts = SB.el('div', 'pp-actions');
+
+    const draw = function () {
+      const p = P();
+      if (!SB.Renders.hasFS) {
+        state.textContent = 'This browser cannot hold a folder. Chrome or Edge can.';
+        state.classList.add('warn');
+        acts.innerHTML = '';
+        return;
+      }
+      acts.innerHTML = '';
+      if (SB.Renders.isConnected()) {
+        state.classList.remove('warn');
+        state.textContent = 'Full-size renders are kept in “' + SB.Renders.rootName() + '” / ' +
+          SB.Renders.folderName(p) + '. The board still holds its own small copies, so it opens ' +
+          'anywhere with or without this folder.';
+        const ch = SB.el('button', 'tb', 'Change…');
+        ch.onclick = function () { SB.Renders.connect().then(draw).catch(function () { }); };
+        const off = SB.el('button', 'tb', 'Disconnect');
+        off.title = 'Stop keeping originals. Nothing already written is touched.';
+        off.onclick = function () { SB.Renders.disconnect().then(draw); };
+        acts.appendChild(ch);
+        acts.appendChild(off);
+      } else {
+        state.classList.remove('warn');
+        state.textContent = 'Not set. Every picture you drop is shrunk to 854×480 for the board ' +
+          'and the original is discarded — which is too small to feed back into an image model. ' +
+          'Choose a folder and the originals are kept, one subfolder per project.';
+        const b = SB.el('button', 'tb on', 'Choose a folder…');
+        b.onclick = function () {
+          SB.Renders.connect().then(function () {
+            draw();
+            SB.toast('Renders will be kept in ' + SB.Renders.rootName());
+          }).catch(function (e) {
+            if (e && e.name === 'AbortError') return;
+            SB.toast(e.message || String(e), true);
+          });
+        };
+        acts.appendChild(b);
+      }
+    };
+
+    box.appendChild(state);
+    box.appendChild(acts);
+    /* the handle is remembered across sessions, so ask before drawing */
+    SB.Renders.ready().then(draw);
+    draw();
+    return box;
+  }
+
   function open(startTab) {
     const p = P();
     const body = SB.el('div');
@@ -51,6 +109,14 @@
     });
     themeSel.onchange = function () { SB.Theme.set(themeSel.value); };
     panels.general.appendChild(field('Appearance', themeSel));
+
+    /* ---- the renders folder ----
+     *
+     * Everything on the board is a ≤480p proxy, which is right for a portable
+     * file and useless as a reference to feed back into an image model. With a
+     * folder connected the original is kept beside the board instead of being
+     * thrown away, and the app can hand you the real thing. */
+    panels.general.appendChild(rendersBlock());
 
     /* ---------------- Card fields ---------------- */
     panels.fields.appendChild(SB.el('div', 'pp-note',

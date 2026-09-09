@@ -114,11 +114,13 @@
   function hero(per) { return imagesOf(per)[0] || null; }
   function hasImage(per) { return !!hero(per); }
 
-  function addImage(per, img, label) {
+  function addImage(per, img, label, render) {
     if (!per || !img) return null;
     per.images = imagesOf(per).slice();
     delete per.image;
-    const rec = { ref: img.ref, w: img.w, h: img.h, label: label || '' };
+    /* `render` points at the full-size original in the renders folder, when
+     * there is one. The board still holds the proxy either way. */
+    const rec = { ref: img.ref, w: img.w, h: img.h, label: label || '', render: render || null };
     per.images.push(rec);
     touch(per);
     return rec;

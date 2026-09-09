@@ -156,6 +156,10 @@
       fields: {},                       // extra text boxes, keyed by field id
       image: null,                      // {ref,w,h} into project.blobs
       annotation: null,                 // {ref} — transparent PNG overlay
+      /* {serial,ext,bytes,at} — where the full-size original of this frame
+       * lives in the renders folder. The board keeps only the proxy; this is
+       * the pointer to the real thing, and it rides with the content. */
+      render: null,
       comments: [],
       prompts: {}                       // modelName -> {imagePrompt, videoPrompt}
     };
@@ -212,6 +216,10 @@
       blobs: {},                        // hash -> data URL; images live here once
       scriptComments: [],               // notes anchored to ranges of the master
       personas: [],
+      /* High-water mark for render serials. Only ever goes up: a number
+       * belonging to a deleted shot is never handed out again, so a file that
+       * has already left the app never comes to mean something else. */
+      renderSeq: 0,
       scenes: [newScene('Scene one')],
       versionNumber: 1,
       versionName: 'v1',
@@ -301,6 +309,8 @@
       const a = SB.Blobs.adopt(p, img);
       if (!a) return null;
       a.label = typeof img.label === 'string' ? img.label : (a.label || '');
+      a.render = (img.render && img.render.serial) ? img.render : (a.render || null);
+      if (a.render) p.renderSeq = Math.max(p.renderSeq | 0, a.render.serial | 0);
       return a;
     }).filter(Boolean);
   }
@@ -333,6 +343,7 @@
     p.personas.forEach(function (x) { migratePersona(p, x); });
     p.scenes = Array.isArray(p.scenes) ? p.scenes : [];
     if (!p.scenes.length) p.scenes.push(newScene('Scene one'));
+    p.renderSeq = Math.max(p.renderSeq | 0, 0);
     p.versionNumber = p.versionNumber || 1;
     p.versionName = p.versionName || ('v' + p.versionNumber);
     p.versions = Array.isArray(p.versions) ? p.versions : [];
@@ -353,7 +364,9 @@
       (v.snapshot.scenes || []).forEach(function (sc) {
         (sc.shots || []).forEach(function (sh) {
           /* the arrival marks are a subset of the cast here too */
-          sh.personaIds = Array.isArray(sh.personaIds) ? sh.personaIds : [];
+          sh.render = (sh.render && sh.render.serial) ? sh.render : null;
+        if (sh.render) p.renderSeq = Math.max(p.renderSeq | 0, sh.render.serial | 0);
+        sh.personaIds = Array.isArray(sh.personaIds) ? sh.personaIds : [];
           sh.castEnters = (Array.isArray(sh.castEnters) ? sh.castEnters : [])
             .filter(function (id) { return sh.personaIds.indexOf(id) >= 0; });
           sh.image = SB.Blobs.adopt(p, sh.image);
@@ -480,6 +493,8 @@
         sh.fields = (sh.fields && typeof sh.fields === 'object') ? sh.fields : {};
         sh.comments = Array.isArray(sh.comments) ? sh.comments : [];
         sh.prompts = sh.prompts || {};
+        sh.render = (sh.render && sh.render.serial) ? sh.render : null;
+        if (sh.render) p.renderSeq = Math.max(p.renderSeq | 0, sh.render.serial | 0);
         sh.personaIds = Array.isArray(sh.personaIds) ? sh.personaIds : [];
         /* Empty for every board written before this, which is the right answer:
            nobody was marked as arriving, so everybody was already there. */
@@ -807,7 +822,7 @@
    * they stay behind when the imagery moves. */
   const CONTENT_KEYS = [
     'type', 'color', 'image', 'annotation', 'description',
-    'fields', 'prompts', 'personaIds', 'castEnters', 'comments'
+    'fields', 'prompts', 'personaIds', 'castEnters', 'comments', 'render'
   ];
 
   /* Swap two shots' contents, leaving each card's dialogue where it is. */

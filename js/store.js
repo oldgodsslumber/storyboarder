@@ -432,7 +432,14 @@
     repairReport: repairReport,
     readHandle: function (handle) {
       return handle.getFile().then(function (f) { return f.text(); });
-    }
+    },
+    /* The handle store and the permission dance, shared with renders.js — a
+     * directory handle is kept exactly the way the project file's handle is,
+     * and for the same reason: it is a fact about this machine, not about the
+     * board, so it never goes in the file. */
+    idbPut: idbPut,
+    idbGet: idbGet,
+    ensurePermission: ensurePermission
   };
 
 })(window.SB);
