@@ -519,7 +519,7 @@
     h.className = 'sh-heading';
     h.dataset.scene = sc.id;
     h.value = sc.heading || '';
-    h.placeholder = 'Scene heading';
+    h.placeholder = 'Untitled scene — what happens here';
     h.addEventListener('input', function () {
       sc.heading = h.value; SB.app.changed(false); renderSceneList();
       syncSceneFields(sc.id);
@@ -963,9 +963,6 @@
     /* --- frame --- */
     c.appendChild(frame(sh));
 
-    /* --- cast --- */
-    if (SB.Personas.all(P()).length) c.appendChild(castRow(sh));
-
     /* --- script box ---
      *
      * Only once there is something to show. A card that has never claimed a
@@ -1067,94 +1064,6 @@
 
   /* Who is in this shot. The order is the order their reference images are fed
    * to the model, so it is shown. */
-  function castRow(sh) {
-    const row = SB.el('div', 'cast-row');
-    row.dataset.shot = sh.id;
-    const cast = SB.Personas.forShot(P(), sh);
-    cast.forEach(function (per) {
-      const kind = SB.Personas.kindOf(per);
-      const n = SB.Personas.imagesOf(per).length;
-      const arriving = SB.Personas.enters(sh, per.id);
-      /* A chip is a two-state control: here when the shot opens, or arriving
-         during it. The first frame is one instant, and this is the only way to
-         say so that does not depend on a model reading the description right. */
-      const chip = SB.el('button', 'cast-chip kind-' + kind.id +
-        (n ? ' has-img' : '') + (arriving ? ' arriving' : ''),
-        (arriving ? '▷ ' : (n ? '◉ ' : '')) + (per.name || 'unnamed') + (n > 1 ? ' ×' + n : ''));
-      const refs = n
-        ? (n === 1 ? ', one reference image' : ', ' + n + ' reference images')
-        : ', no reference image, described in full';
-      chip.title = per.name + ' — ' + kind.label.toLowerCase() + refs + '.\n' +
-        (arriving
-          ? 'Arrives during the shot, so it is left out of the first frame. Click to say it is there when the shot opens.'
-          : 'There when the shot opens. Click if it arrives partway through instead.');
-      chip.onclick = function (ev) {
-        ev.stopPropagation();
-        SB.Personas.toggleEnters(sh, per.id);
-        SB.Store.touch();
-        refreshCastRows();
-      };
-      row.appendChild(chip);
-    });
-    if (!cast.length) row.appendChild(SB.el('span', 'cast-empty', 'no cast'));
-
-    /* The moment somebody is attached, a description written for a different
-     * person — or for this one before they were re-dressed — becomes visibly
-     * wrong. castRow is rebuilt on every cast change, so this lands right when
-     * the mistake is made rather than at prompt time. */
-    const terms = SB.Coverage.carriesWardrobe(P(), sh);
-    if (terms) {
-      const warn = SB.el('button', 'mini cast-fix', 'describes wardrobe');
-      warn.title = 'This description still says what somebody looks like (' +
-        terms.slice(0, 4).join(', ') + (terms.length > 4 ? '…' : '') + '). ' +
-        'The cast above is the real record — click to take it out of the text.';
-      warn.onclick = function (ev) {
-        ev.stopPropagation();
-        warn.disabled = true;
-        warn.textContent = 'cleaning…';
-        SB.Coverage.cleanWardrobe(P(), [sh]).then(function (r) {
-          SB.app.changed(true);
-          SB.toast(r.cleaned
-            ? 'Description cleaned — the cast keeps the wardrobe now'
-            : 'Nothing could be taken out of that one', !r.cleaned);
-        }).catch(function (e) {
-          warn.disabled = false;
-          warn.textContent = 'describes wardrobe';
-          if (SB.apiBlocked(e, function () { warn.onclick(ev); })) return;
-          SB.toast(e.message || String(e), true);
-        });
-      };
-      row.appendChild(warn);
-    }
-
-    /* The nudge, in the shape the board already uses for a description that
-       contradicts its cast: say it where the mistake is, and fix it in a click. */
-    /* People, not subjects: an insert of one hand and one scanner is two
-       "cast", and the nudge asked which of them makes an entrance. */
-    const people = cast.filter(function (per) {
-      return SB.Personas.kindOf(per).id === 'person';
-    });
-    if (people.length > 1 && !SB.Personas.arriving(P(), sh).length &&
-        SB.Personas.readsAsArrival(SB.Refs.plain(P(), sh.description))) {
-      const nudge = SB.el('button', 'mini cast-late', 'someone arrives?');
-      nudge.title = 'This description reads as somebody turning up partway through, but ' +
-        'everyone on this card is marked as being here when it opens — so they will all be ' +
-        'drawn into the first frame. Click a chip to mark whoever arrives.';
-      nudge.onclick = function (ev) {
-        ev.stopPropagation();
-        SB.toast('Click the chip of whoever arrives partway through');
-      };
-      row.appendChild(nudge);
-    }
-
-    const b = SB.el('button', 'mini cast-edit', cast.length ? 'edit' : '+ cast');
-    b.onclick = function (ev) {
-      ev.stopPropagation();
-      castPicker(b, sh);
-    };
-    row.appendChild(b);
-    return row;
-  }
 
   /* ---- the feed ----
    *
@@ -1209,6 +1118,41 @@
       }
 
       cell.appendChild(SB.el('span', 'feed-name', e.label));
+
+      /* The first frame is one instant, so whether somebody is already there
+         matters as much as whether their picture is fed. It used to live on a
+         chip in a row of its own; it belongs on the thing it is about. */
+      const per = e.subject;
+      if (per && SB.Personas.kindOf(per).id === 'person') {
+        const arriving = SB.Personas.enters(sh, e.id);
+        const when = SB.el('button', 'feed-when' + (arriving ? ' arriving' : ''),
+          arriving ? '▷' : '◉');
+        when.title = arriving
+          ? 'Arrives during the shot, so the first frame leaves them out. Click to say they are ' +
+            'there when it opens.'
+          : 'There when the shot opens. Click if they arrive partway through instead.';
+        when.onclick = function (ev) {
+          ev.stopPropagation();
+          SB.Personas.toggleEnters(sh, e.id);
+          SB.Store.touch();
+          refreshFeed(sh.id);
+        };
+        cell.appendChild(when);
+      }
+
+      /* Cast, but nobody said to show it — so nobody chose its place in the
+         order either. The way off the card, now the cast row has gone. */
+      if (!e.mentioned && e.kind === 'subject') {
+        const off = SB.el('button', 'feed-off', '✕');
+        off.title = 'Take ' + e.label + ' off this card. It is not mentioned in the ' +
+          'description, so nothing else changes.';
+        off.onclick = function (ev) {
+          ev.stopPropagation();
+          SB.Personas.toggleOnShot(P(), sh, e.id);
+          SB.app.changed(true);
+        };
+        cell.appendChild(off);
+      }
       /* Full-size entries carry their serial, so the strip names the actual
          files this card is about to hand over. */
       const sers = (e.renders || []).filter(Boolean)
@@ -1240,6 +1184,52 @@
       };
       row.appendChild(cell);
     });
+
+    /* A description that still says what somebody looks like: the feed is the
+       real record of who is in this, so that text is a frozen copy of somebody
+       who may not even be on the card any more. */
+    const terms = SB.Coverage.carriesWardrobe(P(), sh);
+    if (terms) {
+      const warn = SB.el('button', 'mini feed-fix', 'describes wardrobe');
+      warn.title = 'This description still says what somebody looks like (' +
+        terms.slice(0, 4).join(', ') + (terms.length > 4 ? '…' : '') + '). ' +
+        'The subjects it feeds are the real record — click to take it out of the text.';
+      warn.onclick = function (ev) {
+        ev.stopPropagation();
+        warn.disabled = true;
+        warn.textContent = 'cleaning…';
+        SB.Coverage.cleanWardrobe(P(), [sh]).then(function (r) {
+          SB.app.changed(true);
+          SB.toast(r.cleaned
+            ? 'Description cleaned — the subjects keep the wardrobe now'
+            : 'Nothing could be taken out of that one', !r.cleaned);
+        }).catch(function (e) {
+          warn.disabled = false;
+          warn.textContent = 'describes wardrobe';
+          if (SB.apiBlocked(e, function () { warn.onclick(ev); })) return;
+          SB.toast(e.message || String(e), true);
+        });
+      };
+      row.appendChild(warn);
+    }
+
+    /* People, not subjects: an insert of one hand and one scanner is two
+       "cast", and the nudge asked which of them makes an entrance. */
+    const people = SB.Personas.forShot(P(), sh).filter(function (x) {
+      return SB.Personas.kindOf(x).id === 'person';
+    });
+    if (people.length > 1 && !SB.Personas.arriving(P(), sh).length &&
+        SB.Personas.readsAsArrival(SB.Refs.plain(P(), sh.description))) {
+      const nudge = SB.el('button', 'mini feed-late', 'someone arrives?');
+      nudge.title = 'This description reads as somebody turning up partway through, but ' +
+        'everyone here is marked as being present when it opens — so they will all be drawn ' +
+        'into the first frame. Click the ◉ on whoever arrives.';
+      nudge.onclick = function (ev) {
+        ev.stopPropagation();
+        SB.toast('Click the ◉ beside whoever arrives partway through');
+      };
+      row.appendChild(nudge);
+    }
 
     const imgs = SB.Refs.images(P(), sh);
     /* The advice is about references being averaged together. A frame this shot
@@ -1368,59 +1358,17 @@
     SB.toast(n + ' reference image' + (n === 1 ? '' : 's') + ' saved, numbered in feed order');
   }
 
-  function castPicker(anchor, sh) {
-    const old = document.querySelector('.cast-pop');
-    if (old) old.remove();
-    const pop = SB.el('div', 'cast-pop');
-    /* Grouped, because "who is in this" and "where is this" are different
-       questions and a flat list of thirty names answers neither quickly. */
-    let any = false;
-    SB.Personas.KINDS.forEach(function (kind) {
-      const mine = SB.Personas.ofKind(P(), kind.id);
-      if (!mine.length) return;
-      any = true;
-      pop.appendChild(SB.el('div', 'cast-pop-head', kind.plural));
-      mine.forEach(function (per) {
-        const l = SB.el('label', 'cast-opt');
-        const cb = document.createElement('input');
-        cb.type = 'checkbox';
-        cb.checked = (sh.personaIds || []).indexOf(per.id) >= 0;
-        cb.onchange = function () {
-          SB.Personas.toggleOnShot(P(), sh, per.id);
-          SB.Store.touch();
-          refreshCast();
-        };
-        l.appendChild(cb);
-        l.appendChild(document.createTextNode(' ' + (per.name || 'unnamed')));
-        pop.appendChild(l);
-      });
-    });
-    if (!any) pop.appendChild(SB.el('div', 'cast-pop-head', 'nothing on the board yet'));
-    const manage = SB.el('button', 'mini', 'open the reference library…');
-    manage.onclick = function () { pop.remove(); SB.PersonaPanel.open(); };
-    pop.appendChild(manage);
-
-    document.body.appendChild(pop);
-    const r = anchor.getBoundingClientRect();
-    pop.style.left = Math.min(r.left, window.innerWidth - pop.offsetWidth - 8) + 'px';
-    pop.style.top = Math.min(r.bottom + 4, window.innerHeight - pop.offsetHeight - 8) + 'px';
-    setTimeout(function () {
-      document.addEventListener('mousedown', function away(ev) {
-        if (pop.contains(ev.target)) return;
-        pop.remove();
-        document.removeEventListener('mousedown', away);
-      });
-    }, 0);
-  }
 
   /* Redraw just the cast rows — cheaper than rebuilding every card. */
+  /* The cast used to have a row of its own, above the feed, saying the same
+   * thing twice: who is on this card, and then which pictures that means. The
+   * feed is the honest half — it names the actual images, in the order they go
+   * in — so it absorbed the rest: who arrives partway through, the description
+   * that still carries a wardrobe, and taking something off the card. The name
+   * is kept because half the app calls it. */
   function refreshCastRows() {
-    document.querySelectorAll('.cast-row').forEach(function (row) {
-      const f = SB.Model.findShot(P(), row.dataset.shot);
-      if (!f) return;
-      const fresh = castRow(f.shot);
-      row.parentNode.replaceChild(fresh, row);
-      refreshFeed(f.shot.id);      // who is cast decides what is fed
+    document.querySelectorAll('.feed-row').forEach(function (row) {
+      refreshFeed(row.dataset.feed);
     });
   }
 

@@ -310,7 +310,6 @@
       el.focus();
       el.dispatchEvent(new Event('input', { bubbles: true }));
       SB.Store.touch();
-      SB.UsagePanel.badgeSoon();
       if (!it.shot.image) SB.toast(it.label + ' has no frame yet — render it and this feeds it', true);
       return;
     }
@@ -353,7 +352,6 @@
        refreshed by hand above precisely so the caret can stay where it is. */
     SB.PersonaPanel.refreshRefs();
     SB.Store.touch();
-    SB.UsagePanel.badgeSoon();
   }
 
   function hide(keepHost) {

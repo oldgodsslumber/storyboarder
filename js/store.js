@@ -160,7 +160,7 @@
       S.lastSaved = Date.now();
       S.lastGood = text;                     // the rescue copy
       S.stats.writes++;
-      S.stats.lastBytes = (SB.Usage ? SB.Usage.bytes(text) : text.length);
+      S.stats.lastBytes = text.length;
       S.stats.bytes += S.stats.lastBytes;
       state('saved ' + new Date().toLocaleTimeString(), 'saved');
       if (S.onSaved) S.onSaved(S.stats);

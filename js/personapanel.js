@@ -849,7 +849,7 @@
     hd.type = 'text';
     hd.className = 'sh-heading';
     hd.value = sc.heading || '';
-    hd.placeholder = 'Scene heading';
+    hd.placeholder = 'Untitled scene — what happens here';
     hd.dataset.scene = sc.id;
     hd.addEventListener('input', function () {
       sc.heading = hd.value;

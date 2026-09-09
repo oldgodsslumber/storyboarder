@@ -25,7 +25,6 @@
      * row behind the board, and its counts with it. */
     SB.PromptPanel.follow();
     SB.Store.touch();
-    SB.UsagePanel.badgeSoon();
   };
 
   /* A change to shared script text: refresh every window onto the master. */
@@ -62,7 +61,6 @@
     SB.ScriptMode.refresh();
     SB.PromptPanel.refresh();
     SB.PersonaPanel.refresh();
-    SB.UsagePanel.refreshBadge();
   }
 
   /* ---------------- boot ---------------- */
@@ -75,7 +73,6 @@
     SB.PromptPanel.init();
     SB.PersonaPanel.init();
     SB.Store.S.getProject = function () { return app.project; };
-    SB.Store.S.onSaved = function () { SB.UsagePanel.refreshBadge(); };
     SB.Store.S.onState = function (txt, cls) {
       const el = document.getElementById('saveState');
       el.textContent = txt;
@@ -237,7 +234,6 @@
     $('btnCopy').addEventListener('click', function () {
       if (!SB.Store.downloadCopy(app.project)) SB.toast('Nothing to copy yet', true);
     });
-    $('sizeState').addEventListener('click', function () { SB.UsagePanel.open(); });
 
     $('btnScript').addEventListener('click', function () { SB.ScriptMode.toggle(); });
 

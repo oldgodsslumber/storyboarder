@@ -290,7 +290,7 @@ A board is made one card at a time; prompts are written a whole film at a time. 
 | **Description** | the same reference box as the card, so marks stay live links and `@` works |
 | **First frame** | a large prompt box, with its own ✦ generate, a *gendered* flag and a *cast changed* badge |
 | **Video** | the same again for the image→video prompt |
-| **Feed** | the references this row hands over, in order, with **copy image set** |
+| **Feed** | the reference files this row hands over, in order — named by file (`0007.png`), because those are what you go and find — with **copy image set** |
 
 Rows group under their scene, the header sticks, and the filters are the point of a table:
 **Missing** (no prompt yet), **Stale** (a subject on the card was edited after the prompt was
@@ -429,8 +429,9 @@ not change is the same problem as a face that must not change. Each holds a **na
   editable afterwards, and **+ Person / + Location / + Object** skip the model entirely.
 - **write it for me** turns a description into a reference-frame prompt, worded for what
   kind of thing it is; **copy prompt** puts it on the clipboard.
-- Cards get a **cast row**: click *+ cast* to tick what appears in that shot, grouped by
-  kind. The order you add them is the order their reference images are fed.
+- There is no cast row: the **feed** under each description is the record of what a card
+  shows, because it names the actual pictures in the order they go in. A subject fed but not
+  mentioned is marked as such and can be taken off from there.
 - Renaming a subject offers to update the descriptions that spell out the old name. It never
   does it behind your back.
 
@@ -519,11 +520,11 @@ Three things fix it, and the third is the one that actually settles it:
   ships whether or not the house style is on, because it is not a matter of taste.
 - The **cast block knows which prompt it is serving**. For the first-frame job it says outright
   that it describes how subjects *look* and is not a list of who is in the frame.
-- **Click a cast chip** on a card to mark that subject as arriving partway through: the chip
-  goes dashed amber with a ▷. The block then names them as absent from the first frame — and
+- **Click the ◉ beside a person in the feed** to mark them as arriving partway through: it
+  becomes an amber ▷. The block then names them as absent from the first frame — and
   tells the video prompt their arrival is movement it owns. This is the deterministic one:
   nothing is inferred from your prose. When a description reads like an arrival and nobody is
-  marked, the cast row says **someone arrives?**
+  marked, the feed says **someone arrives?**
 
 Everyone is "present when it opens" until you say otherwise, so every board written before
 this means exactly what it meant.
@@ -622,33 +623,7 @@ iframe and measures it — page count, sheet overflow, cell overflow, cell width
 containment, uniform frame height — plus the scene, toggle and colour options, so the layouts
 can't quietly rot again.
 
-## Data tracker
-
-The top bar shows what the board currently weighs. Click it for the breakdown:
-
-- **Headline** — total size, what share of it is images, how many times this session has
-  saved plus how many bytes that moved, and what deduplication is saving.
-- **Where the bytes are** — frames, persona references, comment ink, saved versions, and
-  script/prompts/structure. The parts add up to the file exactly (they're measured from the
-  string the app actually writes, not estimated), and every part is written out as text as
-  well as colour.
-- **Heaviest single items** — usually the frames, so you can see which ones.
-- **On Firebase's free (Spark) plan** — measured against the published limits, with a
-  verdict.
-
-Figures used, checked Aug 2026:
-
-| Limit | Value |
-|---|---|
-| Firestore document ceiling | **1 MiB (1,048,576 bytes)** — hard, not a quota |
-| Spark Firestore storage | 1 GiB |
-| Spark writes / reads per day | 20,000 / 50,000 |
-| Cloud Storage on Spark | **not available** — needs the Blaze plan |
-
-Sources: [Firestore quotas](https://firebase.google.com/docs/firestore/quotas),
-[Firebase pricing](https://firebase.google.com/pricing).
-
-### If this ever goes online
+## If this ever goes online
 
 Storing each image once (above) was step one, and it is the one that matters: without it a
 board's frozen versions duplicate every frame, and nothing fits anywhere. With it, the plan
@@ -702,8 +677,6 @@ js/blobs.js       content-addressed image store (one copy per picture)
 js/geminimodels.js writer model list, ListModels refresh, daily call counter
 js/model.js       project schema, numbering, all mutations
 js/store.js       File System Access autosave, API key in localStorage
-js/usage.js       size measurement + Firebase free-tier maths
-js/usagepanel.js  the data readout
 js/history.js     undo/redo for script text
 js/editor.js      contenteditable window onto a Doc slice
 js/board.js       scenes, cards, drag & drop

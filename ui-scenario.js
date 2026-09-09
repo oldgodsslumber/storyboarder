@@ -520,15 +520,14 @@
         return box.isContentEditable ? SB.RefBox.read(box) : box.value;
       };
       // personas
-      t('no cast row until personas exist',
+      t('no cast row anywhere — the feed is the record of what a card shows',
         document.querySelectorAll('.cast-row').length === 0, '');
       var per1 = SB.Personas.add(P(), { name: 'Ops lead', description: 'Charcoal knit.' });
       var per2 = SB.Personas.add(P(), { name: 'Technician', description: 'Navy work shirt.' });
       per1.image = SB.Blobs.image(P(), 'data:image/gif;base64,R0lGODlhAQABAAAAACw=', 4, 3);
       SB.app.changed(true);
-      t('every card gains a cast row',
-        document.querySelectorAll('.cast-row').length === document.querySelectorAll('.card').length,
-        document.querySelectorAll('.cast-row').length);
+      t('adding subjects still adds no cast row',
+        document.querySelectorAll('.cast-row').length === 0, '');
       SB.PersonaPanel.open();
       t('the reference library takes over the page', !!document.querySelector('.lib-back'), '');
       t('a card per subject', document.querySelectorAll('.lib-refs .persona').length === 2,
@@ -567,19 +566,16 @@
       t('each scene row carries its heading and description',
         document.querySelector('.lib-scenes .sc-row .sh-heading').value === P().scenes[0].heading, '');
 
-      var castBtn = document.querySelector('.card .cast-row .cast-edit');
-      castBtn.click();
-      var castPop = document.querySelector('.cast-pop');
-      t('cast picker lists every subject, grouped by kind',
-        castPop && castPop.querySelectorAll('input[type=checkbox]').length === 4 &&
-        castPop.querySelectorAll('.cast-pop-head').length === 3,
-        castPop ? castPop.querySelectorAll('input[type=checkbox]').length : 'none');
-      castPop.querySelectorAll('input[type=checkbox]')[0].click();
       var firstShot = SB.Model.findShot(P(), document.querySelector('.card').dataset.shot).shot;
-      t('casting a persona sticks', (firstShot.personaIds || []).length === 1, firstShot.personaIds);
-      t('the chip shows on the card',
-        /Ops lead/.test(document.querySelector('.card .cast-row').textContent), '');
-      castPop.remove();
+      SB.Personas.toggleOnShot(P(), firstShot, per1.id);
+      SB.app.changed(true);
+      t('a cast subject shows in the feed instead',
+        /Ops lead/.test(document.querySelector('.card .feed-row').textContent),
+        document.querySelector('.card .feed-row').textContent);
+      t('flagged, because nobody said to show it',
+        !!document.querySelector('.card .feed-cell.unmentioned'), '');
+      t('and it can be taken off from there',
+        !!document.querySelector('.card .feed-cell.unmentioned .feed-off'), '');
 
       // the full-size original, and what the card says about it
       {
@@ -679,29 +675,30 @@
       {
         SB.Personas.toggleOnShot(P(), firstShot, per2.id);
         firstShot.description = 'He writes at the desk. A colleague walks into frame behind him.';
-        SB.Board.refreshCastRows();
-        var crow = document.querySelector('.card[data-shot="' + firstShot.id + '"] .cast-row');
+        SB.app.changed(true);
+        var crow = document.querySelector('.feed-row[data-feed="' + firstShot.id + '"]');
         t('the board notices a description that reads as an arrival',
-          !!crow.querySelector('.cast-late'), '');
-        var chips = crow.querySelectorAll('.cast-chip');
-        t('cast chips are controls, not labels', chips.length === 2 && chips[0].tagName === 'BUTTON',
-          chips.length + ' ' + (chips[0] && chips[0].tagName));
-        chips[1].click();
+          !!crow.querySelector('.feed-late'), crow.textContent);
+        var whens = crow.querySelectorAll('.feed-when');
+        t('every person in the feed says whether they are there when it opens',
+          whens.length === 2 && whens[0].tagName === 'BUTTON',
+          whens.length + ' ' + (whens[0] && whens[0].tagName));
+        whens[1].click();
         t('clicking one marks it as arriving partway through',
           SB.Personas.enters(firstShot, per2.id), JSON.stringify(firstShot.castEnters));
-        crow = document.querySelector('.card[data-shot="' + firstShot.id + '"] .cast-row');
-        t('the chip shows it', !!crow.querySelector('.cast-chip.arriving'), '');
+        crow = document.querySelector('.feed-row[data-feed="' + firstShot.id + '"]');
+        t('the feed shows it', !!crow.querySelector('.feed-when.arriving'), '');
         t('and the nudge goes away once somebody is marked',
-          !crow.querySelector('.cast-late'), '');
+          !crow.querySelector('.feed-late'), '');
         var iSys = SB.Prompts.jobsFor(firstShot, SB.Model.imageModel(P()), null, { image: true })[0].system;
         t('the first-frame request says the frame is one instant',
           /THE FIRST FRAME IS ONE INSTANT/.test(iSys), '');
         t('and names who is not in it',
           /MARKED AS ARRIVING[\s\S]*Technician/.test(iSys), '');
-        chips[1].click();
+        crow.querySelectorAll('.feed-when')[1].click();   // put it back
         SB.Personas.toggleOnShot(P(), firstShot, per2.id);
         firstShot.description = '';
-        SB.Board.refreshCastRows();
+        SB.app.changed(true);
       }
 
       var jobsCast = SB.Prompts.jobsFor(firstShot, SB.Model.imageModel(P()), SB.Model.videoModel(P()),
@@ -1534,43 +1531,20 @@
         getComputedStyle(cardEl).backgroundColor !== getComputedStyle(document.body).backgroundColor,
         getComputedStyle(cardEl).backgroundColor);
 
-      // data tracker
-      SB.UsagePanel.refreshBadge();
-      var badge = document.getElementById('sizeState');
-      t('the top bar shows the board size', /KB|MB|B$/.test(badge.textContent), badge.textContent);
-      var m0 = SB.Usage.measure(P());
-      var bigJpg = 'data:image/jpeg;base64,' + 'A'.repeat(30000);
-      P().scenes[0].shots[0].image = SB.Blobs.image(P(), bigJpg, 8, 6);
-      var m1 = SB.Usage.measure(P());
-      t('adding a frame is reflected in the measurement', m1.total > m0.total + 29000,
-        m1.total - m0.total);
-      t('the breakdown adds up to the file', m1.sections.reduce(function (n, s) { return n + s.b; }, 0)
-        === m1.total, 'off by ' + (m1.total - m1.sections.reduce(function (n, s) { return n + s.b; }, 0)));
-      SB.UsagePanel.open();
-      t('the data panel opens', document.querySelectorAll('.usage').length === 1, '');
-      t('a segment per section',
-        document.querySelectorAll('.usage-seg').length === m1.sections.length,
-        document.querySelectorAll('.usage-seg').length + ' vs ' + m1.sections.length);
-      t('every section is also written out as text, not colour alone',
-        document.querySelectorAll('.usage-table tr').length === m1.sections.length + 1, '');
-      t('the Firebase verdict is shown',
-        document.querySelectorAll('.usage-check').length === 5, '');
-      t('it names the 1 MiB document ceiling',
-        /1 MiB/.test(document.querySelector('.usage-checks').textContent), '');
-      document.querySelector('.modal .foot .tb.on').click();
-
-      // the same picture on a second shot costs nothing
-      var beforeDup = SB.Usage.measure(P()).total;
-      P().scenes[0].shots[1].image = SB.Blobs.image(P(), bigJpg, 8, 6);
-      var afterDup = SB.Usage.measure(P()).total;
-      t('reusing a picture adds almost nothing', afterDup - beforeDup < 200,
-        'grew by ' + (afterDup - beforeDup));
-      t('and both shots point at the same blob',
-        P().scenes[0].shots[0].image.ref === P().scenes[0].shots[1].image.ref, '');
-      t('the dedupe saving is reported', SB.Usage.measure(P()).dedupe.saved > 29000,
-        SB.Usage.measure(P()).dedupe.saved);
-      P().scenes[0].shots[1].image = null;
-      SB.app.changed(true);
+      // the same picture on two shots costs one copy
+      {
+        var bigJpg = 'data:image/jpeg;base64,' + 'A'.repeat(30000);
+        P().scenes[0].shots[0].image = SB.Blobs.image(P(), bigJpg, 8, 6);
+        var blobsBefore = Object.keys(P().blobs).length;
+        P().scenes[0].shots[1].image = SB.Blobs.image(P(), bigJpg, 8, 6);
+        t('reusing a picture stores no second copy',
+          Object.keys(P().blobs).length === blobsBefore,
+          Object.keys(P().blobs).length + ' vs ' + blobsBefore);
+        t('and both shots point at the same blob',
+          P().scenes[0].shots[0].image.ref === P().scenes[0].shots[1].image.ref, '');
+        P().scenes[0].shots[1].image = null;
+        SB.app.changed(true);
+      }
 
       // generate shots + rewrite, driven through the actual scene buttons
       {

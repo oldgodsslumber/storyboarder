@@ -847,6 +847,21 @@ button.linkish{
 .feed-cell.dead .feed-n{color:var(--danger)}
 .feed-cell.empty .feed-n{color:var(--accent2)}
 .feed-warn{font-size:10px;color:var(--accent2);white-space:nowrap}
+/* is this person there when the shot opens, or do they arrive during it */
+.feed-when{
+  background:none;border:none;padding:0 1px;cursor:pointer;font-size:10px;
+  color:var(--fg-dim);line-height:1;
+}
+.feed-when:hover{color:var(--fg)}
+.feed-when.arriving{color:var(--accent2)}
+/* fed, but nobody said to — the way off the card */
+.feed-off{
+  background:none;border:none;padding:0 1px;cursor:pointer;font-size:9px;
+  color:var(--fg-dim);line-height:1;
+}
+.feed-off:hover{color:var(--danger)}
+.feed-fix,.feed-late{border-color:var(--accent2);color:var(--accent2)}
+.feed-late{text-transform:uppercase;letter-spacing:.4px;font-size:10px}
 .feed-copy{margin-left:auto}
 .feed-fix{border-color:var(--accent2);color:var(--accent2)}
 
@@ -923,6 +938,15 @@ button.linkish{
 }
 .pt-fe .feed-n{min-width:16px;text-align:center;color:var(--accent);font-weight:600}
 .pt-fe .feed-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* the file is what you go and find, so it leads; who it is rides along after */
+.pt-fe .feed-file{
+  font-variant-numeric:tabular-nums;color:var(--fg);white-space:nowrap;flex:0 0 auto;
+}
+.pt-fe .feed-file.none{color:var(--fg-dim);font-style:italic}
+.pt-fe .feed-who{
+  flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  color:var(--fg-dim);
+}
 .pt-fe.is-shot{border-color:var(--scene);color:var(--scene)}
 .pt-fe.is-shot .feed-n{color:var(--scene)}
 .pt-fe.empty{border-color:var(--accent2);color:var(--accent2)}

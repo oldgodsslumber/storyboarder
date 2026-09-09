@@ -170,10 +170,18 @@
    * whatever its shots point at: they may overlap it, or sit outside it, or not
    * exist yet. Unlike a shot, a scene starts with NO script at all — an empty
    * local doc here would have every scene claiming to have one. */
+  /* A new scene has no name.
+   *
+   * It used to be called "Scene 3", which is true exactly until somebody drags
+   * it — and then the board has a scene called "Scene 3" sitting second, which
+   * is worse than no name at all. The number is where a scene SITS: the
+   * navigator, the banner, the organizer and the prompt table all draw it from
+   * the position, so it is right by construction and never has to be kept in
+   * step. What the heading is for is what the scene IS. */
   function newScene(heading) {
     return {
       id: SB.uid('sc'),
-      heading: heading || 'New scene',
+      heading: heading || '',
       description: '',
       link: null,          // {from,to} into master
       local: null,         // its own doc once the link is broken; null = untied
@@ -220,7 +228,7 @@
        * belonging to a deleted shot is never handed out again, so a file that
        * has already left the app never comes to mean something else. */
       renderSeq: 0,
-      scenes: [newScene('Scene one')],
+      scenes: [newScene()],
       versionNumber: 1,
       versionName: 'v1',
       versions: [],
@@ -354,7 +362,13 @@
     p.personas = Array.isArray(p.personas) ? p.personas : [];
     p.personas.forEach(function (x) { migratePersona(p, x); });
     p.scenes = Array.isArray(p.scenes) ? p.scenes : [];
-    if (!p.scenes.length) p.scenes.push(newScene('Scene one'));
+    /* "Scene 3" sitting second is a number somebody never typed and cannot be
+     * kept true. Only the app's own defaults are cleared — anything a person
+     * actually wrote is theirs, whatever it says. */
+    p.scenes.forEach(function (sc) {
+      if (sc && /^scene (?:\d+|one)$/i.test(String(sc.heading || '').trim())) sc.heading = '';
+    });
+    if (!p.scenes.length) p.scenes.push(newScene());
     p.renderSeq = Math.max(p.renderSeq | 0, 0);
     p.versionNumber = p.versionNumber || 1;
     p.versionName = p.versionName || ('v' + p.versionNumber);
@@ -795,7 +809,7 @@
   /* ---------- structure ---------- */
 
   function addScene(p, afterIdx) {
-    const sc = newScene('Scene ' + (p.scenes.length + 1));
+    const sc = newScene();
     if (typeof afterIdx === 'number') p.scenes.splice(afterIdx + 1, 0, sc);
     else p.scenes.push(sc);
     p.updatedAt = Date.now();
@@ -806,7 +820,7 @@
     const f = findScene(p, sceneId);
     if (!f) return;
     p.scenes.splice(f.idx, 1);
-    if (!p.scenes.length) p.scenes.push(newScene('Scene one'));
+    if (!p.scenes.length) p.scenes.push(newScene());
     p.updatedAt = Date.now();
   }
 
@@ -891,7 +905,7 @@
     if (!f) return null;
     if (idx <= 0 || idx >= f.scene.shots.length) return null;   // nothing to move
     const moved = f.scene.shots.splice(idx);
-    const sc = newScene('Scene ' + (f.idx + 2));
+    const sc = newScene();
     sc.shots = moved;
     p.scenes.splice(f.idx + 1, 0, sc);
     p.updatedAt = Date.now();
@@ -914,7 +928,7 @@
       if (sources.indexOf(f.scene) < 0) sources.push(f.scene);
       f.scene.shots.splice(f.shotIdx, 1);
     });
-    const sc = newScene('Scene ' + (afterIdx + 2));
+    const sc = newScene();
     sc.shots = order;
     p.scenes.splice(afterIdx + 1, 0, sc);
     /* A scene emptied BY THIS is noise on the board. An empty scene the user

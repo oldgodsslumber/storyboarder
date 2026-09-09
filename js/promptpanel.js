@@ -500,6 +500,13 @@
 
   /* The references this row hands over, in order — the same feed the card
    * shows, laid out down the column because there is room for it here. */
+  /* The references this row hands over, in order.
+   *
+   * Named by FILE, not by subject. "Nat" tells you nothing you can act on: the
+   * point of this column is that you go and find those pictures and drop them
+   * into a model in this order, so it says 0007.png. The subject's name rides
+   * along after it, because the filename alone says nothing about who it is.
+   */
   function feedList(sh, code) {
     const wrap = SB.el('div', 'pt-feed-list');
     const list = SB.Refs.feed(P(), sh);
@@ -507,32 +514,44 @@
       wrap.appendChild(SB.el('div', 'pt-none', 'no references'));
       return wrap;
     }
+    /* one line per FILE, so the numbers down the column are the numbers in the
+       prompt's mapping and in the folder */
+    SB.Refs.images(P(), sh).forEach(function (e) {
+      const it = SB.el('div', 'pt-fe' + (e.kind === 'shot' ? ' is-shot' : ''));
+      it.appendChild(SB.el('span', 'feed-n', String(e.n)));
+
+      const t = SB.el('span', 'feed-thumb');
+      const im3 = document.createElement('img');
+      im3.src = SB.Blobs.src(P(), e.img);
+      t.appendChild(im3);
+      it.appendChild(t);
+
+      const file = e.render
+        ? SB.Renders.fileName(e.render.serial, e.render.ext)
+        : null;
+      const nameEl = SB.el('span', 'feed-file' + (file ? '' : ' none'),
+        file || 'board copy only');
+      it.appendChild(nameEl);
+      it.appendChild(SB.el('span', 'feed-who', e.label + (e.role ? ' · ' + e.role : '')));
+
+      it.title = (file
+        ? file + ' — the full-size original, in the renders folder'
+        : 'No original kept for this one: the board\'s 854×480 copy is what would be ' +
+          'written. Connect a renders folder in Settings to keep originals.') +
+        '\n' + e.label + (e.role ? ' (' + e.role + ')' : '');
+      wrap.appendChild(it);
+    });
+
+    /* things that are referenced but have no picture behind them still have to
+       be said — they are numbered nowhere and feed nothing */
     list.forEach(function (e) {
-      const it = SB.el('div', 'pt-fe' +
-        (e.kind === 'dead' ? ' dead' : '') +
-        (e.kind === 'shot' ? ' is-shot' : '') +
-        (e.images.length ? '' : ' empty') +
-        (e.mentioned ? '' : ' unmentioned'));
-      const n = e.numbers.length
-        ? (e.numbers.length === 1 ? e.numbers[0]
-          : e.numbers[0] + '–' + e.numbers[e.numbers.length - 1])
-        : '–';
-      it.appendChild(SB.el('span', 'feed-n', String(n)));
-      if (e.images.length) {
-        const t = SB.el('span', 'feed-thumb');
-        const im3 = document.createElement('img');
-        im3.src = SB.Blobs.src(P(), e.images[0]);
-        t.appendChild(im3);
-        it.appendChild(t);
-      } else {
-        it.appendChild(SB.el('span', 'feed-thumb none', '?'));
-      }
-      it.appendChild(SB.el('span', 'feed-name', e.label));
-      const sers = (e.renders || []).filter(Boolean)
-        .map(function (x) { return SB.Renders.pad(x.serial); });
-      if (sers.length) it.appendChild(SB.el('span', 'feed-ser', sers.join(' ')));
-      it.title = e.label + (e.why ? ' — ' + e.why : '') +
-        (sers.length ? '\nFull-size ' + sers.join(', ') + ' if the folder still has it.' : '');
+      if (e.images.length) return;
+      const it = SB.el('div', 'pt-fe' + (e.kind === 'dead' ? ' dead' : ' empty'));
+      it.appendChild(SB.el('span', 'feed-n', '–'));
+      it.appendChild(SB.el('span', 'feed-thumb none', '?'));
+      it.appendChild(SB.el('span', 'feed-file none', e.kind === 'dead' ? 'gone' : 'no picture'));
+      it.appendChild(SB.el('span', 'feed-who', e.label));
+      it.title = e.label + (e.why ? ' — ' + e.why : '');
       wrap.appendChild(it);
     });
 
