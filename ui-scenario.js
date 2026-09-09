@@ -365,40 +365,101 @@
       t('prompt boxes hidden by default', document.querySelectorAll('.prompt-box').length === 0,
         document.querySelectorAll('.prompt-box').length);
       SB.PromptPanel.open();
-      t('prompt panel opens', !document.getElementById('promptPanel').classList.contains('hidden'), '');
-      const ppSel = document.querySelectorAll('#promptBody select');
-      t('panel has image + video model pickers', ppSel.length >= 2, ppSel.length);
+      t('the prompt table takes over the page', !!document.querySelector('.lib-back .pt-grid'), '');
+      t('a row per shot on the board',
+        document.querySelectorAll('.pt-row').length === document.querySelectorAll('.card').length,
+        document.querySelectorAll('.pt-row').length + ' rows for ' +
+        document.querySelectorAll('.card').length + ' cards');
+      t('grouped under their scene',
+        document.querySelectorAll('.pt-scene').length === P().scenes.length,
+        document.querySelectorAll('.pt-scene').length);
+      t('the five columns are there',
+        document.querySelectorAll('.pt-head-row .pt-h').length === 5, '');
+      t('and no shots are shown as cards here',
+        document.querySelectorAll('.pt-body .card').length === 0, '');
+
+      const ppSel = document.querySelectorAll('.lib-head select.pt-model');
+      t('table has image + video model pickers', ppSel.length === 2, ppSel.length);
       t('image + video are separate models',
         P().settings.imageModelId !== P().settings.videoModelId,
         P().settings.imageModelId + ' / ' + P().settings.videoModelId);
-      const showBoxes = document.querySelectorAll('#promptBody .pp-block')[2]
-        .querySelectorAll('input[type=checkbox]');
+      t('each prompt column names the model it writes for',
+        /Qwen|FLUX|Imagen|Ideogram|Midjourney|GPT|Nano/.test(
+          document.querySelectorAll('.pt-head-row .pt-h')[2].textContent),
+        document.querySelectorAll('.pt-head-row .pt-h')[2].textContent);
+
+      // the two prompt boxes, larger than a card's and editable in place
+      const firstRow = document.querySelector('.pt-row');
+      const ptTexts = firstRow.querySelectorAll('.pt-text');
+      t('a row carries both prompt boxes', ptTexts.length === 2, ptTexts.length);
+      const ptShot = SB.Model.findShot(P(), firstRow.dataset.shot).shot;
+      ptTexts[0].value = 'A wide of the floor, one lamp on.';
+      ptTexts[0].dispatchEvent(new Event('input', { bubbles: true }));
+      t('typing in one stores it against the image model',
+        (ptShot.prompts[SB.Model.imageModel(P()).id] || {}).imagePrompt ===
+        'A wide of the floor, one lamp on.',
+        JSON.stringify(ptShot.prompts));
+      ptTexts[1].value = 'The camera drifts left as they turn.';
+      ptTexts[1].dispatchEvent(new Event('input', { bubbles: true }));
+      t('and the other against the video model',
+        (ptShot.prompts[SB.Model.videoModel(P()).id] || {}).videoPrompt ===
+        'The camera drifts left as they turn.',
+        JSON.stringify(ptShot.prompts));
+
+      // the description is the same reference box as the card's
+      const ptDesc = firstRow.querySelector('.pt-desc');
+      t('the description is editable here too', !!ptDesc && ptDesc.isContentEditable, '');
+      t('and shows its references as links',
+        SB.Refs.parse(P(), ptShot.description).length === 0 ||
+        !!ptDesc.querySelector('.ref-link'), ptDesc.innerHTML.slice(0, 80));
+
+      // the feed, down the column
+      t('the row lists what it will feed',
+        !!firstRow.querySelector('.pt-feed'), '');
+
+      // filters turn "what is left" into a list
+      const filterBtns = document.querySelectorAll('.lib-head .lib-tabs button');
+      t('filters offered: all, missing, stale, this scene', filterBtns.length === 4,
+        filterBtns.length);
+      const allRows = document.querySelectorAll('.pt-row').length;
+      filterBtns[1].click();                       // missing
+      const missingRows = document.querySelectorAll('.pt-row').length;
+      t('the missing filter narrows the list', missingRows < allRows,
+        missingRows + ' of ' + allRows);
+      t('and the row just filled in is not in it',
+        !document.querySelector('.pt-row[data-shot="' + ptShot.id + '"]'), '');
+      filterBtns[0].click();                       // all
+      t('going back to all restores every row',
+        document.querySelectorAll('.pt-row').length === allRows, '');
+
+      // the card-display toggles moved here with everything else
+      const showBoxes = document.querySelectorAll('.pt-oncards input[type=checkbox]');
+      t('the on-card toggles are in the header', showBoxes.length === 2, showBoxes.length);
       showBoxes[0].click(); showBoxes[1].click();
-      t('toggling reveals both prompt boxes',
+      t('toggling reveals both prompt boxes on the cards',
         document.querySelectorAll('.card:not(.noshot) .prompt-box').length ===
         document.querySelectorAll('.card:not(.noshot)').length * 2,
         document.querySelectorAll('.prompt-box').length + ' boxes on ' +
         document.querySelectorAll('.card:not(.noshot)').length + ' cards');
       const titles = Array.prototype.map.call(document.querySelectorAll('.prompt-box .ptitle span'),
         function (s) { return s.textContent; });
-      t('each box names its own model',
+      t('each card box names its own model',
         titles[0].indexOf(SB.Model.imageModel(P()).name) > 0 &&
         titles[1].indexOf(SB.Model.videoModel(P()).name) > 0, JSON.stringify(titles.slice(0, 2)));
-      showBoxes[0].click(); showBoxes[1].click();
+      document.querySelectorAll('.pt-oncards input[type=checkbox]')[0].click();
+      document.querySelectorAll('.pt-oncards input[type=checkbox]')[1].click();
 
-      // gemini model picker + free-call counter live in the panel
-      const gmSel = document.querySelector('#promptBody .gm-picker select');
+      // gemini model picker + free-call counter came along
+      const gmSel = document.querySelector('.lib-head .gm-picker select');
       t('gemini model is a dropdown', !!gmSel, 'missing');
       t('dropdown lists current models',
         gmSel.options.length === SB.GeminiModels.LIST.length + 1, gmSel.options.length);
       t('default selected', gmSel.value === SB.GeminiModels.DEFAULT, gmSel.value);
-      t('custom escape hatch',
-        gmSel.options[gmSel.options.length - 1].value === '__custom', '');
       gmSel.value = 'gemini-2.5-pro';
       gmSel.dispatchEvent(new Event('change', { bubbles: true }));
       t('picking a model sticks', P().settings.geminiModel === 'gemini-2.5-pro',
         P().settings.geminiModel);
-      const usage = document.querySelector('#promptBody .pp-usage');
+      const usage = document.querySelector('.lib-head .pp-usage');
       t('free-call counter shown', /request/.test(usage.textContent), usage.textContent);
       SB.GeminiModels.setLimit('gemini-2.5-pro', 10);
       SB.GeminiModels.bump('gemini-2.5-pro');
@@ -407,7 +468,10 @@
       gmSel.value = SB.GeminiModels.DEFAULT;
       gmSel.dispatchEvent(new Event('change', { bubbles: true }));
 
+      /* leave the board as it was for everything after this */
+      ptShot.prompts = {};
       SB.PromptPanel.close();
+      t('closing the table takes it off the page', !document.querySelector('.pt-grid'), '');
 
       const pauseTop = function () { return new Promise(function (r) { setTimeout(r, 40); }); };
       /* the description boxes are contenteditable now, so a test types the way

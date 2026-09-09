@@ -281,16 +281,30 @@ unused; if a card still names something that cannot be found, the toast says how
 
 ## Prompt export
 
-Prompt boxes are **hidden on the cards by default** — cards stay compact until you want
-prompts. Everything prompt-related lives in one **Prompts** panel (top bar):
+A board is made one card at a time; prompts are written a whole film at a time. So
+**Prompts** (top bar) is a full-page **table** — one row per shot, five columns:
 
-- **Target models** — a first-frame model *and* a video model, chosen independently. The
-  image model writes the first-frame prompt; the video model writes the image→video prompt.
-- **Write prompts** — tick which of the two to write, choose the scope (whole project /
-  selected scene / selected shot), hit **Generate**. Gemini writes them from each shot's
-  **description** plus that model's templates. The app never generates images or video.
-- **Show on cards** — the two independent hide/show toggles. Generating turns the matching
-  one on for you, so results appear as soon as they exist.
+| | |
+|---|---|
+| **Shot** | code, the serial its render is filed under, a thumbnail, the type. Click the thumbnail to jump to that card. |
+| **Description** | the same reference box as the card, so marks stay live links and `@` works |
+| **First frame** | a large prompt box, with its own ✦ generate, a *gendered* flag and a *cast changed* badge |
+| **Video** | the same again for the image→video prompt |
+| **Feed** | the references this row hands over, in order, with **copy image set** |
+
+Rows group under their scene, the header sticks, and the filters are the point of a table:
+**Missing** (no prompt yet), **Stale** (something on the card was edited after the prompt was
+written), **This scene**. Each filter carries its count, and **✦ Generate** runs exactly the
+list you are looking at — "no shot" cards and empty descriptions are skipped.
+
+The prompt boxes are deliberately much larger than the card's, because editing a paragraph in
+a box the width of a thumbnail is how prompts end up unedited.
+
+Everything the panel used to hold came with it, in the header: target models (a first-frame
+model *and* a video model, chosen independently), the prompt writer, the free-call counter,
+and the two **on cards** toggles — prompt boxes are still hidden on the cards by default, and
+generating still turns the matching one on for you.
+
 - **Prompt writer** — which Gemini model does the writing, picked from a dropdown of the
   current text models (plus *Custom…* for anything not listed), and a **free-call counter**
   for that model.
@@ -693,12 +707,13 @@ js/brand.js       house style, scene context, gendered-language check
 js/personas.js    recurring people, places and things + reference-image wording
 js/fields.js      the extra card text boxes, per project
 js/personapanel.js the reference library + scene organizer
+js/renders.js     the renders folder: full-size originals, kept by serial
 js/refs.js        marks, the feed, and the boundary a model reads
 js/refbox.js      the description box that draws a mark as a link
 js/mentions.js    the @ popover
 js/prompts.js     Gemini prompt writing
 js/coverage.js    scene description -> shots, and the description rewrite
-js/promptpanel.js the Prompts panel
+js/promptpanel.js the prompt table
 js/settings.js    tabbed settings
 js/versions.js    whole-project versions
 js/pdf.js         contact-sheet print view

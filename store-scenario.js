@@ -91,7 +91,7 @@
       /* ---- the report: change the writer model ---- */
       SB.PromptPanel.open();
       await wait(200);
-      const sel = document.querySelector('#promptBody .gm-picker select');
+      const sel = document.querySelector('.lib-head .gm-picker select');
       t('writer dropdown is there', !!sel, 'missing');
       sel.value = 'gemma-4-31b-it';
       sel.dispatchEvent(new Event('change', { bubbles: true }));

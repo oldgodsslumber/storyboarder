@@ -1592,6 +1592,7 @@
     refreshCast: refreshCast,
     refreshCastRows: refreshCastRows, refreshPromptStale: refreshPromptStale,
     refreshFeed: refreshFeed,
+    saveFeed: saveFeed,
     setImage: setImage,
     swap: doSwap,
     armSwap: armSwap,

@@ -218,8 +218,8 @@
       SB.PromptPanel.open();
       await wait(150);
       const genBtn = Array.prototype.filter.call(
-        document.querySelectorAll('#promptBody .tb'),
-        function (b) { return b.textContent === 'Generate'; })[0];
+        document.querySelectorAll('.lib-head .tb'),
+        function (b) { return /Generate/.test(b.textContent); })[0];
       /* ListModels answers even though generateContent 404s */
       const realFetch = window.fetch;
       window.fetch = function (url, opts) {
@@ -240,10 +240,10 @@
       };
       genBtn.click();
       await wait(900);
-      const status = document.querySelector('#promptBody .pp-status').textContent;
+      const status = document.querySelector('.lib-head .pt-status').textContent;
       t('a 404 sends the app to ask the key what it can reach',
         /not available to this key/.test(status) && /pick one/.test(status), status);
-      const opts = document.querySelector('#promptBody .gm-picker select').options;
+      const opts = document.querySelector('.lib-head .gm-picker select').options;
       t('and the picker is rebuilt from that answer',
         opts.length === 4 &&                     // 2 reachable + the current one + Custom…
         /gemini-2\.5-flash/.test(opts[1].value + opts[2].value),
@@ -310,10 +310,9 @@
 
         // 5. the whole loop through the Prompts panel: block -> dialog -> try again
         window.fetch = function () { return Promise.reject(new TypeError('Failed to fetch')); };
-        const scopeSel = document.querySelector('#promptBody select');
         const genBtn2 = Array.prototype.filter.call(
-          document.querySelectorAll('#promptBody .tb'),
-          function (b) { return b.textContent === 'Generate'; })[0];
+          document.querySelectorAll('.lib-head .tb'),
+          function (b) { return /Generate/.test(b.textContent); })[0];
         genBtn2.click();
         await wait(300);
 
@@ -325,8 +324,8 @@
         t('and opens in a new tab', !!link && link.getAttribute('target') === '_blank',
           link && link.getAttribute('target'));
         t('the panel points at the dialog rather than repeating it',
-          /blocked/.test(document.querySelector('#promptBody .pp-status').textContent),
-          document.querySelector('#promptBody .pp-status').textContent);
+          /blocked/.test(document.querySelector('.lib-head .pt-status').textContent),
+          document.querySelector('.lib-head .pt-status').textContent);
 
         // accept happens in the other tab; here the network simply works again
         window.fetch = realFetch2;
@@ -340,10 +339,9 @@
         await wait(600);
         t('the dialog closes when it is used', !document.querySelector('.blocked-link'), '');
         t('try again re-runs the thing that failed',
-          /done —/.test(document.querySelector('#promptBody .pp-status').textContent) &&
+          /done —/.test(document.querySelector('.lib-head .pt-status').textContent) &&
           window.__calls.length > 0,
-          document.querySelector('#promptBody .pp-status').textContent + ' / ' + window.__calls.length);
-        if (scopeSel) scopeSel.value = 'project';
+          document.querySelector('.lib-head .pt-status').textContent + ' / ' + window.__calls.length);
       }
 
       /* ---------- MiniMax H3 gets its own published prompt format ---------- */

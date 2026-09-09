@@ -856,6 +856,99 @@ button.linkish{
 .feed-copy{margin-left:auto}
 .feed-fix{border-color:var(--accent2);color:var(--accent2)}
 
+/* ---------- the prompt table ---------- */
+.pt-body{flex:1;min-height:0;overflow:auto;padding:0 0 24px}
+.lib-head:has(.pt-hrow){flex-direction:column;align-items:stretch;gap:6px}
+.pt-hrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}
+.pt-hrow2{gap:6px}
+.pt-grid{display:flex;flex-direction:column;min-width:1080px}
+.pt-head-row,.pt-row{
+  display:grid;
+  grid-template-columns:118px minmax(200px,1.05fr) minmax(240px,1.35fr) minmax(240px,1.35fr) 210px;
+  gap:10px;align-items:start;
+}
+.pt-head-row{
+  position:sticky;top:0;z-index:2;background:var(--bg2);
+  border-bottom:1px solid var(--line2);padding:6px 12px;
+}
+.pt-h{
+  font-size:9px;text-transform:uppercase;letter-spacing:.7px;color:var(--fg-dim);font-weight:600;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.pt-row{padding:10px 12px;border-bottom:1px solid var(--line)}
+.pt-row:hover{background:var(--bg2)}
+.pt-row.noshot{opacity:.6}
+.pt-cell{min-width:0}
+.pt-scene{
+  position:sticky;top:26px;z-index:1;
+  display:flex;align-items:baseline;gap:8px;padding:8px 12px 4px;
+  background:var(--bg);border-bottom:1px solid var(--line);
+}
+.pt-scene .n{font-size:10px;text-transform:uppercase;letter-spacing:.7px;color:var(--accent);font-weight:700}
+.pt-scene .t{font-size:12px;color:var(--fg-dim)}
+.pt-empty{padding:22px 12px;color:var(--fg-dim);font-size:12px}
+
+.pt-shot{display:flex;flex-direction:column;gap:4px}
+.pt-code-line{display:flex;align-items:baseline;gap:4px}
+.pt-code-line .code{font-weight:700;color:var(--accent);font-size:12px}
+.pt-code-line .code-serial{font-size:9px;color:var(--fg-dim);font-variant-numeric:tabular-nums}
+.pt-thumb{
+  width:100%;aspect-ratio:16/9;background:var(--frame-bg);border-radius:4px;overflow:hidden;
+  cursor:pointer;display:flex;align-items:center;justify-content:center;
+}
+.pt-thumb img{width:100%;height:100%;object-fit:cover}
+.pt-thumb.none{font-size:9px;color:var(--fg-dim);border:1px dashed var(--line2)}
+.pt-thumb:hover{outline:1px solid var(--accent)}
+.pt-type{font-size:10px;color:var(--fg-dim)}
+
+/* the description, as a reference box so marks stay live */
+.pt-desc{
+  background:var(--input-bg);border:1px solid var(--line);border-radius:5px;
+  padding:5px 6px;font-size:12px;min-height:96px;max-height:220px;overflow:auto;
+  white-space:pre-wrap;overflow-wrap:break-word;
+}
+.pt-desc:focus{outline:none;border-color:var(--accent)}
+
+/* the two prompt boxes — the reason this screen exists */
+.pt-prompt{display:flex;flex-direction:column;gap:4px}
+.pt-bar{display:flex;align-items:center;gap:5px;min-height:18px}
+.pt-bar .spacer{flex:1}
+.pt-text{
+  width:100%;background:var(--input-bg);color:var(--fg);border:1px solid var(--line);
+  border-radius:5px;padding:6px 7px;font-size:12px;line-height:1.5;
+  min-height:120px;resize:vertical;
+}
+.pt-text:focus{outline:none;border-color:var(--accent)}
+.pt-foot{display:flex;gap:5px}
+.pt-none{font-size:10px;color:var(--fg-dim);font-style:italic;padding:2px 0}
+
+/* the feed, down the column */
+.pt-feed-list{display:flex;flex-direction:column;gap:3px}
+.pt-fe{
+  display:flex;align-items:center;gap:5px;font-size:10px;color:var(--fg-dim);
+  border:1px solid var(--line2);border-radius:9px;padding:1px 6px 1px 2px;
+}
+.pt-fe .feed-n{min-width:16px;text-align:center;color:var(--accent);font-weight:600}
+.pt-fe .feed-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pt-fe.is-shot{border-color:var(--scene);color:var(--scene)}
+.pt-fe.is-shot .feed-n{color:var(--scene)}
+.pt-fe.empty{border-color:var(--accent2);color:var(--accent2)}
+.pt-fe.empty .feed-n{color:var(--accent2)}
+.pt-fe.dead{border-style:dotted;border-color:var(--danger);color:var(--danger)}
+.pt-fe.unmentioned{border-style:dashed}
+
+.pt-status{font-size:11px;color:var(--fg-dim)}
+.pt-status.err{color:var(--danger)}
+.pt-model{max-width:150px}
+.pt-prov{flex:0 0 auto;display:flex;gap:2px;width:auto}
+/* the shared .prov-pick makes its buttons flex and ellipsis; here they are
+   two short words and should just be their own width */
+.pt-prov .tb{flex:0 0 auto;overflow:visible;text-overflow:clip}
+.pt-usage-wrap{display:flex;align-items:center;gap:5px}
+.pt-gm{max-width:150px}
+.pt-oncards{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--fg-dim)}
+.pt-oncards .l{text-transform:uppercase;letter-spacing:.5px;font-size:9px}
+
 /* ---------- @ mentions ---------- */
 .men-pop{
   position:fixed;z-index:80;background:var(--bg2);border:1px solid var(--line2);
@@ -969,7 +1062,7 @@ body.comment-mode .frame{cursor:crosshair}
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-09-09 00:39 · d8279b7+";</script>
+<script>window.SB_BUILD = "2026-09-09 00:54 · 02cab22+";</script>
 
 <div id="app">
 
@@ -1039,11 +1132,6 @@ body.comment-mode .frame{cursor:crosshair}
       <div id="captureForm" class="capture-form hidden"></div>
       <div id="noteForm" class="capture-form hidden"></div>
       <div id="noteList" class="note-list hidden"></div>
-    </aside>
-
-    <aside id="promptPanel" class="hidden">
-      <div class="panel-head"><span>Prompts</span></div>
-      <div id="promptBody" class="pp-body"></div>
     </aside>
 
   </main>
@@ -7816,6 +7904,7 @@ window.SB = window.SB || {};
     refreshCast: refreshCast,
     refreshCastRows: refreshCastRows, refreshPromptStale: refreshPromptStale,
     refreshFeed: refreshFeed,
+    saveFeed: saveFeed,
     setImage: setImage,
     swap: doSwap,
     armSwap: armSwap,
@@ -9609,31 +9698,127 @@ window.SB = window.SB || {};
 </script>
 <script>
 /* ===== js/promptpanel.js ===== */
-/* promptpanel.js — everything prompt-related in one panel, opened when the
- * user is ready for prompts. Cards stay clean until they ask for them.
+/* promptpanel.js — the prompt table.
+ *
+ * A board is made one card at a time; prompts are written a whole film at a
+ * time. Doing that on the cards means scrolling a wall of pictures to find the
+ * three shots that have no video prompt yet, and editing a paragraph in a box
+ * the width of a thumbnail. So this is a table: one row per shot, the columns
+ * being the four things that matter at this stage — what it is, what it says,
+ * the two prompts, and which pictures go with it.
+ *
+ * It is the same data as the cards. Editing here edits the board; the boxes are
+ * simply the right shape for the job, and the filters (missing, stale, this
+ * scene) turn "what is left to do" into a list you can act on.
  */
 (function (SB) {
   'use strict';
 
-  let panel, bodyEl, statusEl, usageEl, limitEl;
-  const write = { image: true, video: true };   // which prompts to write this run
+  let root = null;
+  let bodyEl, statusEl, usageEl, limitEl, headEl;
+  let filter = 'all';
+  const write = { image: true, video: true };   // which prompts a bulk run writes
 
   function P() { return SB.app.project; }
 
-  function init() {
-    panel = document.getElementById('promptPanel');
-    bodyEl = document.getElementById('promptBody');
+  function init() { /* built on open */ }
+
+  /* ---------------------------------------------------------------- shell */
+
+  function open() {
+    if (root) { render(); return; }
+    root = SB.el('div', 'lib-back');
+    const box = SB.el('div', 'lib');
+    headEl = SB.el('header', 'lib-head');
+    box.appendChild(headEl);
+    bodyEl = SB.el('section', 'pt-body');
+    box.appendChild(bodyEl);
+    root.appendChild(box);
+    root.addEventListener('mousedown', function (ev) { if (ev.target === root) close(); });
+    document.addEventListener('keydown', onKey);
+    document.getElementById('modalRoot').appendChild(root);
+    document.getElementById('btnPrompts').classList.add('on');
+    render();
   }
 
-  function block(title) {
-    const b = SB.el('div', 'pp-block');
-    if (title) b.appendChild(SB.el('div', 't', title));
-    return b;
+  function onKey(e) {
+    if (e.key !== 'Escape' || !root) return;
+    if (document.querySelector('.modal-back')) return;
+    if (document.querySelector('.lib-pop') || document.querySelector('.men-pop')) return;
+    close();
   }
+
+  function close() {
+    if (!root) return;
+    root.remove();
+    root = null;
+    bodyEl = statusEl = usageEl = limitEl = headEl = null;
+    document.removeEventListener('keydown', onKey);
+    document.getElementById('btnPrompts').classList.remove('on');
+  }
+
+  function toggle() { root ? close() : open(); }
+  function isOpen() { return !!root; }
+  function refresh() { if (root) render(); }
+
+  function setStatus(txt, isErr) {
+    if (!statusEl) return;
+    statusEl.textContent = txt || '';
+    statusEl.classList.toggle('err', !!isErr);
+  }
+
+  /* ---------------------------------------------------------------- rows */
+
+  /* Every shot on the board, with the scene it belongs to and its code, in the
+   * order it plays. "no shot" cards come too — they are part of the film, and
+   * the table is where you notice one is still marked that way. */
+  function allRows() {
+    const p = P();
+    const out = [];
+    p.scenes.forEach(function (sc, si) {
+      sc.shots.forEach(function (sh, sj) {
+        out.push({ shot: sh, scene: sc, si: si, sj: sj, code: SB.Model.code(si, sj) });
+      });
+    });
+    return out;
+  }
+
+  function isMissing(r, im, vm) {
+    if (r.shot.noShot) return false;
+    const pi = im && r.shot.prompts[im.id];
+    const pv = vm && r.shot.prompts[vm.id];
+    return (im && !(pi && pi.imagePrompt)) || (vm && !(pv && pv.videoPrompt));
+  }
+
+  function isStale(r, im, vm) {
+    const one = function (m, field) {
+      const pr = m && r.shot.prompts[m.id];
+      return !!(pr && pr[field] && SB.Personas.staleFor(P(), r.shot, pr.at));
+    };
+    return one(im, 'imagePrompt') || one(vm, 'videoPrompt');
+  }
+
+  function visible(im, vm) {
+    const rows = allRows();
+    if (filter === 'missing') return rows.filter(function (r) { return isMissing(r, im, vm); });
+    if (filter === 'stale') return rows.filter(function (r) { return isStale(r, im, vm); });
+    if (filter === 'scene') {
+      return rows.filter(function (r) { return r.scene.id === SB.app.selectedSceneId; });
+    }
+    return rows;
+  }
+
+  /* --------------------------------------------------------------- header */
 
   function modelSelect(role) {
     const p = P();
     const sel = document.createElement('select');
+    sel.className = 'pt-model';
+    sel.title = role === 'image' ? 'Which model the first-frame prompts are written for'
+      : 'Which model the image→video prompts are written for';
+    const none = document.createElement('option');
+    none.value = ''; none.textContent = role === 'image' ? '(no image model)' : '(no video model)';
+    sel.appendChild(none);
     [['image', 'Image models'], ['video', 'Video models']].forEach(function (g) {
       const list = p.settings.models.filter(function (m) { return m.kind === g[0]; });
       if (!list.length) return;
@@ -9642,7 +9827,9 @@ window.SB = window.SB || {};
       list.forEach(function (m) {
         const o = document.createElement('option');
         o.value = m.id; o.textContent = m.name;
-        if (m.id === (role === 'image' ? p.settings.imageModelId : p.settings.videoModelId)) o.selected = true;
+        if (m.id === (role === 'image' ? p.settings.imageModelId : p.settings.videoModelId)) {
+          o.selected = true;
+        }
         og.appendChild(o);
       });
       sel.appendChild(og);
@@ -9650,181 +9837,133 @@ window.SB = window.SB || {};
     sel.addEventListener('change', function () {
       if (role === 'image') p.settings.imageModelId = sel.value;
       else p.settings.videoModelId = sel.value;
-      SB.app.changed(true);   // cards relabel to the new model
+      SB.app.changed(true);            // the cards relabel to the new model
+      render();
     });
     return sel;
   }
 
-  function row(labelText, control) {
-    const r = SB.el('div', 'pp-row');
-    r.appendChild(SB.el('label', null, labelText));
-    r.appendChild(control);
-    return r;
-  }
+  /* Two rows on purpose: what you are looking at, then what you are working
+   * with. Crammed into one they wrapped unpredictably as the model names
+   * changed length, and the close button ended up beside the run button. */
+  function head(im, vm, rows) {
+    headEl.innerHTML = '';
+    const r1 = SB.el('div', 'pt-hrow');
+    const r2 = SB.el('div', 'pt-hrow pt-hrow2');
+    headEl.appendChild(r1);
+    headEl.appendChild(r2);
 
-  function checkRow(labelText, checked, onChange) {
-    const l = SB.el('label', 'pp-toggle');
-    const c = document.createElement('input');
-    c.type = 'checkbox';
-    c.checked = !!checked;
-    c.addEventListener('change', function () { onChange(c.checked); });
-    l.appendChild(c);
-    l.appendChild(document.createTextNode(labelText));
-    return l;
-  }
+    r1.appendChild(SB.el('h2', null, 'Prompts'));
 
-  function render() {
-    if (!panel || !P()) return;
-    const p = P();
-    bodyEl.innerHTML = '';
-
-    /* --- target models --- */
-    const b1 = block('target models');
-    b1.appendChild(row('First frame', modelSelect('image')));
-    b1.appendChild(row('Video', modelSelect('video')));
-    b1.appendChild(SB.el('div', 'pp-note',
-      'Each shot keeps its prompts per model — switching models here never loses the old ones.'));
-    bodyEl.appendChild(b1);
-
-    /* --- generate --- */
-    const b2 = block('write prompts');
-    b2.appendChild(checkRow(' first-frame prompt', write.image, function (v) { write.image = v; }));
-    b2.appendChild(checkRow(' image→video prompt', write.video, function (v) { write.video = v; }));
-
-    const brand = SB.Brand.brandOf(p);
-    const bRow = checkRow(' apply house style', brand.enabled, function (v) {
-      p.settings.brand = p.settings.brand || {};
-      p.settings.brand.enabled = v;
-      SB.Store.touch();
+    const tabs = SB.el('div', 'lib-tabs');
+    const all = allRows();
+    const counts = {
+      all: all.length,
+      missing: all.filter(function (r) { return isMissing(r, im, vm); }).length,
+      stale: all.filter(function (r) { return isStale(r, im, vm); }).length
+    };
+    [['all', 'All', counts.all], ['missing', 'Missing', counts.missing],
+    ['stale', 'Stale', counts.stale], ['scene', 'This scene', null]].forEach(function (t) {
+      const b = SB.el('button', 'tb toggle' + (filter === t[0] ? ' on' : ''),
+        t[1] + (t[2] ? ' ' + t[2] : ''));
+      b.onclick = function () { filter = t[0]; render(); };
+      tabs.appendChild(b);
     });
-    bRow.title = 'Continuity, camera, tone and the no-gendered-language rule — Settings → Brand style';
-    b2.appendChild(bRow);
+    r1.appendChild(tabs);
+    r1.appendChild(SB.el('span', 'spacer'));
 
-    const scope = document.createElement('select');
-    [['project', 'Whole project'], ['scene', 'Selected scene'], ['shot', 'Selected shot']]
-      .forEach(function (o) {
-        const op = document.createElement('option');
-        op.value = o[0]; op.textContent = o[1];
-        scope.appendChild(op);
-      });
-    b2.appendChild(row('Scope', scope));
+    const x = SB.el('button', 'tb lib-x', '✕');
+    x.title = 'Close (Esc)';
+    x.onclick = close;
+    r1.appendChild(x);
 
-    const acts = SB.el('div', 'pp-actions');
-    const gen = SB.el('button', 'tb on', 'Generate');
-    acts.appendChild(gen);
-    b2.appendChild(acts);
+    r2.appendChild(modelSelect('image'));
+    r2.appendChild(modelSelect('video'));
 
-    const ready = SB.Providers.active().ready();
-    statusEl = SB.el('div', 'pp-status', ready ? '' : SB.Providers.active().notReady());
-    if (!ready) statusEl.classList.add('err');
-    b2.appendChild(statusEl);
-    bodyEl.appendChild(b2);
-
-    gen.addEventListener('click', function () {
-      const shots = scope.value === 'project' ? SB.Prompts.allShots()
-        : scope.value === 'scene' ? SB.Prompts.sceneShots(SB.app.selectedSceneId)
-          : (function () {
-            const f = SB.app.selectedShotId && SB.Model.findShot(p, SB.app.selectedShotId);
-            return f ? [f.shot] : [];
-          })();
-      if (!shots.length) { setStatus('Nothing in scope — select a scene or shot first.', true); return; }
-      run(shots, { image: write.image, video: write.video }, gen);
-    });
-
-    /* --- show on cards --- */
-    const b3 = block('show on cards');
-    b3.appendChild(checkRow(' first-frame prompt', p.settings.showImagePrompt, function (v) {
-      p.settings.showImagePrompt = v; SB.app.changed(true);
-    }));
-    b3.appendChild(checkRow(' image→video prompt', p.settings.showVideoPrompt, function (v) {
-      p.settings.showVideoPrompt = v; SB.app.changed(true);
-    }));
-    b3.appendChild(SB.el('div', 'pp-note',
-      'Off by default so cards stay compact. Generating turns the matching box on for you.'));
-    bodyEl.appendChild(b3);
-
-    /* --- engine ---
-     * The provider switch lives here as well as in Settings: choosing between
-     * the cloud model and the local one is a working decision (quota gone,
-     * offline, a draft not worth spending calls on), not a configuration one,
-     * and it should not cost a trip through a modal. */
-    const b4 = block('prompt writer');
-
-    const provRow = SB.el('div', 'pp-row prov-row');
-    provRow.appendChild(SB.el('label', null, 'Writer'));
-    const provWrap = SB.el('div', 'prov-pick');
+    /* The provider switch is a working decision — quota gone, offline, a draft
+       not worth spending calls on — so it stays one click away, not in a modal. */
+    const provWrap = SB.el('div', 'prov-pick pt-prov');
     SB.Providers.list().forEach(function (prov) {
       const b = SB.el('button', 'tb toggle' + (prov.id === SB.Providers.activeId() ? ' on' : ''),
         prov.id === 'gemini' ? 'Gemini' : 'Local');
       b.title = prov.label;
-      b.onclick = function () {
-        SB.Providers.setActive(prov.id);
-        SB.app.changed(true);
-        render();                       // the model picker below it changes too
-      };
+      b.onclick = function () { SB.Providers.setActive(prov.id); SB.app.changed(true); render(); };
       provWrap.appendChild(b);
     });
-    provRow.appendChild(provWrap);
-    b4.appendChild(provRow);
+    r2.appendChild(provWrap);
 
-    const activeProv = SB.Providers.active();
+    r2.appendChild(usageBit());
 
-    if (activeProv.id === 'gemini') {
-      const pick = SB.GeminiModels.picker(p.settings.geminiModel, function (id) {
-        p.settings.geminiModel = id || SB.GeminiModels.DEFAULT;
-        SB.Store.touch();
-        refreshUsage();
+    /* Whether the cards carry their prompt boxes as well. Off by default so the
+       board stays a board; this is the screen where you would change it. */
+    const onCards = SB.el('div', 'pt-oncards');
+    onCards.appendChild(SB.el('span', 'l', 'on cards'));
+    [['showImagePrompt', 'first frame'], ['showVideoPrompt', 'video']].forEach(function (k) {
+      const l = SB.el('label', 'pp-toggle');
+      const c = document.createElement('input');
+      c.type = 'checkbox';
+      c.checked = !!P().settings[k[0]];
+      c.dataset.setting = k[0];
+      c.addEventListener('change', function () {
+        P().settings[k[0]] = c.checked;
+        SB.app.changed(true);
       });
-      b4.appendChild(row('Model', pick.el));
+      l.appendChild(c);
+      l.appendChild(document.createTextNode(' ' + k[1]));
+      onCards.appendChild(l);
+    });
+    r2.appendChild(onCards);
 
-      const uRow = SB.el('div', 'pp-row');
-      uRow.appendChild(SB.el('label', null, 'Free calls'));
-      usageEl = SB.el('span', 'pp-usage');
-      uRow.appendChild(usageEl);
-      limitEl = document.createElement('input');
-      limitEl.type = 'number';
-      limitEl.min = '0';
-      limitEl.className = 'pp-limit';
-      limitEl.title = 'Your free-tier requests per day for this model (AI Studio shows the real number). Blank = just count.';
-      limitEl.placeholder = 'limit';
-      limitEl.addEventListener('change', function () {
-        SB.GeminiModels.setLimit(p.settings.geminiModel, parseInt(limitEl.value, 10) || 0);
-        refreshUsage();
-      });
-      uRow.appendChild(limitEl);
-      b4.appendChild(uRow);
-      b4.appendChild(SB.el('div', 'pp-note',
-        'Counted in this browser and reset at midnight. Google no longer publishes the free-tier ' +
-        'daily cap per model — set it from your AI Studio rate-limit page.'));
+    r2.appendChild(SB.el('span', 'spacer'));
 
-      b4.appendChild(SB.el('div', 'pp-note', SB.Store.getApiKey()
-        ? 'API key is set in this browser.' : 'No API key — add one in Settings → API.'));
-    } else {
-      /* Local: no quota to spend, so the counter is a plain tally and the
-       * things worth showing are where it points and what is loaded. */
+    statusEl = SB.el('span', 'pt-status');
+    r2.appendChild(statusEl);
+
+    const runnable = rows.filter(function (r) {
+      return !r.shot.noShot && (r.shot.description || '').trim();
+    });
+    const go = SB.el('button', 'tb on', '✦ Generate ' + runnable.length +
+      (filter === 'all' ? '' : ' shown'));
+    go.title = 'Write the missing prompts for every shot in this list. ' +
+      '“No shot” cards and empty descriptions are skipped.';
+    go.disabled = !runnable.length;
+    go.onclick = function () {
+      run(runnable.map(function (r) { return r.shot; }), { image: write.image, video: write.video }, go);
+    };
+    r2.appendChild(go);
+  }
+
+  /* the quota readout, kept because a run of thirty rows is where it matters */
+  function usageBit() {
+    const p = P();
+    const wrap = SB.el('span', 'pt-usage-wrap');
+    if (SB.Providers.activeId() !== 'gemini') {
+      usageEl = null; limitEl = null;
       const o = SB.Store.getOoba();
-      usageEl = null;
-      limitEl = null;
-      const mRow = SB.el('div', 'pp-row');
-      mRow.appendChild(SB.el('label', null, 'Model'));
-      mRow.appendChild(SB.el('span', 'pp-usage', o.model || 'whatever is loaded'));
-      b4.appendChild(mRow);
-
-      const sRow = SB.el('div', 'pp-row');
-      sRow.appendChild(SB.el('label', null, 'Server'));
-      sRow.appendChild(SB.el('span', 'pp-usage', SB.Providers.baseUrl()));
-      b4.appendChild(sRow);
-
-      const calls = SB.GeminiModels.count(SB.Providers.usageKey('ooba', o.model));
-      b4.appendChild(SB.el('div', 'pp-note',
-        'Runs on your machine — no quota, no key, nothing sent out. ' +
-        calls + ' request' + (calls === 1 ? '' : 's') + ' today.'));
-      b4.appendChild(SB.el('div', 'pp-note',
-        'Change the address or model in Settings → API.'));
+      wrap.appendChild(SB.el('span', 'pp-usage', o.model || 'local model'));
+      return wrap;
     }
-    bodyEl.appendChild(b4);
-
-    refreshUsage();
+    const pick = SB.GeminiModels.picker(p.settings.geminiModel, function (id) {
+      p.settings.geminiModel = id || SB.GeminiModels.DEFAULT;
+      SB.Store.touch();
+      refreshUsage();
+    });
+    pick.el.classList.add('pt-gm');
+    wrap.appendChild(pick.el);
+    usageEl = SB.el('span', 'pp-usage');
+    wrap.appendChild(usageEl);
+    limitEl = document.createElement('input');
+    limitEl.type = 'number';
+    limitEl.min = '0';
+    limitEl.className = 'pp-limit';
+    limitEl.title = 'Your free-tier requests per day for this model. Blank = just count.';
+    limitEl.placeholder = 'limit';
+    limitEl.addEventListener('change', function () {
+      SB.GeminiModels.setLimit(p.settings.geminiModel, parseInt(limitEl.value, 10) || 0);
+      refreshUsage();
+    });
+    wrap.appendChild(limitEl);
+    return wrap;
   }
 
   function refreshUsage() {
@@ -9832,22 +9971,261 @@ window.SB = window.SB || {};
     if (SB.Providers.activeId() !== 'gemini') return;   // local runs have no allowance
     const id = P().settings.geminiModel;
     usageEl.textContent = SB.GeminiModels.usageText(id);
-    const rem = SB.GeminiModels.remaining(id);
-    usageEl.classList.toggle('spent', rem === 0);
+    usageEl.classList.toggle('spent', SB.GeminiModels.remaining(id) === 0);
     if (limitEl && document.activeElement !== limitEl) {
       const lim = SB.GeminiModels.limit(id);
       limitEl.value = lim ? lim : '';
     }
   }
 
-  function setStatus(txt, isErr) {
-    if (!statusEl) return;
-    statusEl.textContent = txt;
-    statusEl.classList.toggle('err', !!isErr);
+  /* ---------------------------------------------------------------- table */
+
+  function render() {
+    if (!root || !P()) return;
+    const p = P();
+    const im = SB.Model.imageModel(p), vm = SB.Model.videoModel(p);
+    const rows = visible(im, vm);
+    head(im, vm, rows);
+    refreshUsage();
+
+    bodyEl.innerHTML = '';
+
+    const grid = SB.el('div', 'pt-grid');
+    const hdr = SB.el('div', 'pt-head-row');
+    ['Shot', 'Description', 'First frame' + (im ? ' · ' + im.name : ''),
+      'Video' + (vm ? ' · ' + vm.name : ''), 'Feed'].forEach(function (t) {
+        hdr.appendChild(SB.el('div', 'pt-h', t));
+      });
+    grid.appendChild(hdr);
+
+    if (!rows.length) {
+      grid.appendChild(SB.el('div', 'pt-empty',
+        filter === 'missing' ? 'Every shot in this board has both its prompts.'
+          : filter === 'stale' ? 'No prompt has fallen behind its cast.'
+            : filter === 'scene' ? 'That scene has no shots yet.'
+              : 'No shots yet.'));
+    }
+
+    let lastScene = null;
+    rows.forEach(function (r) {
+      if (r.scene.id !== lastScene) {
+        lastScene = r.scene.id;
+        const band = SB.el('div', 'pt-scene');
+        band.appendChild(SB.el('span', 'n', 'Scene ' + (r.si + 1)));
+        band.appendChild(SB.el('span', 't', r.scene.heading || '(untitled)'));
+        grid.appendChild(band);
+      }
+      grid.appendChild(rowEl(r, im, vm));
+    });
+    bodyEl.appendChild(grid);
+
+    const ready = SB.Providers.active().ready();
+    if (!ready) setStatus(SB.Providers.active().notReady(), true);
   }
 
+  function rowEl(r, im, vm) {
+    const sh = r.shot;
+    const row = SB.el('div', 'pt-row' + (sh.noShot ? ' noshot' : ''));
+    row.dataset.shot = sh.id;
+
+    /* ---- what it is ---- */
+    const c1 = SB.el('div', 'pt-cell pt-shot');
+    const line = SB.el('div', 'pt-code-line');
+    line.appendChild(SB.el('span', 'code', r.code));
+    if (sh.render && sh.render.serial) {
+      const ser = SB.el('span', 'code-serial', SB.Renders.pad(sh.render.serial));
+      ser.title = 'Full-size render: ' + SB.Renders.fileName(sh.render.serial, sh.render.ext);
+      line.appendChild(ser);
+    }
+    c1.appendChild(line);
+
+    const thumb = SB.el('div', 'pt-thumb');
+    if (sh.image) {
+      const im2 = document.createElement('img');
+      im2.src = SB.Blobs.src(P(), sh.image);
+      thumb.appendChild(im2);
+    } else {
+      thumb.classList.add('none');
+      thumb.textContent = 'not rendered';
+    }
+    thumb.title = 'Show this card on the board';
+    thumb.onclick = function () {
+      close();
+      SB.Board.select(sh.id);
+      const el = document.querySelector('.card[data-shot="' + sh.id + '"]');
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    };
+    c1.appendChild(thumb);
+    c1.appendChild(SB.el('div', 'pt-type', sh.type || (sh.noShot ? 'no shot' : '—')));
+    row.appendChild(c1);
+
+    /* ---- what it says ---- */
+    const c2 = SB.el('div', 'pt-cell');
+    const desc = SB.el('div', 'pt-desc');
+    desc.dataset.shot = sh.id;
+    SB.RefBox.attach(desc, {
+      get: function () { return sh.description || ''; },
+      set: function (t) {
+        sh.description = t;
+        SB.Store.touch();
+        SB.Board.refreshCastRows();
+        refreshFeedCell(sh.id);
+      },
+      placeholder: 'What we see. @ anything the model should be shown.',
+      ctx: { shot: sh, code: r.code }
+    });
+    c2.appendChild(desc);
+    row.appendChild(c2);
+
+    /* ---- the two prompts ---- */
+    row.appendChild(promptCell(sh, im, 'imagePrompt'));
+    row.appendChild(promptCell(sh, vm, 'videoPrompt'));
+
+    /* ---- what goes in with it ---- */
+    const c5 = SB.el('div', 'pt-cell pt-feed');
+    c5.dataset.feedCell = sh.id;
+    c5.appendChild(feedList(sh, r.code));
+    row.appendChild(c5);
+
+    return row;
+  }
+
+  function promptCell(sh, m, field) {
+    const cell = SB.el('div', 'pt-cell pt-prompt');
+    if (!m) {
+      cell.appendChild(SB.el('div', 'pt-none', 'no model chosen'));
+      return cell;
+    }
+    const pr = sh.prompts[m.id] || null;
+
+    const bar = SB.el('div', 'pt-bar');
+    const flagged = (pr && pr.flagged && pr.flagged[field]) || null;
+    if (flagged && flagged.length) {
+      const warn = SB.el('span', 'badge warn', 'gendered');
+      warn.title = 'This prompt still contains: ' + flagged.join(', ') +
+        '. Edit it or generate again.';
+      bar.appendChild(warn);
+    }
+    if (pr && pr[field] && SB.Personas.staleFor(P(), sh, pr.at)) {
+      const b = SB.el('span', 'badge warn stale', 'cast changed');
+      b.title = 'Something on this card was edited after this prompt was written.';
+      bar.appendChild(b);
+    }
+    bar.appendChild(SB.el('span', 'spacer'));
+    const gen = SB.el('button', 'mini primary', '✦ generate');
+    gen.disabled = !!sh.noShot || !(sh.description || '').trim();
+    if (gen.disabled) {
+      gen.title = sh.noShot ? 'A “no shot” card never generates'
+        : 'Write a description first — there is nothing for the writer to work from';
+    }
+    gen.onclick = function () {
+      gen.disabled = true;
+      gen.textContent = '…';
+      const roles = field === 'imagePrompt' ? { image: true } : { video: true };
+      SB.Prompts.generateFor([sh], { roles: roles }).then(function () {
+        render();
+      }).catch(function (e) {
+        gen.disabled = false;
+        gen.textContent = '✦ generate';
+        if (SB.apiBlocked(e, function () { gen.onclick(); })) return;
+        SB.toast(e.message || String(e), true);
+      });
+    };
+    bar.appendChild(gen);
+    cell.appendChild(bar);
+
+    const ta = document.createElement('textarea');
+    ta.className = 'pt-text';
+    ta.value = (pr && pr[field]) || '';
+    ta.placeholder = sh.noShot ? '(“no shot” — never generated)' : 'not generated yet';
+    ta.addEventListener('input', function () {
+      sh.prompts[m.id] = sh.prompts[m.id] || { imagePrompt: '', videoPrompt: '', modelName: m.name };
+      sh.prompts[m.id][field] = ta.value;
+      sh.prompts[m.id].modelName = m.name;
+      /* Editing by hand is the user restating the prompt as it should read now,
+         so it stops being behind the cast. */
+      sh.prompts[m.id].at = Date.now();
+      SB.Store.touch();
+      SB.Board.refreshPromptStale();
+    });
+    cell.appendChild(ta);
+
+    const foot = SB.el('div', 'pt-foot');
+    const copy = SB.el('button', 'mini', 'copy');
+    copy.onclick = function () {
+      navigator.clipboard.writeText(ta.value || '').then(function () {
+        SB.toast('Prompt copied');
+      }).catch(function () { SB.toast('Could not copy', true); });
+    };
+    foot.appendChild(copy);
+    cell.appendChild(foot);
+    return cell;
+  }
+
+  /* The references this row hands over, in order — the same feed the card
+   * shows, laid out down the column because there is room for it here. */
+  function feedList(sh, code) {
+    const wrap = SB.el('div', 'pt-feed-list');
+    const list = SB.Refs.feed(P(), sh);
+    if (!list.length) {
+      wrap.appendChild(SB.el('div', 'pt-none', 'no references'));
+      return wrap;
+    }
+    list.forEach(function (e) {
+      const it = SB.el('div', 'pt-fe' +
+        (e.kind === 'dead' ? ' dead' : '') +
+        (e.kind === 'shot' ? ' is-shot' : '') +
+        (e.images.length ? '' : ' empty') +
+        (e.mentioned ? '' : ' unmentioned'));
+      const n = e.numbers.length
+        ? (e.numbers.length === 1 ? e.numbers[0]
+          : e.numbers[0] + '–' + e.numbers[e.numbers.length - 1])
+        : '–';
+      it.appendChild(SB.el('span', 'feed-n', String(n)));
+      if (e.images.length) {
+        const t = SB.el('span', 'feed-thumb');
+        const im3 = document.createElement('img');
+        im3.src = SB.Blobs.src(P(), e.images[0]);
+        t.appendChild(im3);
+        it.appendChild(t);
+      } else {
+        it.appendChild(SB.el('span', 'feed-thumb none', '?'));
+      }
+      it.appendChild(SB.el('span', 'feed-name', e.label));
+      const sers = (e.renders || []).filter(Boolean)
+        .map(function (x) { return SB.Renders.pad(x.serial); });
+      if (sers.length) it.appendChild(SB.el('span', 'feed-ser', sers.join(' ')));
+      it.title = e.label + (e.why ? ' — ' + e.why : '') +
+        (sers.length ? '\nFull-size: ' + sers.join(', ') : '');
+      wrap.appendChild(it);
+    });
+
+    const imgs = SB.Refs.images(P(), sh);
+    if (imgs.length) {
+      const full = imgs.filter(function (e) { return !!e.render; }).length;
+      const b = SB.el('button', 'mini', 'copy image set');
+      b.title = imgs.length + ' images, numbered in feed order' +
+        (full ? ' — ' + full + ' full-size' : ' — all at board size');
+      b.onclick = function () { SB.Board.saveFeed(sh, imgs, code); };
+      wrap.appendChild(b);
+    }
+    return wrap;
+  }
+
+  function refreshFeedCell(id) {
+    if (!root) return;
+    const cell = bodyEl.querySelector('.pt-feed[data-feed-cell="' + id + '"]');
+    if (!cell) return;
+    const f = SB.Model.findShot(P(), id);
+    if (!f) return;
+    cell.innerHTML = '';
+    cell.appendChild(feedList(f.shot, f.code));
+  }
+
+  /* ------------------------------------------------------------------ run */
+
   function run(shots, roles, btn) {
-    if (!roles.image && !roles.video) { setStatus('Tick at least one prompt to write.', true); return; }
+    if (!roles.image && !roles.video) { setStatus('Nothing to write.', true); return; }
     btn.disabled = true;
     SB.Prompts.generateFor(shots, {
       roles: roles,
@@ -9856,16 +10234,12 @@ window.SB = window.SB || {};
         refreshUsage();
       }
     }).then(function (r) {
-      btn.disabled = false;
-      // reveal what was just written
-      const s = P().settings;
-      if (roles.image && r.done) s.showImagePrompt = true;
-      if (roles.video && r.done) s.showVideoPrompt = true;
-      SB.app.changed(true);
-      setStatus(r.failed
-        ? r.done + ' of ' + r.total + ' written · ' + r.failed + ' failed: ' + (r.error || 'unknown')
-        : 'done — ' + r.done + ' of ' + r.total,
-        !!r.failed);
+      const done = r.done, total = r.total, failed = r.failed, err = r.error;
+      render();                                   // rows, counts and filters all move
+      setStatus(failed
+        ? done + ' of ' + total + ' written · ' + failed + ' failed: ' + (err || 'unknown')
+        : 'done — ' + done + ' of ' + total,
+        !!failed);
     }).catch(function (e) {
       btn.disabled = false;
       if (SB.apiBlocked(e, function () { run(shots, roles, btn); })) {
@@ -9876,12 +10250,14 @@ window.SB = window.SB || {};
       setStatus(msg, true);
       /* "that model is not available to this key" is answerable on the spot:
        * ask the key what it can reach and put those in the picker. */
-      if (/\b404\b/.test(msg) && SB.Providers.activeId() === 'gemini') {
+      const notAvailable = msg.indexOf('404') >= 0 && SB.Providers.activeId() === 'gemini';
+      if (notAvailable) {
         setStatus(msg + ' — checking what your key can reach…', true);
         SB.GeminiModels.fetchAvailable().then(function (models) {
           render();
           setStatus('“' + P().settings.geminiModel + '” is not available to this key. ' +
-            'The writer list now shows the ' + models.length + ' models it can reach — pick one.', true);
+            'The writer list now shows the ' + models.length +
+            ' models it can reach — pick one.', true);
         }).catch(function () {
           setStatus(msg, true);
         });
@@ -9889,22 +10265,9 @@ window.SB = window.SB || {};
     });
   }
 
-  function open() {
-    panel.classList.remove('hidden');
-    document.getElementById('btnPrompts').classList.add('on');
-    render();
-  }
-  function close() {
-    panel.classList.add('hidden');
-    document.getElementById('btnPrompts').classList.remove('on');
-  }
-  function toggle() { panel.classList.contains('hidden') ? open() : close(); }
-  function isOpen() { return panel && !panel.classList.contains('hidden'); }
-  function refresh() { if (isOpen()) render(); }
-
   SB.PromptPanel = {
-    init: init, open: open, close: close, toggle: toggle, isOpen: isOpen,
-    refresh: refresh, run: run, refreshUsage: refreshUsage
+    init: init, open: open, close: close, toggle: toggle, isOpen: isOpen, refresh: refresh,
+    refreshUsage: refreshUsage
   };
 
 })(window.SB);

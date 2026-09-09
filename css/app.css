@@ -850,6 +850,99 @@ button.linkish{
 .feed-copy{margin-left:auto}
 .feed-fix{border-color:var(--accent2);color:var(--accent2)}
 
+/* ---------- the prompt table ---------- */
+.pt-body{flex:1;min-height:0;overflow:auto;padding:0 0 24px}
+.lib-head:has(.pt-hrow){flex-direction:column;align-items:stretch;gap:6px}
+.pt-hrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}
+.pt-hrow2{gap:6px}
+.pt-grid{display:flex;flex-direction:column;min-width:1080px}
+.pt-head-row,.pt-row{
+  display:grid;
+  grid-template-columns:118px minmax(200px,1.05fr) minmax(240px,1.35fr) minmax(240px,1.35fr) 210px;
+  gap:10px;align-items:start;
+}
+.pt-head-row{
+  position:sticky;top:0;z-index:2;background:var(--bg2);
+  border-bottom:1px solid var(--line2);padding:6px 12px;
+}
+.pt-h{
+  font-size:9px;text-transform:uppercase;letter-spacing:.7px;color:var(--fg-dim);font-weight:600;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.pt-row{padding:10px 12px;border-bottom:1px solid var(--line)}
+.pt-row:hover{background:var(--bg2)}
+.pt-row.noshot{opacity:.6}
+.pt-cell{min-width:0}
+.pt-scene{
+  position:sticky;top:26px;z-index:1;
+  display:flex;align-items:baseline;gap:8px;padding:8px 12px 4px;
+  background:var(--bg);border-bottom:1px solid var(--line);
+}
+.pt-scene .n{font-size:10px;text-transform:uppercase;letter-spacing:.7px;color:var(--accent);font-weight:700}
+.pt-scene .t{font-size:12px;color:var(--fg-dim)}
+.pt-empty{padding:22px 12px;color:var(--fg-dim);font-size:12px}
+
+.pt-shot{display:flex;flex-direction:column;gap:4px}
+.pt-code-line{display:flex;align-items:baseline;gap:4px}
+.pt-code-line .code{font-weight:700;color:var(--accent);font-size:12px}
+.pt-code-line .code-serial{font-size:9px;color:var(--fg-dim);font-variant-numeric:tabular-nums}
+.pt-thumb{
+  width:100%;aspect-ratio:16/9;background:var(--frame-bg);border-radius:4px;overflow:hidden;
+  cursor:pointer;display:flex;align-items:center;justify-content:center;
+}
+.pt-thumb img{width:100%;height:100%;object-fit:cover}
+.pt-thumb.none{font-size:9px;color:var(--fg-dim);border:1px dashed var(--line2)}
+.pt-thumb:hover{outline:1px solid var(--accent)}
+.pt-type{font-size:10px;color:var(--fg-dim)}
+
+/* the description, as a reference box so marks stay live */
+.pt-desc{
+  background:var(--input-bg);border:1px solid var(--line);border-radius:5px;
+  padding:5px 6px;font-size:12px;min-height:96px;max-height:220px;overflow:auto;
+  white-space:pre-wrap;overflow-wrap:break-word;
+}
+.pt-desc:focus{outline:none;border-color:var(--accent)}
+
+/* the two prompt boxes — the reason this screen exists */
+.pt-prompt{display:flex;flex-direction:column;gap:4px}
+.pt-bar{display:flex;align-items:center;gap:5px;min-height:18px}
+.pt-bar .spacer{flex:1}
+.pt-text{
+  width:100%;background:var(--input-bg);color:var(--fg);border:1px solid var(--line);
+  border-radius:5px;padding:6px 7px;font-size:12px;line-height:1.5;
+  min-height:120px;resize:vertical;
+}
+.pt-text:focus{outline:none;border-color:var(--accent)}
+.pt-foot{display:flex;gap:5px}
+.pt-none{font-size:10px;color:var(--fg-dim);font-style:italic;padding:2px 0}
+
+/* the feed, down the column */
+.pt-feed-list{display:flex;flex-direction:column;gap:3px}
+.pt-fe{
+  display:flex;align-items:center;gap:5px;font-size:10px;color:var(--fg-dim);
+  border:1px solid var(--line2);border-radius:9px;padding:1px 6px 1px 2px;
+}
+.pt-fe .feed-n{min-width:16px;text-align:center;color:var(--accent);font-weight:600}
+.pt-fe .feed-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pt-fe.is-shot{border-color:var(--scene);color:var(--scene)}
+.pt-fe.is-shot .feed-n{color:var(--scene)}
+.pt-fe.empty{border-color:var(--accent2);color:var(--accent2)}
+.pt-fe.empty .feed-n{color:var(--accent2)}
+.pt-fe.dead{border-style:dotted;border-color:var(--danger);color:var(--danger)}
+.pt-fe.unmentioned{border-style:dashed}
+
+.pt-status{font-size:11px;color:var(--fg-dim)}
+.pt-status.err{color:var(--danger)}
+.pt-model{max-width:150px}
+.pt-prov{flex:0 0 auto;display:flex;gap:2px;width:auto}
+/* the shared .prov-pick makes its buttons flex and ellipsis; here they are
+   two short words and should just be their own width */
+.pt-prov .tb{flex:0 0 auto;overflow:visible;text-overflow:clip}
+.pt-usage-wrap{display:flex;align-items:center;gap:5px}
+.pt-gm{max-width:150px}
+.pt-oncards{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--fg-dim)}
+.pt-oncards .l{text-transform:uppercase;letter-spacing:.5px;font-size:9px}
+
 /* ---------- @ mentions ---------- */
 .men-pop{
   position:fixed;z-index:80;background:var(--bg2);border:1px solid var(--line2);
