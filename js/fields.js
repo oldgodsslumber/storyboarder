@@ -71,9 +71,15 @@
       .replace(/[^A-Z0-9]+/g, '_').replace(/^_|_$/g, '') || 'FIELD';
   }
 
+  /* A field is a description too: it can hold marks, and nothing but prose
+   * ever reaches a model. */
+  function plainValue(p, shot, id) {
+    return SB.Refs.plain(p, value(shot, id));
+  }
+
   function placeholders(p, shot) {
     const out = {};
-    enabled(p).forEach(function (f) { out[placeholder(f)] = value(shot, f.id); });
+    enabled(p).forEach(function (f) { out[placeholder(f)] = plainValue(p, shot, f.id); });
     return out;
   }
 
@@ -82,7 +88,7 @@
     const filled = enabled(p).filter(function (f) { return value(shot, f.id).trim(); });
     if (!filled.length) return '';
     return filled.map(function (f) {
-      return f.label.toUpperCase() + ':\n' + value(shot, f.id).trim();
+      return f.label.toUpperCase() + ':\n' + plainValue(p, shot, f.id).trim();
     }).join('\n\n');
   }
 

@@ -361,12 +361,21 @@
       SB.Coverage.rewrite(P(), sc.id, '').then(function (next) {
         const f = SB.Model.findScene(P(), sc.id);
         if (!f) return;
-        f.scene.description = SB.Refs.linkAll(P(), next);   // it comes back as prose
-        descEl.value = next;
+        f.scene.description = SB.Refs.relink(P(), next, prev);   // it comes back as prose
+        /* the box is a reference box now: it is repainted, not assigned to */
+        const dropped = SB.Refs.lostIn(P(), f.scene.description, prev);
         ai.prev = prev;
         syncSceneAi(sc.id);
         syncSceneFields(sc.id);
-        busy(false, 'rewritten');
+        if (descEl.__refPaint) descEl.__refPaint(false);
+        busy(false, dropped.length
+          ? 'rewritten — ' + dropped.length + ' reference' + (dropped.length === 1 ? '' : 's') + ' dropped'
+          : 'rewritten', !!dropped.length);
+        if (dropped.length) {
+          SB.toast('The rewrite no longer mentions ' +
+            dropped.map(function (m) { return m.label; }).join(', ') +
+            ' — @ ' + (dropped.length === 1 ? 'it' : 'them') + ' again if the picture is still wanted', true);
+        }
         SB.app.changed(false);
       }).catch(function (e) { failed(e, bRw.onclick); });
     };
@@ -375,7 +384,7 @@
       const f = SB.Model.findScene(P(), sc.id);
       if (!f || ai.prev == null) return;
       f.scene.description = ai.prev;
-      descEl.value = ai.prev;
+      if (descEl.__refPaint) descEl.__refPaint(false);
       ai.prev = null;
       syncSceneAi(sc.id);
       syncSceneFields(sc.id);
@@ -793,7 +802,7 @@
        and want the next one OFF it — the reverse, tighter, a moment later. The
        new card arrives with this one already marked as a reference, so its
        frame is fed and the description only has to say what changes. */
-    const riff = SB.el('button', 'mini card-riff', '▸ riff');
+    const riff = SB.el('button', 'mini card-riff' + (sh.noShot ? ' hidden' : ''), '▸ riff');
     riff.title = 'New shot after this one, with this shot\'s frame as its reference. ' +
       'Then just say what changes — "reverse angle", "push in on their face".';
     riff.onclick = function (ev) {
@@ -1088,7 +1097,7 @@
     /* The nudge, in the shape the board already uses for a description that
        contradicts its cast: say it where the mistake is, and fix it in a click. */
     if (cast.length > 1 && !SB.Personas.arriving(P(), sh).length &&
-        SB.Personas.readsAsArrival(sh.description)) {
+        SB.Personas.readsAsArrival(SB.Refs.plain(P(), sh.description))) {
       const nudge = SB.el('button', 'mini cast-late', 'someone arrives?');
       nudge.title = 'This description reads as somebody turning up partway through, but ' +
         'everyone on this card is marked as being here when it opens — so they will all be ' +
@@ -1121,8 +1130,12 @@
     const row = SB.el('div', 'feed-row');
     row.dataset.feed = sh.id;
     const list = SB.Refs.feed(P(), sh);
+    /* A name in the text that is not a mark feeds nothing — the exact mistake
+       this feature exists to stop. It is most likely on a card with NO feed at
+       all, so it is worked out before the empty case, not after it. */
+    const loose = SB.Refs.unlinked(P(), sh.description);
 
-    if (!list.length) {
+    if (!list.length && !loose.length) {
       /* Only worth saying on a card that has something to say it about. */
       if ((sh.description || '').trim()) {
         const hint = SB.el('span', 'feed-empty', 'no references — @ anything the model should see');
@@ -1133,11 +1146,13 @@
       return row;
     }
 
-    row.appendChild(SB.el('span', 'feed-label', 'feed'));
+    if (list.length) row.appendChild(SB.el('span', 'feed-label', 'feed'));
 
     list.forEach(function (e) {
       const cell = SB.el('button', 'feed-cell' +
         (e.mentioned ? '' : ' unmentioned') +
+        (e.kind === 'dead' ? ' dead' : '') +
+        (e.kind === 'shot' ? ' is-shot' : '') +
         (e.images.length ? '' : ' empty'));
       const n = e.numbers.length
         ? (e.numbers.length === 1 ? e.numbers[0] : e.numbers[0] + '–' + e.numbers[e.numbers.length - 1])
@@ -1166,8 +1181,11 @@
     });
 
     const imgs = SB.Refs.images(P(), sh);
-    if (imgs.length > SB.Personas.IMAGE_ADVICE) {
-      const warn = SB.el('span', 'feed-warn', imgs.length + ' images');
+    /* The advice is about references being averaged together. A frame this shot
+       is derived from is not one of those — it is the picture being edited. */
+    const refCount = imgs.filter(function (e) { return e.kind !== 'shot'; }).length;
+    if (refCount > SB.Personas.IMAGE_ADVICE) {
+      const warn = SB.el('span', 'feed-warn', refCount + ' references');
       warn.title = 'Past ' + SB.Personas.IMAGE_ADVICE + ' references most image models start ' +
         'averaging them together instead of reading them. Drop a mark, or drop a frame off one ' +
         'of these subjects.';
@@ -1184,9 +1202,6 @@
       row.appendChild(copy);
     }
 
-    /* A name in the text that is not a mark feeds nothing — the exact mistake
-       this feature exists to stop, said where it happens. */
-    const loose = SB.Refs.unlinked(P(), sh.description);
     if (loose.length) {
       const fix = SB.el('button', 'mini feed-fix',
         loose.length === 1 ? 'link 1 name' : 'link ' + loose.length + ' names');
@@ -1198,8 +1213,16 @@
       fix.onclick = function (ev) {
         ev.stopPropagation();
         sh.description = SB.Refs.linkAll(P(), sh.description);
+        /* and cast them, as picking from the popover does — a marked subject
+           that is not cast was numbered in the manifest with no description
+           above it to say what it looks like. */
+        loose.forEach(function (x) {
+          if ((sh.personaIds || []).indexOf(x.id) < 0) {
+            sh.personaIds = (sh.personaIds || []).concat([x.id]);
+          }
+        });
         SB.app.changed(true);
-        SB.toast(loose.length + (loose.length === 1 ? ' name' : ' names') + ' linked');
+        SB.toast(loose.length + (loose.length === 1 ? ' name' : ' names') + ' linked and cast');
       };
       row.appendChild(fix);
     }
@@ -1223,8 +1246,10 @@
       if (!src) return;
       const a = document.createElement('a');
       a.href = src;
+      const ext = (/^data:image\/([a-z0-9+]+)/i.exec(src) || [])[1] || 'jpg';
       a.download = e.n + '_' + String(e.label || 'ref').replace(/[^\w-]+/g, '-') +
-        (e.role ? '_' + String(e.role).replace(/[^\w-]+/g, '-') : '') + '.jpg';
+        (e.role ? '_' + String(e.role).replace(/[^\w-]+/g, '-') : '') +
+        '.' + (ext === 'jpeg' ? 'jpg' : ext);
       document.body.appendChild(a);
       a.click();
       a.remove();

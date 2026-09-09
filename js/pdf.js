@@ -125,7 +125,7 @@
         out.push({
           code: SB.Model.code(si, sj),
           scene: sc.heading || '',
-          sceneDesc: sc.description || '',
+          sceneDesc: SB.Refs.plain(p, sc.description),
           sceneIdx: si,
           /* the first card of the scene that actually prints — a scene whose
            * opening shots are all "no shot" still gets its banner */

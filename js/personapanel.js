@@ -607,6 +607,8 @@
         SB.Personas.labelImage(per, i, lb.value);
         lb.title = lb.value || 'What this angle is: front, 3/4, wardrobe detail, wide…';
         SB.Store.touch();
+        /* the label is cited in the manifest and in the saved filename */
+        SB.Board.refreshCastRows();
       });
       cell.appendChild(lb);
       strip.appendChild(cell);
@@ -679,15 +681,12 @@
     const now = per ? (per.name || '') : '';
     if (!per || !was || !now || was === now) { pendingRename = null; return null; }
 
-    /* Lookarounds rather than \b: a name ending in ")" or "." has no word
-       boundary after it, so "Ops (lead)" was in the text and never matched. */
-    const re = new RegExp('(?<![\\w])' + was.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') +
-      '(?![\\w])', 'g');
+    /* Only where the old name sits in the text as PROSE. A mark resolves by
+       id, so it already says the new name and needs no repair — and matching
+       inside one would rewrite the token's own fallback. */
     const hits = [];
     SB.Model.eachShot(P(), function (sh) {
-      if ((sh.personaIds || []).indexOf(per.id) < 0) return;
-      re.lastIndex = 0;
-      if (re.test(sh.description || '')) hits.push(sh);
+      if (SB.Refs.proseHits(P(), sh.description, was).length) hits.push(sh);
     });
     if (!hits.length) { pendingRename = null; return null; }
 
@@ -699,8 +698,13 @@
       ' to “' + now + '”');
     b.onclick = function () {
       hits.forEach(function (sh) {
-        re.lastIndex = 0;
-        sh.description = (sh.description || '').replace(re, now);
+        /* back to front, so each rewrite leaves the earlier offsets alone */
+        const spots = SB.Refs.proseHits(P(), sh.description, was);
+        let text = sh.description || '';
+        for (let i = spots.length - 1; i >= 0; i--) {
+          text = text.slice(0, spots[i].from) + now + text.slice(spots[i].to);
+        }
+        sh.description = text;
       });
       pendingRename = null;
       SB.app.changed(true);

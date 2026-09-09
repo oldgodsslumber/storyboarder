@@ -262,12 +262,22 @@
    * the model — and that order does not restart per kind.
    */
   function block(p, shot, model, role) {
-    const cast = forShot(p, shot);
-    if (!cast.length) return '';
-
     /* image N -> which subject, assigned before anything is written so the
      * per-kind sections can cite numbers the mapping will agree with */
     const numbered = SB.Refs.images(p, shot);
+    /* Every subject in the FEED, in feed order — not just the cast. A subject
+     * can be marked without being cast (a mark written by hand, a name linked
+     * from the card), and describing only the cast left images numbered in the
+     * mapping with no entry above them, under a paragraph claiming the entries
+     * above were the complete and authoritative record. */
+    const cast = SB.Refs.feed(p, shot)
+      .filter(function (e) { return e.kind === 'subject'; })
+      .map(function (e) { return e.subject; });
+    /* A card can feed images with nobody cast on it — a shot mark from a riff,
+     * or a mark written by hand, neither of which casts anyone. Bailing on an
+     * empty cast then sent the files with no mapping at all, so the prompt said
+     * nothing about images the person was about to hand over. */
+    if (!cast.length && !numbered.length) return '';
     const rangeFor = function (per) {
       const mine = numbered.filter(function (e) { return e.id === per.id; })
         .map(function (e) { return e.n; });
@@ -297,13 +307,15 @@
       });
     });
 
+    const subjectImages = numbered.filter(function (e) { return e.kind === 'subject'; });
     if (numbered.length) {
-      /* An empty string is an answer: this model takes no reference wording, and
-       * the Settings box says so ("leave blank for a model that takes no
-       * references"). Only a missing field falls back to the default — treating
-       * blank as missing made that box impossible to obey. */
-      const tpl = (model && typeof model.referenceTemplate === 'string')
-        ? model.referenceTemplate : DEFAULT_REF_TEMPLATE;
+      /* The per-model wording is about recurring SUBJECTS ("the person in image
+       * N"). Sending it when the only image is another shot's whole frame told
+       * the model to treat a frame as a face. */
+      const tpl = subjectImages.length
+        ? ((model && typeof model.referenceTemplate === 'string')
+          ? model.referenceTemplate : DEFAULT_REF_TEMPLATE)
+        : '';
       const names = cast.filter(hasImage).map(function (x) { return x.name; }).join(', ');
       lines.push(tpl.replace(/\{\{N\}\}/g, function () { return 'N'; })
         .replace(/\{\{NAME\}\}/g, names));
@@ -336,20 +348,6 @@
      * a writer looks like a manifest of who is in the picture — so somebody the
      * description had walking in later was drawn standing in the first frame.
      * What it actually answers is "how do they look", never "who is here". */
-    /* A frame of another shot in the feed is a reference the cast block knows
-       nothing about — it is not a person, it is a picture of an earlier moment.
-       Saying what it is turns "reverse of 1C" into an instruction. */
-    const shots = SB.Refs.feed(p, shot).filter(function (e) {
-      return e.kind === 'shot' && e.images.length;
-    });
-    if (shots.length) {
-      lines.push('EARLIER FRAMES SUPPLIED: ' + shots.map(function (e) {
-        return 'image ' + (e.numbers[0] || '?') + ' is the rendered frame of shot ' + e.label;
-      }).join('; ') + '. Treat it as the source this frame is derived from: keep its place, its ' +
-        'light, its wardrobe and its staging, and change only what the description asks you to ' +
-        'change. It is not a separate moment to include in the frame.');
-    }
-
     const late = arriving(p, shot);
     if (role === 'image' || role === 'both') {
       const who = role === 'both' ? 'In the FIRST-FRAME PROMPT, only' : 'Only';
@@ -371,6 +369,34 @@
         late.map(function (x) { return x.name || 'unnamed'; }).join(', ') +
         ' — they enter after the first frame, so their arrival is movement this prompt covers.');
     }
+    /* Last, because it overrides what everything above it says.
+     *
+     * A frame of another shot is not a reference to a face — it is the picture
+     * this one is derived FROM, and the prompt has to come out as an edit of
+     * it. Told merely how to "treat" the image, the writer ignored image 1
+     * entirely and rebuilt the room from scratch, which is the one thing the
+     * source frame exists to prevent. So this is a constraint on the OUTPUT,
+     * and it says which instructions above it cancels. */
+    const shots = SB.Refs.feed(p, shot).filter(function (e) {
+      return e.kind === 'shot' && e.images.length;
+    });
+    if (shots.length && (role === 'image' || role === 'both')) {
+      const which = shots.map(function (e) {
+        return 'image ' + (e.numbers[0] || '?') + ' is the whole rendered frame of shot ' + e.label;
+      }).join('; ');
+      lines.push('THE SOURCE FRAME — READ THIS LAST, IT OVERRIDES THE ABOVE');
+      lines.push(which + '. It is not a subject and not a face: it is the frame this one is ' +
+        'derived from.');
+      lines.push('The prompt you write is an EDIT of that frame, not a fresh description of a ' +
+        'scene. Open it by naming the image — "Starting from image ' +
+        (shots[0].numbers[0] || 1) + ', …" — then state ONLY what changes: the camera, the ' +
+        'framing, the moment. Do NOT re-describe the place, the light, the lens, the grade or ' +
+        'the wardrobe, and do not re-establish the setting: all of it is inherited from that ' +
+        'frame unchanged, and describing it again is what makes the edit come back as a ' +
+        'different shot. Any instruction above to describe the setting, the lighting or the ' +
+        'lens does not apply to what is inherited.');
+    }
+
     return lines.join('\n');
   }
 

@@ -50,7 +50,9 @@
   /* An @ only opens the popover at the start of a word — mid-word it is an
    * email address or a handle somebody is quoting, and stealing those
    * keystrokes would be worse than not offering the list at all. */
-  function boundary(ch) { return !ch || /[\s(\[\-—"'“‘]/.test(ch); }
+  /* "}" is a boundary because that is where the caret lands after a pick —
+   * naming two subjects back to back is ordinary, and used to be dead. */
+  function boundary(ch) { return !ch || /[\s(\[\-—"'“‘}]/.test(ch); }
 
   function attach(el, opts) {
     if (!el) return;
@@ -293,6 +295,7 @@
     if (it.shot) {
       const el = host;
       const caret = pos(el);
+      if (caret == null) { hide(); return; }
       const next = SB.Refs.insert(val(el), at, caret, it.shot.id, it.label);
       hide();
       put(el, next.text, next.caret);
@@ -315,6 +318,7 @@
     const el = host, where = ctx;
     const name = per.name || 'unnamed';
     const caret = pos(el);
+    if (caret == null) { hide(); return; }
     /* A mark, not a name: it carries the id, so renaming the subject or
        renumbering the shot never has to touch a single description. */
     const next = SB.Refs.insert(val(el), at, caret, per.id, name);

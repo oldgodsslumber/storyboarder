@@ -103,6 +103,9 @@
         if (n.nodeType !== 1) continue;
         if (n.dataset && n.dataset.mark) {
           const len = n.dataset.mark.length;
+          /* A chip is one object: offset 0 is in front of it, its own length
+             is behind it, and there is nowhere in between. */
+          if (left <= 0) { range.setStartBefore(n); done = true; return; }
           if (left <= len) { range.setStartAfter(n); done = true; return; }
           left -= len;
           continue;

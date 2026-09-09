@@ -56,7 +56,10 @@
     }
     const per = SB.Personas.find(p, id);
     if (!per) return null;
-    return { kind: 'subject', id: id, subject: per, label: per.name || 'unnamed' };
+    /* The label goes into prompts and into the printed board, so it is cleaned
+     * on the way out: a subject named "Bad}Name" — or, deliberately, "@{x|y}" —
+     * must not be able to put mark syntax into a request. */
+    return { kind: 'subject', id: id, subject: per, label: clean(per.name) || 'unnamed' };
   }
 
   /* Every mark in a piece of text, in the order it appears. `label` is what a
@@ -109,13 +112,40 @@
    * because an unmentioned subject is one whose position in the feed nobody
    * chose.
    */
+  /* Everything on this card that can hold a mark, in the order it is read:
+   * the description, then the project's own boxes. A mark in a field used to
+   * be invisible here, which made its position in the feed a lie. */
+  function marked(p, shot) {
+    let out = parse(p, shot.description);
+    if (SB.Fields && SB.Fields.enabled) {
+      SB.Fields.enabled(p).forEach(function (f) {
+        out = out.concat(parse(p, SB.Fields.value(shot, f.id)));
+      });
+    }
+    return out;
+  }
+
   function feed(p, shot) {
     const out = [];
     const seen = {};
 
-    parse(p, shot.description).forEach(function (m) {
-      if (m.dead || seen[m.id]) return;
+    marked(p, shot).forEach(function (m) {
+      if (seen[m.id]) return;
       seen[m.id] = 1;
+      /* A mark whose target is gone feeds nothing, but it is still sitting in
+       * the text — so it belongs in the strip, saying so. Left out, the card
+       * claimed it had no references while the model was still being handed
+       * the words. */
+      if (m.dead) {
+        out.push({
+          kind: 'dead', id: m.id, label: m.label, mentioned: true, images: [],
+          why: '“' + m.fallback + '” is gone — this is plain text now'
+        });
+        return;
+      }
+      /* A swap can leave a card pointing at itself, and telling a model to
+       * derive a frame from that same frame is nonsense. */
+      if (m.id === shot.id) return;
       if (m.kind === 'shot') {
         const img = m.target.shot.image;
         out.push({
@@ -176,7 +206,12 @@
   function insert(text, at, until, id, name) {
     const s = String(text == null ? '' : text);
     const tok = mark(id, name);
-    return { text: s.slice(0, at) + tok + s.slice(until), caret: at + tok.length };
+    /* `until` is where the caret was. A caret that could not be read comes
+     * back null, which used to slice from the start and paste the whole
+     * description in again. */
+    const from = Math.max(0, Math.min(at | 0, s.length));
+    const to = (until == null || until < from) ? from : Math.min(until, s.length);
+    return { text: s.slice(0, from) + tok + s.slice(to), caret: from + tok.length };
   }
 
   /* Marks for names the writer typed but never linked.
@@ -190,7 +225,13 @@
     const s = String(text == null ? '' : text);
     if (!s.trim()) return [];
     const marks = parse(p, s);
+    /* Everything from an unterminated `@{` to the end is a token being typed,
+     * not prose — linking inside it nests one mark in another. */
+    let half = -1;
+    const open = s.lastIndexOf('@{');
+    if (open >= 0 && s.indexOf('}', open) < 0) half = open;
     const inside = function (i) {
+      if (half >= 0 && i >= half) return true;
       return marks.some(function (m) { return i >= m.from && i < m.to; });
     };
     const names = SB.Personas.all(p)
@@ -214,6 +255,26 @@
     return out.sort(function (x, y) { return x.from - y.from; });
   }
 
+  /* Where this exact text appears as prose rather than inside a mark. The
+   * rename offer needs this: a mark resolves by id and needs no repair, so
+   * only the loose copies are worth offering to rewrite. */
+  function proseHits(p, text, name) {
+    const s = String(text == null ? '' : text);
+    const n = String(name || '');
+    if (!s || !n) return [];
+    const marks = parse(p, s);
+    const re = new RegExp('(?<![\\w@{|])' + n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') +
+      '(?![\\w}|])', 'g');
+    const out = [];
+    let m;
+    while ((m = re.exec(s))) {
+      const at = m.index;
+      if (marks.some(function (k) { return at >= k.from && at < k.to; })) continue;
+      out.push({ from: at, to: at + m[0].length });
+    }
+    return out;
+  }
+
   /* Link every unlinked name in one pass, back to front so the offsets hold. */
   function linkAll(p, text) {
     const hits = unlinked(p, text);
@@ -224,9 +285,44 @@
     return s;
   }
 
+  /* Put back the marks a model rewrite flattened.
+   *
+   * The writer is handed prose and answers with prose, so every mark in the
+   * text it replaced is gone. Re-marking every name it happens to mention is
+   * wrong twice over: it links names the writer deliberately left plain —
+   * overwriting the "no mark, not shown" half of the rule — and it knows
+   * nothing about shot codes, so an earlier frame silently drops out of the
+   * feed. So only what WAS marked is marked again, matched on the label it
+   * carries now, first occurrence only, in the order the marks were written.
+   */
+  function relink(p, next, prev) {
+    let s = String(next == null ? '' : next);
+    const was = parse(p, prev);
+    if (!was.length) return s;
+    const done = {};
+    was.forEach(function (m) {
+      if (done[m.id] || m.dead) return;
+      const hits = proseHits(p, s, m.label);
+      if (!hits.length) return;
+      done[m.id] = 1;
+      const h = hits[0];
+      s = s.slice(0, h.from) + mark(m.id, m.label) + s.slice(h.to);
+    });
+    return s;
+  }
+
+  /* Which marks did not survive — what the rewrite dropped on the floor. */
+  function lostIn(p, next, prev) {
+    const after = {};
+    parse(p, next).forEach(function (m) { after[m.id] = 1; });
+    return parse(p, prev).filter(function (m) { return !m.dead && !after[m.id]; });
+  }
+
   SB.Refs = {
-    MARK: MARK, mark: mark, parse: parse, plain: plain, has: has, target: target,
-    feed: feed, images: images, insert: insert, unlinked: unlinked, linkAll: linkAll
+    mark: mark, parse: parse, plain: plain, target: target,
+    feed: feed, images: images, insert: insert,
+    unlinked: unlinked, linkAll: linkAll, proseHits: proseHits,
+    relink: relink, lostIn: lostIn
   };
 
 })(window.SB);

@@ -27,7 +27,7 @@
       CODE: f ? f.code : '',
       SHOT_TYPE: shot.type || 'unspecified',
       SCENE: f ? (f.scene.heading || '') : '',
-      SCENE_DESC: f ? (f.scene.description || '') : '',
+      SCENE_DESC: f ? SB.Refs.plain(P(), f.scene.description) : '',
       SCRIPT: w.doc.text.slice(w.from, w.to),
       /* marks resolve to the names they have now — the writer gets prose */
       DESCRIPTION: SB.Refs.plain(P(), shot.description),

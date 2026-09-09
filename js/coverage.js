@@ -259,7 +259,7 @@
       /* With a section claimed and no description written, the script IS the
        * brief — an empty DESCRIPTION block would just read as a blank order. */
       (sc.description || '').trim()
-        ? 'DESCRIPTION:\n' + sc.description.trim()
+        ? 'DESCRIPTION:\n' + SB.Refs.plain(p, sc.description).trim()
         : 'There is no scene description. Board directly from the script this scene covers, below.'
     ];
 
@@ -628,7 +628,11 @@
       const cast = SB.Personas.forShot(p, sh);
       const cut = stripCast(SB.Refs.plain(p, sh.description), cast);
       if (cut !== SB.Refs.plain(p, sh.description).trim() && !wardrobeTerms(cut).length) {
-        changes.push({ id: sh.id, from: sh.description, to: SB.Refs.linkAll(p, cut) });
+        /* relink, not linkAll: only what was marked before is marked again.
+           linkAll knew nothing about shot codes, so an earlier frame dropped
+           out of the feed, and it linked names the writer had deliberately
+           left as prose. */
+        changes.push({ id: sh.id, from: sh.description, to: SB.Refs.relink(p, cut, sh.description) });
         stripped++;
         return;
       }
@@ -681,7 +685,8 @@
           if (next) {
             changes.push({
               id: j.shot.id, from: j.shot.description,
-              to: SB.Refs.linkAll(p, deprompt(next))     // the rewrite came back as prose
+              /* it came back as prose — put back the marks it flattened */
+              to: SB.Refs.relink(p, deprompt(next), j.shot.description)
             });
           }
           else failed++;
@@ -715,7 +720,7 @@
     let f;
     try { f = sceneOf(p, sceneId); } catch (e) { return Promise.reject(e); }
     const sc = f.scene;
-    const draft = (sc.description || '').trim();
+    const draft = SB.Refs.plain(p, sc.description).trim();
     if (!draft) return Promise.reject(new Error('Nothing to rewrite yet — write a rough description first.'));
     const miss = needKey();
     if (miss) return Promise.reject(miss);

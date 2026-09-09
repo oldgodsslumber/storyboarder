@@ -458,10 +458,18 @@ have to say what changes:
 > Reverse of **1C** — camera behind **Colleague**, looking back at **Writer**.
 
 That one line is the relation, the feed and the prose at once. The feed becomes `1 ▸ 1C's
-frame, 2 ▸ Colleague, 3 ▸ Writer`, and the request tells the model image 1 is the frame this
-one is derived from — keep its place, its light, its wardrobe and its staging, change only
-what the description asks. If the source has not been rendered yet, the card says so instead
-of feeding nothing.
+frame, 2 ▸ Colleague, 3 ▸ Writer`.
+
+A derived shot's prompt is written as an **edit of that frame**, not a fresh description of a
+scene: it opens by naming the image, states only what changes — the camera, the framing, the
+moment — and inherits the place, the light, the lens, the grade and the wardrobe rather than
+rebuilding them in words. **The house style is not sent on those**, deliberately: it is a
+list of things to put *into* the words, and the source frame already carries every one of
+them, so restating it is what turns an edit into a re-render. The frame is the style
+reference now.
+
+If the source has not been rendered yet, the card says so instead of feeding nothing; if it
+has been deleted, the mark goes dotted red and the strip says the reference is gone.
 
 ### The scene organizer
 

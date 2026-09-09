@@ -726,13 +726,19 @@ console.log('\n— a shot is a reference image too: that is riffing —');
     'riffing on a shot nobody has rendered says so rather than feeding nothing');
 
   const blk = Per.block(p, b, null, 'image');
-  eq(/EARLIER FRAMES SUPPLIED/.test(blk), false,
+  eq(/THE SOURCE FRAME/.test(blk), false,
     'with no frame there is nothing to tell the model about');
   a.image = img('Z');
   const blk2 = Per.block(p, b, null, 'image');
-  eq(/EARLIER FRAMES SUPPLIED/.test(blk2), true, 'with one, the source is declared');
-  eq(/keep its place, its light, its wardrobe and its staging/.test(blk2), true,
-    'as the frame this one is derived from, not a second moment to draw');
+  eq(/THE SOURCE FRAME/.test(blk2), true, 'with one, the source is declared');
+  /* and declared as a constraint on the OUTPUT: told merely how to "treat" the
+     image, the writer ignored it and rebuilt the room from scratch */
+  eq(/The prompt you write is an EDIT of that frame/.test(blk2), true,
+    'as an edit of that frame, not a fresh description of a scene');
+  eq(/Do NOT re-describe the place, the light, the lens/.test(blk2), true,
+    'with the setting explicitly inherited rather than rewritten');
+  eq(blk2.indexOf('THE SOURCE FRAME') > blk2.indexOf('CURRENT and AUTHORITATIVE'), true,
+    'and last, because it overrides what is above it');
   eq(/image 1 = 2A/.test(blk2), true, 'and the mapping agrees with the feed');
   eq(/image 2 = Colleague \(front\)/.test(blk2), true, 'right down to the labels');
 }
@@ -796,6 +802,102 @@ console.log('\n— no mark ever reaches a model —');
     ' in a charcoal fleece and heavy boots, late thirties.';
   eq(!!SB.Coverage.carriesWardrobe(p, sh), true,
     'a description carrying a wardrobe is still caught through the marks');
+}
+
+console.log('\n— a derived frame is an edit of the frame it came from —');
+{
+  const R = SB.Refs, Per = SB.Personas, B = SB.Brand;
+  const p = SB.Model.newProject();
+  const sc = p.scenes[0];
+  const a = sc.shots[0];
+  const img = function (c) { return SB.Blobs.image(p, 'data:image/jpeg;base64,' + c.repeat(80), 4, 3); };
+  a.image = img('Z');
+  const b = SB.Model.addShot(p, sc.id, {});
+  b.description = 'Reverse of ' + R.mark(a.id, '1A') + '.';
+
+  const sys = B.systemFor(p, b, 'image');
+  eq(/THIS FRAME IS DERIVED FROM A SUPPLIED FRAME/.test(sys), true,
+    'the request says the still is an edit of the supplied frame');
+  /* the house style is a list of things to put INTO the words — the grade, the
+     grain, the lens — and the source frame already carries every one of them.
+     Sent anyway, the writer restates them and the edit comes back a re-render. */
+  eq(/HOUSE STYLE — every prompt/.test(sys), false,
+    'and the house style is not sent again: the frame already carries it');
+  eq(/THE HOUSE STYLE IS NOT REPEATED HERE/.test(sys), true, 'which is said, not silently done');
+  eq(/must not be restated/.test(sys), true,
+    'so the fold-in instruction is scoped to what actually changes');
+
+  /* a combined job still writes the video half, which is derived from nothing */
+  eq(/HOUSE STYLE — every prompt/.test(B.systemFor(p, b, 'both')), true,
+    'a combined image+video job keeps the house style');
+  eq(/THIS FRAME IS DERIVED/.test(B.systemFor(p, b, 'video')), false,
+    'and a video-only job is not derived from a still at all');
+
+  /* an ordinary shot is untouched by any of it */
+  eq(/THIS FRAME IS DERIVED/.test(B.systemFor(p, a, 'image')), false,
+    'a shot that riffs on nothing gets none of this');
+  eq(/HOUSE STYLE — every prompt/.test(B.systemFor(p, a, 'image')), true,
+    'and keeps its house style');
+}
+
+console.log('\n— what is fed is always what the prompt accounts for —');
+{
+  const R = SB.Refs, Per = SB.Personas;
+  const p = SB.Model.newProject();
+  const sc = p.scenes[0];
+  const a = sc.shots[0];
+  const img = function (c) { return SB.Blobs.image(p, 'data:image/jpeg;base64,' + c.repeat(80), 4, 3); };
+  a.image = img('Z');
+  const b = SB.Model.addShot(p, sc.id, {});
+  b.description = 'Reverse of ' + R.mark(a.id, '1A') + '.';
+
+  /* nobody is cast: the block used to bail, so four files went in against a
+     prompt that mentioned none of them */
+  eq(Per.forShot(p, b).length, 0, 'nothing is cast on this card');
+  const blk = Per.block(p, b, null, 'image');
+  eq(/image 1 = 1A/.test(blk), true, 'the mapping is written anyway, because an image is fed');
+  eq(/THE SOURCE FRAME/.test(blk), true, 'and the source is declared');
+  eq(/the person in image/.test(blk), false,
+    'without the per-subject wording, which is about faces, not whole frames');
+
+  /* a subject marked but never cast is numbered — so it has to be described */
+  const her = Per.add(p, { name: 'Colleague', description: 'Rust-orange jacket.' });
+  Per.addImage(her, img('B'), 'front');
+  b.description += ' ' + R.mark(her.id, 'Colleague') + ' turns.';
+  const blk2 = Per.block(p, b, null, 'image');
+  eq(/image 2 = Colleague \(front\)/.test(blk2), true, 'she is in the mapping');
+  eq(/Rust-orange jacket/.test(blk2), true,
+    'and described above it, though she was never cast');
+  eq(/the person in image/.test(blk2), true,
+    'and now there is a subject, the per-model wording comes back');
+
+  /* every numbered image has an entry, which is what the block claims */
+  const nums = R.images(p, b).map(function (e) { return e.n; });
+  eq(nums, [1, 2], 'the feed and the mapping are the same two images');
+}
+
+console.log('\n— a reference that feeds nothing still says so —');
+{
+  const R = SB.Refs;
+  const p = SB.Model.newProject();
+  const sc = p.scenes[0];
+  const a = sc.shots[0];
+  const b = SB.Model.addShot(p, sc.id, {});
+  b.description = 'Reverse of ' + R.mark(a.id, '1A') + '.';
+  SB.Model.deleteShot(p, a.id);
+
+  const f = R.feed(p, b);
+  eq(f.length, 1, 'a mark whose shot is gone is still in the feed');
+  eq(f[0].kind, 'dead', 'as a dead entry');
+  eq(f[0].images.length, 0, 'feeding nothing');
+  eq(R.images(p, b).length, 0, 'so it is in no image set');
+  eq(/is gone/.test(f[0].why), true, 'and saying why');
+
+  /* swapping two cards can leave one pointing at itself */
+  const c = SB.Model.addShot(p, sc.id, {});
+  c.description = 'Reverse of ' + R.mark(c.id, '1B') + '.';
+  eq(R.feed(p, c).length, 0,
+    'a card referencing its own frame is not fed to itself');
 }
 
 console.log('\n— gendered language detector —');
@@ -1438,9 +1540,10 @@ console.log('\n— cleaning: free where it can be, a request only where it must 
   eq(r2.stripped, 0, 'nothing could be stripped for free');
   eq(SB.Refs.plain(p, b.description), 'Courier leans in as the screen blinks.',
     'the rewrite lands on the card');
-  /* and the name it used comes back linked, so the card already says which
-     picture goes with it instead of looking finished and feeding none */
-  eq(SB.Refs.parse(p, b.description).length, 1, 'with the cast it named marked as a reference');
+  /* and it does NOT invent a mark: the writer had left that name as prose, and
+     a rewrite is not permission to start feeding a picture nobody asked for */
+  eq(SB.Refs.parse(p, b.description).length, 0,
+    'a name the writer left as prose stays prose through a rewrite');
 
   /* a card with nobody on it is never touched, whatever it says */
   const c = SB.Model.addShot(p, sc.id, {});

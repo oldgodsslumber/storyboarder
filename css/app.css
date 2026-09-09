@@ -794,7 +794,9 @@ button.linkish{
   text-underline-offset:2px;cursor:pointer;border-radius:2px;
 }
 .ref-link:hover{background:var(--hl1)}
+/* a shot chip is a whole frame, not a face — worth telling apart at a glance */
 .ref-link.ref-shot{color:var(--scene)}
+.ref-link.ref-shot::before{content:'▸';font-size:.85em;opacity:.8;margin-right:1px}
 /* whatever it pointed at is gone: it is plain text now, and says so */
 .ref-link.dead{color:var(--fg-dim);text-decoration-style:dotted;cursor:default}
 
@@ -833,6 +835,12 @@ button.linkish{
 .feed-cell.unmentioned .feed-n{color:var(--fg-dim)}
 /* @'d, but there is no picture behind it */
 .feed-cell.empty{border-color:var(--accent2);color:var(--accent2)}
+.feed-cell.is-shot{border-color:var(--scene);color:var(--scene)}
+.feed-cell.is-shot .feed-n{color:var(--scene)}
+.feed-cell.is-shot .feed-name::before{content:'▸';margin-right:2px;opacity:.8}
+/* whatever it pointed at is gone: it feeds nothing and is only text now */
+.feed-cell.dead{border-style:dotted;border-color:var(--danger);color:var(--danger)}
+.feed-cell.dead .feed-n{color:var(--danger)}
 .feed-cell.empty .feed-n{color:var(--accent2)}
 .feed-warn{font-size:10px;color:var(--accent2);white-space:nowrap}
 .feed-copy{margin-left:auto}

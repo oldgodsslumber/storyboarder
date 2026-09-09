@@ -82,6 +82,23 @@
     '- Everything you leave out is not lost: the image-to-video prompt covers the movement.'
   ].join('\n');
 
+  /* When a frame of another shot is supplied, the still is an EDIT of it. The
+   * template still says "describe subject, setting, composition, lens, lighting
+   * and mood", because a board carries its own copy of that wording and most of
+   * them were written before any of this existed — so the override travels in
+   * the system instruction, where it reaches every board. */
+  const DERIVED_RIDER = [
+    'THIS FRAME IS DERIVED FROM A SUPPLIED FRAME',
+    '- A rendered frame of an earlier shot is supplied with this job. The prompt you write is ' +
+    'an EDIT of that frame.',
+    '- Name it and start from it. State only what changes: the camera, the framing, the moment.',
+    '- Do not re-describe the place, the light, the lens, the grade or the wardrobe, and do not ' +
+    're-establish the setting. They are inherited from the frame exactly as they are. Any ' +
+    'instruction to describe setting, lighting, lens or mood applies only to what actually ' +
+    'changes.',
+    '- Rebuilding the scene in words is what makes an edit come back as a different shot.'
+  ].join('\n');
+
   const VIDEO_RIDER = [
     'MOTION',
     '- Wardrobe and location must not change during the shot.',
@@ -143,7 +160,7 @@
 
     lines.push('SCENE CONTEXT');
     lines.push('Scene ' + (f.sceneIdx + 1) + ': ' + (scene.heading || '(untitled)'));
-    if (scene.description) lines.push('Scene note: ' + scene.description);
+    if (scene.description) lines.push('Scene note: ' + SB.Refs.plain(p, scene.description));
     lines.push('This is shot ' + f.code + (pos > 0 ? ' (beat ' + pos + ' of ' + beats.length + ')' : '') + '.');
 
     if (beats.length > 1) {
@@ -170,10 +187,33 @@
   function systemFor(p, shot, role) {
     const b = brandOf(p);
     const parts = [];
-    if (b.enabled) parts.push('HOUSE STYLE — every prompt you write must obey this.', '', b.text);
+    /* Is a frame of another shot being handed over? Then this still is an edit
+     * of it, which changes both what to say and what to leave unsaid. */
+    const derived = (role === 'image' || role === 'both') &&
+      SB.Refs.feed(p, shot).some(function (e) {
+        return e.kind === 'shot' && e.images.length;
+      });
+    /* On an image job derived from another shot's frame, the house style is
+     * NOT sent. It is a list of things to put into the words — the grade, the
+     * grain, the lens, the practicals — and the source frame already carries
+     * every one of them. Sent anyway, the writer dutifully restates them, and
+     * an edit instruction full of "50mm, f/2.8, muted grade" comes back as a
+     * re-render of the scene rather than a change to the picture. The frame is
+     * the style reference now. (A combined image+video job still gets it: the
+     * video half is not derived from anything.) */
+    const styleInherited = derived && role === 'image';
+    if (b.enabled && !styleInherited) {
+      parts.push('HOUSE STYLE — every prompt you write must obey this.', '', b.text);
+    } else if (b.enabled) {
+      parts.push('THE HOUSE STYLE IS NOT REPEATED HERE.', '',
+        'The supplied source frame was made under it and already carries the look — the grade, ' +
+        'the grain, the lighting and the lens. Putting any of it back into words is what turns ' +
+        'an edit into a re-render. Change what the description asks for; inherit the rest.');
+    }
     if (role === 'image' || role === 'both') {
       if (parts.length) parts.push('');
       parts.push(FIRST_FRAME_RIDER);
+      if (derived) parts.push('', DERIVED_RIDER);
     }
     if (role === 'video' || role === 'both') {
       if (parts.length) parts.push('');
@@ -185,8 +225,19 @@
       parts.push(seq);
     }
     if (!parts.length) return '';
-    parts.push('', 'Fold these requirements into the prompt itself as concrete description — ' +
-      'do not quote the rules back, do not add headings or commentary, and never use gendered language.');
+    /* The closing instruction is what puts the house style into the words. On a
+     * derived frame that is exactly wrong for the half being inherited: told to
+     * fold in the grade and the lighting, the writer restated the lens, the
+     * practicals and the grain — rebuilding in words what the source frame
+     * already carries. So there, the fold-in is scoped to what changes. */
+    parts.push('', derived
+      ? 'Fold these requirements into the prompt itself as concrete description, but ONLY where ' +
+        'they describe what this frame CHANGES. Everything inherited from the supplied source ' +
+        'frame — the place, the lighting, the lens, the grade, the wardrobe — is already in that ' +
+        'image and must not be restated. Do not quote the rules back, do not add headings or ' +
+        'commentary, and never use gendered language.'
+      : 'Fold these requirements into the prompt itself as concrete description — ' +
+        'do not quote the rules back, do not add headings or commentary, and never use gendered language.');
     return parts.join('\n');
   }
 
@@ -194,6 +245,7 @@
     DEFAULT: DEFAULT_BRAND,
     VIDEO_RIDER: VIDEO_RIDER,
     FIRST_FRAME_RIDER: FIRST_FRAME_RIDER,
+    DERIVED_RIDER: DERIVED_RIDER,
     brandOf: brandOf,
     systemFor: systemFor,
     sequenceBlock: sequenceBlock,

@@ -800,7 +800,9 @@ button.linkish{
   text-underline-offset:2px;cursor:pointer;border-radius:2px;
 }
 .ref-link:hover{background:var(--hl1)}
+/* a shot chip is a whole frame, not a face — worth telling apart at a glance */
 .ref-link.ref-shot{color:var(--scene)}
+.ref-link.ref-shot::before{content:'▸';font-size:.85em;opacity:.8;margin-right:1px}
 /* whatever it pointed at is gone: it is plain text now, and says so */
 .ref-link.dead{color:var(--fg-dim);text-decoration-style:dotted;cursor:default}
 
@@ -839,6 +841,12 @@ button.linkish{
 .feed-cell.unmentioned .feed-n{color:var(--fg-dim)}
 /* @'d, but there is no picture behind it */
 .feed-cell.empty{border-color:var(--accent2);color:var(--accent2)}
+.feed-cell.is-shot{border-color:var(--scene);color:var(--scene)}
+.feed-cell.is-shot .feed-n{color:var(--scene)}
+.feed-cell.is-shot .feed-name::before{content:'▸';margin-right:2px;opacity:.8}
+/* whatever it pointed at is gone: it feeds nothing and is only text now */
+.feed-cell.dead{border-style:dotted;border-color:var(--danger);color:var(--danger)}
+.feed-cell.dead .feed-n{color:var(--danger)}
 .feed-cell.empty .feed-n{color:var(--accent2)}
 .feed-warn{font-size:10px;color:var(--accent2);white-space:nowrap}
 .feed-copy{margin-left:auto}
@@ -957,7 +965,7 @@ body.comment-mode .frame{cursor:crosshair}
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-09-08 23:45 · 02c7447+";</script>
+<script>window.SB_BUILD = "2026-09-09 00:09 · cd44320+";</script>
 
 <div id="app">
 
@@ -2488,6 +2496,23 @@ window.SB = window.SB || {};
     '- Everything you leave out is not lost: the image-to-video prompt covers the movement.'
   ].join('\n');
 
+  /* When a frame of another shot is supplied, the still is an EDIT of it. The
+   * template still says "describe subject, setting, composition, lens, lighting
+   * and mood", because a board carries its own copy of that wording and most of
+   * them were written before any of this existed — so the override travels in
+   * the system instruction, where it reaches every board. */
+  const DERIVED_RIDER = [
+    'THIS FRAME IS DERIVED FROM A SUPPLIED FRAME',
+    '- A rendered frame of an earlier shot is supplied with this job. The prompt you write is ' +
+    'an EDIT of that frame.',
+    '- Name it and start from it. State only what changes: the camera, the framing, the moment.',
+    '- Do not re-describe the place, the light, the lens, the grade or the wardrobe, and do not ' +
+    're-establish the setting. They are inherited from the frame exactly as they are. Any ' +
+    'instruction to describe setting, lighting, lens or mood applies only to what actually ' +
+    'changes.',
+    '- Rebuilding the scene in words is what makes an edit come back as a different shot.'
+  ].join('\n');
+
   const VIDEO_RIDER = [
     'MOTION',
     '- Wardrobe and location must not change during the shot.',
@@ -2549,7 +2574,7 @@ window.SB = window.SB || {};
 
     lines.push('SCENE CONTEXT');
     lines.push('Scene ' + (f.sceneIdx + 1) + ': ' + (scene.heading || '(untitled)'));
-    if (scene.description) lines.push('Scene note: ' + scene.description);
+    if (scene.description) lines.push('Scene note: ' + SB.Refs.plain(p, scene.description));
     lines.push('This is shot ' + f.code + (pos > 0 ? ' (beat ' + pos + ' of ' + beats.length + ')' : '') + '.');
 
     if (beats.length > 1) {
@@ -2576,10 +2601,33 @@ window.SB = window.SB || {};
   function systemFor(p, shot, role) {
     const b = brandOf(p);
     const parts = [];
-    if (b.enabled) parts.push('HOUSE STYLE — every prompt you write must obey this.', '', b.text);
+    /* Is a frame of another shot being handed over? Then this still is an edit
+     * of it, which changes both what to say and what to leave unsaid. */
+    const derived = (role === 'image' || role === 'both') &&
+      SB.Refs.feed(p, shot).some(function (e) {
+        return e.kind === 'shot' && e.images.length;
+      });
+    /* On an image job derived from another shot's frame, the house style is
+     * NOT sent. It is a list of things to put into the words — the grade, the
+     * grain, the lens, the practicals — and the source frame already carries
+     * every one of them. Sent anyway, the writer dutifully restates them, and
+     * an edit instruction full of "50mm, f/2.8, muted grade" comes back as a
+     * re-render of the scene rather than a change to the picture. The frame is
+     * the style reference now. (A combined image+video job still gets it: the
+     * video half is not derived from anything.) */
+    const styleInherited = derived && role === 'image';
+    if (b.enabled && !styleInherited) {
+      parts.push('HOUSE STYLE — every prompt you write must obey this.', '', b.text);
+    } else if (b.enabled) {
+      parts.push('THE HOUSE STYLE IS NOT REPEATED HERE.', '',
+        'The supplied source frame was made under it and already carries the look — the grade, ' +
+        'the grain, the lighting and the lens. Putting any of it back into words is what turns ' +
+        'an edit into a re-render. Change what the description asks for; inherit the rest.');
+    }
     if (role === 'image' || role === 'both') {
       if (parts.length) parts.push('');
       parts.push(FIRST_FRAME_RIDER);
+      if (derived) parts.push('', DERIVED_RIDER);
     }
     if (role === 'video' || role === 'both') {
       if (parts.length) parts.push('');
@@ -2591,8 +2639,19 @@ window.SB = window.SB || {};
       parts.push(seq);
     }
     if (!parts.length) return '';
-    parts.push('', 'Fold these requirements into the prompt itself as concrete description — ' +
-      'do not quote the rules back, do not add headings or commentary, and never use gendered language.');
+    /* The closing instruction is what puts the house style into the words. On a
+     * derived frame that is exactly wrong for the half being inherited: told to
+     * fold in the grade and the lighting, the writer restated the lens, the
+     * practicals and the grain — rebuilding in words what the source frame
+     * already carries. So there, the fold-in is scoped to what changes. */
+    parts.push('', derived
+      ? 'Fold these requirements into the prompt itself as concrete description, but ONLY where ' +
+        'they describe what this frame CHANGES. Everything inherited from the supplied source ' +
+        'frame — the place, the lighting, the lens, the grade, the wardrobe — is already in that ' +
+        'image and must not be restated. Do not quote the rules back, do not add headings or ' +
+        'commentary, and never use gendered language.'
+      : 'Fold these requirements into the prompt itself as concrete description — ' +
+        'do not quote the rules back, do not add headings or commentary, and never use gendered language.');
     return parts.join('\n');
   }
 
@@ -2600,6 +2659,7 @@ window.SB = window.SB || {};
     DEFAULT: DEFAULT_BRAND,
     VIDEO_RIDER: VIDEO_RIDER,
     FIRST_FRAME_RIDER: FIRST_FRAME_RIDER,
+    DERIVED_RIDER: DERIVED_RIDER,
     brandOf: brandOf,
     systemFor: systemFor,
     sequenceBlock: sequenceBlock,
@@ -2669,7 +2729,10 @@ window.SB = window.SB || {};
     }
     const per = SB.Personas.find(p, id);
     if (!per) return null;
-    return { kind: 'subject', id: id, subject: per, label: per.name || 'unnamed' };
+    /* The label goes into prompts and into the printed board, so it is cleaned
+     * on the way out: a subject named "Bad}Name" — or, deliberately, "@{x|y}" —
+     * must not be able to put mark syntax into a request. */
+    return { kind: 'subject', id: id, subject: per, label: clean(per.name) || 'unnamed' };
   }
 
   /* Every mark in a piece of text, in the order it appears. `label` is what a
@@ -2722,13 +2785,40 @@ window.SB = window.SB || {};
    * because an unmentioned subject is one whose position in the feed nobody
    * chose.
    */
+  /* Everything on this card that can hold a mark, in the order it is read:
+   * the description, then the project's own boxes. A mark in a field used to
+   * be invisible here, which made its position in the feed a lie. */
+  function marked(p, shot) {
+    let out = parse(p, shot.description);
+    if (SB.Fields && SB.Fields.enabled) {
+      SB.Fields.enabled(p).forEach(function (f) {
+        out = out.concat(parse(p, SB.Fields.value(shot, f.id)));
+      });
+    }
+    return out;
+  }
+
   function feed(p, shot) {
     const out = [];
     const seen = {};
 
-    parse(p, shot.description).forEach(function (m) {
-      if (m.dead || seen[m.id]) return;
+    marked(p, shot).forEach(function (m) {
+      if (seen[m.id]) return;
       seen[m.id] = 1;
+      /* A mark whose target is gone feeds nothing, but it is still sitting in
+       * the text — so it belongs in the strip, saying so. Left out, the card
+       * claimed it had no references while the model was still being handed
+       * the words. */
+      if (m.dead) {
+        out.push({
+          kind: 'dead', id: m.id, label: m.label, mentioned: true, images: [],
+          why: '“' + m.fallback + '” is gone — this is plain text now'
+        });
+        return;
+      }
+      /* A swap can leave a card pointing at itself, and telling a model to
+       * derive a frame from that same frame is nonsense. */
+      if (m.id === shot.id) return;
       if (m.kind === 'shot') {
         const img = m.target.shot.image;
         out.push({
@@ -2789,7 +2879,12 @@ window.SB = window.SB || {};
   function insert(text, at, until, id, name) {
     const s = String(text == null ? '' : text);
     const tok = mark(id, name);
-    return { text: s.slice(0, at) + tok + s.slice(until), caret: at + tok.length };
+    /* `until` is where the caret was. A caret that could not be read comes
+     * back null, which used to slice from the start and paste the whole
+     * description in again. */
+    const from = Math.max(0, Math.min(at | 0, s.length));
+    const to = (until == null || until < from) ? from : Math.min(until, s.length);
+    return { text: s.slice(0, from) + tok + s.slice(to), caret: from + tok.length };
   }
 
   /* Marks for names the writer typed but never linked.
@@ -2803,7 +2898,13 @@ window.SB = window.SB || {};
     const s = String(text == null ? '' : text);
     if (!s.trim()) return [];
     const marks = parse(p, s);
+    /* Everything from an unterminated `@{` to the end is a token being typed,
+     * not prose — linking inside it nests one mark in another. */
+    let half = -1;
+    const open = s.lastIndexOf('@{');
+    if (open >= 0 && s.indexOf('}', open) < 0) half = open;
     const inside = function (i) {
+      if (half >= 0 && i >= half) return true;
       return marks.some(function (m) { return i >= m.from && i < m.to; });
     };
     const names = SB.Personas.all(p)
@@ -2827,6 +2928,26 @@ window.SB = window.SB || {};
     return out.sort(function (x, y) { return x.from - y.from; });
   }
 
+  /* Where this exact text appears as prose rather than inside a mark. The
+   * rename offer needs this: a mark resolves by id and needs no repair, so
+   * only the loose copies are worth offering to rewrite. */
+  function proseHits(p, text, name) {
+    const s = String(text == null ? '' : text);
+    const n = String(name || '');
+    if (!s || !n) return [];
+    const marks = parse(p, s);
+    const re = new RegExp('(?<![\\w@{|])' + n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') +
+      '(?![\\w}|])', 'g');
+    const out = [];
+    let m;
+    while ((m = re.exec(s))) {
+      const at = m.index;
+      if (marks.some(function (k) { return at >= k.from && at < k.to; })) continue;
+      out.push({ from: at, to: at + m[0].length });
+    }
+    return out;
+  }
+
   /* Link every unlinked name in one pass, back to front so the offsets hold. */
   function linkAll(p, text) {
     const hits = unlinked(p, text);
@@ -2837,9 +2958,44 @@ window.SB = window.SB || {};
     return s;
   }
 
+  /* Put back the marks a model rewrite flattened.
+   *
+   * The writer is handed prose and answers with prose, so every mark in the
+   * text it replaced is gone. Re-marking every name it happens to mention is
+   * wrong twice over: it links names the writer deliberately left plain —
+   * overwriting the "no mark, not shown" half of the rule — and it knows
+   * nothing about shot codes, so an earlier frame silently drops out of the
+   * feed. So only what WAS marked is marked again, matched on the label it
+   * carries now, first occurrence only, in the order the marks were written.
+   */
+  function relink(p, next, prev) {
+    let s = String(next == null ? '' : next);
+    const was = parse(p, prev);
+    if (!was.length) return s;
+    const done = {};
+    was.forEach(function (m) {
+      if (done[m.id] || m.dead) return;
+      const hits = proseHits(p, s, m.label);
+      if (!hits.length) return;
+      done[m.id] = 1;
+      const h = hits[0];
+      s = s.slice(0, h.from) + mark(m.id, m.label) + s.slice(h.to);
+    });
+    return s;
+  }
+
+  /* Which marks did not survive — what the rewrite dropped on the floor. */
+  function lostIn(p, next, prev) {
+    const after = {};
+    parse(p, next).forEach(function (m) { after[m.id] = 1; });
+    return parse(p, prev).filter(function (m) { return !m.dead && !after[m.id]; });
+  }
+
   SB.Refs = {
-    MARK: MARK, mark: mark, parse: parse, plain: plain, has: has, target: target,
-    feed: feed, images: images, insert: insert, unlinked: unlinked, linkAll: linkAll
+    mark: mark, parse: parse, plain: plain, target: target,
+    feed: feed, images: images, insert: insert,
+    unlinked: unlinked, linkAll: linkAll, proseHits: proseHits,
+    relink: relink, lostIn: lostIn
   };
 
 })(window.SB);
@@ -3111,12 +3267,22 @@ window.SB = window.SB || {};
    * the model — and that order does not restart per kind.
    */
   function block(p, shot, model, role) {
-    const cast = forShot(p, shot);
-    if (!cast.length) return '';
-
     /* image N -> which subject, assigned before anything is written so the
      * per-kind sections can cite numbers the mapping will agree with */
     const numbered = SB.Refs.images(p, shot);
+    /* Every subject in the FEED, in feed order — not just the cast. A subject
+     * can be marked without being cast (a mark written by hand, a name linked
+     * from the card), and describing only the cast left images numbered in the
+     * mapping with no entry above them, under a paragraph claiming the entries
+     * above were the complete and authoritative record. */
+    const cast = SB.Refs.feed(p, shot)
+      .filter(function (e) { return e.kind === 'subject'; })
+      .map(function (e) { return e.subject; });
+    /* A card can feed images with nobody cast on it — a shot mark from a riff,
+     * or a mark written by hand, neither of which casts anyone. Bailing on an
+     * empty cast then sent the files with no mapping at all, so the prompt said
+     * nothing about images the person was about to hand over. */
+    if (!cast.length && !numbered.length) return '';
     const rangeFor = function (per) {
       const mine = numbered.filter(function (e) { return e.id === per.id; })
         .map(function (e) { return e.n; });
@@ -3146,13 +3312,15 @@ window.SB = window.SB || {};
       });
     });
 
+    const subjectImages = numbered.filter(function (e) { return e.kind === 'subject'; });
     if (numbered.length) {
-      /* An empty string is an answer: this model takes no reference wording, and
-       * the Settings box says so ("leave blank for a model that takes no
-       * references"). Only a missing field falls back to the default — treating
-       * blank as missing made that box impossible to obey. */
-      const tpl = (model && typeof model.referenceTemplate === 'string')
-        ? model.referenceTemplate : DEFAULT_REF_TEMPLATE;
+      /* The per-model wording is about recurring SUBJECTS ("the person in image
+       * N"). Sending it when the only image is another shot's whole frame told
+       * the model to treat a frame as a face. */
+      const tpl = subjectImages.length
+        ? ((model && typeof model.referenceTemplate === 'string')
+          ? model.referenceTemplate : DEFAULT_REF_TEMPLATE)
+        : '';
       const names = cast.filter(hasImage).map(function (x) { return x.name; }).join(', ');
       lines.push(tpl.replace(/\{\{N\}\}/g, function () { return 'N'; })
         .replace(/\{\{NAME\}\}/g, names));
@@ -3185,20 +3353,6 @@ window.SB = window.SB || {};
      * a writer looks like a manifest of who is in the picture — so somebody the
      * description had walking in later was drawn standing in the first frame.
      * What it actually answers is "how do they look", never "who is here". */
-    /* A frame of another shot in the feed is a reference the cast block knows
-       nothing about — it is not a person, it is a picture of an earlier moment.
-       Saying what it is turns "reverse of 1C" into an instruction. */
-    const shots = SB.Refs.feed(p, shot).filter(function (e) {
-      return e.kind === 'shot' && e.images.length;
-    });
-    if (shots.length) {
-      lines.push('EARLIER FRAMES SUPPLIED: ' + shots.map(function (e) {
-        return 'image ' + (e.numbers[0] || '?') + ' is the rendered frame of shot ' + e.label;
-      }).join('; ') + '. Treat it as the source this frame is derived from: keep its place, its ' +
-        'light, its wardrobe and its staging, and change only what the description asks you to ' +
-        'change. It is not a separate moment to include in the frame.');
-    }
-
     const late = arriving(p, shot);
     if (role === 'image' || role === 'both') {
       const who = role === 'both' ? 'In the FIRST-FRAME PROMPT, only' : 'Only';
@@ -3220,6 +3374,34 @@ window.SB = window.SB || {};
         late.map(function (x) { return x.name || 'unnamed'; }).join(', ') +
         ' — they enter after the first frame, so their arrival is movement this prompt covers.');
     }
+    /* Last, because it overrides what everything above it says.
+     *
+     * A frame of another shot is not a reference to a face — it is the picture
+     * this one is derived FROM, and the prompt has to come out as an edit of
+     * it. Told merely how to "treat" the image, the writer ignored image 1
+     * entirely and rebuilt the room from scratch, which is the one thing the
+     * source frame exists to prevent. So this is a constraint on the OUTPUT,
+     * and it says which instructions above it cancels. */
+    const shots = SB.Refs.feed(p, shot).filter(function (e) {
+      return e.kind === 'shot' && e.images.length;
+    });
+    if (shots.length && (role === 'image' || role === 'both')) {
+      const which = shots.map(function (e) {
+        return 'image ' + (e.numbers[0] || '?') + ' is the whole rendered frame of shot ' + e.label;
+      }).join('; ');
+      lines.push('THE SOURCE FRAME — READ THIS LAST, IT OVERRIDES THE ABOVE');
+      lines.push(which + '. It is not a subject and not a face: it is the frame this one is ' +
+        'derived from.');
+      lines.push('The prompt you write is an EDIT of that frame, not a fresh description of a ' +
+        'scene. Open it by naming the image — "Starting from image ' +
+        (shots[0].numbers[0] || 1) + ', …" — then state ONLY what changes: the camera, the ' +
+        'framing, the moment. Do NOT re-describe the place, the light, the lens, the grade or ' +
+        'the wardrobe, and do not re-establish the setting: all of it is inherited from that ' +
+        'frame unchanged, and describing it again is what makes the edit come back as a ' +
+        'different shot. Any instruction above to describe the setting, the lighting or the ' +
+        'lens does not apply to what is inherited.');
+    }
+
     return lines.join('\n');
   }
 
@@ -3428,9 +3610,15 @@ window.SB = window.SB || {};
       .replace(/[^A-Z0-9]+/g, '_').replace(/^_|_$/g, '') || 'FIELD';
   }
 
+  /* A field is a description too: it can hold marks, and nothing but prose
+   * ever reaches a model. */
+  function plainValue(p, shot, id) {
+    return SB.Refs.plain(p, value(shot, id));
+  }
+
   function placeholders(p, shot) {
     const out = {};
-    enabled(p).forEach(function (f) { out[placeholder(f)] = value(shot, f.id); });
+    enabled(p).forEach(function (f) { out[placeholder(f)] = plainValue(p, shot, f.id); });
     return out;
   }
 
@@ -3439,7 +3627,7 @@ window.SB = window.SB || {};
     const filled = enabled(p).filter(function (f) { return value(shot, f.id).trim(); });
     if (!filled.length) return '';
     return filled.map(function (f) {
-      return f.label.toUpperCase() + ':\n' + value(shot, f.id).trim();
+      return f.label.toUpperCase() + ':\n' + plainValue(p, shot, f.id).trim();
     }).join('\n\n');
   }
 
@@ -5582,6 +5770,9 @@ window.SB = window.SB || {};
         if (n.nodeType !== 1) continue;
         if (n.dataset && n.dataset.mark) {
           const len = n.dataset.mark.length;
+          /* A chip is one object: offset 0 is in front of it, its own length
+             is behind it, and there is nowhere in between. */
+          if (left <= 0) { range.setStartBefore(n); done = true; return; }
           if (left <= len) { range.setStartAfter(n); done = true; return; }
           left -= len;
           continue;
@@ -6047,12 +6238,21 @@ window.SB = window.SB || {};
       SB.Coverage.rewrite(P(), sc.id, '').then(function (next) {
         const f = SB.Model.findScene(P(), sc.id);
         if (!f) return;
-        f.scene.description = SB.Refs.linkAll(P(), next);   // it comes back as prose
-        descEl.value = next;
+        f.scene.description = SB.Refs.relink(P(), next, prev);   // it comes back as prose
+        /* the box is a reference box now: it is repainted, not assigned to */
+        const dropped = SB.Refs.lostIn(P(), f.scene.description, prev);
         ai.prev = prev;
         syncSceneAi(sc.id);
         syncSceneFields(sc.id);
-        busy(false, 'rewritten');
+        if (descEl.__refPaint) descEl.__refPaint(false);
+        busy(false, dropped.length
+          ? 'rewritten — ' + dropped.length + ' reference' + (dropped.length === 1 ? '' : 's') + ' dropped'
+          : 'rewritten', !!dropped.length);
+        if (dropped.length) {
+          SB.toast('The rewrite no longer mentions ' +
+            dropped.map(function (m) { return m.label; }).join(', ') +
+            ' — @ ' + (dropped.length === 1 ? 'it' : 'them') + ' again if the picture is still wanted', true);
+        }
         SB.app.changed(false);
       }).catch(function (e) { failed(e, bRw.onclick); });
     };
@@ -6061,7 +6261,7 @@ window.SB = window.SB || {};
       const f = SB.Model.findScene(P(), sc.id);
       if (!f || ai.prev == null) return;
       f.scene.description = ai.prev;
-      descEl.value = ai.prev;
+      if (descEl.__refPaint) descEl.__refPaint(false);
       ai.prev = null;
       syncSceneAi(sc.id);
       syncSceneFields(sc.id);
@@ -6479,7 +6679,7 @@ window.SB = window.SB || {};
        and want the next one OFF it — the reverse, tighter, a moment later. The
        new card arrives with this one already marked as a reference, so its
        frame is fed and the description only has to say what changes. */
-    const riff = SB.el('button', 'mini card-riff', '▸ riff');
+    const riff = SB.el('button', 'mini card-riff' + (sh.noShot ? ' hidden' : ''), '▸ riff');
     riff.title = 'New shot after this one, with this shot\'s frame as its reference. ' +
       'Then just say what changes — "reverse angle", "push in on their face".';
     riff.onclick = function (ev) {
@@ -6774,7 +6974,7 @@ window.SB = window.SB || {};
     /* The nudge, in the shape the board already uses for a description that
        contradicts its cast: say it where the mistake is, and fix it in a click. */
     if (cast.length > 1 && !SB.Personas.arriving(P(), sh).length &&
-        SB.Personas.readsAsArrival(sh.description)) {
+        SB.Personas.readsAsArrival(SB.Refs.plain(P(), sh.description))) {
       const nudge = SB.el('button', 'mini cast-late', 'someone arrives?');
       nudge.title = 'This description reads as somebody turning up partway through, but ' +
         'everyone on this card is marked as being here when it opens — so they will all be ' +
@@ -6807,8 +7007,12 @@ window.SB = window.SB || {};
     const row = SB.el('div', 'feed-row');
     row.dataset.feed = sh.id;
     const list = SB.Refs.feed(P(), sh);
+    /* A name in the text that is not a mark feeds nothing — the exact mistake
+       this feature exists to stop. It is most likely on a card with NO feed at
+       all, so it is worked out before the empty case, not after it. */
+    const loose = SB.Refs.unlinked(P(), sh.description);
 
-    if (!list.length) {
+    if (!list.length && !loose.length) {
       /* Only worth saying on a card that has something to say it about. */
       if ((sh.description || '').trim()) {
         const hint = SB.el('span', 'feed-empty', 'no references — @ anything the model should see');
@@ -6819,11 +7023,13 @@ window.SB = window.SB || {};
       return row;
     }
 
-    row.appendChild(SB.el('span', 'feed-label', 'feed'));
+    if (list.length) row.appendChild(SB.el('span', 'feed-label', 'feed'));
 
     list.forEach(function (e) {
       const cell = SB.el('button', 'feed-cell' +
         (e.mentioned ? '' : ' unmentioned') +
+        (e.kind === 'dead' ? ' dead' : '') +
+        (e.kind === 'shot' ? ' is-shot' : '') +
         (e.images.length ? '' : ' empty'));
       const n = e.numbers.length
         ? (e.numbers.length === 1 ? e.numbers[0] : e.numbers[0] + '–' + e.numbers[e.numbers.length - 1])
@@ -6852,8 +7058,11 @@ window.SB = window.SB || {};
     });
 
     const imgs = SB.Refs.images(P(), sh);
-    if (imgs.length > SB.Personas.IMAGE_ADVICE) {
-      const warn = SB.el('span', 'feed-warn', imgs.length + ' images');
+    /* The advice is about references being averaged together. A frame this shot
+       is derived from is not one of those — it is the picture being edited. */
+    const refCount = imgs.filter(function (e) { return e.kind !== 'shot'; }).length;
+    if (refCount > SB.Personas.IMAGE_ADVICE) {
+      const warn = SB.el('span', 'feed-warn', refCount + ' references');
       warn.title = 'Past ' + SB.Personas.IMAGE_ADVICE + ' references most image models start ' +
         'averaging them together instead of reading them. Drop a mark, or drop a frame off one ' +
         'of these subjects.';
@@ -6870,9 +7079,6 @@ window.SB = window.SB || {};
       row.appendChild(copy);
     }
 
-    /* A name in the text that is not a mark feeds nothing — the exact mistake
-       this feature exists to stop, said where it happens. */
-    const loose = SB.Refs.unlinked(P(), sh.description);
     if (loose.length) {
       const fix = SB.el('button', 'mini feed-fix',
         loose.length === 1 ? 'link 1 name' : 'link ' + loose.length + ' names');
@@ -6884,8 +7090,16 @@ window.SB = window.SB || {};
       fix.onclick = function (ev) {
         ev.stopPropagation();
         sh.description = SB.Refs.linkAll(P(), sh.description);
+        /* and cast them, as picking from the popover does — a marked subject
+           that is not cast was numbered in the manifest with no description
+           above it to say what it looks like. */
+        loose.forEach(function (x) {
+          if ((sh.personaIds || []).indexOf(x.id) < 0) {
+            sh.personaIds = (sh.personaIds || []).concat([x.id]);
+          }
+        });
         SB.app.changed(true);
-        SB.toast(loose.length + (loose.length === 1 ? ' name' : ' names') + ' linked');
+        SB.toast(loose.length + (loose.length === 1 ? ' name' : ' names') + ' linked and cast');
       };
       row.appendChild(fix);
     }
@@ -6909,8 +7123,10 @@ window.SB = window.SB || {};
       if (!src) return;
       const a = document.createElement('a');
       a.href = src;
+      const ext = (/^data:image\/([a-z0-9+]+)/i.exec(src) || [])[1] || 'jpg';
       a.download = e.n + '_' + String(e.label || 'ref').replace(/[^\w-]+/g, '-') +
-        (e.role ? '_' + String(e.role).replace(/[^\w-]+/g, '-') : '') + '.jpg';
+        (e.role ? '_' + String(e.role).replace(/[^\w-]+/g, '-') : '') +
+        '.' + (ext === 'jpeg' ? 'jpg' : ext);
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -7887,7 +8103,7 @@ window.SB = window.SB || {};
       CODE: f ? f.code : '',
       SHOT_TYPE: shot.type || 'unspecified',
       SCENE: f ? (f.scene.heading || '') : '',
-      SCENE_DESC: f ? (f.scene.description || '') : '',
+      SCENE_DESC: f ? SB.Refs.plain(P(), f.scene.description) : '',
       SCRIPT: w.doc.text.slice(w.from, w.to),
       /* marks resolve to the names they have now — the writer gets prose */
       DESCRIPTION: SB.Refs.plain(P(), shot.description),
@@ -8480,7 +8696,7 @@ window.SB = window.SB || {};
       /* With a section claimed and no description written, the script IS the
        * brief — an empty DESCRIPTION block would just read as a blank order. */
       (sc.description || '').trim()
-        ? 'DESCRIPTION:\n' + sc.description.trim()
+        ? 'DESCRIPTION:\n' + SB.Refs.plain(p, sc.description).trim()
         : 'There is no scene description. Board directly from the script this scene covers, below.'
     ];
 
@@ -8849,7 +9065,11 @@ window.SB = window.SB || {};
       const cast = SB.Personas.forShot(p, sh);
       const cut = stripCast(SB.Refs.plain(p, sh.description), cast);
       if (cut !== SB.Refs.plain(p, sh.description).trim() && !wardrobeTerms(cut).length) {
-        changes.push({ id: sh.id, from: sh.description, to: SB.Refs.linkAll(p, cut) });
+        /* relink, not linkAll: only what was marked before is marked again.
+           linkAll knew nothing about shot codes, so an earlier frame dropped
+           out of the feed, and it linked names the writer had deliberately
+           left as prose. */
+        changes.push({ id: sh.id, from: sh.description, to: SB.Refs.relink(p, cut, sh.description) });
         stripped++;
         return;
       }
@@ -8902,7 +9122,8 @@ window.SB = window.SB || {};
           if (next) {
             changes.push({
               id: j.shot.id, from: j.shot.description,
-              to: SB.Refs.linkAll(p, deprompt(next))     // the rewrite came back as prose
+              /* it came back as prose — put back the marks it flattened */
+              to: SB.Refs.relink(p, deprompt(next), j.shot.description)
             });
           }
           else failed++;
@@ -8936,7 +9157,7 @@ window.SB = window.SB || {};
     let f;
     try { f = sceneOf(p, sceneId); } catch (e) { return Promise.reject(e); }
     const sc = f.scene;
-    const draft = (sc.description || '').trim();
+    const draft = SB.Refs.plain(p, sc.description).trim();
     if (!draft) return Promise.reject(new Error('Nothing to rewrite yet — write a rough description first.'));
     const miss = needKey();
     if (miss) return Promise.reject(miss);
@@ -9904,6 +10125,8 @@ window.SB = window.SB || {};
         SB.Personas.labelImage(per, i, lb.value);
         lb.title = lb.value || 'What this angle is: front, 3/4, wardrobe detail, wide…';
         SB.Store.touch();
+        /* the label is cited in the manifest and in the saved filename */
+        SB.Board.refreshCastRows();
       });
       cell.appendChild(lb);
       strip.appendChild(cell);
@@ -9976,15 +10199,12 @@ window.SB = window.SB || {};
     const now = per ? (per.name || '') : '';
     if (!per || !was || !now || was === now) { pendingRename = null; return null; }
 
-    /* Lookarounds rather than \b: a name ending in ")" or "." has no word
-       boundary after it, so "Ops (lead)" was in the text and never matched. */
-    const re = new RegExp('(?<![\\w])' + was.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') +
-      '(?![\\w])', 'g');
+    /* Only where the old name sits in the text as PROSE. A mark resolves by
+       id, so it already says the new name and needs no repair — and matching
+       inside one would rewrite the token's own fallback. */
     const hits = [];
     SB.Model.eachShot(P(), function (sh) {
-      if ((sh.personaIds || []).indexOf(per.id) < 0) return;
-      re.lastIndex = 0;
-      if (re.test(sh.description || '')) hits.push(sh);
+      if (SB.Refs.proseHits(P(), sh.description, was).length) hits.push(sh);
     });
     if (!hits.length) { pendingRename = null; return null; }
 
@@ -9996,8 +10216,13 @@ window.SB = window.SB || {};
       ' to “' + now + '”');
     b.onclick = function () {
       hits.forEach(function (sh) {
-        re.lastIndex = 0;
-        sh.description = (sh.description || '').replace(re, now);
+        /* back to front, so each rewrite leaves the earlier offsets alone */
+        const spots = SB.Refs.proseHits(P(), sh.description, was);
+        let text = sh.description || '';
+        for (let i = spots.length - 1; i >= 0; i--) {
+          text = text.slice(0, spots[i].from) + now + text.slice(spots[i].to);
+        }
+        sh.description = text;
       });
       pendingRename = null;
       SB.app.changed(true);
@@ -10271,7 +10496,9 @@ window.SB = window.SB || {};
   /* An @ only opens the popover at the start of a word — mid-word it is an
    * email address or a handle somebody is quoting, and stealing those
    * keystrokes would be worse than not offering the list at all. */
-  function boundary(ch) { return !ch || /[\s(\[\-—"'“‘]/.test(ch); }
+  /* "}" is a boundary because that is where the caret lands after a pick —
+   * naming two subjects back to back is ordinary, and used to be dead. */
+  function boundary(ch) { return !ch || /[\s(\[\-—"'“‘}]/.test(ch); }
 
   function attach(el, opts) {
     if (!el) return;
@@ -10514,6 +10741,7 @@ window.SB = window.SB || {};
     if (it.shot) {
       const el = host;
       const caret = pos(el);
+      if (caret == null) { hide(); return; }
       const next = SB.Refs.insert(val(el), at, caret, it.shot.id, it.label);
       hide();
       put(el, next.text, next.caret);
@@ -10536,6 +10764,7 @@ window.SB = window.SB || {};
     const el = host, where = ctx;
     const name = per.name || 'unnamed';
     const caret = pos(el);
+    if (caret == null) { hide(); return; }
     /* A mark, not a name: it carries the id, so renaming the subject or
        renumbering the shot never has to touch a single description. */
     const next = SB.Refs.insert(val(el), at, caret, per.id, name);
@@ -11671,7 +11900,7 @@ window.SB = window.SB || {};
         out.push({
           code: SB.Model.code(si, sj),
           scene: sc.heading || '',
-          sceneDesc: sc.description || '',
+          sceneDesc: SB.Refs.plain(p, sc.description),
           sceneIdx: si,
           /* the first card of the scene that actually prints — a scene whose
            * opening shots are all "no shot" still gets its banner */
