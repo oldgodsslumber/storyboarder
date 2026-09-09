@@ -21,6 +21,9 @@
     } else {
       SB.Board.renderSceneList();
     }
+    /* The prompt table is a view of the same shots — left alone it drifted a
+     * row behind the board, and its counts with it. */
+    SB.PromptPanel.follow();
     SB.Store.touch();
     SB.UsagePanel.badgeSoon();
   };

@@ -931,7 +931,16 @@ button.linkish{
 .pt-fe.dead{border-style:dotted;border-color:var(--danger);color:var(--danger)}
 .pt-fe.unmentioned{border-style:dashed}
 
-.pt-status{font-size:11px;color:var(--fg-dim)}
+/* status and the run button travel as one, and stay at the right edge however
+   the row above them wraps */
+.pt-acts{
+  display:flex;align-items:center;gap:8px;margin-left:auto;min-width:0;flex:0 1 auto;
+}
+.pt-status{
+  font-size:11px;color:var(--fg-dim);max-width:38ch;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.pt-type.noshot{color:var(--accent2)}
 .pt-status.err{color:var(--danger)}
 .pt-model{max-width:150px}
 .pt-prov{flex:0 0 auto;display:flex;gap:2px;width:auto}

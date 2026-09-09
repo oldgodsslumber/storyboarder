@@ -293,9 +293,14 @@ A board is made one card at a time; prompts are written a whole film at a time. 
 | **Feed** | the references this row hands over, in order, with **copy image set** |
 
 Rows group under their scene, the header sticks, and the filters are the point of a table:
-**Missing** (no prompt yet), **Stale** (something on the card was edited after the prompt was
-written), **This scene**. Each filter carries its count, and **✦ Generate** runs exactly the
-list you are looking at — "no shot" cards and empty descriptions are skipped.
+**Missing** (no prompt yet), **Stale** (a subject on the card was edited after the prompt was
+written), **This scene**. Each filter carries its count, zero included.
+
+**✦ Write N missing** writes exactly that: the prompts that are missing from the shots in the
+list you are looking at. Anything already written is left alone — a prompt you edited by hand
+is not something a bulk run gets to replace. To replace one, use that row's own ✦ generate.
+"No shot" cards and empty descriptions are skipped, and nothing can start a second run while
+one is in flight.
 
 The prompt boxes are deliberately much larger than the card's, because editing a paragraph in
 a box the width of a thumbnail is how prompts end up unedited.

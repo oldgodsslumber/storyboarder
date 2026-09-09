@@ -284,7 +284,23 @@
     shots.forEach(function (s) {
       if (s.noShot) return;                        // "no shot" fragments never generate
       if (!(s.description || '').trim()) return;   // nothing for the writer to work from
-      jobsFor(s, im, vm, roles).forEach(function (j) { j.shot = s; jobs.push(j); });
+      let want = roles;
+      /* A run over a whole board is a run over what is not written yet. Asking
+       * for everything overwrote prompts somebody had edited by hand — the
+       * exact work this is for — and paid for the privilege twice. A single
+       * card's generate button never passes this: clicking one IS the ask. */
+      if (opts.onlyMissing) {
+        const has = function (m, field) {
+          const pr = m && s.prompts[m.id];
+          return !!(pr && pr[field]);
+        };
+        want = {
+          image: roles.image && !has(im, 'imagePrompt'),
+          video: roles.video && !has(vm, 'videoPrompt')
+        };
+        if (!want.image && !want.video) return;
+      }
+      jobsFor(s, im, vm, want).forEach(function (j) { j.shot = s; jobs.push(j); });
     });
     if (!jobs.length) {
       return Promise.reject(new Error('Nothing to generate — “no shot” cards and empty descriptions are skipped.'));

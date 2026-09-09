@@ -219,7 +219,7 @@
       await wait(150);
       const genBtn = Array.prototype.filter.call(
         document.querySelectorAll('.lib-head .tb'),
-        function (b) { return /Generate/.test(b.textContent); })[0];
+        function (b) { return /Write \d+ missing|Generate/.test(b.textContent); })[0];
       /* ListModels answers even though generateContent 404s */
       const realFetch = window.fetch;
       window.fetch = function (url, opts) {
@@ -312,7 +312,7 @@
         window.fetch = function () { return Promise.reject(new TypeError('Failed to fetch')); };
         const genBtn2 = Array.prototype.filter.call(
           document.querySelectorAll('.lib-head .tb'),
-          function (b) { return /Generate/.test(b.textContent); })[0];
+          function (b) { return /Write \d+ missing|Generate/.test(b.textContent); })[0];
         genBtn2.click();
         await wait(300);
 

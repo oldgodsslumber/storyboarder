@@ -188,12 +188,17 @@
     const t = SB.Refs.target(p, id);
     if (!t) return;
     if (t.kind === 'shot') {
+      /* Both takeovers cover the board, and the board is where this leads. */
       SB.PersonaPanel.close();
+      SB.PromptPanel.close();
       SB.Board.select(t.shot.id);
       const el = document.querySelector('.card[data-shot="' + t.shot.id + '"]');
       if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
     }
+    /* ...and the library must replace whatever is in front, not stack on it:
+       two overlays deep, one Escape closed both. */
+    SB.PromptPanel.close();
     SB.PersonaPanel.open();
     setTimeout(function () {
       const el = document.querySelector('.persona[data-id="' + id + '"]');

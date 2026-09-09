@@ -435,7 +435,10 @@
       // the card-display toggles moved here with everything else
       const showBoxes = document.querySelectorAll('.pt-oncards input[type=checkbox]');
       t('the on-card toggles are in the header', showBoxes.length === 2, showBoxes.length);
-      showBoxes[0].click(); showBoxes[1].click();
+      /* the header is rebuilt when the board changes, so each click needs a
+         live element rather than one captured before the last render */
+      document.querySelectorAll('.pt-oncards input[type=checkbox]')[0].click();
+      document.querySelectorAll('.pt-oncards input[type=checkbox]')[1].click();
       t('toggling reveals both prompt boxes on the cards',
         document.querySelectorAll('.card:not(.noshot) .prompt-box').length ===
         document.querySelectorAll('.card:not(.noshot)').length * 2,
@@ -448,6 +451,56 @@
         titles[1].indexOf(SB.Model.videoModel(P()).name) > 0, JSON.stringify(titles.slice(0, 2)));
       document.querySelectorAll('.pt-oncards input[type=checkbox]')[0].click();
       document.querySelectorAll('.pt-oncards input[type=checkbox]')[1].click();
+
+      // a bulk run writes what is MISSING — it used to overwrite prompts
+      // somebody had edited by hand, which is the work this screen is for
+      {
+        const im2 = SB.Model.imageModel(P()), vm2 = SB.Model.videoModel(P());
+        const keep = P().scenes[0].shots[0];
+        const other = P().scenes[0].shots[1];
+        keep.description = keep.description || 'Something to work from.';
+        other.description = other.description || 'And something here too.';
+        /* one card fully written by hand, one with nothing */
+        keep.prompts[im2.id] = { imagePrompt: 'MINE, BY HAND', modelName: im2.name, at: Date.now() };
+        if (vm2) keep.prompts[vm2.id] = Object.assign(keep.prompts[vm2.id] || {},
+          { videoPrompt: 'MINE TOO', modelName: vm2.name, at: Date.now() });
+        other.prompts = {};
+        SB.PromptPanel.refresh();
+        const btn = Array.prototype.filter.call(
+          document.querySelectorAll('.lib-head .tb'),
+          function (b) { return /Write \d+ missing/.test(b.textContent); })[0];
+        t('the bulk button says it writes only what is missing', !!btn,
+          Array.prototype.map.call(document.querySelectorAll('.lib-head .tb'),
+            function (b) { return b.textContent; }).join(','));
+        var stub = SB.Prompts.generateFor;
+        var asked = null;
+        SB.Prompts.generateFor = function (shots, opts) {
+          asked = { n: shots.length, onlyMissing: !!opts.onlyMissing };
+          return Promise.resolve({ done: 0, total: 0, failed: 0 });
+        };
+        btn.click();
+        t('and asks for exactly that', asked && asked.onlyMissing === true,
+          JSON.stringify(asked) + ' btn=' + btn.textContent);
+        t('the hand-written card is not in the count',
+          /Write [1-9]/.test(btn.textContent) && keep.prompts[im2.id].imagePrompt === 'MINE, BY HAND',
+          btn.textContent);
+        t('a second click while one is in flight starts nothing',
+          (function () { asked = null; btn.click(); return asked === null; })(), '');
+        SB.Prompts.generateFor = stub;
+        keep.prompts = {};
+        other.prompts = {};
+        SB.PromptPanel.refresh();
+      }
+
+      // every filter shows its count, zero included
+      {
+        const tabTxt = Array.prototype.map.call(
+          document.querySelectorAll('.lib-head .lib-tabs button'),
+          function (b) { return b.textContent; });
+        t('each filter carries a number', tabTxt.every(function (x) { return /\s\d+$/.test(x); }),
+          tabTxt.join(' | '));
+        t('including "this scene"', /This scene \d+/.test(tabTxt[3]), tabTxt[3]);
+      }
 
       // gemini model picker + free-call counter came along
       const gmSel = document.querySelector('.lib-head .gm-picker select');

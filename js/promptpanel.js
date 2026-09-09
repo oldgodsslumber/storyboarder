@@ -17,7 +17,7 @@
   let root = null;
   let bodyEl, statusEl, usageEl, limitEl, headEl;
   let filter = 'all';
-  const write = { image: true, video: true };   // which prompts a bulk run writes
+  let running = false;          // a run is in flight; nothing may start a second
 
   function P() { return SB.app.project; }
 
@@ -45,6 +45,10 @@
     if (e.key !== 'Escape' || !root) return;
     if (document.querySelector('.modal-back')) return;
     if (document.querySelector('.lib-pop') || document.querySelector('.men-pop')) return;
+    /* Another takeover may be sitting on top of this one; whatever is last in
+       the root is the one in front, and only it should answer. */
+    const backs = document.querySelectorAll('#modalRoot .lib-back');
+    if (backs.length && backs[backs.length - 1] !== root) return;
     close();
   }
 
@@ -60,6 +64,11 @@
   function toggle() { root ? close() : open(); }
   function isOpen() { return !!root; }
   function refresh() { if (root) render(); }
+
+  /* Called from app.changed(): the board moved under the table. Skipped while a
+   * run is in flight, because run() renders when it finishes and rebuilding
+   * mid-run throws away the progress line. */
+  function follow() { if (root && !running) render(); }
 
   function setStatus(txt, isErr) {
     if (!statusEl) return;
@@ -160,12 +169,16 @@
     const counts = {
       all: all.length,
       missing: all.filter(function (r) { return isMissing(r, im, vm); }).length,
-      stale: all.filter(function (r) { return isStale(r, im, vm); }).length
+      stale: all.filter(function (r) { return isStale(r, im, vm); }).length,
+      scene: all.filter(function (r) { return r.scene.id === SB.app.selectedSceneId; }).length
     };
-    [['all', 'All', counts.all], ['missing', 'Missing', counts.missing],
-    ['stale', 'Stale', counts.stale], ['scene', 'This scene', null]].forEach(function (t) {
+    /* Every count is shown, zero included: "Missing" with the number left off
+       reads as "not counted", and none-left-to-do is the one moment this screen
+       most wants to say a number. */
+    [['all', 'All'], ['missing', 'Missing'], ['stale', 'Stale'],
+    ['scene', 'This scene']].forEach(function (t) {
       const b = SB.el('button', 'tb toggle' + (filter === t[0] ? ' on' : ''),
-        t[1] + (t[2] ? ' ' + t[2] : ''));
+        t[1] + ' ' + counts[t[0]]);
       b.onclick = function () { filter = t[0]; render(); };
       tabs.appendChild(b);
     });
@@ -216,21 +229,27 @@
 
     r2.appendChild(SB.el('span', 'spacer'));
 
-    statusEl = SB.el('span', 'pt-status');
-    r2.appendChild(statusEl);
-
+    /* What a run would actually write: shots in this list that are missing a
+       prompt. Anything already written is left alone — see prompts.js. */
     const runnable = rows.filter(function (r) {
-      return !r.shot.noShot && (r.shot.description || '').trim();
+      return !r.shot.noShot && (r.shot.description || '').trim() && isMissing(r, im, vm);
     });
-    const go = SB.el('button', 'tb on', '✦ Generate ' + runnable.length +
-      (filter === 'all' ? '' : ' shown'));
-    go.title = 'Write the missing prompts for every shot in this list. ' +
+    const acts = SB.el('div', 'pt-acts');
+    statusEl = SB.el('span', 'pt-status');
+    acts.appendChild(statusEl);
+
+    const go = SB.el('button', 'tb on', running
+      ? '✦ writing…'
+      : '✦ Write ' + runnable.length + ' missing');
+    go.title = 'Write the prompts that are missing from the shots in this list. ' +
+      'Anything already written is left as it is — use a row’s own generate to replace one. ' +
       '“No shot” cards and empty descriptions are skipped.';
-    go.disabled = !runnable.length;
+    go.disabled = running || !runnable.length;
     go.onclick = function () {
-      run(runnable.map(function (r) { return r.shot; }), { image: write.image, video: write.video }, go);
+      run(runnable.map(function (r) { return r.shot; }), { image: !!im, video: !!vm }, go, true);
     };
-    r2.appendChild(go);
+    acts.appendChild(go);
+    r2.appendChild(acts);
   }
 
   /* the quota readout, kept because a run of thirty rows is where it matters */
@@ -302,7 +321,10 @@
       grid.appendChild(SB.el('div', 'pt-empty',
         filter === 'missing' ? 'Every shot in this board has both its prompts.'
           : filter === 'stale' ? 'No prompt has fallen behind its cast.'
-            : filter === 'scene' ? 'That scene has no shots yet.'
+            : filter === 'scene'
+              ? (SB.app.selectedSceneId
+                ? 'That scene has no shots yet.'
+                : 'No scene is selected — pick one on the board or in the scene list.')
               : 'No shots yet.'));
     }
 
@@ -356,7 +378,8 @@
       if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
     };
     c1.appendChild(thumb);
-    c1.appendChild(SB.el('div', 'pt-type', sh.type || (sh.noShot ? 'no shot' : '—')));
+    c1.appendChild(SB.el('div', 'pt-type' + (sh.noShot ? ' noshot' : ''),
+      sh.noShot ? 'no shot' + (sh.type ? ' · ' + sh.type : '') : (sh.type || '—')));
     row.appendChild(c1);
 
     /* ---- what it says ---- */
@@ -413,10 +436,11 @@
     }
     bar.appendChild(SB.el('span', 'spacer'));
     const gen = SB.el('button', 'mini primary', '✦ generate');
-    gen.disabled = !!sh.noShot || !(sh.description || '').trim();
+    gen.disabled = running || !!sh.noShot || !(sh.description || '').trim();
     if (gen.disabled) {
-      gen.title = sh.noShot ? 'A “no shot” card never generates'
-        : 'Write a description first — there is nothing for the writer to work from';
+      gen.title = running ? 'A run is in flight'
+        : sh.noShot ? 'A “no shot” card never generates'
+          : 'Write a description first — there is nothing for the writer to work from';
     }
     gen.onclick = function () {
       gen.disabled = true;
@@ -524,25 +548,39 @@
 
   /* ------------------------------------------------------------------ run */
 
-  function run(shots, roles, btn) {
+  function run(shots, roles, btn, onlyMissing) {
     if (!roles.image && !roles.video) { setStatus('Nothing to write.', true); return; }
+    if (running) return;
+    /* The flag, not the button: head() builds a fresh button on every render,
+       so a filter click mid-run used to re-arm it and a second click started a
+       second run over the same shots. */
+    running = true;
     btn.disabled = true;
     SB.Prompts.generateFor(shots, {
       roles: roles,
+      onlyMissing: !!onlyMissing,
       onProgress: function (done, total, failed) {
         setStatus('writing ' + done + '/' + total + (failed ? ' · ' + failed + ' failed' : ''), false);
         refreshUsage();
       }
     }).then(function (r) {
+      running = false;
       const done = r.done, total = r.total, failed = r.failed, err = r.error;
+      /* Reveal what was just written — the boxes are off by default, and a
+         result you cannot see is the same as no result. */
+      const s = P().settings;
+      if (roles.image && done) s.showImagePrompt = true;
+      if (roles.video && done) s.showVideoPrompt = true;
+      SB.app.changed(true);
       render();                                   // rows, counts and filters all move
       setStatus(failed
         ? done + ' of ' + total + ' written · ' + failed + ' failed: ' + (err || 'unknown')
         : 'done — ' + done + ' of ' + total,
         !!failed);
     }).catch(function (e) {
+      running = false;
       btn.disabled = false;
-      if (SB.apiBlocked(e, function () { run(shots, roles, btn); })) {
+      if (SB.apiBlocked(e, function () { run(shots, roles, btn, onlyMissing); })) {
         setStatus('blocked — see the dialog', true);
         return;
       }
@@ -567,7 +605,7 @@
 
   SB.PromptPanel = {
     init: init, open: open, close: close, toggle: toggle, isOpen: isOpen, refresh: refresh,
-    refreshUsage: refreshUsage
+    follow: follow, refreshUsage: refreshUsage
   };
 
 })(window.SB);
