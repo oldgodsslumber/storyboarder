@@ -104,6 +104,10 @@ button,input,select,textarea{font:inherit;color:inherit}
 .mini.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:600}
 .mini.primary:disabled{opacity:.35;cursor:default}
 .mini.danger:hover{border-color:var(--danger);color:var(--danger)}
+/* Deleting a shot asks in place rather than in a modal: the button arms
+   itself, and a second click on the same button does it. */
+.mini.arm{background:var(--danger);border-color:var(--danger);color:#fff;font-weight:600}
+.mini.arm:hover{border-color:var(--danger);color:#fff}
 .save-state{color:var(--fg-dim);font-size:11px;min-width:74px}
 .save-state.dirty{color:var(--accent2)}
 .save-state.saved{color:var(--ok)}
@@ -331,6 +335,8 @@ button,input,select,textarea{font:inherit;color:inherit}
   background:transparent;color:var(--fg-dim);cursor:pointer;font-size:13px;
 }
 .add-shot:hover{border-color:var(--accent);color:var(--fg)}
+/* An image dragged onto an add button becomes a card. */
+.add-shot.drag-over,.mini.drag-over{outline:2px dashed var(--accent);outline-offset:2px;border-color:var(--accent);color:var(--fg)}
 
 /* ---------- master script ---------- */
 .script-hint{padding:6px 8px;color:var(--fg-dim);font-size:11px;border-bottom:1px solid var(--line)}
@@ -650,6 +656,9 @@ button.linkish{
 .lib-search:focus{outline:none;border-color:var(--accent)}
 .lib-head .spacer{flex:1}
 .lib-x{font-size:13px;line-height:1}
+.lib-size{display:flex;gap:2px;align-items:center}
+.lib-size .lbl{font-size:11px;color:var(--fg-dim)}
+.lib-size button{padding:2px 7px;font-size:11px}
 
 .lib-split{flex:1;min-height:0;display:flex;flex-direction:column}
 .lib-refs{flex:0 0 62%;min-height:0;overflow:auto;padding:10px 12px 16px}
@@ -675,7 +684,9 @@ button.linkish{
 .lib-section-head .n{font-size:11px;color:var(--fg-dim)}
 .lib-section-head .spacer{flex:1}
 .lib-empty{padding:2px 0 4px}
-.lib-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px}
+/* Cards keep their own height — a portrait subject is a tall card, and
+   stretching it to match a landscape neighbour is what buried it. */
+.lib-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(var(--ref-col,380px),1fr));gap:10px;align-items:start}
 .lib-pop{
   position:fixed;z-index:70;background:var(--bg2);border:1px solid var(--line2);
   border-radius:6px;padding:8px;box-shadow:0 6px 20px var(--shadow);
@@ -708,12 +719,25 @@ button.linkish{
 }
 .persona-used.none{text-decoration:none;cursor:default}
 .persona-used:hover:not(.none){color:var(--accent)}
+/* The frame is the shape of the picture in it, not a fixed landscape slot.
+   A 9:16 person used to be letterboxed into 84px of a 234px-wide box; now the
+   height is the dial and the width follows the ratio. Landscape pictures run
+   into max-width instead and give their height back on their own. */
+.persona-frames{display:flex;flex-direction:column;min-width:0}
 .persona-frame{
-  position:relative;background:var(--frame-bg);width:100%;height:150px;
+  position:relative;background:var(--frame-bg);
+  height:var(--ref-hero,260px);width:auto;max-width:100%;aspect-ratio:var(--ar,16/9);
   display:flex;align-items:center;justify-content:center;cursor:pointer;
-  border-radius:5px;overflow:hidden;margin-bottom:4px;
+  border-radius:5px;overflow:hidden;margin:0 auto 4px;
 }
 .persona-frame img{width:100%;height:100%;object-fit:contain}
+
+/* A tall picture leaves room beside it; the fields move into it. */
+.persona-body{display:flex;flex-direction:column;min-width:0}
+.persona-fields{display:flex;flex-direction:column;min-width:0}
+.persona.portrait .persona-body{flex-direction:row;gap:10px;align-items:flex-start}
+.persona.portrait .persona-frames{flex:0 0 auto;min-width:70px}
+.persona.portrait .persona-fields{flex:1;min-width:0}
 .persona-frame.drag-over,.strip-thumb.drag-over{outline:2px dashed var(--accent);outline-offset:-3px}
 /* An X in the corner. The old button said "remove image" straight across the
    middle of whoever's face it happened to be sitting on. */
@@ -727,9 +751,13 @@ button.linkish{
 .frame-x:hover{background:var(--danger);border-color:var(--danger)}
 
 .persona-strip{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:4px}
-.strip-cell{width:64px;display:flex;flex-direction:column;gap:2px}
+.strip-cell{min-width:64px;display:flex;flex-direction:column;gap:2px}
+/* Same bargain as the hero: fixed height, width from the picture — otherwise a
+   portrait angle is 27px of a 64px thumb. The cell stays 64px wide so the
+   label under it is still a usable box. */
 .strip-thumb{
-  position:relative;width:64px;height:48px;background:var(--frame-bg);
+  position:relative;height:48px;width:auto;aspect-ratio:var(--ar,4/3);
+  max-width:100%;min-width:20px;margin:0 auto;background:var(--frame-bg);
   border:1px solid var(--line);border-radius:4px;overflow:hidden;cursor:pointer;
   display:flex;align-items:center;justify-content:center;
 }
@@ -738,7 +766,7 @@ button.linkish{
 .strip-thumb.add{color:var(--fg-dim);font-size:16px;border-style:dashed}
 .strip-thumb.add:hover{color:var(--accent);border-color:var(--accent)}
 .strip-label{
-  width:64px;background:var(--input-bg);color:var(--fg);border:1px solid var(--line);
+  width:100%;background:var(--input-bg);color:var(--fg);border:1px solid var(--line);
   border-radius:3px;padding:1px 3px;font-size:9px;
 }
 .strip-label:focus{outline:none;border-color:var(--accent)}

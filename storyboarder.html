@@ -110,6 +110,10 @@ button,input,select,textarea{font:inherit;color:inherit}
 .mini.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:600}
 .mini.primary:disabled{opacity:.35;cursor:default}
 .mini.danger:hover{border-color:var(--danger);color:var(--danger)}
+/* Deleting a shot asks in place rather than in a modal: the button arms
+   itself, and a second click on the same button does it. */
+.mini.arm{background:var(--danger);border-color:var(--danger);color:#fff;font-weight:600}
+.mini.arm:hover{border-color:var(--danger);color:#fff}
 .save-state{color:var(--fg-dim);font-size:11px;min-width:74px}
 .save-state.dirty{color:var(--accent2)}
 .save-state.saved{color:var(--ok)}
@@ -337,6 +341,8 @@ button,input,select,textarea{font:inherit;color:inherit}
   background:transparent;color:var(--fg-dim);cursor:pointer;font-size:13px;
 }
 .add-shot:hover{border-color:var(--accent);color:var(--fg)}
+/* An image dragged onto an add button becomes a card. */
+.add-shot.drag-over,.mini.drag-over{outline:2px dashed var(--accent);outline-offset:2px;border-color:var(--accent);color:var(--fg)}
 
 /* ---------- master script ---------- */
 .script-hint{padding:6px 8px;color:var(--fg-dim);font-size:11px;border-bottom:1px solid var(--line)}
@@ -656,6 +662,9 @@ button.linkish{
 .lib-search:focus{outline:none;border-color:var(--accent)}
 .lib-head .spacer{flex:1}
 .lib-x{font-size:13px;line-height:1}
+.lib-size{display:flex;gap:2px;align-items:center}
+.lib-size .lbl{font-size:11px;color:var(--fg-dim)}
+.lib-size button{padding:2px 7px;font-size:11px}
 
 .lib-split{flex:1;min-height:0;display:flex;flex-direction:column}
 .lib-refs{flex:0 0 62%;min-height:0;overflow:auto;padding:10px 12px 16px}
@@ -681,7 +690,9 @@ button.linkish{
 .lib-section-head .n{font-size:11px;color:var(--fg-dim)}
 .lib-section-head .spacer{flex:1}
 .lib-empty{padding:2px 0 4px}
-.lib-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px}
+/* Cards keep their own height — a portrait subject is a tall card, and
+   stretching it to match a landscape neighbour is what buried it. */
+.lib-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(var(--ref-col,380px),1fr));gap:10px;align-items:start}
 .lib-pop{
   position:fixed;z-index:70;background:var(--bg2);border:1px solid var(--line2);
   border-radius:6px;padding:8px;box-shadow:0 6px 20px var(--shadow);
@@ -714,12 +725,25 @@ button.linkish{
 }
 .persona-used.none{text-decoration:none;cursor:default}
 .persona-used:hover:not(.none){color:var(--accent)}
+/* The frame is the shape of the picture in it, not a fixed landscape slot.
+   A 9:16 person used to be letterboxed into 84px of a 234px-wide box; now the
+   height is the dial and the width follows the ratio. Landscape pictures run
+   into max-width instead and give their height back on their own. */
+.persona-frames{display:flex;flex-direction:column;min-width:0}
 .persona-frame{
-  position:relative;background:var(--frame-bg);width:100%;height:150px;
+  position:relative;background:var(--frame-bg);
+  height:var(--ref-hero,260px);width:auto;max-width:100%;aspect-ratio:var(--ar,16/9);
   display:flex;align-items:center;justify-content:center;cursor:pointer;
-  border-radius:5px;overflow:hidden;margin-bottom:4px;
+  border-radius:5px;overflow:hidden;margin:0 auto 4px;
 }
 .persona-frame img{width:100%;height:100%;object-fit:contain}
+
+/* A tall picture leaves room beside it; the fields move into it. */
+.persona-body{display:flex;flex-direction:column;min-width:0}
+.persona-fields{display:flex;flex-direction:column;min-width:0}
+.persona.portrait .persona-body{flex-direction:row;gap:10px;align-items:flex-start}
+.persona.portrait .persona-frames{flex:0 0 auto;min-width:70px}
+.persona.portrait .persona-fields{flex:1;min-width:0}
 .persona-frame.drag-over,.strip-thumb.drag-over{outline:2px dashed var(--accent);outline-offset:-3px}
 /* An X in the corner. The old button said "remove image" straight across the
    middle of whoever's face it happened to be sitting on. */
@@ -733,9 +757,13 @@ button.linkish{
 .frame-x:hover{background:var(--danger);border-color:var(--danger)}
 
 .persona-strip{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:4px}
-.strip-cell{width:64px;display:flex;flex-direction:column;gap:2px}
+.strip-cell{min-width:64px;display:flex;flex-direction:column;gap:2px}
+/* Same bargain as the hero: fixed height, width from the picture — otherwise a
+   portrait angle is 27px of a 64px thumb. The cell stays 64px wide so the
+   label under it is still a usable box. */
 .strip-thumb{
-  position:relative;width:64px;height:48px;background:var(--frame-bg);
+  position:relative;height:48px;width:auto;aspect-ratio:var(--ar,4/3);
+  max-width:100%;min-width:20px;margin:0 auto;background:var(--frame-bg);
   border:1px solid var(--line);border-radius:4px;overflow:hidden;cursor:pointer;
   display:flex;align-items:center;justify-content:center;
 }
@@ -744,7 +772,7 @@ button.linkish{
 .strip-thumb.add{color:var(--fg-dim);font-size:16px;border-style:dashed}
 .strip-thumb.add:hover{color:var(--accent);border-color:var(--accent)}
 .strip-label{
-  width:64px;background:var(--input-bg);color:var(--fg);border:1px solid var(--line);
+  width:100%;background:var(--input-bg);color:var(--fg);border:1px solid var(--line);
   border-radius:3px;padding:1px 3px;font-size:9px;
 }
 .strip-label:focus{outline:none;border-color:var(--accent)}
@@ -1094,7 +1122,7 @@ body.comment-mode .frame{cursor:crosshair}
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-09-09 14:51 · 9c73328+";</script>
+<script>window.SB_BUILD = "2026-09-09 19:47 · e91eb4c+";</script>
 
 <div id="app">
 
@@ -1279,6 +1307,40 @@ window.SB = window.SB || {};
     setTimeout(function () { el.remove(); }, isErr ? 6000 : 2600);
   };
 
+  /* ---- ask in place ----
+   *
+   * confirm() stops the whole app dead for something as ordinary as dropping
+   * a card. Instead the button itself becomes the question: one click arms it
+   * and relabels it, a second click within a few seconds does the job, and
+   * anything else — Esc, a click elsewhere, waiting — quietly disarms it.
+   */
+  SB.armButton = function (btn, label, run) {
+    const was = { text: btn.textContent, cls: btn.className, title: btn.title };
+    let armed = false, timer = null;
+    function disarm() {
+      if (!armed) return;
+      armed = false;
+      clearTimeout(timer);
+      btn.textContent = was.text; btn.className = was.cls; btn.title = was.title;
+      document.removeEventListener('mousedown', away, true);
+      document.removeEventListener('keydown', esc, true);
+    }
+    function away(ev) { if (ev.target !== btn) disarm(); }
+    function esc(ev) { if (ev.key === 'Escape') disarm(); }
+    btn.onclick = function (ev) {
+      ev.stopPropagation();
+      if (armed) { disarm(); run(); return; }
+      armed = true;
+      btn.textContent = label;
+      btn.className = was.cls + ' arm';
+      btn.title = 'Click again to confirm — or press Esc';
+      document.addEventListener('mousedown', away, true);
+      document.addEventListener('keydown', esc, true);
+      timer = setTimeout(disarm, 4000);
+    };
+    return disarm;
+  };
+
   /* ---- the request that never left the browser ----
    *
    * A corporate proxy blocking generativelanguage.googleapis.com looks nothing
@@ -1458,6 +1520,32 @@ window.SB = window.SB || {};
       }
     }
     return Promise.resolve(null);
+  };
+
+  /* Every image in a drop, not just the first. Dragging a selection out of
+     Explorer is one gesture and means several pictures; the single-image
+     fallbacks (a URL, an <img> lifted out of a page) can only ever describe
+     one, so they come back as a list of one. Returns Promise<Array>. */
+  SB.imagesFromTransfer = function (dt) {
+    if (!dt) return Promise.resolve([]);
+    const out = [];
+    const files = dt.files;
+    if (files && files.length) {
+      for (let i = 0; i < files.length; i++) {
+        if (/^image\//.test(files[i].type)) out.push(files[i]);
+      }
+    }
+    if (!out.length && dt.items) {
+      for (let i = 0; i < dt.items.length; i++) {
+        const it = dt.items[i];
+        if (it.kind === 'file' && /^image\//.test(it.type)) {
+          const f = it.getAsFile();
+          if (f) out.push(f);
+        }
+      }
+    }
+    if (out.length) return Promise.resolve(out);
+    return SB.imageFromTransfer(dt).then(function (one) { return one ? [one] : []; });
   };
 
   SB.pickImageFile = function () {
@@ -6865,6 +6953,8 @@ window.SB = window.SB || {};
 
     const acts = SB.el('div', 'scene-actions');
     const bAdd = SB.el('button', 'mini', '+ Shot');
+    bAdd.title = 'Add a shot — or drop an image here to make a card from it';
+    acceptImageDrop(bAdd, sc);
     bAdd.onclick = function () {
       const sh = SB.Model.addShot(P(), sc.id, {});
       SB.app.selectedShotId = sh.id;
@@ -6898,6 +6988,8 @@ window.SB = window.SB || {};
     });
 
     const add = SB.el('button', 'add-shot', '+ Add shot');
+    add.title = 'Add a shot — or drop an image here to make a card from it';
+    acceptImageDrop(add, sc);
     add.onclick = function () {
       const s = SB.Model.addShot(P(), sc.id, {});
       SB.app.selectedShotId = s.id;
@@ -6948,6 +7040,47 @@ window.SB = window.SB || {};
     });
 
     return blk;
+  }
+
+  /* ---------------- pictures dropped on an add button ----------------
+   *
+   * Dragging a still straight at "+ Add shot" is the gesture people try
+   * first, and it used to do nothing at all. The card is made only once the
+   * picture has actually been resolved, so a drop carrying no image leaves no
+   * empty card behind.
+   */
+  function acceptImageDrop(el, sc) {
+    el.addEventListener('dragover', function (ev) {
+      /* A card being reordered is not ours — let it fall through to the strip
+       * underneath, which is what actually moves it. */
+      if (ev.dataTransfer.types.indexOf(DND_SHOT) >= 0) return;
+      ev.preventDefault();
+      ev.dataTransfer.dropEffect = 'copy';
+      el.classList.add('drag-over');
+    });
+    el.addEventListener('dragleave', function () { el.classList.remove('drag-over'); });
+    el.addEventListener('drop', function (ev) {
+      if (ev.dataTransfer.types.indexOf(DND_SHOT) >= 0) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      el.classList.remove('drag-over');
+      SB.imagesFromTransfer(ev.dataTransfer).then(function (imgs) {
+        if (!imgs.length) { SB.toast('No image found in that drop', true); return; }
+        /* One at a time: the cards then land in the order they were picked,
+           and the blob writes do not race each other. */
+        return imgs.reduce(function (chain, src) {
+          return chain.then(function () {
+            const sh = SB.Model.addShot(P(), sc.id, {});
+            if (!sh) return null;
+            SB.app.selectedShotId = sh.id;
+            SB.app.changed(true);          // the card shows at once, then fills in
+            return setImage(sh, src);
+          });
+        }, Promise.resolve()).then(function () {
+          if (imgs.length > 1) SB.toast('Added ' + imgs.length + ' shots');
+        });
+      });
+    });
   }
 
   /* ---------------- a scene break between two cards ---------------- */
@@ -7016,12 +7149,15 @@ window.SB = window.SB || {};
     bar.appendChild(ns);
 
     const del = SB.el('button', 'mini danger', 'Delete');
-    del.onclick = function () {
-      if (!confirm('Delete ' + sel.length + ' shots? Their script text stays in the master script.')) return;
+    del.title = 'Delete the selected shots (their script text stays in the master)';
+    SB.armButton(del, 'Delete ' + sel.length + '?', function () {
+      const n = sel.length;
       sel.slice().forEach(function (id) { SB.Model.deleteShot(P(), id); });
       clearSelection();
       SB.app.changed(true);
-    };
+      SB.toast('Deleted ' + n + ' shot' + (n === 1 ? '' : 's') +
+        ' — their script text stays in the master');
+    });
     bar.appendChild(del);
 
     const clear = SB.el('button', 'mini', 'Clear');
@@ -7259,11 +7395,11 @@ window.SB = window.SB || {};
 
     const del = SB.el('button', 'mini danger', '✕');
     del.title = 'Delete shot (script text stays in the master)';
-    del.onclick = function () {
-      if (!confirm('Delete shot ' + SB.Model.code(si, sj) + '? The script text stays in the master script.')) return;
+    SB.armButton(del, 'delete?', function () {
       SB.Model.deleteShot(P(), sh.id);
       SB.app.changed(true);
-    };
+      SB.toast('Deleted shot ' + SB.Model.code(si, sj) + ' — its script text stays in the master');
+    });
     acts.appendChild(del);
     head.appendChild(acts);
     c.appendChild(head);
@@ -10391,9 +10527,23 @@ window.SB = window.SB || {};
   'use strict';
 
   const SPLIT_KEY = 'sb.library.split';
+  const SIZE_KEY = 'sb.library.size';
+
+  /* How big a reference reads at. Portrait subjects are stored at 270x480 at
+     most (SB.downscaleImage caps at 854x480), so L stops short of upscaling.
+     The column widens with the hero: a tall picture plus the fields beside it
+     needs the room. */
+  const SIZES = {
+    s: { hero: 170, col: 300 },
+    m: { hero: 260, col: 380 },
+    l: { hero: 380, col: 460 }
+  };
+  let size = 'm';
+  try { if (SIZES[localStorage.getItem(SIZE_KEY)]) size = localStorage.getItem(SIZE_KEY); }
+  catch (e) { /* private mode */ }
 
   let root = null;          // the overlay, while it is open
-  let refsEl, scenesEl, statusEl, searchEl, tabsEl;
+  let refsEl, scenesEl, statusEl, searchEl, tabsEl, sizeEl;
   let filter = 'all';       // which kind the library is showing
   let query = '';
   let targetId = null;      // the subject a paste would land on
@@ -10403,6 +10553,20 @@ window.SB = window.SB || {};
   let pendingRename = null;
 
   function P() { return SB.app.project; }
+
+  /* Pure CSS, so changing size costs no re-render — the portrait cards' own
+     widths are calc()s off the same variable and follow along. */
+  function applySize() {
+    if (!refsEl) return;
+    const v = SIZES[size] || SIZES.m;
+    refsEl.style.setProperty('--ref-hero', v.hero + 'px');
+    refsEl.style.setProperty('--ref-col', v.col + 'px');
+    if (sizeEl) {
+      sizeEl.querySelectorAll('button').forEach(function (b) {
+        b.classList.toggle('on', b.dataset.size === size);
+      });
+    }
+  }
 
   function init() { /* nothing to bind — the takeover is built when it opens */ }
 
@@ -10516,6 +10680,24 @@ window.SB = window.SB || {};
       renderRefs();
     });
     h.appendChild(searchEl);
+
+    /* A library of people is a library of tall pictures, and how big they need
+       to read is a matter of the screen and the eyes in front of it. */
+    sizeEl = SB.el('div', 'lib-size');
+    sizeEl.appendChild(SB.el('span', 'lbl', 'size'));
+    [['s', 'S'], ['m', 'M'], ['l', 'L']].forEach(function (pair) {
+      const b = SB.el('button', 'tb toggle', pair[1]);
+      b.dataset.size = pair[0];
+      b.title = 'Show references ' +
+        (pair[0] === 's' ? 'small' : pair[0] === 'm' ? 'at the usual size' : 'large');
+      b.onclick = function () {
+        size = pair[0];
+        try { localStorage.setItem(SIZE_KEY, size); } catch (e) { /* private mode */ }
+        applySize();
+      };
+      sizeEl.appendChild(b);
+    });
+    h.appendChild(sizeEl);
 
     h.appendChild(SB.el('span', 'spacer'));
 
@@ -10708,6 +10890,8 @@ window.SB = window.SB || {};
       });
     }
 
+    applySize();
+
     statusEl = SB.el('div', 'pp-status lib-status');
     refsEl.appendChild(statusEl);
 
@@ -10854,11 +11038,15 @@ window.SB = window.SB || {};
     head.appendChild(del);
     wrap.appendChild(head);
 
-    /* ---- reference frames ---- */
-    wrap.appendChild(frames(per, kind));
+    /* ---- reference frames, and the fields beside or below them ---- */
+    const body = SB.el('div', 'persona-body');
+    const fields = SB.el('div', 'persona-fields');
+    body.appendChild(frames(per, kind, wrap));
+    body.appendChild(fields);
+    wrap.appendChild(body);
 
     /* ---- description ---- */
-    wrap.appendChild(SB.el('div', 'box-label', kind.descLabel));
+    fields.appendChild(SB.el('div', 'box-label', kind.descLabel));
     const d = document.createElement('textarea');
     d.className = 'persona-text';
     d.rows = 3;
@@ -10873,10 +11061,10 @@ window.SB = window.SB || {};
       SB.Board.refreshCastRows();
       SB.Board.refreshPromptStale();
     });
-    wrap.appendChild(d);
+    fields.appendChild(d);
 
     /* ---- reference-image prompt ---- */
-    wrap.appendChild(SB.el('div', 'box-label', 'reference image prompt'));
+    fields.appendChild(SB.el('div', 'box-label', 'reference image prompt'));
     const ip = document.createElement('textarea');
     ip.className = 'persona-text';
     ip.rows = 2;
@@ -10887,7 +11075,7 @@ window.SB = window.SB || {};
       SB.Personas.touch(per);
       SB.Store.touch();
     });
-    wrap.appendChild(ip);
+    fields.appendChild(ip);
 
     const foot = SB.el('div', 'pp-actions');
     const copy = SB.el('button', 'mini', 'copy prompt');
@@ -10926,7 +11114,7 @@ window.SB = window.SB || {};
       });
     };
     foot.appendChild(write);
-    wrap.appendChild(foot);
+    fields.appendChild(foot);
 
     return wrap;
   }
@@ -10934,14 +11122,49 @@ window.SB = window.SB || {};
   /* One angle rarely pins a face or a room down, so a subject holds as many
    * frames as it needs. The first is the hero: it is what the board shows and
    * what a single-reference model gets handed. */
-  function frames(per, kind) {
+  /* The shape of a stored picture, or 0 when the record predates w/h being
+   * kept. Everything added through this panel has them — SB.downscaleImage
+   * hands them over — so a 0 means an old file or a hand-built fixture. */
+  function ratioOf(rec) {
+    if (!rec || !(rec.w > 0) || !(rec.h > 0)) return 0;
+    return rec.w / rec.h;
+  }
+
+  /* Below this a subject is tall enough that the fields belong beside it
+   * rather than under it. Square-ish stays stacked. */
+  const PORTRAIT_AT = 0.95;
+
+  function applyShape(wrap, box, big, ratio) {
+    const portrait = !!ratio && ratio < PORTRAIT_AT;
+    if (big) big.style.setProperty('--ar', ratio ? String(ratio) : '');
+    wrap.classList.toggle('portrait', portrait);
+    /* The frames column is exactly as wide as the frame, so the fields get
+       every pixel the picture is not using. It tracks the size dial. */
+    box.style.width = portrait
+      ? 'calc(var(--ref-hero, 260px) * ' + ratio.toFixed(4) + ')'
+      : '';
+  }
+
+  function frames(per, kind, wrap) {
     const box = SB.el('div', 'persona-frames');
     const list = SB.Personas.imagesOf(per);
 
     const big = SB.el('div', 'persona-frame');
+    applyShape(wrap, box, big, ratioOf(list[0]));
     if (list.length) {
       const img = document.createElement('img');
       img.src = SB.Blobs.src(P(), list[0]);
+      /* An old record carrying no dimensions learns its own shape the first
+         time it is drawn, and the file keeps the answer. */
+      if (!ratioOf(list[0])) {
+        img.onload = function () {
+          const w = img.naturalWidth, h = img.naturalHeight;
+          if (!w || !h) return;
+          list[0].w = w; list[0].h = h;
+          SB.Store.touch();
+          applyShape(wrap, box, big, w / h);
+        };
+      }
       big.appendChild(img);
       const rm = SB.el('button', 'frame-x', '✕');
       rm.title = 'Remove this reference image';
@@ -10963,8 +11186,18 @@ window.SB = window.SB || {};
     list.forEach(function (img, i) {
       const cell = SB.el('div', 'strip-cell' + (i === 0 ? ' hero' : ''));
       const t = SB.el('div', 'strip-thumb');
+      const r = ratioOf(img);
+      if (r) t.style.setProperty('--ar', String(r));
       const im = document.createElement('img');
       im.src = SB.Blobs.src(P(), img);
+      if (!r) {
+        im.onload = function () {
+          if (!im.naturalWidth || !im.naturalHeight) return;
+          img.w = im.naturalWidth; img.h = im.naturalHeight;
+          SB.Store.touch();
+          t.style.setProperty('--ar', String(img.w / img.h));
+        };
+      }
       t.appendChild(im);
       t.title = i === 0 ? 'The hero frame' : 'Make this the hero frame';
       if (i > 0) {

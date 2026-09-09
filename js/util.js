@@ -58,6 +58,40 @@ window.SB = window.SB || {};
     setTimeout(function () { el.remove(); }, isErr ? 6000 : 2600);
   };
 
+  /* ---- ask in place ----
+   *
+   * confirm() stops the whole app dead for something as ordinary as dropping
+   * a card. Instead the button itself becomes the question: one click arms it
+   * and relabels it, a second click within a few seconds does the job, and
+   * anything else — Esc, a click elsewhere, waiting — quietly disarms it.
+   */
+  SB.armButton = function (btn, label, run) {
+    const was = { text: btn.textContent, cls: btn.className, title: btn.title };
+    let armed = false, timer = null;
+    function disarm() {
+      if (!armed) return;
+      armed = false;
+      clearTimeout(timer);
+      btn.textContent = was.text; btn.className = was.cls; btn.title = was.title;
+      document.removeEventListener('mousedown', away, true);
+      document.removeEventListener('keydown', esc, true);
+    }
+    function away(ev) { if (ev.target !== btn) disarm(); }
+    function esc(ev) { if (ev.key === 'Escape') disarm(); }
+    btn.onclick = function (ev) {
+      ev.stopPropagation();
+      if (armed) { disarm(); run(); return; }
+      armed = true;
+      btn.textContent = label;
+      btn.className = was.cls + ' arm';
+      btn.title = 'Click again to confirm — or press Esc';
+      document.addEventListener('mousedown', away, true);
+      document.addEventListener('keydown', esc, true);
+      timer = setTimeout(disarm, 4000);
+    };
+    return disarm;
+  };
+
   /* ---- the request that never left the browser ----
    *
    * A corporate proxy blocking generativelanguage.googleapis.com looks nothing
@@ -237,6 +271,32 @@ window.SB = window.SB || {};
       }
     }
     return Promise.resolve(null);
+  };
+
+  /* Every image in a drop, not just the first. Dragging a selection out of
+     Explorer is one gesture and means several pictures; the single-image
+     fallbacks (a URL, an <img> lifted out of a page) can only ever describe
+     one, so they come back as a list of one. Returns Promise<Array>. */
+  SB.imagesFromTransfer = function (dt) {
+    if (!dt) return Promise.resolve([]);
+    const out = [];
+    const files = dt.files;
+    if (files && files.length) {
+      for (let i = 0; i < files.length; i++) {
+        if (/^image\//.test(files[i].type)) out.push(files[i]);
+      }
+    }
+    if (!out.length && dt.items) {
+      for (let i = 0; i < dt.items.length; i++) {
+        const it = dt.items[i];
+        if (it.kind === 'file' && /^image\//.test(it.type)) {
+          const f = it.getAsFile();
+          if (f) out.push(f);
+        }
+      }
+    }
+    if (out.length) return Promise.resolve(out);
+    return SB.imageFromTransfer(dt).then(function (one) { return one ? [one] : []; });
   };
 
   SB.pickImageFile = function () {

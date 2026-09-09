@@ -557,6 +557,8 @@
 
     const acts = SB.el('div', 'scene-actions');
     const bAdd = SB.el('button', 'mini', '+ Shot');
+    bAdd.title = 'Add a shot — or drop an image here to make a card from it';
+    acceptImageDrop(bAdd, sc);
     bAdd.onclick = function () {
       const sh = SB.Model.addShot(P(), sc.id, {});
       SB.app.selectedShotId = sh.id;
@@ -590,6 +592,8 @@
     });
 
     const add = SB.el('button', 'add-shot', '+ Add shot');
+    add.title = 'Add a shot — or drop an image here to make a card from it';
+    acceptImageDrop(add, sc);
     add.onclick = function () {
       const s = SB.Model.addShot(P(), sc.id, {});
       SB.app.selectedShotId = s.id;
@@ -640,6 +644,47 @@
     });
 
     return blk;
+  }
+
+  /* ---------------- pictures dropped on an add button ----------------
+   *
+   * Dragging a still straight at "+ Add shot" is the gesture people try
+   * first, and it used to do nothing at all. The card is made only once the
+   * picture has actually been resolved, so a drop carrying no image leaves no
+   * empty card behind.
+   */
+  function acceptImageDrop(el, sc) {
+    el.addEventListener('dragover', function (ev) {
+      /* A card being reordered is not ours — let it fall through to the strip
+       * underneath, which is what actually moves it. */
+      if (ev.dataTransfer.types.indexOf(DND_SHOT) >= 0) return;
+      ev.preventDefault();
+      ev.dataTransfer.dropEffect = 'copy';
+      el.classList.add('drag-over');
+    });
+    el.addEventListener('dragleave', function () { el.classList.remove('drag-over'); });
+    el.addEventListener('drop', function (ev) {
+      if (ev.dataTransfer.types.indexOf(DND_SHOT) >= 0) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      el.classList.remove('drag-over');
+      SB.imagesFromTransfer(ev.dataTransfer).then(function (imgs) {
+        if (!imgs.length) { SB.toast('No image found in that drop', true); return; }
+        /* One at a time: the cards then land in the order they were picked,
+           and the blob writes do not race each other. */
+        return imgs.reduce(function (chain, src) {
+          return chain.then(function () {
+            const sh = SB.Model.addShot(P(), sc.id, {});
+            if (!sh) return null;
+            SB.app.selectedShotId = sh.id;
+            SB.app.changed(true);          // the card shows at once, then fills in
+            return setImage(sh, src);
+          });
+        }, Promise.resolve()).then(function () {
+          if (imgs.length > 1) SB.toast('Added ' + imgs.length + ' shots');
+        });
+      });
+    });
   }
 
   /* ---------------- a scene break between two cards ---------------- */
@@ -708,12 +753,15 @@
     bar.appendChild(ns);
 
     const del = SB.el('button', 'mini danger', 'Delete');
-    del.onclick = function () {
-      if (!confirm('Delete ' + sel.length + ' shots? Their script text stays in the master script.')) return;
+    del.title = 'Delete the selected shots (their script text stays in the master)';
+    SB.armButton(del, 'Delete ' + sel.length + '?', function () {
+      const n = sel.length;
       sel.slice().forEach(function (id) { SB.Model.deleteShot(P(), id); });
       clearSelection();
       SB.app.changed(true);
-    };
+      SB.toast('Deleted ' + n + ' shot' + (n === 1 ? '' : 's') +
+        ' — their script text stays in the master');
+    });
     bar.appendChild(del);
 
     const clear = SB.el('button', 'mini', 'Clear');
@@ -951,11 +999,11 @@
 
     const del = SB.el('button', 'mini danger', '✕');
     del.title = 'Delete shot (script text stays in the master)';
-    del.onclick = function () {
-      if (!confirm('Delete shot ' + SB.Model.code(si, sj) + '? The script text stays in the master script.')) return;
+    SB.armButton(del, 'delete?', function () {
       SB.Model.deleteShot(P(), sh.id);
       SB.app.changed(true);
-    };
+      SB.toast('Deleted shot ' + SB.Model.code(si, sj) + ' — its script text stays in the master');
+    });
     acts.appendChild(del);
     head.appendChild(acts);
     c.appendChild(head);

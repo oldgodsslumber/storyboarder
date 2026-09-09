@@ -549,6 +549,49 @@
       t('and the frame carries a filmstrip with room for another',
         !!document.querySelector('.lib-refs .persona-strip .strip-thumb.add'), '');
 
+      /* a 9:16 subject is a tall card with its fields beside it, not a sliver */
+      (function () {
+        const tall = SB.Personas.add(P(), { name: 'Portrait', description: 'Standing.' });
+        SB.Personas.addImage(tall, SB.Blobs.image(P(), 'data:image/gif;base64,R0lGODlhAQABAAAAACw=', 270, 480), '');
+        const flat = SB.Personas.add(P(), { name: 'Landscape', description: 'Wide.' });
+        SB.Personas.addImage(flat, SB.Blobs.image(P(), 'data:image/gif;base64,R0lGODlhAQABAAAAACw=', 854, 480), '');
+        SB.PersonaPanel.refresh();
+        const tc = document.querySelector('.persona[data-id="' + tall.id + '"]');
+        const fc = document.querySelector('.persona[data-id="' + flat.id + '"]');
+        t('a portrait subject lays its fields beside the picture',
+          tc.classList.contains('portrait'), tc.className);
+        t('a landscape one still stacks', !fc.classList.contains('portrait'), fc.className);
+        t('the frame carries the picture’s own shape',
+          tc.querySelector('.persona-frame').style.getPropertyValue('--ar').indexOf('0.5625') === 0,
+          tc.querySelector('.persona-frame').style.getPropertyValue('--ar'));
+        t('and the portrait column is only as wide as the picture',
+          /calc\(var\(--ref-hero/.test(tc.querySelector('.persona-frames').style.width),
+          tc.querySelector('.persona-frames').style.width);
+        t('while a landscape column takes the whole card',
+          fc.querySelector('.persona-frames').style.width === '',
+          fc.querySelector('.persona-frames').style.width);
+        t('a strip thumb is shaped like its own angle',
+          tc.querySelector('.strip-thumb').style.getPropertyValue('--ar').indexOf('0.5625') === 0,
+          tc.querySelector('.strip-thumb').style.getPropertyValue('--ar'));
+
+        /* the size dial is CSS only — no re-render, and the cards follow it */
+        const refs = document.querySelector('.lib-refs');
+        t('the library opens at the remembered size',
+          refs.style.getPropertyValue('--ref-hero') !== '', refs.style.cssText);
+        const big = document.querySelector('.lib-size button[data-size="l"]');
+        big.click();
+        t('the size dial resizes the heroes',
+          refs.style.getPropertyValue('--ref-hero') === '380px', refs.style.cssText);
+        t('and widens the columns with them',
+          refs.style.getPropertyValue('--ref-col') === '460px', refs.style.cssText);
+        t('the chosen size is the one lit up', big.classList.contains('on'), big.className);
+        document.querySelector('.lib-size button[data-size="m"]').click();
+
+        SB.Personas.remove(P(), tall.id);
+        SB.Personas.remove(P(), flat.id);
+        SB.PersonaPanel.refresh();
+      })();
+
       // a location and an object are subjects like anybody else
       var place = SB.Personas.add(P(), { kind: 'place', name: 'Server room', description: 'Cold aisle, blue LEDs.' });
       SB.Personas.add(P(), { kind: 'thing', name: 'Handset', description: 'Matte black, one green LED.' });
@@ -1812,6 +1855,71 @@
           document.querySelector('.scene-block[data-scene="' + sc0.id + '"] .link-dot.free') !== null, '');
         t('and then claims none of the master',
           master.querySelectorAll('.scov').length === 0, master.innerHTML.slice(0, 240));
+      })();
+
+      // pictures dropped straight onto an add button
+      await (async function () {
+        const wait = function (ms) { return new Promise(function (r) { setTimeout(r, ms || 80); }); };
+        const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAf' +
+          'FcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+        const sc = P().scenes[0];
+        const btn = function () {
+          return document.querySelector('.shots[data-scene="' + sc.id + '"] .add-shot');
+        };
+        const fire = function (dt) {
+          const el = btn();
+          const over = new DragEvent('dragover', { dataTransfer: dt, bubbles: true, cancelable: true });
+          el.dispatchEvent(over);
+          el.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
+          return over.defaultPrevented;
+        };
+
+        const n0 = sc.shots.length;
+        const dt1 = new DataTransfer();
+        dt1.setData('text/uri-list', PNG);
+        t('an image dragged onto + Add shot is accepted', fire(dt1), '');
+        await wait(200);
+        t('and it spawns a card', sc.shots.length === n0 + 1, sc.shots.length + ' vs ' + n0);
+        const made = sc.shots[sc.shots.length - 1];
+        t('with the picture already in it', !!made.image, JSON.stringify(made.image));
+        t('and that card is the selected one', app.selectedShotId === made.id, app.selectedShotId);
+
+        /* a drop carrying no picture must not leave an empty card behind */
+        const n1 = sc.shots.length;
+        const dt2 = new DataTransfer();
+        dt2.setData('text/plain', 'just some words');
+        fire(dt2);
+        await wait(120);
+        t('a drop with no image makes no card', sc.shots.length === n1, sc.shots.length + ' vs ' + n1);
+
+        /* several files at once — one card each, in the order they were picked */
+        const blob = await fetch(PNG).then(function (r) { return r.blob(); });
+        const dt3 = new DataTransfer();
+        dt3.items.add(new File([blob], 'a.png', { type: 'image/png' }));
+        dt3.items.add(new File([blob], 'b.png', { type: 'image/png' }));
+        const n2 = sc.shots.length;
+        fire(dt3);
+        await wait(300);
+        t('two images make two cards', sc.shots.length === n2 + 2, sc.shots.length + ' vs ' + n2);
+        t('both of them carrying a picture',
+          sc.shots.slice(-2).every(function (x) { return !!x.image; }),
+          JSON.stringify(sc.shots.slice(-2).map(function (x) { return x.image; })));
+
+        /* the reorder drag over the same button must still be a reorder */
+        const moved = SB.Model.addShot(P(), P().scenes[1] ? P().scenes[1].id : sc.id, {});
+        app.changed(true);
+        const dt4 = new DataTransfer();
+        const src = document.querySelector('.card[data-shot="' + moved.id + '"] .card-head');
+        src.dispatchEvent(new DragEvent('dragstart', { dataTransfer: dt4, bubbles: true, cancelable: true }));
+        const el = btn();
+        const over = new DragEvent('dragover', { dataTransfer: dt4, bubbles: true, cancelable: true });
+        el.dispatchEvent(over);
+        el.dispatchEvent(new DragEvent('drop', { dataTransfer: dt4, bubbles: true, cancelable: true }));
+        await wait(80);
+        const f = SB.Model.findShot(P(), moved.id);
+        t('a card dragged onto the button still just moves',
+          !!f && f.scene.id === sc.id && !f.shot.image,
+          (f ? f.scene.id + ' img=' + !!f.shot.image : 'gone') + ' want ' + sc.id);
       })();
 
       // comment mode

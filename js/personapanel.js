@@ -14,9 +14,23 @@
   'use strict';
 
   const SPLIT_KEY = 'sb.library.split';
+  const SIZE_KEY = 'sb.library.size';
+
+  /* How big a reference reads at. Portrait subjects are stored at 270x480 at
+     most (SB.downscaleImage caps at 854x480), so L stops short of upscaling.
+     The column widens with the hero: a tall picture plus the fields beside it
+     needs the room. */
+  const SIZES = {
+    s: { hero: 170, col: 300 },
+    m: { hero: 260, col: 380 },
+    l: { hero: 380, col: 460 }
+  };
+  let size = 'm';
+  try { if (SIZES[localStorage.getItem(SIZE_KEY)]) size = localStorage.getItem(SIZE_KEY); }
+  catch (e) { /* private mode */ }
 
   let root = null;          // the overlay, while it is open
-  let refsEl, scenesEl, statusEl, searchEl, tabsEl;
+  let refsEl, scenesEl, statusEl, searchEl, tabsEl, sizeEl;
   let filter = 'all';       // which kind the library is showing
   let query = '';
   let targetId = null;      // the subject a paste would land on
@@ -26,6 +40,20 @@
   let pendingRename = null;
 
   function P() { return SB.app.project; }
+
+  /* Pure CSS, so changing size costs no re-render — the portrait cards' own
+     widths are calc()s off the same variable and follow along. */
+  function applySize() {
+    if (!refsEl) return;
+    const v = SIZES[size] || SIZES.m;
+    refsEl.style.setProperty('--ref-hero', v.hero + 'px');
+    refsEl.style.setProperty('--ref-col', v.col + 'px');
+    if (sizeEl) {
+      sizeEl.querySelectorAll('button').forEach(function (b) {
+        b.classList.toggle('on', b.dataset.size === size);
+      });
+    }
+  }
 
   function init() { /* nothing to bind — the takeover is built when it opens */ }
 
@@ -139,6 +167,24 @@
       renderRefs();
     });
     h.appendChild(searchEl);
+
+    /* A library of people is a library of tall pictures, and how big they need
+       to read is a matter of the screen and the eyes in front of it. */
+    sizeEl = SB.el('div', 'lib-size');
+    sizeEl.appendChild(SB.el('span', 'lbl', 'size'));
+    [['s', 'S'], ['m', 'M'], ['l', 'L']].forEach(function (pair) {
+      const b = SB.el('button', 'tb toggle', pair[1]);
+      b.dataset.size = pair[0];
+      b.title = 'Show references ' +
+        (pair[0] === 's' ? 'small' : pair[0] === 'm' ? 'at the usual size' : 'large');
+      b.onclick = function () {
+        size = pair[0];
+        try { localStorage.setItem(SIZE_KEY, size); } catch (e) { /* private mode */ }
+        applySize();
+      };
+      sizeEl.appendChild(b);
+    });
+    h.appendChild(sizeEl);
 
     h.appendChild(SB.el('span', 'spacer'));
 
@@ -331,6 +377,8 @@
       });
     }
 
+    applySize();
+
     statusEl = SB.el('div', 'pp-status lib-status');
     refsEl.appendChild(statusEl);
 
@@ -477,11 +525,15 @@
     head.appendChild(del);
     wrap.appendChild(head);
 
-    /* ---- reference frames ---- */
-    wrap.appendChild(frames(per, kind));
+    /* ---- reference frames, and the fields beside or below them ---- */
+    const body = SB.el('div', 'persona-body');
+    const fields = SB.el('div', 'persona-fields');
+    body.appendChild(frames(per, kind, wrap));
+    body.appendChild(fields);
+    wrap.appendChild(body);
 
     /* ---- description ---- */
-    wrap.appendChild(SB.el('div', 'box-label', kind.descLabel));
+    fields.appendChild(SB.el('div', 'box-label', kind.descLabel));
     const d = document.createElement('textarea');
     d.className = 'persona-text';
     d.rows = 3;
@@ -496,10 +548,10 @@
       SB.Board.refreshCastRows();
       SB.Board.refreshPromptStale();
     });
-    wrap.appendChild(d);
+    fields.appendChild(d);
 
     /* ---- reference-image prompt ---- */
-    wrap.appendChild(SB.el('div', 'box-label', 'reference image prompt'));
+    fields.appendChild(SB.el('div', 'box-label', 'reference image prompt'));
     const ip = document.createElement('textarea');
     ip.className = 'persona-text';
     ip.rows = 2;
@@ -510,7 +562,7 @@
       SB.Personas.touch(per);
       SB.Store.touch();
     });
-    wrap.appendChild(ip);
+    fields.appendChild(ip);
 
     const foot = SB.el('div', 'pp-actions');
     const copy = SB.el('button', 'mini', 'copy prompt');
@@ -549,7 +601,7 @@
       });
     };
     foot.appendChild(write);
-    wrap.appendChild(foot);
+    fields.appendChild(foot);
 
     return wrap;
   }
@@ -557,14 +609,49 @@
   /* One angle rarely pins a face or a room down, so a subject holds as many
    * frames as it needs. The first is the hero: it is what the board shows and
    * what a single-reference model gets handed. */
-  function frames(per, kind) {
+  /* The shape of a stored picture, or 0 when the record predates w/h being
+   * kept. Everything added through this panel has them — SB.downscaleImage
+   * hands them over — so a 0 means an old file or a hand-built fixture. */
+  function ratioOf(rec) {
+    if (!rec || !(rec.w > 0) || !(rec.h > 0)) return 0;
+    return rec.w / rec.h;
+  }
+
+  /* Below this a subject is tall enough that the fields belong beside it
+   * rather than under it. Square-ish stays stacked. */
+  const PORTRAIT_AT = 0.95;
+
+  function applyShape(wrap, box, big, ratio) {
+    const portrait = !!ratio && ratio < PORTRAIT_AT;
+    if (big) big.style.setProperty('--ar', ratio ? String(ratio) : '');
+    wrap.classList.toggle('portrait', portrait);
+    /* The frames column is exactly as wide as the frame, so the fields get
+       every pixel the picture is not using. It tracks the size dial. */
+    box.style.width = portrait
+      ? 'calc(var(--ref-hero, 260px) * ' + ratio.toFixed(4) + ')'
+      : '';
+  }
+
+  function frames(per, kind, wrap) {
     const box = SB.el('div', 'persona-frames');
     const list = SB.Personas.imagesOf(per);
 
     const big = SB.el('div', 'persona-frame');
+    applyShape(wrap, box, big, ratioOf(list[0]));
     if (list.length) {
       const img = document.createElement('img');
       img.src = SB.Blobs.src(P(), list[0]);
+      /* An old record carrying no dimensions learns its own shape the first
+         time it is drawn, and the file keeps the answer. */
+      if (!ratioOf(list[0])) {
+        img.onload = function () {
+          const w = img.naturalWidth, h = img.naturalHeight;
+          if (!w || !h) return;
+          list[0].w = w; list[0].h = h;
+          SB.Store.touch();
+          applyShape(wrap, box, big, w / h);
+        };
+      }
       big.appendChild(img);
       const rm = SB.el('button', 'frame-x', '✕');
       rm.title = 'Remove this reference image';
@@ -586,8 +673,18 @@
     list.forEach(function (img, i) {
       const cell = SB.el('div', 'strip-cell' + (i === 0 ? ' hero' : ''));
       const t = SB.el('div', 'strip-thumb');
+      const r = ratioOf(img);
+      if (r) t.style.setProperty('--ar', String(r));
       const im = document.createElement('img');
       im.src = SB.Blobs.src(P(), img);
+      if (!r) {
+        im.onload = function () {
+          if (!im.naturalWidth || !im.naturalHeight) return;
+          img.w = im.naturalWidth; img.h = im.naturalHeight;
+          SB.Store.touch();
+          t.style.setProperty('--ar', String(img.w / img.h));
+        };
+      }
       t.appendChild(im);
       t.title = i === 0 ? 'The hero frame' : 'Make this the hero frame';
       if (i > 0) {
