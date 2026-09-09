@@ -797,6 +797,14 @@
     head.addEventListener('dragend', function () { c.classList.remove('dragging'); });
 
     head.appendChild(SB.el('span', 'code', SB.Model.code(si, sj)));
+    /* The number the full-size render is filed under. A serial means nothing on
+       its own, so the board is where it is given a meaning. */
+    if (sh.render && sh.render.serial) {
+      const ser = SB.el('span', 'code-serial', SB.Renders.pad(sh.render.serial));
+      ser.title = 'The full-size render of this shot is ' +
+        SB.Renders.fileName(sh.render.serial, sh.render.ext) + ' in the renders folder.';
+      head.appendChild(ser);
+    }
 
     /* Riffing is how a board actually gets made: you stand on a finished shot
        and want the next one OFF it — the reverse, tighter, a moment later. The
@@ -1171,7 +1179,18 @@
       }
 
       cell.appendChild(SB.el('span', 'feed-name', e.label));
+      /* Full-size entries carry their serial, so the strip names the actual
+         files this card is about to hand over. */
+      const sers = (e.renders || []).filter(Boolean)
+        .map(function (r) { return SB.Renders.pad(r.serial); });
+      if (sers.length) {
+        cell.classList.add('full');
+        cell.appendChild(SB.el('span', 'feed-ser', sers.join(' ')));
+      }
       cell.title = e.label + (e.why ? ' — ' + e.why : '') +
+        (sers.length
+          ? '\nFull-size: ' + sers.join(', ')
+          : (e.images.length ? '\nBoard copy only (854×480) — no original kept.' : '')) +
         (e.images.length ? '\nClick to open it.' : '\nClick to fix it.');
       cell.onclick = function (ev) {
         ev.stopPropagation();
@@ -1192,12 +1211,16 @@
       row.appendChild(warn);
     }
     if (imgs.length) {
+      const full = imgs.filter(function (e) { return !!e.render; }).length;
       const copy = SB.el('button', 'mini feed-copy', 'copy image set');
-      copy.title = 'Save all ' + imgs.length + ' reference images, numbered in feed order, ' +
-        'so they go into the model in the order the prompt promises.';
+      copy.title = 'Write all ' + imgs.length + ' reference images out, numbered in feed order, ' +
+        'so they go into the model in the order the prompt promises.' +
+        (full ? '\n' + full + ' of them full-size from the renders folder.'
+              : '\nAll of them are the board’s 854×480 copies — connect a renders folder in ' +
+                'Settings to keep the originals.');
       copy.onclick = function (ev) {
         ev.stopPropagation();
-        saveFeed(sh, imgs);
+        saveFeed(sh, imgs, SB.Model.code(si, sj));
       };
       row.appendChild(copy);
     }
@@ -1238,8 +1261,24 @@
   }
 
   /* Hand the images over in feed order. Named 1_, 2_, … because the order is
-   * the promise the prompt's mapping makes, and a folder sorts by name. */
-  function saveFeed(sh, imgs) {
+   * the promise the prompt's mapping makes, and a folder sorts by name.
+   *
+   * With a renders folder connected this writes a real folder of full-size
+   * files you can drag in one gesture; without one it falls back to the
+   * browser's downloads, which is the old behaviour and still the proxies. */
+  function saveFeed(sh, imgs, code) {
+    if (SB.Renders.isConnected()) {
+      SB.Renders.writeFeed(P(), sh, code, imgs).then(function (r) {
+        if (!r) { downloadFeed(imgs); return; }
+        SB.toast(r.wrote + ' reference image' + (r.wrote === 1 ? '' : 's') + ' written to ' +
+          r.path + (r.full ? ' — ' + r.full + ' full-size' : ' — all at board size'));
+      }).catch(function () { downloadFeed(imgs); });
+      return;
+    }
+    downloadFeed(imgs);
+  }
+
+  function downloadFeed(imgs) {
     let n = 0;
     imgs.forEach(function (e) {
       const src = SB.Blobs.src(P(), e.img);
@@ -1485,8 +1524,10 @@
   }
 
   function setImage(sh, src) {
-    /* The proxy is what the board shows and stores; the original goes to the
-       renders folder, if one is connected. Before this, it was thrown away. */
+    /* The original goes to the renders folder, if one is connected — before
+       this it was thrown away. It runs alongside rather than in front: the
+       proxy is what the board shows, and it must never wait on a permission
+       check or on a handle store that stalls under file://. */
     SB.Renders.keep(P(), src, sh.render).then(function (rec) {
       if (!rec) return;
       sh.render = rec;

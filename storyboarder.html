@@ -263,6 +263,8 @@ button,input,select,textarea{font:inherit;color:inherit}
 }
 .card-head{flex-wrap:wrap}
 .card-head .code{font-weight:700;color:var(--accent);min-width:34px}
+/* which file on disk this card's render is */
+.card-head .code-serial{font-size:9px;color:var(--fg-dim);font-variant-numeric:tabular-nums;margin-left:-3px}
 .card-head select.type{
   background:var(--bg2);border:1px solid var(--line);border-radius:4px;
   padding:1px 4px;font-size:11px;flex:1 1 60px;min-width:0;max-width:104px;
@@ -836,6 +838,8 @@ button.linkish{
   font-size:7px;padding:0 1px;
 }
 .feed-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* the file this cell will actually hand over */
+.feed-ser{font-size:9px;color:var(--fg-dim);font-variant-numeric:tabular-nums;opacity:.85}
 /* fed, but nobody said to — its place in the order was nobody's decision */
 .feed-cell.unmentioned{border-style:dashed}
 .feed-cell.unmentioned .feed-n{color:var(--fg-dim)}
@@ -965,7 +969,7 @@ body.comment-mode .frame{cursor:crosshair}
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-09-09 00:35 · 1504b62+";</script>
+<script>window.SB_BUILD = "2026-09-09 00:39 · d8279b7+";</script>
 
 <div id="app">
 
@@ -2900,13 +2904,82 @@ window.SB = window.SB || {};
     return file(p, rec).then(function (f) { return !!f; });
   }
 
+  /* ---------- the feed ----------
+   *
+   * The reference set for one shot, written out at the moment it is asked for
+   * and resolved through ids — so what you drag is correct whatever any file
+   * happens to be called. Position first, because the order is the promise the
+   * prompt's mapping makes; then the serial, which is the identity; then a
+   * label, which is for the eye.
+   *
+   *   _feed/1C/1_0002_1B.png  2_0007_Colleague-front.png
+   *
+   * Full-size where the folder has it, the board's proxy where it does not, so
+   * the set is always complete and never silently short.
+   */
+  function slug(t) {
+    return String(t || '').replace(/[^\w-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
+  }
+
+  /* Empty it first: a set left over from a previous run, with an entry since
+   * removed, is worse than no set at all — you would feed a picture the prompt
+   * no longer accounts for. */
+  function clear(dir) {
+    const names = [];
+    if (!dir.values) return Promise.resolve();
+    return (async function () {
+      for await (const h of dir.values()) names.push(h.name);
+    })().then(function () {
+      return Promise.all(names.map(function (n) {
+        return dir.removeEntry(n, { recursive: true }).catch(function () { });
+      }));
+    }).catch(function () { });
+  }
+
+  function writeFeed(p, shot, code, entries) {
+    if (!hasFS) return Promise.resolve(null);
+    return folder(p).then(function (dir) {
+      if (!dir) return null;
+      return sub(dir, FEED).then(function (fd) {
+        if (!fd) return null;
+        return sub(fd, slug(code) || 'shot').then(function (od) {
+          if (!od) return null;
+          return clear(od).then(function () {
+            let wrote = 0, full = 0;
+            const step = function (i) {
+              if (i >= entries.length) {
+                return { dir: od, wrote: wrote, full: full, path: folderName(p) + '/' + FEED + '/' + code };
+              }
+              const e = entries[i];
+              const name = e.n + '_' + (e.render ? pad(e.render.serial) + '_' : '') +
+                (slug(e.label) || 'ref') + (e.role ? '_' + slug(e.role) : '');
+              /* the original if there is one, the proxy if there is not */
+              return file(p, e.render).then(function (f) {
+                if (f) {
+                  full++;
+                  return writeFile(od, name + '.' + (e.render.ext || 'png'), f);
+                }
+                const src = SB.Blobs.src(p, e.img);
+                if (!src) return null;
+                return toBlob(src).then(function (b) {
+                  return b ? writeFile(od, name + '.jpg', b) : null;
+                });
+              }).then(function () { wrote++; return step(i + 1); });
+            };
+            return step(0);
+          });
+        });
+      });
+    }).catch(function () { return null; });
+  }
+
   SB.Renders = {
     hasFS: hasFS,
     connect: connect, disconnect: disconnect, ready: ready,
     isConnected: isConnected, rootName: rootName, folderName: folderName,
     folder: folder, sub: sub, writeFile: writeFile,
     claim: claim, pad: pad, fileName: fileName, extOf: extOf,
-    keep: keep, file: file, has: has,
+    keep: keep, file: file, has: has, writeFeed: writeFeed, slug: slug,
     VERSIONS: VERSIONS, FEED: FEED
   };
 
@@ -3068,6 +3141,8 @@ window.SB = window.SB || {};
         out.push({
           kind: 'shot', id: m.id, label: m.target.label, mentioned: true,
           images: img ? [img] : [],
+          /* the full-size original, if the renders folder has it */
+          renders: img ? [m.target.shot.render || null] : [],
           why: img ? 'the rendered frame of ' + m.target.label
                    : m.target.label + ' has no frame yet — there is nothing to feed'
         });
@@ -3077,6 +3152,7 @@ window.SB = window.SB || {};
       out.push({
         kind: 'subject', id: m.id, label: m.target.label, mentioned: true,
         subject: m.target.subject, images: imgs,
+        renders: imgs.map(function (x) { return x.render || null; }),
         why: imgs.length ? null : 'no reference image yet — it will be described in full instead'
       });
     });
@@ -3089,6 +3165,7 @@ window.SB = window.SB || {};
       out.push({
         kind: 'subject', id: per.id, label: per.name || 'unnamed', mentioned: false,
         subject: per, images: imgs,
+        renders: imgs.map(function (x) { return x.render || null; }),
         why: 'cast on this card but not mentioned in the description'
       });
     });
@@ -3109,6 +3186,8 @@ window.SB = window.SB || {};
       e.images.forEach(function (img, i) {
         list.push({
           img: img, id: e.id, kind: e.kind, label: e.label,
+          /* null when the board's proxy is all there is */
+          render: (e.renders || [])[i] || null,
           role: (img.label || ''), n: e.numbers[i]
         });
       });
@@ -6942,6 +7021,14 @@ window.SB = window.SB || {};
     head.addEventListener('dragend', function () { c.classList.remove('dragging'); });
 
     head.appendChild(SB.el('span', 'code', SB.Model.code(si, sj)));
+    /* The number the full-size render is filed under. A serial means nothing on
+       its own, so the board is where it is given a meaning. */
+    if (sh.render && sh.render.serial) {
+      const ser = SB.el('span', 'code-serial', SB.Renders.pad(sh.render.serial));
+      ser.title = 'The full-size render of this shot is ' +
+        SB.Renders.fileName(sh.render.serial, sh.render.ext) + ' in the renders folder.';
+      head.appendChild(ser);
+    }
 
     /* Riffing is how a board actually gets made: you stand on a finished shot
        and want the next one OFF it — the reverse, tighter, a moment later. The
@@ -7316,7 +7403,18 @@ window.SB = window.SB || {};
       }
 
       cell.appendChild(SB.el('span', 'feed-name', e.label));
+      /* Full-size entries carry their serial, so the strip names the actual
+         files this card is about to hand over. */
+      const sers = (e.renders || []).filter(Boolean)
+        .map(function (r) { return SB.Renders.pad(r.serial); });
+      if (sers.length) {
+        cell.classList.add('full');
+        cell.appendChild(SB.el('span', 'feed-ser', sers.join(' ')));
+      }
       cell.title = e.label + (e.why ? ' — ' + e.why : '') +
+        (sers.length
+          ? '\nFull-size: ' + sers.join(', ')
+          : (e.images.length ? '\nBoard copy only (854×480) — no original kept.' : '')) +
         (e.images.length ? '\nClick to open it.' : '\nClick to fix it.');
       cell.onclick = function (ev) {
         ev.stopPropagation();
@@ -7337,12 +7435,16 @@ window.SB = window.SB || {};
       row.appendChild(warn);
     }
     if (imgs.length) {
+      const full = imgs.filter(function (e) { return !!e.render; }).length;
       const copy = SB.el('button', 'mini feed-copy', 'copy image set');
-      copy.title = 'Save all ' + imgs.length + ' reference images, numbered in feed order, ' +
-        'so they go into the model in the order the prompt promises.';
+      copy.title = 'Write all ' + imgs.length + ' reference images out, numbered in feed order, ' +
+        'so they go into the model in the order the prompt promises.' +
+        (full ? '\n' + full + ' of them full-size from the renders folder.'
+              : '\nAll of them are the board’s 854×480 copies — connect a renders folder in ' +
+                'Settings to keep the originals.');
       copy.onclick = function (ev) {
         ev.stopPropagation();
-        saveFeed(sh, imgs);
+        saveFeed(sh, imgs, SB.Model.code(si, sj));
       };
       row.appendChild(copy);
     }
@@ -7383,8 +7485,24 @@ window.SB = window.SB || {};
   }
 
   /* Hand the images over in feed order. Named 1_, 2_, … because the order is
-   * the promise the prompt's mapping makes, and a folder sorts by name. */
-  function saveFeed(sh, imgs) {
+   * the promise the prompt's mapping makes, and a folder sorts by name.
+   *
+   * With a renders folder connected this writes a real folder of full-size
+   * files you can drag in one gesture; without one it falls back to the
+   * browser's downloads, which is the old behaviour and still the proxies. */
+  function saveFeed(sh, imgs, code) {
+    if (SB.Renders.isConnected()) {
+      SB.Renders.writeFeed(P(), sh, code, imgs).then(function (r) {
+        if (!r) { downloadFeed(imgs); return; }
+        SB.toast(r.wrote + ' reference image' + (r.wrote === 1 ? '' : 's') + ' written to ' +
+          r.path + (r.full ? ' — ' + r.full + ' full-size' : ' — all at board size'));
+      }).catch(function () { downloadFeed(imgs); });
+      return;
+    }
+    downloadFeed(imgs);
+  }
+
+  function downloadFeed(imgs) {
     let n = 0;
     imgs.forEach(function (e) {
       const src = SB.Blobs.src(P(), e.img);
@@ -7630,8 +7748,10 @@ window.SB = window.SB || {};
   }
 
   function setImage(sh, src) {
-    /* The proxy is what the board shows and stores; the original goes to the
-       renders folder, if one is connected. Before this, it was thrown away. */
+    /* The original goes to the renders folder, if one is connected — before
+       this it was thrown away. It runs alongside rather than in front: the
+       proxy is what the board shows, and it must never wait on a permission
+       check or on a handle store that stalls under file://. */
     SB.Renders.keep(P(), src, sh.render).then(function (rec) {
       if (!rec) return;
       sh.render = rec;
@@ -10453,12 +10573,18 @@ window.SB = window.SB || {};
   }
 
   function addImage(per, src) {
-    /* the full-size original goes to the renders folder; the board keeps the
-       proxy, exactly as it always has */
-    return SB.Renders.keep(P(), src, null).then(function (rec) {
-      return SB.downscaleImage(src).then(function (img) {
-        SB.Personas.addImage(per, SB.Blobs.image(P(), img.data, img.w, img.h), '', rec);
-        SB.app.changed(true);
+    /* The proxy is the visible half and never waits on the folder: reaching a
+       remembered directory handle can cost a permission check, and on file://
+       the handle store itself stalls. So the frame appears, and the full-size
+       original catches up. */
+    return SB.downscaleImage(src).then(function (img) {
+      const rec = SB.Personas.addImage(per, SB.Blobs.image(P(), img.data, img.w, img.h), '');
+      SB.app.changed(true);
+      renderRefs();
+      SB.Renders.keep(P(), src, null).then(function (r) {
+        if (!r || !rec) return;
+        rec.render = r;
+        SB.Store.touch();
         renderRefs();
       });
     }).catch(function (e) { SB.toast('Image failed: ' + e.message, true); });

@@ -257,6 +257,8 @@ button,input,select,textarea{font:inherit;color:inherit}
 }
 .card-head{flex-wrap:wrap}
 .card-head .code{font-weight:700;color:var(--accent);min-width:34px}
+/* which file on disk this card's render is */
+.card-head .code-serial{font-size:9px;color:var(--fg-dim);font-variant-numeric:tabular-nums;margin-left:-3px}
 .card-head select.type{
   background:var(--bg2);border:1px solid var(--line);border-radius:4px;
   padding:1px 4px;font-size:11px;flex:1 1 60px;min-width:0;max-width:104px;
@@ -830,6 +832,8 @@ button.linkish{
   font-size:7px;padding:0 1px;
 }
 .feed-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* the file this cell will actually hand over */
+.feed-ser{font-size:9px;color:var(--fg-dim);font-variant-numeric:tabular-nums;opacity:.85}
 /* fed, but nobody said to — its place in the order was nobody's decision */
 .feed-cell.unmentioned{border-style:dashed}
 .feed-cell.unmentioned .feed-n{color:var(--fg-dim)}

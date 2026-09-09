@@ -659,12 +659,18 @@
   }
 
   function addImage(per, src) {
-    /* the full-size original goes to the renders folder; the board keeps the
-       proxy, exactly as it always has */
-    return SB.Renders.keep(P(), src, null).then(function (rec) {
-      return SB.downscaleImage(src).then(function (img) {
-        SB.Personas.addImage(per, SB.Blobs.image(P(), img.data, img.w, img.h), '', rec);
-        SB.app.changed(true);
+    /* The proxy is the visible half and never waits on the folder: reaching a
+       remembered directory handle can cost a permission check, and on file://
+       the handle store itself stalls. So the frame appears, and the full-size
+       original catches up. */
+    return SB.downscaleImage(src).then(function (img) {
+      const rec = SB.Personas.addImage(per, SB.Blobs.image(P(), img.data, img.w, img.h), '');
+      SB.app.changed(true);
+      renderRefs();
+      SB.Renders.keep(P(), src, null).then(function (r) {
+        if (!r || !rec) return;
+        rec.render = r;
+        SB.Store.touch();
         renderRefs();
       });
     }).catch(function (e) { SB.toast('Image failed: ' + e.message, true); });

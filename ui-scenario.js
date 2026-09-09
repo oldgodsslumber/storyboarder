@@ -489,6 +489,45 @@
         /Ops lead/.test(document.querySelector('.card .cast-row').textContent), '');
       castPop.remove();
 
+      // the full-size original, and what the card says about it
+      {
+        var rShot0 = P().scenes[0].shots[0];
+        var rWasImg = rShot0.image;
+        rShot0.image = rShot0.image || SB.Blobs.image(P(),
+          'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 4, 3);
+        rShot0.render = { serial: 7, ext: 'png', bytes: 1234, at: 1 };
+        SB.app.changed(true);
+        var rHead = document.querySelector('.card[data-shot="' + rShot0.id + '"] .card-head');
+        t('a card says which file its render is',
+          !!rHead.querySelector('.code-serial') &&
+          rHead.querySelector('.code-serial').textContent === '0007',
+          rHead.textContent);
+        t('and the board still shows the shot code beside it',
+          /1A|1B|1C/.test(rHead.querySelector('.code').textContent), '');
+        /* the feed says which files it is about to hand over */
+        var other = P().scenes[0].shots[1];
+        other.description = 'Reverse of ' + SB.Refs.mark(rShot0.id, '1A') + '.';
+        SB.Board.refreshFeed(other.id);
+        var oFeed = document.querySelector('.feed-row[data-feed="' + other.id + '"]');
+        t('a feed cell backed by a full-size file names it',
+          !!oFeed.querySelector('.feed-cell.full .feed-ser') &&
+          oFeed.querySelector('.feed-ser').textContent === '0007',
+          oFeed.textContent);
+        t('and the serial rides with the picture, not the card',
+          (function () {
+            SB.Model.swapShotContent(P(), rShot0.id, other.id);
+            var moved = SB.Model.findShot(P(), other.id).shot;
+            var ok = moved.render && moved.render.serial === 7 &&
+              !SB.Model.findShot(P(), rShot0.id).shot.render;
+            SB.Model.swapShotContent(P(), rShot0.id, other.id);
+            return ok;
+          })(), '');
+        rShot0.render = null;
+        rShot0.image = rWasImg;
+        other.description = '';
+        SB.app.changed(true);
+      }
+
       // riffing: the next shot off this one, with its frame as the reference
       {
         var rCard = document.querySelector('.card[data-shot="' + firstShot.id + '"]');

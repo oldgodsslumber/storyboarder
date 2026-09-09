@@ -151,6 +151,8 @@
         out.push({
           kind: 'shot', id: m.id, label: m.target.label, mentioned: true,
           images: img ? [img] : [],
+          /* the full-size original, if the renders folder has it */
+          renders: img ? [m.target.shot.render || null] : [],
           why: img ? 'the rendered frame of ' + m.target.label
                    : m.target.label + ' has no frame yet — there is nothing to feed'
         });
@@ -160,6 +162,7 @@
       out.push({
         kind: 'subject', id: m.id, label: m.target.label, mentioned: true,
         subject: m.target.subject, images: imgs,
+        renders: imgs.map(function (x) { return x.render || null; }),
         why: imgs.length ? null : 'no reference image yet — it will be described in full instead'
       });
     });
@@ -172,6 +175,7 @@
       out.push({
         kind: 'subject', id: per.id, label: per.name || 'unnamed', mentioned: false,
         subject: per, images: imgs,
+        renders: imgs.map(function (x) { return x.render || null; }),
         why: 'cast on this card but not mentioned in the description'
       });
     });
@@ -192,6 +196,8 @@
       e.images.forEach(function (img, i) {
         list.push({
           img: img, id: e.id, kind: e.kind, label: e.label,
+          /* null when the board's proxy is all there is */
+          render: (e.renders || [])[i] || null,
           role: (img.label || ''), n: e.numbers[i]
         });
       });
