@@ -266,107 +266,70 @@
     });
   }
 
-  /* opts = { roles:{image,video}, onProgress(done,total,failed) } */
-  function generateFor(shots, opts) {
-    opts = opts || {};
+  /* Write the prompts for ONE shot.
+   *
+   * There used to be a batch here: a queue, three lanes, a canary first request
+   * to prove the network before the rest followed, progress ticks and an
+   * aggregate result. All of it existed to write a whole board at once, which
+   * turned out to be a fast way to produce text nobody had read — every prompt
+   * it wrote was one you then opened and edited anyway. So it is one shot, and
+   * at most the two jobs that shot needs.
+   *
+   * Resolves with what was written. Rejects if nothing could be.
+   */
+  function generateFor(shot, roles) {
     const p = P();
     const im = SB.Model.imageModel(p), vm = SB.Model.videoModel(p);
-    const roles = opts.roles || { image: true, video: true };
+    roles = roles || { image: true, video: true };
     if ((!roles.image || !im) && (!roles.video || !vm)) {
       return Promise.reject(new Error('Pick a target model first'));
     }
-    /* Check up front rather than letting every job fail one at a time — the
-     * reason is what the user needs, not a count of failures. */
+    /* Checked up front rather than letting the job fail: the reason is what the
+     * user needs, not a failure count. */
     const prov = SB.Providers.active();
     if (!prov.ready()) return Promise.reject(new Error(prov.notReady()));
 
-    const jobs = [];
-    shots.forEach(function (s) {
-      if (s.noShot) return;                        // "no shot" fragments never generate
-      if (!(s.description || '').trim()) return;   // nothing for the writer to work from
-      let want = roles;
-      /* A run over a whole board is a run over what is not written yet. Asking
-       * for everything overwrote prompts somebody had edited by hand — the
-       * exact work this is for — and paid for the privilege twice. A single
-       * card's generate button never passes this: clicking one IS the ask. */
-      if (opts.onlyMissing) {
-        const has = function (m, field) {
-          const pr = m && s.prompts[m.id];
-          return !!(pr && pr[field]);
-        };
-        want = {
-          image: roles.image && !has(im, 'imagePrompt'),
-          video: roles.video && !has(vm, 'videoPrompt')
-        };
-        if (!want.image && !want.video) return;
-      }
-      jobsFor(s, im, vm, want).forEach(function (j) { j.shot = s; jobs.push(j); });
-    });
-    if (!jobs.length) {
-      return Promise.reject(new Error('Nothing to generate — “no shot” cards and empty descriptions are skipped.'));
+    if (shot.noShot) {
+      return Promise.reject(new Error('A \u201cno shot\u201d card is never generated.'));
+    }
+    if (!(shot.description || '').trim()) {
+      return Promise.reject(new Error('Write a description first \u2014 there is nothing to work from.'));
     }
 
-    let done = 0, failed = 0, lastError = null;
-    const total = jobs.length;
-    const tick = function () { if (opts.onProgress) opts.onProgress(done, total, failed); };
-    tick();
+    const jobs = jobsFor(shot, im, vm, roles);
+    if (!jobs.length) return Promise.reject(new Error('Nothing to write for this shot.'));
 
-    const queue = jobs.slice();
-    let stopped = false;
-    function worker() {
-      if (stopped) return Promise.resolve();
-      const j = queue.shift();
-      if (!j) return Promise.resolve();
+    const written = [];
+    let lastError = null;
+
+    /* One after another. Two jobs only happen when the image and the video
+     * model differ, and a wall that stops the first would stop the second. */
+    function step(i) {
+      if (i >= jobs.length) return Promise.resolve();
+      if (lastError && SB.netKind(lastError)) return Promise.resolve();
+      const j = jobs[i];
       return callWriter(j.text, j.keys, j.system).then(function (res) {
-        return enforceNeutral(j, res);
+        return enforceNeutral({ shot: shot, keys: j.keys, system: j.system, text: j.text }, res);
       }).then(function (out) {
         j.targets.forEach(function (t) {
-          store(j.shot, t.model, t.field, out.res[t.field], out.flags[t.field]);
+          store(shot, t.model, t.field, out.res[t.field], out.flags[t.field]);
+          written.push(t.field);
         });
-        done++;
       }).catch(function (e) {
-        failed++;
         lastError = e;
         console.error('[storyboarder] prompt failed', e);
-        /* Blocked at the network: every remaining job would fail the same way.
-         * Stop, so one wall costs one failed request and one message. */
-        if (SB.netKind(e)) { stopped = true; queue.length = 0; return; }
-        if (failed === 1) SB.toast(e.message, true);
-      }).then(function () { tick(); return worker(); });
+      }).then(function () { return step(i + 1); });
     }
 
-    /* The first job goes alone. Three lanes opening at once would put three
-     * doomed requests on the wire before the first rejection came back, so the
-     * canary proves the network is there before the rest follow. */
-    return worker().then(function () {
-      if (stopped || !queue.length) return;
-      const lanes = [];
-      for (let i = 0; i < Math.min(2, queue.length); i++) lanes.push(worker());
-      return Promise.all(lanes);
-    }).then(function () {
+    return step(0).then(function () {
       SB.app.changed(true);
-      /* Nothing written at all is a failure, not a result — say why. */
-      if (!done && lastError) throw lastError;
-      return {
-        done: done, failed: failed, total: total,
-        error: lastError ? lastError.message : null
-      };
+      if (!written.length) throw lastError || new Error('Nothing was written');
+      return { written: written, error: lastError ? lastError.message : null };
     });
-  }
-
-  function allShots() {
-    const all = [];
-    SB.Model.eachShot(P(), function (sh) { all.push(sh); });
-    return all;
-  }
-
-  function sceneShots(sceneId) {
-    const f = SB.Model.findScene(P(), sceneId);
-    return f ? f.scene.shots.slice() : [];
   }
 
   SB.Prompts = {
-    generateFor: generateFor, allShots: allShots, sceneShots: sceneShots,
+    generateFor: generateFor,
     jobsFor: jobsFor, fill: fill, raw: ask
   };
 

@@ -17,7 +17,6 @@
   let root = null;
   let bodyEl, statusEl, usageEl, limitEl, headEl;
   let filter = 'all';
-  let running = false;          // a run is in flight; nothing may start a second
 
   function P() { return SB.app.project; }
 
@@ -65,10 +64,8 @@
   function isOpen() { return !!root; }
   function refresh() { if (root) render(); }
 
-  /* Called from app.changed(): the board moved under the table. Skipped while a
-   * run is in flight, because run() renders when it finishes and rebuilding
-   * mid-run throws away the progress line. */
-  function follow() { if (root && !running) render(); }
+  /* Called from app.changed(): the board moved under the table. */
+  function follow() { if (root) render(); }
 
   function setStatus(txt, isErr) {
     if (!statusEl) return;
@@ -229,26 +226,9 @@
 
     r2.appendChild(SB.el('span', 'spacer'));
 
-    /* What a run would actually write: shots in this list that are missing a
-       prompt. Anything already written is left alone — see prompts.js. */
-    const runnable = rows.filter(function (r) {
-      return !r.shot.noShot && (r.shot.description || '').trim() && isMissing(r, im, vm);
-    });
     const acts = SB.el('div', 'pt-acts');
     statusEl = SB.el('span', 'pt-status');
     acts.appendChild(statusEl);
-
-    const go = SB.el('button', 'tb on', running
-      ? '✦ writing…'
-      : '✦ Write ' + runnable.length + ' missing');
-    go.title = 'Write the prompts that are missing from the shots in this list. ' +
-      'Anything already written is left as it is — use a row’s own generate to replace one. ' +
-      '“No shot” cards and empty descriptions are skipped.';
-    go.disabled = running || !runnable.length;
-    go.onclick = function () {
-      run(runnable.map(function (r) { return r.shot; }), { image: !!im, video: !!vm }, go, true);
-    };
-    acts.appendChild(go);
     r2.appendChild(acts);
   }
 
@@ -418,6 +398,11 @@
    * boxes sat a row lower than the description beside them and the whole table
    * read as if it were out of register. Everything that acts on a prompt now
    * sits under it, which is also the order you use it in: read, then act. */
+  function code(sh) {
+    const f = SB.Model.findShot(P(), sh.id);
+    return f ? f.code : 'this shot';
+  }
+
   function promptCell(sh, m, field) {
     const cell = SB.el('div', 'pt-cell pt-prompt');
     if (!m) {
@@ -469,25 +454,28 @@
     foot.appendChild(SB.el('span', 'spacer'));
 
     const gen = SB.el('button', 'mini primary', '\u2726 generate');
-    gen.disabled = running || !!sh.noShot || !(sh.description || '').trim();
+    gen.disabled = !!sh.noShot || !(sh.description || '').trim();
     if (gen.disabled) {
-      gen.title = running ? 'A run is in flight'
-        : sh.noShot ? 'A \u201cno shot\u201d card never generates'
-          : 'Write a description first \u2014 there is nothing for the writer to work from';
+      gen.title = sh.noShot ? 'A \u201cno shot\u201d card never generates'
+        : 'Write a description first \u2014 there is nothing for the writer to work from';
     } else if (ta.value) {
       gen.title = 'Write this one again, replacing what is there';
     }
     gen.onclick = function () {
       gen.disabled = true;
       gen.textContent = '\u2026';
+      setStatus('writing the ' + (field === 'imagePrompt' ? 'first frame' : 'video') +
+        ' prompt for ' + code(sh) + '\u2026');
       const roles = field === 'imagePrompt' ? { image: true } : { video: true };
-      SB.Prompts.generateFor([sh], { roles: roles }).then(function () {
+      SB.Prompts.generateFor(sh, roles).then(function () {
+        setStatus('');
+        refreshUsage();
         render();
       }).catch(function (e) {
         gen.disabled = false;
         gen.textContent = '\u2726 generate';
-        if (SB.apiBlocked(e, function () { gen.onclick(); })) return;
-        SB.toast(e.message || String(e), true);
+        refreshUsage();
+        writeError(e, function () { gen.onclick(); });
       });
     };
     foot.appendChild(gen);
@@ -556,60 +544,36 @@
     cell.appendChild(feedList(f.shot, f.code));
   }
 
-  /* ------------------------------------------------------------------ run */
+  /* ------------------------------------------------------- one shot at a time */
 
-  function run(shots, roles, btn, onlyMissing) {
-    if (!roles.image && !roles.video) { setStatus('Nothing to write.', true); return; }
-    if (running) return;
-    /* The flag, not the button: head() builds a fresh button on every render,
-       so a filter click mid-run used to re-arm it and a second click started a
-       second run over the same shots. */
-    running = true;
-    btn.disabled = true;
-    SB.Prompts.generateFor(shots, {
-      roles: roles,
-      onlyMissing: !!onlyMissing,
-      onProgress: function (done, total, failed) {
-        setStatus('writing ' + done + '/' + total + (failed ? ' · ' + failed + ' failed' : ''), false);
-        refreshUsage();
-      }
-    }).then(function (r) {
-      running = false;
-      const done = r.done, total = r.total, failed = r.failed, err = r.error;
-      /* Reveal what was just written — the boxes are off by default, and a
-         result you cannot see is the same as no result. */
-      const s = P().settings;
-      if (roles.image && done) s.showImagePrompt = true;
-      if (roles.video && done) s.showVideoPrompt = true;
-      SB.app.changed(true);
-      render();                                   // rows, counts and filters all move
-      setStatus(failed
-        ? done + ' of ' + total + ' written · ' + failed + ' failed: ' + (err || 'unknown')
-        : 'done — ' + done + ' of ' + total,
-        !!failed);
-    }).catch(function (e) {
-      running = false;
-      btn.disabled = false;
-      if (SB.apiBlocked(e, function () { run(shots, roles, btn, onlyMissing); })) {
-        setStatus('blocked — see the dialog', true);
-        return;
-      }
-      const msg = e.message || String(e);
+  /* Prompts are written one shot at a time, because that is how they are read
+   * and edited. There was a button here that wrote a whole board's worth in one
+   * go; it was faster at producing text nobody had looked at, and every prompt
+   * it wrote was one you then had to open anyway.
+   *
+   * What it did carry, and this does now, is the answer to a writer model the
+   * key cannot reach: a 404 is not a dead end, it is a question the key can be
+   * asked directly. */
+  function writeError(e, retry) {
+    if (SB.apiBlocked(e, retry)) {
+      setStatus('blocked — see the dialog', true);
+      return;
+    }
+    const msg = e.message || String(e);
+    setStatus(msg, true);
+    const notAvailable = msg.indexOf('404') >= 0 && SB.Providers.activeId() === 'gemini';
+    if (!notAvailable) {
+      SB.toast(msg, true);
+      return;
+    }
+    setStatus(msg + ' — checking what your key can reach…', true);
+    SB.GeminiModels.fetchAvailable().then(function (models) {
+      render();
+      setStatus('“' + P().settings.geminiModel + '” is not available to this key. ' +
+        'The writer list now shows the ' + models.length +
+        ' models it can reach — pick one.', true);
+    }).catch(function () {
       setStatus(msg, true);
-      /* "that model is not available to this key" is answerable on the spot:
-       * ask the key what it can reach and put those in the picker. */
-      const notAvailable = msg.indexOf('404') >= 0 && SB.Providers.activeId() === 'gemini';
-      if (notAvailable) {
-        setStatus(msg + ' — checking what your key can reach…', true);
-        SB.GeminiModels.fetchAvailable().then(function (models) {
-          render();
-          setStatus('“' + P().settings.geminiModel + '” is not available to this key. ' +
-            'The writer list now shows the ' + models.length +
-            ' models it can reach — pick one.', true);
-        }).catch(function () {
-          setStatus(msg, true);
-        });
-      }
     });
   }
 

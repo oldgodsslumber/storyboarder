@@ -1466,7 +1466,7 @@
     gen.onclick = function () {
       gen.disabled = true; gen.textContent = '…';
       const roles = field === 'imagePrompt' ? { image: true } : { video: true };
-      SB.Prompts.generateFor([sh], { roles: roles })
+      SB.Prompts.generateFor(sh, roles)
         .catch(function (e) {
           gen.disabled = false; gen.textContent = 'generate';
           if (SB.apiBlocked(e, function () { gen.onclick(); })) return;

@@ -33,10 +33,11 @@
       /* ---------- the plain case: one image prompt for one shot ---------- */
       window.__calls = [];
       let err = '';
-      const res = await SB.Prompts.generateFor([shots.a], { roles: { image: true } })
+      const res = await SB.Prompts.generateFor(shots.a, { image: true })
         .catch(function (e) { err = e.message || String(e); return null; });
 
-      t('an image prompt can be generated', !!res && res.done === 1 && !err,
+      t('an image prompt can be generated',
+        !!res && res.written.join() === 'imagePrompt' && !err,
         err || JSON.stringify(res));
       t('exactly one request went out', window.__calls.length === 1, window.__calls.length);
 
@@ -68,7 +69,7 @@
       SB.Fields.find(P(), 'artDirection').enabled = true;
       SB.Fields.set(shots.a, 'artDirection', 'Warm practicals only.');
       window.__calls = [];
-      await SB.Prompts.generateFor([shots.a], { roles: { image: true } });
+      await SB.Prompts.generateFor(shots.a, { image: true });
       t('an enabled card field reaches the request',
         window.__calls[0].contents === undefined &&
         window.__calls[0].body.contents[0].parts[0].text.indexOf('Warm practicals only.') > 0,
@@ -79,7 +80,7 @@
       per.image = SB.Blobs.image(P(), 'data:image/gif;base64,R0lGODlhAQABAAAAACw=', 4, 3);
       shots.a.personaIds = [per.id];
       window.__calls = [];
-      await SB.Prompts.generateFor([shots.a], { roles: { image: true } });
+      await SB.Prompts.generateFor(shots.a, { image: true });
       const sys2 = window.__calls[0].body.systemInstruction.parts[0].text;
       t('the cast reaches the request', /CAST/.test(sys2) && /Ops lead/.test(sys2), '');
       t('with the reference-image numbering', /image 1 = Ops lead/.test(sys2), '');
@@ -87,7 +88,7 @@
       /* ---------- both prompts, one model, one call ---------- */
       P().settings.videoModelId = P().settings.imageModelId;
       window.__calls = [];
-      await SB.Prompts.generateFor([shots.b], { roles: { image: true, video: true } });
+      await SB.Prompts.generateFor(shots.b, { image: true, video: true });
       t('one model for both prompts means one call', window.__calls.length === 1,
         window.__calls.length);
       t('and both come back stored',
@@ -98,7 +99,7 @@
       /* ---------- gemma: no schema, no systemInstruction ---------- */
       P().settings.geminiModel = 'gemma-4-31b-it';
       window.__calls = [];
-      await SB.Prompts.generateFor([shots.a], { roles: { image: true } });
+      await SB.Prompts.generateFor(shots.a, { image: true });
       const g = window.__calls[0];
       t('gemma is sent no response schema',
         !g.body.generationConfig.responseSchema, JSON.stringify(g.body.generationConfig));
@@ -116,10 +117,10 @@
         }
         return null;
       };
-      const r2 = await SB.Prompts.generateFor([shots.a], { roles: { image: true } })
-        .catch(function (e) { return { done: 0, err: e.message }; });
+      const r2 = await SB.Prompts.generateFor(shots.a, { image: true })
+        .catch(function (e) { return { written: [], err: e.message }; });
       t('a schema rejection is retried without the schema',
-        r2 && r2.done === 1 && window.__calls.length === 2,
+        r2 && r2.written.length === 1 && window.__calls.length === 2,
         JSON.stringify(r2) + ' calls=' + window.__calls.length);
       t('the retry drops the schema',
         window.__calls.length === 2 && !window.__calls[1].body.generationConfig.responseSchema, '');
@@ -134,7 +135,7 @@
               ? 'A businessman adjusts his tie by the window.'
               : 'The subject adjusts a collar by the window.' }) }] } }] }) };
       };
-      await SB.Prompts.generateFor([shots.a], { roles: { image: true } });
+      await SB.Prompts.generateFor(shots.a, { image: true });
       t('a gendered draft triggers one rewrite', window.__calls.length === 2,
         window.__calls.length);
       t('and the clean rewrite is what gets stored',
@@ -151,7 +152,7 @@
           candidates: [{ content: { parts: [{ text: JSON.stringify({
             imagePrompt: 'He stands by the window.' }) }] } }] }) };
       };
-      await SB.Prompts.generateFor([shots.a], { roles: { image: true } });
+      await SB.Prompts.generateFor(shots.a, { image: true });
       t('a draft that stays gendered is flagged for the user',
         (shots.a.prompts[im.id].flagged || {}).imagePrompt &&
         shots.a.prompts[im.id].flagged.imagePrompt.indexOf('he') >= 0,
@@ -165,7 +166,7 @@
       };
       let msg404 = '';
       window.__calls = [];
-      await SB.Prompts.generateFor([shots.b], { roles: { image: true } })
+      await SB.Prompts.generateFor(shots.b, { image: true })
         .catch(function (e) { msg404 = e.message; });
       t('a run that writes nothing rejects rather than reporting success',
         !!msg404, 'it resolved quietly');
@@ -178,7 +179,7 @@
       window.__calls = [];
       const before = SB.GeminiModels.count(P().settings.geminiModel);
       let msg429 = '';
-      await SB.Prompts.generateFor([shots.b], { roles: { image: true } })
+      await SB.Prompts.generateFor(shots.b, { image: true })
         .catch(function (e) { msg429 = e.message; });
       t('a 429 says which model ran out and what to do',
         /daily\/rate limit/i.test(msg429) && /Prompts panel/.test(msg429), msg429);
@@ -190,14 +191,14 @@
       /* ---------- refusals to start ---------- */
       SB.Store.setApiKey('');
       let noKey = '';
-      await SB.Prompts.generateFor([shots.a], { roles: { image: true } })
+      await SB.Prompts.generateFor(shots.a, { image: true })
         .catch(function (e) { noKey = e.message; });
       t('no key gives a clear message', /API key/i.test(noKey), noKey);
       SB.Store.setApiKey('AIza-test-key');
 
       let empty = '';
       const blank = SB.Model.addShot(P(), P().scenes[0].id, {});
-      await SB.Prompts.generateFor([blank], { roles: { image: true } })
+      await SB.Prompts.generateFor(blank, { image: true })
         .catch(function (e) { empty = e.message; });
       t('a shot with no description is skipped with a reason',
         /description/i.test(empty), empty);
@@ -206,7 +207,7 @@
       ns.description = 'Something';
       ns.noShot = true;
       let noShot = '';
-      await SB.Prompts.generateFor([ns], { roles: { image: true } })
+      await SB.Prompts.generateFor(ns, { image: true })
         .catch(function (e) { noShot = e.message; });
       t('a “no shot” card is never generated for', /no shot/i.test(noShot), noShot);
 
@@ -217,9 +218,13 @@
       };
       SB.PromptPanel.open();
       await wait(150);
+      /* prompts are written one shot at a time, so the recovery lives on a
+         row's own button — there is no bulk run to carry it any more */
       const genBtn = Array.prototype.filter.call(
-        document.querySelectorAll('.lib-head .tb'),
-        function (b) { return /Write \d+ missing|Generate/.test(b.textContent); })[0];
+        document.querySelectorAll('.pt-row .pt-foot .mini.primary'),
+        function (b) { return !b.disabled; })[0];
+      t('a row offers its own generate', !!genBtn,
+        document.querySelectorAll('.pt-row').length + ' rows');
       /* ListModels answers even though generateContent 404s */
       const realFetch = window.fetch;
       window.fetch = function (url, opts) {
@@ -262,7 +267,7 @@
         // 1. fetch rejects outright — a CORS/proxy wall
         window.fetch = function () { tries++; return Promise.reject(new TypeError('Failed to fetch')); };
         let e1 = null;
-        await SB.Prompts.generateFor([shots.a], { roles: { image: true } }).catch(function (e) { e1 = e; });
+        await SB.Prompts.generateFor(shots.a, { image: true }).catch(function (e) { e1 = e; });
         t('a blocked request is recognised as one', !!e1 && e1.blocked === true,
           e1 && e1.message);
         t('and the message says how to fix it', !!e1 && /AI Studio/.test(e1.message),
@@ -270,17 +275,12 @@
         t('“Failed to fetch” never reaches the user', !!e1 && !/failed to fetch/i.test(e1.message),
           e1 && e1.message);
 
-        // 2. a whole board's worth of jobs still costs exactly one request
-        const many = [];
-        for (let i = 0; i < 6; i++) {
-          const s = SB.Model.addShot(P(), P().scenes[0].id, {});
-          s.description = 'beat number ' + i;
-          many.push(s);
-        }
+        // 2. a shot needing two prompts from two models is two jobs, and a wall
+        //    that stops the first has to stop the second
         tries = 0;
-        await SB.Prompts.generateFor(many, { roles: { image: true } }).catch(function () { });
+        await SB.Prompts.generateFor(shots.b, { image: true, video: true })
+          .catch(function () { });
         t('one wall costs one request, not one per job', tries === 1, tries);
-        many.forEach(function (s) { SB.Model.deleteShot(P(), s.id); });
 
         // 3. an interception page answering with HTML where JSON was due
         window.fetch = function () {
@@ -291,7 +291,7 @@
           });
         };
         let e2 = null;
-        await SB.Prompts.generateFor([shots.a], { roles: { image: true } }).catch(function (e) { e2 = e; });
+        await SB.Prompts.generateFor(shots.a, { image: true }).catch(function (e) { e2 = e; });
         t('an HTML interception page reads as blocked too', !!e2 && e2.blocked === true,
           e2 && e2.message);
 
@@ -304,15 +304,15 @@
           });
         };
         let e3 = null;
-        await SB.Prompts.generateFor([shots.a], { roles: { image: true } }).catch(function (e) { e3 = e; });
+        await SB.Prompts.generateFor(shots.a, { image: true }).catch(function (e) { e3 = e; });
         t('a genuine 403 is not mistaken for the network', !!e3 && !e3.blocked &&
           /API key not valid/.test(e3.message), e3 && e3.message);
 
         // 5. the whole loop through the Prompts panel: block -> dialog -> try again
         window.fetch = function () { return Promise.reject(new TypeError('Failed to fetch')); };
         const genBtn2 = Array.prototype.filter.call(
-          document.querySelectorAll('.lib-head .tb'),
-          function (b) { return /Write \d+ missing|Generate/.test(b.textContent); })[0];
+          document.querySelectorAll('.pt-row .pt-foot .mini.primary'),
+          function (b) { return !b.disabled; })[0];
         genBtn2.click();
         await wait(300);
 
@@ -338,10 +338,13 @@
         tryAgain.click();
         await wait(600);
         t('the dialog closes when it is used', !document.querySelector('.blocked-link'), '');
+        /* a row that succeeds says nothing — the prompt appearing in its box is
+           the result. What matters is that the request went out again and the
+           status is no longer reporting a wall. */
+        const againStatus = document.querySelector('.lib-head .pt-status');
         t('try again re-runs the thing that failed',
-          /done —/.test(document.querySelector('.lib-head .pt-status').textContent) &&
-          window.__calls.length > 0,
-          document.querySelector('.lib-head .pt-status').textContent + ' / ' + window.__calls.length);
+          window.__calls.length > 0 && !/blocked/.test(againStatus.textContent),
+          againStatus.textContent + ' / ' + window.__calls.length);
       }
 
       /* ---------- MiniMax H3 gets its own published prompt format ---------- */
@@ -364,7 +367,7 @@
 
         P().settings.videoModelId = h3.id;
         window.__calls = [];
-        await SB.Prompts.generateFor([shots.a], { roles: { video: true } });
+        await SB.Prompts.generateFor(shots.a, { video: true });
         const sent = JSON.stringify(window.__calls[0].body);
         t('the format reaches the request', sent.indexOf('retention_analysis') > 0,
           sent.slice(0, 80));

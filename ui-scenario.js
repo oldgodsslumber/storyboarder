@@ -452,44 +452,19 @@
       document.querySelectorAll('.pt-oncards input[type=checkbox]')[0].click();
       document.querySelectorAll('.pt-oncards input[type=checkbox]')[1].click();
 
-      // a bulk run writes what is MISSING — it used to overwrite prompts
-      // somebody had edited by hand, which is the work this screen is for
+      // prompts are written one shot at a time — there is no bulk run
       {
-        const im2 = SB.Model.imageModel(P()), vm2 = SB.Model.videoModel(P());
-        const keep = P().scenes[0].shots[0];
-        const other = P().scenes[0].shots[1];
-        keep.description = keep.description || 'Something to work from.';
-        other.description = other.description || 'And something here too.';
-        /* one card fully written by hand, one with nothing */
-        keep.prompts[im2.id] = { imagePrompt: 'MINE, BY HAND', modelName: im2.name, at: Date.now() };
-        if (vm2) keep.prompts[vm2.id] = Object.assign(keep.prompts[vm2.id] || {},
-          { videoPrompt: 'MINE TOO', modelName: vm2.name, at: Date.now() });
-        other.prompts = {};
-        SB.PromptPanel.refresh();
-        const btn = Array.prototype.filter.call(
+        const heads = Array.prototype.map.call(
           document.querySelectorAll('.lib-head .tb'),
-          function (b) { return /Write \d+ missing/.test(b.textContent); })[0];
-        t('the bulk button says it writes only what is missing', !!btn,
-          Array.prototype.map.call(document.querySelectorAll('.lib-head .tb'),
-            function (b) { return b.textContent; }).join(','));
-        var stub = SB.Prompts.generateFor;
-        var asked = null;
-        SB.Prompts.generateFor = function (shots, opts) {
-          asked = { n: shots.length, onlyMissing: !!opts.onlyMissing };
-          return Promise.resolve({ done: 0, total: 0, failed: 0 });
-        };
-        btn.click();
-        t('and asks for exactly that', asked && asked.onlyMissing === true,
-          JSON.stringify(asked) + ' btn=' + btn.textContent);
-        t('the hand-written card is not in the count',
-          /Write [1-9]/.test(btn.textContent) && keep.prompts[im2.id].imagePrompt === 'MINE, BY HAND',
-          btn.textContent);
-        t('a second click while one is in flight starts nothing',
-          (function () { asked = null; btn.click(); return asked === null; })(), '');
-        SB.Prompts.generateFor = stub;
-        keep.prompts = {};
-        other.prompts = {};
-        SB.PromptPanel.refresh();
+          function (b) { return b.textContent; }).join(' ');
+        t('no button writes a whole board at once',
+          !/Write \d+ missing|Generate \d+/.test(heads), heads);
+        const rowGen = document.querySelectorAll('.pt-row .pt-foot .mini.primary');
+        t('every row has its own generate instead',
+          rowGen.length === document.querySelectorAll('.pt-row').length * 2,
+          rowGen.length + ' on ' + document.querySelectorAll('.pt-row').length + ' rows');
+        t('and a row with nothing to work from cannot be generated',
+          Array.prototype.some.call(rowGen, function (b) { return b.disabled; }), '');
       }
 
       // every filter shows its count, zero included
@@ -498,7 +473,7 @@
           document.querySelectorAll('.lib-head .lib-tabs button'),
           function (b) { return b.textContent; });
         t('each filter carries a number', tabTxt.every(function (x) { return /\s\d+$/.test(x); }),
-          tabTxt.join(' | '));
+          tabTxt.join(' / '));
         t('including "this scene"', /This scene \d+/.test(tabTxt[3]), tabTxt[3]);
       }
 

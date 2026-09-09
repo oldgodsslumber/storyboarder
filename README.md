@@ -294,13 +294,14 @@ A board is made one card at a time; prompts are written a whole film at a time. 
 
 Rows group under their scene, the header sticks, and the filters are the point of a table:
 **Missing** (no prompt yet), **Stale** (a subject on the card was edited after the prompt was
-written), **This scene**. Each filter carries its count, zero included.
+written), **This scene**. Each filter carries its count, zero included — so "what is left to
+do" is a list you can work down.
 
-**✦ Write N missing** writes exactly that: the prompts that are missing from the shots in the
-list you are looking at. Anything already written is left alone — a prompt you edited by hand
-is not something a bulk run gets to replace. To replace one, use that row's own ✦ generate.
-"No shot" cards and empty descriptions are skipped, and nothing can start a second run while
-one is in flight.
+**Prompts are written one shot at a time**, from the ✦ generate under each box. There is no
+button that writes a whole board: it was a fast way to produce text nobody had read, since
+every prompt it wrote was one you then opened and edited anyway. Generating over an existing
+prompt replaces it, and says so. "No shot" cards and empty descriptions can't be generated at
+all, and their buttons say why.
 
 The prompt boxes are deliberately much larger than the card's, because editing a paragraph in
 a box the width of a thumbnail is how prompts end up unedited.
