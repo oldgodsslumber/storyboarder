@@ -15,83 +15,85 @@
   /* Where the full-size renders live. The handle is per-browser and is kept the
    * way the project file's handle is — never in the .storyboard, because it is a
    * fact about this machine. */
-  function rendersBlock() {
+  /* ---------------- originals & clips ----------------
+   *
+   * They used to go to a folder this browser remembered, which was a fact
+   * about one machine and never travelled with the board. Now they are in the
+   * file, which makes the file the only thing anyone has to send — and makes
+   * its weight something worth showing, since it is now mostly pictures the
+   * board never draws.
+   */
+  function kb(n) {
+    if (n < 1024) return n + ' B';
+    if (n < 1024 * 1024) return (n / 1024).toFixed(0) + ' KB';
+    return (n / 1048576).toFixed(1) + ' MB';
+  }
+
+  function originalsBlock() {
     const box = SB.el('div', 'pp-block');
-    box.appendChild(SB.el('div', 't', 'renders folder'));
-    const state = SB.el('div', 'pp-note');
-    const acts = SB.el('div', 'pp-actions');
+    box.appendChild(SB.el('div', 't', 'originals & clips'));
+    box.appendChild(SB.el('div', 'pp-note',
+      'Every picture is held twice: the ≤480p copy the board draws, and the full-size ' +
+      'original a model gets handed. Clips are held whole. All of it is inside the ' +
+      '.storyboard, so handing the file to someone hands over the whole board — there is ' +
+      'no folder to connect and nothing to lose on the way.'));
 
-    const draw = function (remembered) {
-      const p = P();
-      if (!SB.Renders.hasFS) {
-        state.textContent = 'This browser cannot hold a folder. Chrome or Edge can.';
-        state.classList.add('warn');
-        acts.innerHTML = '';
-        return;
-      }
-      acts.innerHTML = '';
-      if (SB.Renders.isConnected()) {
-        state.classList.remove('warn');
-        state.textContent = 'Full-size renders are kept in “' + SB.Renders.rootName() + '” / ' +
-          SB.Renders.folderName(p) + '. The board still holds its own small copies, so it opens ' +
-          'anywhere with or without this folder.';
-        const ch = SB.el('button', 'tb', 'Change…');
-        ch.onclick = function () {
-          SB.Renders.connect().then(function () { draw(false); }).catch(function () { });
-        };
-        const off = SB.el('button', 'tb', 'Disconnect');
-        off.title = 'Stop keeping originals. Nothing already written is touched.';
-        off.onclick = function () { SB.Renders.disconnect().then(function () { draw(false); }); };
-        acts.appendChild(ch);
-        acts.appendChild(off);
-      } else if (remembered) {
-        /* Chrome hands a persisted handle back needing permission again after a
-           restart. The folder IS remembered — saying "not set" here sent people
-           off to pick the same folder a second time. */
-        state.classList.add('warn');
-        state.textContent = 'A folder is remembered, but this browser wants permission again ' +
-          'before it can be written to. Dropping a picture or copying an image set will ask; ' +
-          'or reconnect it here.';
-        const b = SB.el('button', 'tb on', 'Reconnect');
-        b.onclick = function () {
-          SB.Renders.ready(true).then(function (h) {
-            if (h) { SB.toast('Renders folder reconnected'); draw(true); return; }
-            SB.Renders.connect().then(function () { draw(false); }).catch(function () { });
-          });
-        };
-        acts.appendChild(b);
-        const ch = SB.el('button', 'tb', 'Choose another…');
-        ch.onclick = function () { SB.Renders.connect().then(function () { draw(false); }).catch(function () { }); };
-        acts.appendChild(ch);
-      } else {
-        state.classList.remove('warn');
-        state.textContent = 'Not set. Every picture you drop is shrunk to 854×480 for the board ' +
-          'and the original is discarded — which is too small to feed back into an image model. ' +
-          'Choose a folder and the originals are kept, one subfolder per project.';
-        const b = SB.el('button', 'tb on', 'Choose a folder…');
-        b.onclick = function () {
-          SB.Renders.connect().then(function () {
-            draw(false);
-            SB.toast('Renders will be kept in ' + SB.Renders.rootName());
-          }).catch(function (e) {
-            if (e && e.name === 'AbortError') return;
-            SB.toast(e.message || String(e), true);
-          });
-        };
-        acts.appendChild(b);
-      }
-    };
-
-    box.appendChild(state);
-    box.appendChild(acts);
-    draw(false);
-    /* the handle is remembered across sessions, so look before saying anything:
-       "connected", "remembered but needs a click", and "never chosen" are three
-       different states and only the first two have a folder behind them */
-    SB.Renders.ready().then(function (h) {
-      if (h) { draw(false); return; }
-      SB.Renders.isRemembered().then(draw);
+    const w = SB.Renders.weigh(P());
+    const table = SB.el('div', 'weigh');
+    [['the board’s copies', w.proxies], ['full-size originals', w.originals],
+     ['clips', w.clips], ['ink', w.ink]].forEach(function (r) {
+      if (!r[1].n) return;
+      const line = SB.el('div', 'weigh-row');
+      line.appendChild(SB.el('span', 'n', String(r[1].n)));
+      line.appendChild(SB.el('span', 'l', r[0]));
+      line.appendChild(SB.el('span', 'b', kb(r[1].bytes)));
+      table.appendChild(line);
     });
+    const tot = SB.el('div', 'weigh-row total');
+    tot.appendChild(SB.el('span', 'n', ''));
+    tot.appendChild(SB.el('span', 'l', 'pictures in this file'));
+    tot.appendChild(SB.el('span', 'b', kb(w.total)));
+    table.appendChild(tot);
+    box.appendChild(table);
+
+    /* A clip is two orders of magnitude heavier than a still, and the whole
+       file is rewritten on every autosave — so the number that matters is not
+       "is this big" but "is this big enough to feel". */
+    if (w.total > 40 * 1024 * 1024) {
+      box.appendChild(SB.el('div', 'pp-note warn',
+        'This board is heavy enough that saving it takes a noticeable moment — almost all of ' +
+        'it is clips. Deleting a clip you have already cut with, or keeping the shot and ' +
+        'dropping its take, gives the weight straight back.'));
+    }
+
+    if (w.legacy) {
+      box.appendChild(SB.el('div', 'pp-note warn',
+        w.legacy + (w.legacy === 1 ? ' frame was' : ' frames were') + ' filed when originals ' +
+        'lived in a folder on one machine, so only the board copy is in this file. Drop ' +
+        (w.legacy === 1 ? 'that picture' : 'those pictures') + ' in again to bring the ' +
+        (w.legacy === 1 ? 'original' : 'originals') + ' with them.'));
+    }
+
+    const pick = document.createElement('select');
+    [['webp', 'Re-encoded at full size (WebP) — about 16× smaller'],
+     ['source', 'Exactly the bytes that arrived — much bigger files']].forEach(function (o) {
+      const el = document.createElement('option');
+      el.value = o[0]; el.textContent = o[1];
+      if ((P().settings.originals || 'webp') === o[0]) el.selected = true;
+      pick.appendChild(el);
+    });
+    pick.onchange = function () {
+      P().settings.originals = pick.value === 'source' ? 'source' : 'webp';
+      SB.Store.touch();
+    };
+    const f = field('How originals are kept', pick);
+    f.style.marginTop = '12px';
+    box.appendChild(f);
+    box.appendChild(SB.el('div', 'pp-note',
+      'Measured on a real board: a 1184×672 render is 1 MB as the PNG it arrives as and 63 KB ' +
+      're-encoded, at a quality no reference use can tell apart. Forty of them is the ' +
+      'difference between a 7 MB board and a 73 MB one. Changing this affects the next ' +
+      'picture you drop, not the ones already here.'));
     return box;
   }
 
@@ -136,13 +138,8 @@
     themeSel.onchange = function () { SB.Theme.set(themeSel.value); };
     panels.general.appendChild(field('Appearance', themeSel));
 
-    /* ---- the renders folder ----
-     *
-     * Everything on the board is a ≤480p proxy, which is right for a portable
-     * file and useless as a reference to feed back into an image model. With a
-     * folder connected the original is kept beside the board instead of being
-     * thrown away, and the app can hand you the real thing. */
-    panels.general.appendChild(rendersBlock());
+    /* ---- what this board is carrying ---- */
+    panels.general.appendChild(originalsBlock());
 
     /* ---------------- Card fields ---------------- */
     panels.fields.appendChild(SB.el('div', 'pp-note',
@@ -395,8 +392,8 @@
 
     panels.imagine.appendChild(SB.el('div', 'pp-note',
       'Where a finished prompt goes when you press ▶ in the Prompts panel. One press is ' +
-      'one generation — a still lands on the card like any other frame, a clip goes in ' +
-      'the renders folder beside it.'));
+      'one generation — a still lands on the card like any other frame, a clip is kept in ' +
+      'the board beside it.'));
 
     const imPick = SB.el('div', 'prov-pick');
     const imBtns = {};

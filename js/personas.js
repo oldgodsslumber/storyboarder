@@ -118,7 +118,7 @@
     if (!per || !img) return null;
     per.images = imagesOf(per).slice();
     delete per.image;
-    /* `render` points at the full-size original in the renders folder, when
+    /* `render` points at the full-size original, in this same file, when
      * there is one. The board still holds the proxy either way. */
     const rec = { ref: img.ref, w: img.w, h: img.h, label: label || '', render: render || null };
     per.images.push(rec);

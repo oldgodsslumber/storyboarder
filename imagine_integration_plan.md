@@ -173,11 +173,11 @@ gains an account chip: `signed in as …  ·  N credits  ·  sign out`.
   `_versions` archiving of the previous take, and the feed folder for free. A generated frame
   is then indistinguishable from a dropped one, which is the point — the next shot can
   reference it immediately.
-- **Video** — nothing stores video today. Add `_video/NNNN.mp4` under the project folder
-  (`SB.Renders` gains a `keepVideo`, sharing `claim`/`archive`), record
-  `sh.video = {serial, ext, bytes, at, url}` where `url` is the remote copy for instant preview
-  while the download runs, and show a play affordance on the row and the card. With no renders
-  folder connected, keep the remote URL only and say plainly that it expires.
+- **Video** — nothing stores video today. `SB.Renders` gains a `keepVideo`, and
+  `sh.video = {ref, serial, ext, bytes, at, url}` where `url` is the remote copy for instant
+  preview while the download runs; a play affordance goes on the row and the card. *(Built
+  against the renders folder first; both stills and clips moved inside the `.storyboard`
+  immediately afterwards — see the storage note in the README.)*
 
 ## 9. Files touched
 

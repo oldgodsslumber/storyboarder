@@ -43,12 +43,11 @@ The Prompts panel writes the prompt and now also sends it. Each prompt cell has 
 render** (first frame) or **▶ shoot** (clip) beside `copy` and `✦ generate`. One press is
 one generation — nothing is batched, nothing fires on its own.
 
-- A generated still lands on the card exactly like a dropped one: ≤480p proxy in the
-  `.storyboard`, original in the renders folder under its serial, the take it replaced
-  moved into `_versions`.
-- A clip is too big for the project file, so it goes to `<project>/_video/NNNN.mp4` and
-  the card grows a ▷ badge that plays it. With no renders folder connected you keep the
-  remote link only, and the app says so — that link expires.
+- A generated still lands on the card exactly like a dropped one: the ≤480p proxy the
+  board draws, and the full-size original beside it, both inside the `.storyboard`.
+- A clip is kept in the file too, and the card grows a ▷ badge that plays it. If
+  ImagineArt made the clip but the browser could not read the bytes back, you keep the
+  remote link only and the app says so — that link expires.
 - **▶ shoot** animates the shot's own full-size frame when it has one, and falls back to
   text-to-video when it does not. The button's tooltip says which it will do.
 
@@ -70,10 +69,31 @@ still written and copied as before.
 
 ### How images are stored
 
-Every image — shot frames, persona references, comment ink — is stored **once**, under a
-hash of its bytes, in a `blobs` map on the project. Shots and personas hold a short
-reference. The map lives inside the `.storyboard` file, so a board is still one thing you
-can hand to someone.
+Every image — shot frames, persona references, comment ink, the full-size originals and
+any clips — is stored **once**, under a hash of its bytes, in a `blobs` map on the
+project. Shots and personas hold a short reference. The map lives inside the
+`.storyboard` file, so a board is one thing you can hand to someone.
+
+**Two copies of every picture, both in the file.** The board draws a ≤480p proxy — forty
+of those is what makes a wall of cards scroll — and keeps the full-size original beside
+it under a serial, because that is what gets fed back into an image model. Originals are
+re-encoded at native size (WebP q90) on the way in: a 1184×672 render off ImagineArt is
+about 1 MB as the PNG it arrives as and 63 KB re-encoded, which is the difference between
+a 7 MB board and a 73 MB one at forty shots. **Settings → General** shows what the board
+is carrying, broken down by kind, and offers `source` instead if you want the bytes
+exactly as they arrived.
+
+This replaced a renders folder that the browser remembered. That folder was a fact about
+one machine: it was never in the file, so handing the board to someone else handed over
+serial numbers pointing at nothing, silently, with the 480p copies standing in — and
+renaming a board orphaned every original it had, because the folder was named after the
+project. Boards written in that era open fine; their frames say so, and dropping the
+picture in again brings the original with it.
+
+Clips are the one heavy thing: they go in as they arrive, since a browser has no cheap
+re-encode, so a board with a lot of them can reach tens of megabytes. Autosave scales its
+wait with the size of the board for that reason (half a second, up to three), and
+Settings warns when a board is heavy enough to feel.
 
 Two consequences:
 
@@ -717,7 +737,7 @@ js/brand.js       house style, scene context, gendered-language check
 js/personas.js    recurring people, places and things + reference-image wording
 js/fields.js      the extra card text boxes, per project
 js/personapanel.js the reference library + scene organizer
-js/renders.js     the renders folder: full-size originals, kept by serial
+js/renders.js     full-size originals and clips, kept in the file by serial
 js/refs.js        marks, the feed, and the boundary a model reads
 js/refbox.js      the description box that draws a mark as a link
 js/mentions.js    the @ popover

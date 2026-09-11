@@ -195,14 +195,14 @@
       fields: {},                       // extra text boxes, keyed by field id
       image: null,                      // {ref,w,h} into project.blobs
       annotation: null,                 // {ref} — transparent PNG overlay
-      /* {serial,ext,bytes,at} — where the full-size original of this frame
-       * lives in the renders folder. The board keeps only the proxy; this is
-       * the pointer to the real thing, and it rides with the content. */
+      /* {ref,serial,ext,w,h,bytes} — the full-size original, in this file.
+       * The board draws the proxy above; this is the copy a model is fed, and
+       * it rides with the content. */
       render: null,
-      /* {serial,ext,bytes,at,url} — the clip ImagineArt made from this frame.
-       * A clip is megabytes, so unlike a still it is NOT kept in the project
-       * file: this is a pointer into the renders folder, plus the remote copy
-       * for as long as that lasts. Null on every shot that has none. */
+      /* {ref,serial,ext,bytes,at,url} — the clip ImagineArt made from this
+       * frame, kept in this file like everything else. A clip is the heaviest
+       * thing a board can carry, which is why Settings counts them. Null on
+       * every shot that has none. */
       video: null,
       comments: [],
       prompts: {}                       // modelName -> {imagePrompt, videoPrompt}
@@ -287,6 +287,10 @@
         /* What shape ImagineArt is asked for. A storyboard is nearly always
          * widescreen, and it belongs to the board rather than the browser. */
         imagineAspect: '16:9',
+        /* 'webp'   — originals re-encoded at native size (16x smaller, and
+         *            still far past what a reference needs)
+         * 'source' — the bytes exactly as they arrived, and the file it makes */
+        originals: 'webp',
         brand: { enabled: true, custom: false },
         // prompt boxes stay off the cards until the user asks for them
         showImagePrompt: false,
@@ -530,6 +534,7 @@
      * board, and normalize() says so for anything unrecognised too. */
     s.aiProvider = SB.Providers.normalize(s.aiProvider);
     if (typeof s.imagineAspect !== 'string') s.imagineAspect = '16:9';
+    if (s.originals !== 'webp' && s.originals !== 'source') s.originals = 'webp';
     s.brand = (s.brand && typeof s.brand === 'object') ? s.brand : {};
     if (typeof s.brand.enabled !== 'boolean') s.brand.enabled = true;
     // only a hand-edited house style is stored; the rest follow the app's

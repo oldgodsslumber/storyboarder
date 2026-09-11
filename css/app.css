@@ -570,6 +570,13 @@ button.linkish{
   box-shadow:0 4px 18px var(--shadow);animation:tin .15s ease-out;
 }
 .toast.err{border-color:var(--danger);color:var(--danger)}
+/* a toast with one thing to press: the answer travels with the message */
+.toast{display:flex;align-items:center;gap:10px;max-width:min(560px,80vw)}
+.toast-act{
+  flex:0 0 auto;background:transparent;border:1px solid var(--accent);color:var(--accent);
+  border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer;
+}
+.toast-act:hover{background:var(--accent);color:var(--bg)}
 @keyframes tin{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 
 /* ---------- prompt panel ---------- */
@@ -1141,3 +1148,12 @@ body.comment-mode .frame{cursor:crosshair}
 
 /* the model row grew a third box: name, kind, and which ImagineArt model */
 .model-row .top input.slug{flex:0 0 210px;font-family:ui-monospace,Consolas,monospace;font-size:11px}
+
+/* what the board is carrying, in Settings: three columns so the numbers line
+   up down the page and the eye can find the one that is heavy */
+.weigh{margin:8px 0 4px;font-size:12px}
+.weigh-row{display:flex;gap:10px;align-items:baseline;padding:2px 0}
+.weigh-row .n{flex:0 0 34px;text-align:right;color:var(--fg-dim);font-variant-numeric:tabular-nums}
+.weigh-row .l{flex:1;min-width:0}
+.weigh-row .b{flex:0 0 auto;font-variant-numeric:tabular-nums}
+.weigh-row.total{border-top:1px solid var(--line);margin-top:4px;padding-top:5px;font-weight:600}

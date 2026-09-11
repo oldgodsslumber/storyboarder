@@ -157,7 +157,7 @@
         out.push({
           kind: 'shot', id: m.id, label: m.target.label, mentioned: true,
           images: img ? [img] : [],
-          /* the full-size original, if the renders folder has it */
+          /* the full-size original, where the board is carrying one */
           renders: img ? [m.target.shot.render || null] : [],
           why: img ? 'the rendered frame of ' + m.target.label
                    : m.target.label + ' has no frame yet — there is nothing to feed'

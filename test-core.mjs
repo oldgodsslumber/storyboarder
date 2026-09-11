@@ -983,29 +983,48 @@ console.log('\n— a filename is only ever one of ours —');
   eq(R.extOf({ type: 'text/plain', name: 'x' }), 'png', 'and to png when it is neither');
   eq(R.extOf(null), 'png', 'never undefined');
 
-  /* the folder is named for the project, and Windows is the strict one */
-  eq(R.folderName({ name: 'A/B:C*D?"E<F>G|H' }), 'A_B_C_D_E_F_G_H', 'illegal characters go');
-  eq(R.folderName({ name: 'trailing dots... ' }), 'trailing dots', 'as do trailing dots and space');
-  eq(R.folderName({ name: '   ' }), 'Untitled project', 'an empty name still gets a folder');
-  eq(R.folderName({}), 'Untitled project', 'and so does no name at all');
-  eq(R.folderName({ name: 'CON' }), 'CON_', 'a reserved device name is made safe');
-  eq(R.folderName({ name: 'x'.repeat(200) }).length, 100, 'and a very long one is cut short');
+  eq(R.fileName(7, 'webp'), '0007.webp', 'a serial names the file it exports as');
+  eq(R.videoExt({ type: 'video/quicktime' }), 'mov', 'a quicktime clip is named mov');
+  eq(R.videoExt({ type: '' }), 'mp4', 'and anything unrecognised is still nameable');
 }
 
-console.log('\n— a folder name a filesystem will actually accept —');
+console.log('\n— the pictures are in the file, so the file is the whole board —');
 {
   const R = SB.Renders;
-  /* the clamp used to run last, so a 100th character that was a dot or a space
-     came back on the end — and Windows refuses both, silently, forever */
-  const long = R.folderName({ name: 'x'.repeat(99) + '. tail' });
-  eq(long.length <= 100, true, 'a long name is cut to length');
-  eq(/[.\s]$/.test(long), false, 'and never ends in a dot or a space');
-  eq(/[.\s]$/.test(R.folderName({ name: 'y'.repeat(99) + ' more' })), false, 'either of them');
+  const p = SB.Model.newProject();
+  const sh = p.scenes[0].shots[0];
+  const orig = 'data:image/webp;base64,' + 'Q'.repeat(4000);
+  const clip = 'data:video/mp4;base64,' + 'V'.repeat(8000);
 
-  eq(R.folderName({ name: 'CON.txt' }), 'CON.txt_',
-    'a reserved device name is reserved with an extension too');
-  eq(R.folderName({ name: 'a b\nc' }), 'abc', 'control characters are not filenames');
-  eq(R.folderName({ name: 'A/B:C' }), 'A_B_C', 'and the illegal ones still become underscores');
+  sh.image = SB.Blobs.image(p, 'data:image/jpeg;base64,' + 'p'.repeat(400), 854, 480);
+  sh.render = { ref: SB.Blobs.put(p, orig), serial: 1, ext: 'webp', w: 1184, h: 672, bytes: 3000 };
+  sh.video = { ref: SB.Blobs.put(p, clip), serial: 2, ext: 'mp4', bytes: 6000 };
+
+  eq(R.has(p, sh.render), true, 'the original is in this file');
+  eq(R.dataUrl(p, sh.render), orig, 'and comes back out whole');
+  eq(R.isLegacy(sh.render), false, 'it is not one of the folder-era records');
+  eq(R.isLegacy({ serial: 9, ext: 'png' }), true, 'while a folder-era record says so');
+  eq(R.has(p, { serial: 9, ext: 'png' }), false, 'and admits it holds nothing');
+
+  /* the sweep that decides what gc() deletes runs on every structural change,
+     so an original it does not know about is an original deleted the next time
+     a card moves — silently, with the proxy left behind looking fine */
+  SB.Blobs.gc(p);
+  eq(R.has(p, sh.render), true, 'a structural change does not eat the original');
+  eq(R.has(p, sh.video), true, 'nor the clip');
+
+  const w = R.weigh(p);
+  eq(w.originals.n, 1, 'and the board can say what it is carrying');
+  eq(w.clips.n, 1, 'clips counted apart from stills, being the heavy ones');
+  eq(w.clips.bytes > w.proxies.bytes, true, 'which is the whole reason to count them');
+  eq(w.unused, 0, 'with nothing unaccounted for');
+
+  const her = SB.Personas.add(p, { name: 'Mara' });
+  SB.Personas.addImage(her,
+    SB.Blobs.image(p, 'data:image/jpeg;base64,' + 'z'.repeat(200), 4, 3), '',
+    { ref: SB.Blobs.put(p, 'data:image/webp;base64,' + 'R'.repeat(2000)), serial: 3, ext: 'webp' });
+  SB.Blobs.gc(p);
+  eq(R.weigh(p).originals.n, 2, 'a reference frame keeps its original the same way');
 }
 
 console.log('\n— a serial is a whole number or it is not a serial —');

@@ -637,7 +637,12 @@
         var rWasImg = rShot0.image;
         rShot0.image = rShot0.image || SB.Blobs.image(P(),
           'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 4, 3);
-        rShot0.render = { serial: 7, ext: 'png', bytes: 1234, at: 1 };
+        /* an original the file actually holds — a bare serial is the folder-era
+           shape now, and the strip is right to stay quiet about it */
+        rShot0.render = {
+          ref: SB.Blobs.put(P(), 'data:image/webp;base64,' + 'Q'.repeat(200)),
+          serial: 7, ext: 'webp', w: 1184, h: 672, bytes: 1234, at: 1
+        };
         SB.app.changed(true);
         var rHead = document.querySelector('.card[data-shot="' + rShot0.id + '"] .card-head');
         t('a card says which file its render is',
@@ -655,6 +660,17 @@
           !!oFeed.querySelector('.feed-cell.full .feed-ser') &&
           oFeed.querySelector('.feed-ser').textContent === '0007',
           oFeed.textContent);
+        t('a folder-era record, with a number and no picture behind it, is not claimed',
+          (function () {
+            var was = rShot0.render;
+            rShot0.render = { serial: 8, ext: 'png', bytes: 9, at: 1 };
+            SB.Board.refreshFeed(other.id);
+            var cell = document.querySelector('.feed-row[data-feed="' + other.id + '"]');
+            var quiet = !cell.querySelector('.feed-cell.full .feed-ser');
+            rShot0.render = was;
+            SB.Board.refreshFeed(other.id);
+            return quiet;
+          })(), '');
         t('and the serial rides with the picture, not the card',
           (function () {
             SB.Model.swapShotContent(P(), rShot0.id, other.id);
@@ -822,6 +838,34 @@
         t('it lands on the subject you last touched instead',
           SB.Personas.imagesOf(per2).length === beforeRefs + 1,
           SB.Personas.imagesOf(per2).length + ' vs ' + beforeRefs);
+      }
+
+      // an original now travels inside the file, not in a folder on one machine
+      {
+        const oShot = P().scenes[0].shots[0];
+        const wasImg = oShot.image, wasRender = oShot.render;
+        /* a 2×2 PNG — small, but it goes through the same encode as a 4K one */
+        const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAGCAIAAABxZ0i' +
+          'sAAAAFElEQVR4nGM8oaHBgA0wYRWlkwQAppoBJCiW4EgAAAAASUVORK5CYII=';
+        await SB.Board.setImage(oShot, png);
+        await pauseTop(); await pauseTop();
+        t('dropping a picture keeps the original in the file',
+          !!(oShot.render && oShot.render.ref) && SB.Renders.has(P(), oShot.render),
+          JSON.stringify(oShot.render));
+        t('under a serial of its own', (oShot.render || {}).serial > 0, (oShot.render || {}).serial);
+        t('and the board still draws the small copy',
+          !!oShot.image && oShot.image.ref !== oShot.render.ref, '');
+        /* gc runs on every structural change and used to know nothing about
+           originals, which would have deleted this one with the proxy left
+           behind looking perfectly fine */
+        SB.app.changed(true);
+        t('a structural change does not eat it', SB.Renders.has(P(), oShot.render), '');
+        const carried = SB.Renders.weigh(P());
+        t('and the board can say what it is carrying', carried.originals.n >= 1,
+          carried.originals.n + ' originals, ' + carried.clips.n + ' clips');
+        oShot.image = wasImg;
+        oShot.render = wasRender;
+        SB.app.changed(true);
       }
 
       // the scene organizer and the board banner are two windows onto one
@@ -1066,6 +1110,10 @@
       t('settings modal', document.querySelectorAll('.modal').length === 1, '');
       t('settings is tabbed', document.querySelectorAll('.modal .tab').length === 6,
         document.querySelectorAll('.modal .tab').length);
+      t('the first tab says what the board is carrying',
+        !!document.querySelector('.modal .tab-panel.on .weigh'), 'no weight readout');
+      t('and offers no folder to connect',
+        !/renders folder/i.test(document.querySelector('.modal').textContent), 'folder UI is back');
       t('templates are not on the first tab',
         document.querySelectorAll('.modal .tab-panel.on textarea').length === 1,
         document.querySelectorAll('.modal .tab-panel.on textarea').length);

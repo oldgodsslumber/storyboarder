@@ -83,6 +83,12 @@
         (sc.shots || []).forEach(function (sh) {
           mark(sh.image);
           mark(sh.annotation);
+          /* The original and the clip live in this same map now. Leaving them
+           * out of the sweep would make gc() delete the full-size copy of
+           * every frame on the board — the proxy would survive and nothing
+           * would look wrong until somebody tried to feed one to a model. */
+          mark(sh.render);
+          mark(sh.video);
         });
       });
     };
@@ -92,7 +98,10 @@
     const walkPersonas = function (list) {
       (list || []).forEach(function (per) {
         mark(per.image);
-        (per.images || []).forEach(mark);
+        (per.images || []).forEach(function (x) {
+          mark(x);
+          mark(x && x.render);
+        });
       });
     };
     walkScenes(p.scenes);

@@ -502,9 +502,10 @@
         if (!out) return;
         setStatus('');
         if (out.remoteOnly) {
-          SB.toast('Clip made — no renders folder connected, so only the link is kept', true);
+          SB.toast('Clip made, but its bytes could not be read back — only the link is kept, ' +
+            'and links expire', true);
         } else {
-          SB.toast(out.kind === 'video' ? 'Clip saved beside the render' : 'Frame updated');
+          SB.toast(out.kind === 'video' ? 'Clip saved into the board' : 'Frame updated');
         }
         /* The picture or the clip is new, so the row itself has changed. */
         render();
@@ -613,12 +614,13 @@
     foot.appendChild(copy);
 
     /* The clip this row already has, if any — the one place it can be played
-       back from without hunting through the renders folder. */
+       back without going and finding it. */
     if (field === 'videoPrompt' && sh.video) {
       const play = SB.el('button', 'mini', '\u25b7 clip');
-      play.title = sh.video.serial
-        ? 'Play ' + SB.Renders.pad(sh.video.serial) + '.' + (sh.video.ext || 'mp4')
-        : 'Play the clip (held only as a link — it expires)';
+      play.title = sh.video.ref
+        ? 'Play the clip this board is carrying (' +
+          SB.Renders.fileName(sh.video.serial, sh.video.ext) + ')'
+        : 'Play the clip — held only as a link, which expires';
       play.onclick = function () { SB.Clip.play(P(), sh); };
       foot.appendChild(play);
     }
@@ -687,7 +689,7 @@
       t.appendChild(im3);
       it.appendChild(t);
 
-      const file = e.render
+      const file = SB.Renders.has(P(), e.render)
         ? SB.Renders.fileName(e.render.serial, e.render.ext)
         : null;
       const nameEl = SB.el('span', 'feed-file' + (file ? '' : ' none'),
@@ -696,9 +698,9 @@
       it.appendChild(SB.el('span', 'feed-who', e.label + (e.role ? ' · ' + e.role : '')));
 
       it.title = (file
-        ? file + ' — the full-size original, in the renders folder'
-        : 'No original kept for this one: the board\'s 854×480 copy is what would be ' +
-          'written. Connect a renders folder in Settings to keep originals.') +
+        ? file + ' — the full-size original, carried in this file'
+        : 'No original for this one: the board\'s 854×480 copy is what gets fed. Drop the ' +
+          'picture in again and the original comes with it.') +
         '\n' + e.label + (e.role ? ' (' + e.role + ')' : '');
       wrap.appendChild(it);
     });
@@ -718,7 +720,7 @@
 
     const imgs = SB.Refs.images(P(), sh);
     if (imgs.length) {
-      const full = imgs.filter(function (e) { return !!e.render; }).length;
+      const full = imgs.filter(function (e) { return SB.Renders.has(P(), e.render); }).length;
       const b = SB.el('button', 'mini', 'copy image set');
       b.title = imgs.length + ' images, numbered in feed order' +
         (full ? ' — ' + full + ' full-size' : ' — all at board size');

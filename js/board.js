@@ -895,8 +895,12 @@
        its own, so the board is where it is given a meaning. */
     if (sh.render && sh.render.serial) {
       const ser = SB.el('span', 'code-serial', SB.Renders.pad(sh.render.serial));
-      ser.title = 'The full-size render of this shot is ' +
-        SB.Renders.fileName(sh.render.serial, sh.render.ext) + ' in the renders folder.';
+      ser.title = SB.Renders.has(P(), sh.render)
+        ? 'The full-size original is in this file' +
+          (sh.render.w ? ', ' + sh.render.w + '×' + sh.render.h : '') + ' — it exports as ' +
+          SB.Renders.fileName(sh.render.serial, sh.render.ext) + '.'
+        : 'Only the board copy of this frame travelled — it was filed when originals lived ' +
+          'in a folder. Drop the picture in again to bring the original with it.';
       head.appendChild(ser);
     }
 
@@ -1201,9 +1205,9 @@
         };
         cell.appendChild(off);
       }
-      /* Full-size entries carry their serial, so the strip names the actual
-         files this card is about to hand over. */
-      const sers = (e.renders || []).filter(Boolean)
+      /* Named by the serial, but only where the file actually holds the
+         original — a folder-era record has the number and nothing behind it. */
+      const sers = (e.renders || []).filter(function (r) { return SB.Renders.has(P(), r); })
         .map(function (r) { return SB.Renders.pad(r.serial); });
       if (sers.length) {
         cell.classList.add('full');
@@ -1213,8 +1217,8 @@
         (e.kind === 'dead' ? '\nClick to take the reference out and keep the name as text.' : '') +
         (e.kind === 'dead' ? '\nClick to take the reference out and keep the name as text.' : '') +
         (sers.length
-          ? '\nFull-size ' + sers.join(', ') + ' is used if the renders folder still has it, ' +
-            'and the board copy if it does not.'
+          ? '\nFull-size ' + sers.join(', ') + ' is what gets fed; the board copy stands in ' +
+            'for anything whose original this file does not hold.'
           : (e.images.length ? '\nBoard copy only (854×480) — no original kept.' : '')) +
         (e.kind === 'dead' ? ''
           : e.images.length ? '\nClick to open it.' : '\nClick to fix it.');
@@ -1291,7 +1295,7 @@
       row.appendChild(warn);
     }
     if (imgs.length) {
-      const full = imgs.filter(function (e) { return !!e.render; }).length;
+      const full = imgs.filter(function (e) { return SB.Renders.has(P(), e.render); }).length;
       const copy = SB.el('button', 'mini feed-copy', 'copy image set');
       /* H3 opens on the shot's own frame, so its prompt calls that <Picture 1>
          and these references start at 2 — say so where the numbers are. */
@@ -1300,9 +1304,9 @@
         'so they go into the model in the order the prompt promises.' +
         (h3 ? '\nFor MiniMax H3 the first frame of this card is <Picture 1>, so these are ' +
           '<Picture 2>–<Picture ' + (imgs.length + 1) + '> — feed the frame first.' : '') +
-        (full ? '\n' + full + ' of them full-size from the renders folder.'
-              : '\nAll of them are the board’s 854×480 copies — connect a renders folder in ' +
-                'Settings to keep the originals.');
+        (full ? '\n' + full + ' of them full-size.'
+              : '\nAll of them are the board’s 854×480 copies — they were filed when originals ' +
+                'lived in a folder. Drop them in again to bring the originals with them.');
       copy.onclick = function (ev) {
         ev.stopPropagation();
         /* the code is looked up rather than closed over: feedRow is rebuilt on
@@ -1352,8 +1356,12 @@
     const r = f.shot.render;
     if (!r || !r.serial) return;
     const ser = SB.el('span', 'code-serial', SB.Renders.pad(r.serial));
-    ser.title = 'The full-size render of this shot is ' +
-      SB.Renders.fileName(r.serial, r.ext) + ' in the renders folder.';
+    ser.title = SB.Renders.has(P(), r)
+      ? 'The full-size original is in this file' +
+        (r.w ? ', ' + r.w + '×' + r.h : '') + ' — it exports as ' +
+        SB.Renders.fileName(r.serial, r.ext) + '.'
+      : 'This frame was filed when originals lived in a folder, so only the board copy ' +
+        'travelled. Drop the picture in again to bring the original with it.';
     const code = head.querySelector('.code');
     if (code && code.nextSibling) head.insertBefore(ser, code.nextSibling);
     else head.appendChild(ser);
@@ -1370,33 +1378,21 @@
   /* Hand the images over in feed order. Named 1_, 2_, … because the order is
    * the promise the prompt's mapping makes, and a folder sorts by name.
    *
-   * With a renders folder connected this writes a real folder of full-size
-   * files you can drag in one gesture; without one it falls back to the
-   * browser's downloads, which is the old behaviour and still the proxies. */
+   * Full-size wherever the board holds the original, the board copy where it
+   * does not, so the set is always complete and never silently short — and
+   * the toast says which you got. This is the app's one way out until the
+   * export panel exists; when it does, this is the first thing it absorbs. */
   function saveFeed(sh, imgs, code) {
-    /* Asked, not assumed: isConnected() only knows about a folder once
-       something has been to look for it, and on a fresh page nothing has — so
-       the first export of every session used to fall back to downloads even
-       with a folder connected. This is a click, so it is allowed to ask for
-       permission if the handle needs re-granting. */
-    SB.Renders.ready(true).then(function (h) {
-      if (!h) { downloadFeed(imgs); return; }
-      return SB.Renders.writeFeed(P(), sh, code, imgs).then(function (r) {
-        if (!r) { downloadFeed(imgs); return; }
-        const short = r.total - r.wrote;
-        SB.toast(r.wrote + ' of ' + r.total + ' reference image' + (r.total === 1 ? '' : 's') +
-          ' written to ' + r.path +
-          (r.full ? ' — ' + r.full + ' full-size' : ' — all at board size') +
-          (short ? ' · ' + short + ' had no picture to write' : ''), !!short);
-      });
-    }).catch(function () { downloadFeed(imgs); });
+    downloadFeed(imgs);
   }
 
   function downloadFeed(imgs) {
-    let n = 0;
+    let n = 0, full = 0;
     imgs.forEach(function (e) {
-      const src = SB.Blobs.src(P(), e.img);
+      const orig = SB.Renders.dataUrl(P(), e.render);
+      const src = orig || SB.Blobs.src(P(), e.img);
       if (!src) return;
+      if (orig) full++;
       const a = document.createElement('a');
       a.href = src;
       const ext = (/^data:image\/([a-z0-9+]+)/i.exec(src) || [])[1] || 'jpg';
@@ -1408,7 +1404,8 @@
       a.remove();
       n++;
     });
-    SB.toast(n + ' reference image' + (n === 1 ? '' : 's') + ' saved, numbered in feed order');
+    SB.toast(n + ' reference image' + (n === 1 ? '' : 's') + ' saved, numbered in feed order' +
+      (n ? ' — ' + (full === n ? 'all full-size' : full ? full + ' full-size' : 'all at board size') : ''));
   }
 
 
@@ -1597,16 +1594,22 @@
   }
 
   function setImage(sh, src) {
-    /* The original goes to the renders folder, if one is connected — before
-       this it was thrown away. It runs alongside rather than in front: the
-       proxy is what the board shows, and it must never wait on a permission
-       check or on a handle store that stalls under file://. */
+    /* Two copies of one picture: the proxy the board draws, and the original
+       a model gets handed. Both go in the file. The original runs alongside
+       rather than in front — it is an encode of a large picture, and the card
+       should not sit empty while that happens. */
     SB.Renders.keep(P(), src, sh.render).then(function (rec) {
       if (!rec) return;
       sh.render = rec;
       SB.Store.touch();
       SB.Board.refreshFeed(sh.id);
       refreshSerial(sh.id);
+    }).catch(function (e) {
+      /* The proxy is already on the card, so this is not a lost picture — but
+         it IS a lost original, and that is exactly what used to happen in
+         silence. */
+      SB.toast('Kept the board copy only — the full-size original could not be stored: ' +
+        (e.message || e), true);
     });
     return SB.downscaleImage(src).then(function (img) {
       sh.image = SB.Blobs.image(P(), img.data, img.w, img.h);

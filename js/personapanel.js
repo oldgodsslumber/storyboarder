@@ -769,10 +769,9 @@
   }
 
   function addImage(per, src) {
-    /* The proxy is the visible half and never waits on the folder: reaching a
-       remembered directory handle can cost a permission check, and on file://
-       the handle store itself stalls. So the frame appears, and the full-size
-       original catches up. */
+    /* The proxy is the visible half and does not wait on the other: encoding a
+       large original takes a moment, and a reference should appear the instant
+       it is dropped. */
     return SB.downscaleImage(src).then(function (img) {
       const rec = SB.Personas.addImage(per, SB.Blobs.image(P(), img.data, img.w, img.h), '');
       SB.app.changed(true);
@@ -782,6 +781,9 @@
         rec.render = r;
         SB.Store.touch();
         renderRefs();
+      }).catch(function (e) {
+        SB.toast('Kept the board copy only — the full-size original could not be stored: ' +
+          (e.message || e), true);
       });
     }).catch(function (e) { SB.toast('Image failed: ' + e.message, true); });
   }

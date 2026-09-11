@@ -48,14 +48,36 @@ window.SB = window.SB || {};
     });
   };
 
-  SB.toast = function (msg, isErr) {
+  /* A toast says what happened. Occasionally what happened has one obvious
+   * answer — "no folder is set, choose one" — and making the user go and find
+   * it in Settings is how a thing quietly never gets done. So a toast can
+   * carry one button, and a toast with a button waits long enough to be read
+   * and pressed rather than the two seconds an announcement gets.
+   *
+   *   SB.toast(msg, isErr, { action: { label, onClick }, ms })
+   */
+  SB.toast = function (msg, isErr, opts) {
     const root = document.getElementById('toastRoot');
-    if (!root) return;
+    if (!root) return null;
+    opts = opts || {};
     const el = document.createElement('div');
     el.className = 'toast' + (isErr ? ' err' : '');
-    el.textContent = msg;
+    el.appendChild(document.createTextNode(msg));
+    let ms = opts.ms || (isErr ? 6000 : 2600);
+    if (opts.action) {
+      const b = document.createElement('button');
+      b.className = 'toast-act';
+      b.textContent = opts.action.label;
+      b.onclick = function () {
+        el.remove();
+        opts.action.onClick();
+      };
+      el.appendChild(b);
+      if (!opts.ms) ms = 14000;
+    }
     root.appendChild(el);
-    setTimeout(function () { el.remove(); }, isErr ? 6000 : 2600);
+    const timer = setTimeout(function () { el.remove(); }, ms);
+    return { el: el, close: function () { clearTimeout(timer); el.remove(); } };
   };
 
   /* ---- ask in place ----

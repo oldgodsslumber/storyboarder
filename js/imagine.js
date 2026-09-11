@@ -3,8 +3,8 @@
  * Everything the prompt table needs to actually make the picture is already
  * sitting in the row: the prompt, the model it was written for, and the
  * full-size render the shot already has. Up to now the last step was manual —
- * copy the prompt, open a browser tab, find the frame in the renders folder,
- * drop it in. This closes that loop: one button, one generation.
+ * copy the prompt, open a browser tab, find the frame, drop it in. This
+ * closes that loop: one button, one generation.
  *
  * ---- the two doors ----
  *
@@ -1110,9 +1110,10 @@
     });
   }
 
-  /* The frame a clip animates from: the full-size render if the folder has it,
-   * the board's own proxy if not, and nothing at all if the shot has no
-   * picture — which is a text-to-video, not a failure. */
+  /* The frame a clip animates from: the full-size original the board is
+   * carrying, its ≤480p proxy if the original predates them being kept in the
+   * file, and nothing at all if the shot has no picture — which is a
+   * text-to-video, not a failure. */
   function startFrame(p, shot) {
     return SB.Renders.file(p, shot.render).then(function (f) {
       if (f) return { blob: f, name: f.name };
@@ -1123,9 +1124,9 @@
   }
 
   /* A generated still is filed exactly like a dropped one — proxy on the
-   * board, original in the renders folder under its serial, the take it
-   * replaced moved aside. Which is the point: the next shot can reference it
-   * ten seconds later. */
+   * board, original in the file under its serial. Which is the point: the
+   * next shot can reference it ten seconds later, and so can whoever the
+   * board is handed to. */
   function fileImage(p, shot, got) {
     if (!got.blob) {
       throw new Error('ImagineArt made the picture but this browser could not read it back' +
@@ -1139,7 +1140,8 @@
   function fileVideo(p, shot, got) {
     const rec = { at: Date.now(), url: got.url || '', thumb: got.thumb || '' };
     if (!got.blob) {
-      /* No bytes to keep: hold the remote copy and be honest that it expires. */
+      /* ImagineArt made it but the browser could not read the bytes back
+       * across origins: hold the link and be honest that it expires. */
       shot.video = rec;
       SB.app.changed(true);
       return Promise.resolve({ kind: 'video', remoteOnly: true });
@@ -1180,10 +1182,9 @@
 
   /* ---------------- playing one back ----------------
    *
-   * A clip lives in the renders folder, not in the project, so "play it" means
-   * reading the file back through the handle we already hold — and falling
-   * back to the remote copy for a board opened on a machine that has no folder
-   * connected, where the link is all there is and will not last.
+   * The clip is in the file, so playing it is reading it back out of the blob
+   * map — with the remote copy as the fallback for the one case where the
+   * bytes never arrived, and where the link is all there is and will not last.
    */
   function playClip(p, shot) {
     const rec = shot && shot.video;
@@ -1191,7 +1192,7 @@
     SB.Renders.videoFile(p, rec).then(function (f) {
       const src = f ? URL.createObjectURL(f) : (rec.url || '');
       if (!src) {
-        SB.toast('That clip is not in the renders folder and its link has gone', true);
+        SB.toast('This board has no copy of that clip, and its link has gone', true);
         return;
       }
       const box = SB.el('div', 'clip-box');
@@ -1202,8 +1203,9 @@
       v.loop = true;
       box.appendChild(v);
       if (!f && rec.url) {
-        box.appendChild(SB.el('div', 'pp-note',
-          'Played from ImagineArt — this board has no copy of its own, and the link expires.'));
+        box.appendChild(SB.el('div', 'pp-note warn',
+          'Played from ImagineArt — this board has no copy of its own, and the link expires. ' +
+          'Shoot it again to get one that travels with the file.'));
       }
       SB.modal({
         title: 'Clip',
