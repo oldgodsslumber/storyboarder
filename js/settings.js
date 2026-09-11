@@ -29,6 +29,8 @@
     return (n / 1048576).toFixed(1) + ' MB';
   }
 
+  let pendingOriginals = null;
+
   function originalsBlock() {
     const box = SB.el('div', 'pp-block');
     box.appendChild(SB.el('div', 't', 'originals & clips'));
@@ -41,7 +43,8 @@
     const w = SB.Renders.weigh(P());
     const table = SB.el('div', 'weigh');
     [['the board’s copies', w.proxies], ['full-size originals', w.originals],
-     ['clips', w.clips], ['ink', w.ink]].forEach(function (r) {
+     ['clips', w.clips], ['ink', w.ink],
+     ['older reference frames, no longer used', w.retired]].forEach(function (r) {
       if (!r[1].n) return;
       const line = SB.el('div', 'weigh-row');
       line.appendChild(SB.el('span', 'n', String(r[1].n)));
@@ -90,10 +93,9 @@
       if ((P().settings.originals || 'webp') === o[0]) el.selected = true;
       pick.appendChild(el);
     });
-    pick.onchange = function () {
-      P().settings.originals = pick.value === 'source' ? 'source' : 'webp';
-      SB.Store.touch();
-    };
+    /* Every other project setting in this dialog is Save-gated, and this one
+       wrote on change — so Cancel left it changed and the board dirty. */
+    pick.onchange = function () { pendingOriginals = pick.value === 'source' ? 'source' : 'webp'; };
     const f = field('How originals are kept', pick);
     f.style.marginTop = '12px';
     box.appendChild(f);
@@ -285,6 +287,9 @@
     panels.models.appendChild(listHost);
 
     const working = SB.clone(p.settings.models);
+    /* which door the slug column is editing; follows the transport picker on
+       the ImagineArt tab even though that tab is built later */
+    let pendingDoor = (SB.Imagine && SB.Imagine.transport()) || 'oauth';
 
     function drawModels() {
       listHost.innerHTML = '';
@@ -309,7 +314,7 @@
         /* One model, two names: the account's tools and the v2 REST API
            call the same thing differently, so the field edits whichever
            belongs to the door in use and shows the other underneath. */
-        const door = (SB.Imagine && SB.Imagine.transport()) || 'oauth';
+        const door = pendingDoor;
         const slugField = door === 'key' ? 'restSlug' : 'imagineSlug';
         const slug = document.createElement('input');
         slug.type = 'text';
@@ -360,7 +365,7 @@
           bits.push('last produced something on ' +
             new Date(m.lastUsed.at).toLocaleDateString() + ' as ' + m.lastUsed.slug);
         }
-        if (bits.length) row.appendChild(SB.el('div', 'pp-note dim', bits.join(' · ')));
+        const altNote = bits.length ? SB.el('div', 'pp-note dim', bits.join(' · ')) : null;
         const tpl = SB.el('button', 'mini', m.__open ? 'hide templates' : 'templates');
         tpl.onclick = function () { m.__open = !m.__open; drawModels(); };
         const rst = SB.el('button', 'mini', 'reset');
@@ -375,9 +380,11 @@
         del.onclick = function () { working.splice(i, 1); drawModels(); };
         top.appendChild(name); top.appendChild(kind);
         top.appendChild(slug); top.appendChild(dl);
-        row.appendChild(slugNote);
         top.appendChild(tpl); top.appendChild(rst); top.appendChild(del);
         row.appendChild(top);
+        /* under the field, where the README says they are */
+        if (altNote) row.appendChild(altNote);
+        row.appendChild(slugNote);
 
         if (m.__open) {
           const ti = document.createElement('textarea');
@@ -447,7 +454,16 @@
     const imBlocks = { oauth: SB.el('div', 'prov-block'), key: SB.el('div', 'prov-block') };
 
     function showImagine(id) {
+      const was = chosenImagine;
       chosenImagine = id === 'key' ? 'key' : 'oauth';
+      /* The slug field edits the name for the door in use, and it is drawn
+         once — so switching here used to leave the Models tab editing the
+         other door's field under this door's label, and Save then wrote the
+         typed name into the wrong one. */
+      if (was !== chosenImagine && typeof drawModels === 'function') {
+        pendingDoor = chosenImagine;
+        drawModels();
+      }
       Object.keys(imBtns).forEach(function (k) {
         imBtns[k].classList.toggle('on', k === chosenImagine);
       });
@@ -594,10 +610,13 @@
         imModels.appendChild(document.createTextNode(' Last generation went through ' +
           (d === 'mcp' ? 'your account\u2019s tools.' : 'the v2 REST API.')));
       }
-      imRefresh.disabled = !IM.isSignedIn();
-      imRefresh.title = IM.isSignedIn()
+      const canRefresh = IM.isSignedIn() && IM.transport() !== 'key';
+      imRefresh.disabled = !canRefresh;
+      imRefresh.title = canRefresh
         ? 'Ask the account what it offers now. Models come and go.'
-        : 'Sign in to read your account\u2019s own list.';
+        : (IM.transport() === 'key'
+          ? 'The API key uses the built-in v2 list; sign in to read your account\u2019s own.'
+          : 'Sign in to read your account\u2019s own list.');
     }
 
     imRefresh.onclick = function () {
@@ -680,6 +699,22 @@
     imOut.onclick = function () {
       IM.signOut();
       imDraw();
+    };
+
+    /* This had no handler at all: the only control that re-reads the email
+       and the credit balance after a reload did nothing when pressed. */
+    imCheck.onclick = function () {
+      imCheck.disabled = true;
+      imCheck.textContent = 'asking…';
+      IM.whoAmI().catch(function () { return null; })
+        .then(function () { return IM.ensureTools().catch(function () { return null; }); })
+        .then(function () { return IM.balance().catch(function () { return null; }); })
+        .then(function () {
+          imCheck.disabled = false;
+          imCheck.textContent = 'Check account';
+          imDraw();
+          drawCatalogLine();
+        });
     };
 
     /* The one question that cannot be answered from outside an account: what
@@ -1219,6 +1254,7 @@
             if (!has(p.settings.videoModelId)) {
               p.settings.videoModelId = SB.Model.firstOfKind(p.settings.models, 'video');
             }
+            if (pendingOriginals) p.settings.originals = pendingOriginals;
             SB.Store.setApiKey(key.value.trim());
             SB.Store.setOoba({ url: oUrl.value, model: oobaModel, key: oKey.value });
             p.settings.imagineAspect = imAspect.value || '16:9';

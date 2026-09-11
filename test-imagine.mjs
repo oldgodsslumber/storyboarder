@@ -546,6 +546,201 @@ section('asking for a resolution instead of taking the floor');
   sandbox.fetch = () => Promise.reject(new Error('no network in tests'));
 }
 
+/* ------------------------------------------------- nothing billed twice */
+section('a generation that has been submitted is never tried again');
+
+{
+  /* A failure after ImagineArt accepted the job is a failure of something
+     that has already cost money. Falling through to the REST API there is a
+     second, billed generation — and it used to resolve as a success. */
+  const p7 = SB.Model.newProject();
+  sandbox.SB.app = { project: p7, changed() { } };
+  const vm7 = SB.Model.videoModel(p7);
+  const sh7 = p7.scenes[0].shots[0];
+  sh7.prompts[vm7.id] = { imagePrompt: '', videoPrompt: 'She turns.' };
+  sh7.image = SB.Blobs.image(p7, 'data:image/jpeg;base64,' + 'q'.repeat(40), 8, 6);
+
+  SB.Imagine.setTransport('oauth');
+  store.set('sb.imagine.tokens', JSON.stringify({
+    access_token: 'tok', refresh_token: 'r', expires_at: Date.now() + 3600000, email: 'bill@test'
+  }));
+  SB.Imagine.setOrg({ id: 'org-1', name: 'Pega' });
+
+  const seen = [];
+  sandbox.fetch = function (url, init) {
+    if (!init || !init.body) return Promise.resolve({ ok: true, status: 200,
+      headers: { get: () => null },
+      blob: () => Promise.resolve(new Blob([new Uint8Array(9)], { type: 'video/mp4' })) });
+    if (/api\.vyro\.ai/.test(String(url))) {
+      seen.push('REST ' + String(url).replace(/.*vyro\.ai/, ''));
+      return Promise.resolve({ ok: true, status: 200, headers: { get: () => 'application/json' },
+        text: () => Promise.resolve(JSON.stringify({ id: 'rest-1', status: 'processing' })) });
+    }
+    const msg = JSON.parse(init.body);
+    let result = {};
+    if (msg.method === 'initialize') result = { serverInfo: { name: 'i', version: '1' } };
+    else if (msg.method === 'tools/list') result = { tools: REAL_TOOLS };
+    else if (msg.method === 'tools/call') {
+      seen.push('MCP ' + msg.params.name);
+      if (msg.params.name === 'user_upload') {
+        result = { content: [{ type: 'text', text: 'https://asset.imagine.art/processed/a.webp' }] };
+      } else if (msg.params.name === 'fetch_status') {
+        /* accepted, then failed */
+        result = { content: [{ type: 'text', text: 'it fell over' }],
+          structuredContent: { status: 'failed' } };
+      } else if (msg.params.name === 'get_balance') {
+        result = { content: [{ type: 'text', text: '4210 credits' }] };
+      } else {
+        result = { content: [{ type: 'text', text: 'queued' }],
+          structuredContent: { uuid: '11111111-2222-3333-4444-555555555555', status: 'queued' } };
+      }
+    }
+    return Promise.resolve({ ok: true, status: 200, headers: { get: () => null },
+      text: () => Promise.resolve(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: result })) });
+  };
+
+  let err = '';
+  await SB.Imagine.run(sh7, 'video').catch(e => { err = e.message; });
+  t('a job that failed after it was accepted reports the failure',
+    /fell over/.test(err), JSON.stringify(err));
+  t('and nothing was sent to the other door',
+    seen.filter(x => /^REST/.test(x)).length === 0, seen.join(' | '));
+  t('the shot has no clip, because none was made', !sh7.video, JSON.stringify(sh7.video));
+
+  /* the tools refusing the job outright is the one case the fallback is for.
+     (An earlier section may have taught this browser that the REST API does
+     not accept its token, which is remembered on purpose — clear it.) */
+  seen.length = 0;
+  store.delete('sb.imagine.oauthRest');
+  const refuse = sandbox.fetch;
+  sandbox.fetch = function (url, init) {
+    /* only the JSON-RPC calls have a string body — a REST post carries form
+       data, and parsing that threw inside the stub, which looked exactly
+       like the fallback never running */
+    if (init && typeof init.body === 'string') {
+      const msg = JSON.parse(init.body);
+      if (msg.method === 'tools/call' && msg.params.name === 'generate_video') {
+        seen.push('MCP generate_video (refused)');
+        return Promise.resolve({ ok: true, status: 200, headers: { get: () => null },
+          text: () => Promise.resolve(JSON.stringify({ jsonrpc: '2.0', id: msg.id,
+            error: { code: -32602, message: 'that model is not available to you' } })) });
+      }
+    }
+    return refuse(url, init);
+  };
+  err = '';
+  await SB.Imagine.run(sh7, 'video').catch(e => { err = e.message; });
+  t('a refusal before submission does try the other door',
+    seen.filter(x => /^REST/.test(x)).length > 0, seen.join(' | '));
+  t('and the other door is sent the name IT knows, not the account one',
+    seen.some(x => /text-to-video|image-to-video/.test(x)) ||
+    JSON.stringify(seen).indexOf('ltx-2.3') < 0, seen.join(' | '));
+
+  sandbox.fetch = () => Promise.reject(new Error('no network in tests'));
+  SB.Imagine.signOut();
+  SB.Imagine.setOrg(null);
+  SB.Imagine.setTransport('key');
+}
+
+section('the floor is never taken by accident');
+
+{
+  /* The allow-lists arrive with tools/list, and the generation path only ever
+     ran initialize — so an ordinary session sent no resolution at all, which
+     is the model's floor. */
+  const p8 = SB.Model.newProject();
+  sandbox.SB.app = { project: p8, changed() { } };
+  const im8 = SB.Model.imageModel(p8);      // GPT Image -> gpt-image-2
+  const sh8 = p8.scenes[0].shots[0];
+  sh8.prompts[im8.id] = { imagePrompt: 'A wide of the floor.', videoPrompt: '' };
+
+  SB.Imagine.setTransport('oauth');
+  store.set('sb.imagine.tokens', JSON.stringify({
+    access_token: 'tok', refresh_token: 'r', expires_at: Date.now() + 3600000, email: 'res@test'
+  }));
+  SB.Imagine.setOrg({ id: 'org-1', name: 'Pega' });
+  SB.Imagine.signOut();                      // clears the loaded tools
+  store.set('sb.imagine.tokens', JSON.stringify({
+    access_token: 'tok', refresh_token: 'r', expires_at: Date.now() + 3600000, email: 'res@test'
+  }));
+  SB.Imagine.setOrg({ id: 'org-1', name: 'Pega' });
+
+  let sent = null;
+  sandbox.fetch = function (url, init) {
+    if (!init || !init.body) return Promise.resolve({ ok: true, status: 200,
+      headers: { get: () => null },
+      blob: () => Promise.resolve(new Blob([new Uint8Array(9)], { type: 'image/webp' })) });
+    const msg = JSON.parse(init.body);
+    let result = {};
+    if (msg.method === 'initialize') result = { serverInfo: { name: 'i', version: '1' } };
+    else if (msg.method === 'tools/list') result = { tools: REAL_TOOLS };
+    else if (msg.method === 'tools/call') {
+      if (msg.params.name === 'generate_image') {
+        sent = msg.params.arguments;
+        result = { content: [{ type: 'text', text: 'done' }],
+          structuredContent: { status: 'complete', url: 'https://cdn.x/a.webp' } };
+      } else {
+        result = { content: [{ type: 'text', text: '10 credits' }] };
+      }
+    }
+    return Promise.resolve({ ok: true, status: 200, headers: { get: () => null },
+      text: () => Promise.resolve(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: result })) });
+  };
+
+  await SB.Imagine.run(sh8, 'image').catch(() => null);
+  t('a first push of the session reads the tools before it decides anything',
+    !!sent, 'nothing was sent');
+  t('so the resolution goes out, rather than the model\u2019s floor',
+    sent && sent.resolution === '4K', JSON.stringify(sent && sent.resolution));
+  t('and the quality with it', sent && sent.quality === 'high',
+    JSON.stringify(sent && sent.quality));
+
+  /* an aspect the model does not offer is refused, not silently squared */
+  p8.settings.imagineAspect = '3:2';
+  const vm8 = SB.Model.videoModel(p8);       // LTX 2.3: 16:9 and 9:16 only
+  sh8.prompts[vm8.id] = { imagePrompt: '', videoPrompt: 'She turns.' };
+  let why8 = '';
+  await SB.Imagine.run(sh8, 'video').catch(e => { why8 = e.message; });
+  t('an aspect ratio the model does not offer is refused by name',
+    /3:2/.test(why8) && /16:9/.test(why8), why8);
+
+  sandbox.fetch = () => Promise.reject(new Error('no network in tests'));
+  SB.Imagine.signOut();
+  SB.Imagine.setOrg(null);
+  SB.Imagine.setTransport('key');
+}
+
+section('a measured price has to mean something');
+
+{
+  const p9 = SB.Model.newProject();
+  sandbox.SB.app = { project: p9, changed() { } };
+  store.delete('sb.imagine.cost');
+  /* proving a slug works must not erase which way round it runs */
+  const before9 = SB.Imagine.modelInfo('kling-v1.6-standard-text-to-video');
+  t('a published slug knows its mode', before9 && before9.mode === 't2v',
+    JSON.stringify(before9));
+  SB.Imagine.noteWorked('kling-v1.6-standard-text-to-video', 'video');
+  const after9 = SB.Imagine.modelInfo('kling-v1.6-standard-text-to-video');
+  t('and still knows it after it has been proven', after9 && after9.mode === 't2v',
+    JSON.stringify(after9));
+
+  /* a catalog that is not a catalog cannot be stored */
+  const p10 = SB.Model.newProject();
+  p10.settings.imagine = { setUpBy: 'x@y.z', at: Date.now(), orgId: null,
+    catalog: 'not-a-list', costs: {} };
+  sandbox.SB.app = { project: p10, changed() { } };
+  const r10 = await SB.Imagine.adoptBoard(p10);
+  t('a malformed catalog in a board is refused rather than stored',
+    (r10.took || []).join(' ').indexOf('models') < 0, JSON.stringify(r10));
+  t('and the catalog still works afterwards',
+    SB.Imagine.catalog('video').length > 10, SB.Imagine.catalog('video').length);
+  t('as does modelInfo, which Settings calls while it draws',
+    SB.Imagine.modelInfo('ltx-2.3') !== undefined, '');
+  store.delete('sb.imagine.cost');
+  store.delete('sb.imagine.worked');
+}
+
 /* ----------------------------------- what the board hands the next person */
 section('a board that was set up for you');
 

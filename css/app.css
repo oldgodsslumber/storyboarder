@@ -1131,6 +1131,9 @@ body.comment-mode .frame{cursor:crosshair}
    row acting on itself — but it is the one that spends money, so it is the
    accented one and it never fires twice. */
 .mini.push{border-color:var(--accent);color:var(--accent)}
+/* the clip button on a row that has none: present, because it is the way in */
+.mini.quiet{opacity:.55}
+.pt-row:hover .mini.quiet{opacity:1}
 .mini.push:disabled{border-color:var(--line);color:var(--fg-dim);opacity:.6}
 .mini.push.running{
   border-color:var(--accent2);color:var(--accent2);opacity:1;

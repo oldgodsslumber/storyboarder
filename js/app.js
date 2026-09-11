@@ -20,22 +20,44 @@
     if (!b) return;
     const who = b.setUpBy ? ' by ' + b.setUpBy : '';
     const when = b.at ? ' on ' + new Date(b.at).toLocaleDateString() : '';
-    SB.toast('This board was set up' + who + when +
-      (b.orgName ? ', billed to ' + b.orgName : '') + '.', false, {
-      ms: 20000,
-      action: {
-        label: 'Use these settings',
-        onClick: function () {
-          SB.Imagine.adoptBoard(app.project).then(function (r) {
-            if (!r) return;
-            SB.toast(r.took && r.took.length
-              ? 'Took ' + r.took.join(', ') + ' from the board.'
-              : 'Nothing to take — this browser already had it.',
-              false, r.orgSkipped ? { ms: 9000 } : undefined);
-            if (r.orgSkipped) SB.toast('The organization was left alone: ' + r.orgSkipped, true);
-          });
+    const body = SB.el('div');
+    body.appendChild(SB.el('p', null, 'This board was set up' + who + when +
+      (b.orgName ? ', billed to ' + b.orgName : '') + '.'));
+    const bits = [];
+    if (Array.isArray(b.catalog) && b.catalog.length) bits.push(b.catalog.length + ' models');
+    if (b.costs && Object.keys(b.costs).length) {
+      bits.push(Object.keys(b.costs).length + ' measured prices');
+    }
+    if (b.orgId) bits.push('the organization it bills to');
+    if (bits.length) {
+      body.appendChild(SB.el('p', 'pp-note', 'It carries ' + bits.join(', ') +
+        '. Taking them changes this browser, not the board.'));
+    }
+    /* Two answers, because there was only one before: declining was
+       unreachable, so the offer came back on every open and every version
+       restore. */
+    SB.modal({
+      title: 'Use this board’s ImagineArt settings?', width: '460px', body: body,
+      buttons: [
+        {
+          label: 'Keep mine', onClick: function (close) {
+            SB.Imagine.declineBoard(app.project);
+            close();
+          }
+        },
+        {
+          label: 'Use these', primary: true, onClick: function (close) {
+            close();
+            SB.Imagine.adoptBoard(app.project).then(function (r) {
+              if (!r) return;
+              SB.toast(r.took && r.took.length
+                ? 'Took ' + r.took.join(', ') + ' from the board.'
+                : 'Nothing to take — this browser already had it.');
+              if (r.orgSkipped) SB.toast('The organization was left alone: ' + r.orgSkipped, true);
+            });
+          }
         }
-      }
+      ]
     });
   };
 

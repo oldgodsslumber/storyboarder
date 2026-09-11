@@ -576,7 +576,13 @@
    * inquiry" through MCP. Best effort: a number if it can be found, nothing if
    * it cannot. Never blocks a generation. */
   function balance() {
-    return callTool('balance', {}).then(function (out) {
+    if (!orgId()) return Promise.resolve(acct);
+    const ask = toolNamed(TOOL.balance)
+      ? callRaw(TOOL.balance, { org_id: orgId() })
+      /* a server that does not publish get_balance falls back to the scored
+         picker, which is what that machinery is still for */
+      : callTool('balance', {});
+    return ask.then(function (out) {
       const n = firstNumber(out.text || '') ;
       acct = acct || { email: (tokens() || {}).email || '' };
       if (n !== null) acct.credits = n;
@@ -941,20 +947,44 @@
    * gets emailed; a credential in one is a credential in somebody's mail
    * archive forever.
    */
+  /* Written on Save — but never to less than is already there. Every
+   * teammate presses Save eventually, and doing it while signed out used to
+   * replace the setup with an empty one: the catalog snapshot, the measured
+   * prices and the organization all gone from the file, for everybody. So
+   * each field is only replaced by something, and the stamp only moves when
+   * something actually changed. */
   function publishToBoard(p) {
     if (!p || !p.settings) return null;
+    const was = (p.settings.imagine && typeof p.settings.imagine === 'object')
+      ? p.settings.imagine : {};
     const share = p.settings.imagineShareOrg !== false;
     const t = tokens() || {};
+    const mineCat = (cachedCatalog() || {}).list;
+    const mineCost = measured();
+    const catalog = (Array.isArray(mineCat) && mineCat.length) ? mineCat
+      : (Array.isArray(was.catalog) && was.catalog.length ? was.catalog : null);
+    const costs = Object.keys(mineCost).length ? mineCost
+      : (was.costs && Object.keys(was.costs).length ? was.costs : null);
+    const oid = share ? (orgId() || (was.orgId || null)) : null;
+    const oname = share ? ((org() && org().name) || was.orgName || '') : '';
+
+    const changed = catalog !== was.catalog || costs !== was.costs ||
+      oid !== (was.orgId || null) || oname !== (was.orgName || '');
     const block = {
-      setUpBy: t.email || '',
-      at: Date.now(),
-      orgId: (share && orgId()) || null,
-      orgName: (share && org() && org().name) || '',
-      /* a snapshot, so a teammate who has not signed in still sees the right
-         models instead of the v2 REST floor */
-      catalog: (cachedCatalog() || {}).list || null,
-      costs: measured()
+      setUpBy: (t.email || was.setUpBy || ''),
+      at: changed ? Date.now() : (was.at || Date.now()),
+      orgId: oid,
+      orgName: oname,
+      catalog: catalog,
+      costs: costs || {}
     };
+    /* Nothing to hand anybody: leave the field off rather than writing an
+     * empty block that every opener is then offered. */
+    if (!block.orgId && !block.catalog && !Object.keys(block.costs).length) {
+      p.settings.imagine = was.at ? was : null;
+      SB.Store.touch();
+      return p.settings.imagine;
+    }
     p.settings.imagine = block;
     SB.Store.touch();
     return block;
@@ -971,11 +1001,15 @@
     const b = p && p.settings && p.settings.imagine;
     if (!b || !b.at) return null;
     if (lsStr(askedKey(p))) return null;
-    /* nothing to offer if this browser already has all of it */
+    /* nothing to offer if this browser already has all of it, or if the
+     * board is carrying nothing worth taking */
     const sameOrg = !b.orgId || (orgId() === b.orgId);
+    const hasCat = Array.isArray(b.catalog) && b.catalog.length;
+    const hasCost = b.costs && Object.keys(b.costs).length;
+    if (!b.orgId && !hasCat && !hasCost) return null;
     const haveCat = !!(cachedCatalog() || {}).list;
     const haveCost = Object.keys(measured()).length > 0;
-    if (sameOrg && (haveCat || !b.catalog) && (haveCost || !b.costs)) return null;
+    if (sameOrg && (haveCat || !hasCat) && (haveCost || !hasCost)) return null;
     return b;
   }
 
@@ -987,11 +1021,26 @@
   function adoptBoard(p) {
     const b = p && p.settings && p.settings.imagine;
     if (!b) return Promise.resolve(null);
+    /* Everything learned is filed against the account it was learned for, so
+     * adopting while signed out files it under "nobody" and it disappears
+     * the moment somebody signs in. Ask again later instead of burning the
+     * offer on a copy nobody will ever see. */
+    if (transport() !== 'key' && !isSignedIn()) {
+      return Promise.resolve({
+        took: [],
+        orgSkipped: 'sign in first — anything taken now would be filed against no account ' +
+          'and lost the moment you did'
+      });
+    }
     lsPut(askedKey(p), '1');
     const took = [];
-    if (b.catalog && b.catalog.length && !(cachedCatalog() || {}).list) {
-      storeCatalog(b.catalog.slice());
-      took.push(b.catalog.length + ' models');
+    if (Array.isArray(b.catalog) && b.catalog.length && !(cachedCatalog() || {}).list) {
+      /* storeCatalog says whether it recognised a catalog at all — counting
+         the thing we were handed used to report "10 models" for the string
+         "not-a-list". */
+      if (storeCatalog(b.catalog)) {
+        took.push(((cachedCatalog() || {}).list || []).length + ' models');
+      }
     }
     if (b.costs && Object.keys(b.costs).length) {
       const all = lsGet(K_COST) || {};
@@ -1209,11 +1258,19 @@
         const blob = JSON.stringify((got.raw && got.raw.structuredContent) || {}) + ' ' + (got.text || '');
         const done = /"?status"?\s*[:=]\s*"?(complete|completed|success|finished)/i.test(blob);
         const failed = /"?status"?\s*[:=]\s*"?(error|failed)/i.test(blob);
-        if (failed) throw new Error(got.text ? got.text.slice(0, 200) : 'ImagineArt could not finish it.');
+        if (failed) afterSubmit(new Error(got.text ? got.text.slice(0, 200) : 'ImagineArt could not finish it.'));
         if (got.url && done) return got;
         if (got.url && !/queued|generating|processing|pending/i.test(blob)) return got;
+        if (done) {
+          /* Finished, and the file is not in the answer. Polling for ten
+           * more minutes will not conjure one, and the caller must not treat
+           * this as "the tools could not take it" — it was taken. */
+          afterSubmit(new Error('ImagineArt finished it but sent no file back. It is on ' +
+            'imagine.art under ' + id + '.'));
+        }
         if (Date.now() - started > 10 * 60 * 1000) {
-          throw new Error('Gave up waiting after ten minutes. It may still finish on imagine.art.');
+          afterSubmit(new Error('Gave up waiting after ten minutes. It may still finish on ' +
+            'imagine.art — look there before spending another generation.'));
         }
         if (onState) onState('waiting', Date.now() - started);
         return wait(3000).then(look);
@@ -1244,6 +1301,18 @@
     const m = /\b([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b/i
       .exec((got && got.text) || '');
     return m ? m[1] : '';
+  }
+
+  /* The allow-lists, the model lists and the tool names all live in the
+   * descriptions, which only arrive with tools/list — and the generation
+   * path only ever did `initialize`. So a session that opened a board and
+   * pressed the button sent no resolution and no quality at all, which is
+   * the model's floor: exactly what asking for a resolution was meant to
+   * stop. Cached after the first call. */
+  function ensureTools() {
+    if (transport() === 'key' || !isSignedIn()) return Promise.resolve([]);
+    if (mcp.tools) return Promise.resolve(mcp.tools);
+    return toolList().catch(function () { return []; });
   }
 
   function needOrg() {
@@ -1331,8 +1400,8 @@
     const ok = kind === 'video'
       ? /^video\//.test(t)
       : /^image\//.test(t);
-    if (ok) return blob;
     if (!blob || !blob.size) throw new Error('ImagineArt sent an empty file.');
+    if (ok) return blob;
     /* No type at all is common and usually fine for a direct asset URL; an
      * actively wrong one (a web page, a JSON error) never is. */
     if (!t && blob.size > 1024) return blob;
@@ -1518,22 +1587,34 @@
   function door() { return lsStr(K_DOOR); }
   function noteDoor(d) { lsPut(K_DOOR, d); }
 
+  /* The fallback exists for one case: the account's tools could not take the
+   * job at all. It must never run after a generation has been SUBMITTED —
+   * that is a second one, and it is billed. A job that was accepted and then
+   * failed, timed out, or came back without a file has already cost money,
+   * and the honest answer is the failure.
+   *
+   * Anything thrown after submission carries `submitted`; an auth failure
+   * carries `auth`. Both stop here. */
   function firstOf(primary, fallback) {
     return primary().then(function (r) {
       if (r) return r;
       return fallback();
     }, function (e) {
-      /* A token the server rejected is not a reason to try the other door
-       * with the same token. */
-      if (e && e.auth) throw e;
+      if (e && (e.auth || e.submitted)) throw e;
       return fallback().catch(function () { throw e; });
     });
+  }
+
+  function afterSubmit(e) {
+    const err = (e instanceof Error) ? e : new Error(String(e));
+    err.submitted = true;
+    throw err;
   }
 
   /* One still. Resolves to {blob, dataUrl}. */
   function image(opts) {
     const canon = {
-      prompt: opts.prompt, slug: opts.slug,
+      prompt: opts.prompt, slug: opts.slug, restSlug: opts.restSlug || '',
       aspect: opts.aspect, resolution: opts.resolution || '', quality: opts.quality || '',
       onState: opts.onState
     };
@@ -1552,19 +1633,39 @@
       };
       if (canon.resolution) args.resolution = canon.resolution;
       if (canon.quality) args.quality = canon.quality;
+      /* Everything inside this `then` happens after ImagineArt accepted the
+       * job, so every failure in it is a failure of a generation that has
+       * already cost something — never a reason to try the other door. A
+       * rejection from callRaw itself is the tools refusing the job, which
+       * is the one case the fallback is for. */
       return callRaw(TOOL.image, args).then(function (got) {
         const id = assetId(got);
-        return (got.url && !id) ? got : waitForAsset(id || got.text, canon.onState);
-      }).then(function (got) {
-        noteDoor('mcp');
-        return finishImage(got);
+        const settled = (got.url && !id)
+          ? Promise.resolve(got) : waitForAsset(id || got.text, canon.onState);
+        return settled.then(function (g2) {
+          noteDoor('mcp');
+          return finishImage(g2);
+        }).then(function (out) {
+          out.usedSlug = canon.slug || '';
+          out.via = 'mcp';
+          return out;
+        }).catch(afterSubmit);
       });
     };
     const viaRest = function () {
-      return restImage(canon).then(function (got) {
+      /* The v2 API knows this model by a different name, and the board
+       * carries both — sending the account's name here is a wasted round
+       * trip at best and a silent wrong model at worst. */
+      const restCanon = Object.assign({}, canon, { slug: canon.restSlug || canon.slug });
+      if (!restCanon.slug) return Promise.resolve(null);
+      return restImage(restCanon).then(function (got) {
         if (!got) return null;
         noteDoor('rest');
-        return finishImage(got);
+        return finishImage(got).then(function (out) {
+          out.usedSlug = restCanon.slug;
+          out.via = 'rest';
+          return out;
+        });
       });
     };
     if (transport() === 'key') {
@@ -1613,7 +1714,8 @@
    * cross-origin read, and the URL is then all there is. */
   function video(opts) {
     const canon = {
-      prompt: opts.prompt, slug: opts.slug, aspect: opts.aspect,
+      prompt: opts.prompt, slug: opts.slug, restSlug: opts.restSlug || '',
+      aspect: opts.aspect,
       duration: opts.duration, resolution: opts.resolution || '',
       frame: opts.frame, frameName: opts.frameName,
       onState: opts.onState
@@ -1639,15 +1741,29 @@
         })
         .then(function (got) {
           const id = assetId(got);
-          return (got.url && !id) ? got : waitForAsset(id || got.text, canon.onState);
-        })
-        .then(function (got) { noteDoor('mcp'); return finishVideo(got); });
+          const settled = (got.url && !id)
+            ? Promise.resolve(got) : waitForAsset(id || got.text, canon.onState);
+          return settled.then(function (g2) {
+            noteDoor('mcp');
+            return finishVideo(g2);
+          }).then(function (out) {
+            out.usedSlug = canon.slug || '';
+            out.via = 'mcp';
+            return out;
+          }).catch(afterSubmit);
+        });
     };
     const viaRest = function () {
-      return restVideo(canon).then(function (got) {
+      const restCanon = Object.assign({}, canon, { slug: canon.restSlug || canon.slug });
+      if (!restCanon.slug) return Promise.resolve(null);
+      return restVideo(restCanon).then(function (got) {
         if (!got) return null;
         noteDoor('rest');
-        return finishVideo(got);
+        return finishVideo(got).then(function (out) {
+          out.usedSlug = restCanon.slug;
+          out.via = 'rest';
+          return out;
+        });
       });
     };
     if (transport() === 'key') {
@@ -1701,6 +1817,13 @@
   function key(shotId, role) { return shotId + ':' + role; }
 
   function job(shotId, role) { return JOBS[key(shotId, role)] || null; }
+  function runningJobs() {
+    return Object.keys(JOBS).filter(function (k) {
+      const j = JOBS[k];
+      return j && (j.state === 'working' || j.state === 'waiting');
+    }).length;
+  }
+
   function busy(shotId, role) {
     const j = job(shotId, role);
     return !!(j && (j.state === 'working' || j.state === 'waiting'));
@@ -1808,72 +1931,102 @@
       }
     }
 
-    const j = start(shot.id, role);
-    const state = function (s) { j.state = s; notify(); };
+    /* The allow-lists and the model names live in the tool descriptions, so
+     * nothing below is knowable until the tools have been read. */
+    return ensureTools().then(function () {
+      const aspect = aspectOf(p);
+      const slugNow = slugOf(model);
+      const allowed = transport() === 'key'
+        ? null : allowFor(role === 'image' ? TOOL.image : TOOL.video, slugNow, 'aspect_ratio');
+      if (allowed && allowed.length && allowed.indexOf(aspect) < 0) {
+        /* The tool takes an unlisted ratio and silently makes 16:9 of it, so
+         * four of the six shapes on the board's list were paid-for lies. */
+        return Promise.reject(new Error('“' + slugNow + '” does not offer ' + aspect +
+          ' — it takes ' + allowed.join(', ') + '. Change the aspect ratio in ' +
+          'Settings → ImagineArt, or point this model somewhere that offers it.'));
+      }
 
-    /* Stamped onto whatever comes back, because an export that can say "these
-     * eleven were generated, off these prompts, by this model" is a different
-     * thing from one that hands over a folder of pictures. */
-    const made = {
-      by: 'imagine', role: role, model: model.name, modelId: model.id, slug: slugOf(model),
-      via: transport(), at: Date.now()
-    };
-    /* Which picture this clip is being made from, so it can be filed against
-     * that picture however the board is rearranged in the meantime. */
-    const frameRef = (shot.image && shot.image.ref) || '';
+      const j = start(shot.id, role);
+      const state = function (s2) { j.state = s2; notify(); };
 
-    const res = resolutionFor(p, slugOf(model), role);
-    const qual = role === 'image' ? qualityFor(p, slugOf(model)) : '';
-    made.resolution = res || '';
+      /* Stamped onto whatever comes back, because an export that can say
+       * "these eleven were generated, off these prompts, by this model" is a
+       * different thing from one that hands over a folder of pictures. The
+       * slug and the door are filled in from what actually carried it. */
+      const made = {
+        by: 'imagine', role: role, model: model.name, modelId: model.id,
+        slug: slugNow, via: transport(), at: Date.now()
+      };
+      const frameRef = (shot.image && shot.image.ref) || '';
 
-    /* The balance before, so the balance after says what this cost. */
-    const before = balanceNow();
+      const res = resolutionFor(p, slugNow, role);
+      const qual = role === 'image' ? qualityFor(p, slugNow) : '';
+      made.resolution = res || '';
 
-    const work = role === 'image'
-      ? image({
-        prompt: text, slug: slugOf(model), aspect: aspectOf(p),
-        resolution: res, quality: qual,
-        onState: function () { state('waiting'); }
-      })
-        .then(function (got) { return fileImage(p, shot, got, made); })
-      : startFrame(p, shot).then(function (frame) {
-        return video({
-          prompt: text, slug: slugOf(model), aspect: aspectOf(p),
-          resolution: res,
-          frame: frame && frame.blob, frameName: frame && frame.name,
-          onState: function () { state('waiting'); }
+      /* A measurement is only worth anything if this generation is the only
+       * one in the air: two at once and the difference is both of them. */
+      const alone = runningJobs() === 1;
+      const before = alone ? balanceNow() : Promise.resolve(null);
+
+      const work = role === 'image'
+        ? before.then(function () {
+          return image({
+            prompt: text, slug: slugNow, restSlug: slugOf(model, 'key'),
+            aspect: aspect, resolution: res, quality: qual,
+            onState: function () { state('waiting'); }
+          });
+        }).then(function (got) {
+          made.slug = got.usedSlug || made.slug;
+          made.via = got.via || made.via;
+          return fileImage(p, shot, got, made).then(function (out) {
+            out.usedSlug = got.usedSlug;
+            return out;
+          });
+        })
+        : before.then(function () { return startFrame(p, shot); }).then(function (frame) {
+          return video({
+            prompt: text, slug: slugNow, restSlug: slugOf(model, 'key'),
+            aspect: aspect, resolution: res,
+            frame: frame && frame.blob, frameName: frame && frame.name,
+            onState: function () { state('waiting'); }
+          });
+        }).then(function (got) {
+          made.slug = got.usedSlug || made.slug;
+          made.via = got.via || made.via;
+          return fileVideo(p, targetFor(p, shot, frameRef), got, made).then(function (out) {
+            out.usedSlug = got.usedSlug;
+            return out;
+          });
         });
-      }).then(function (got) {
-        return fileVideo(p, targetFor(p, shot, frameRef), got, made);
+
+      return work.then(function (out) {
+        endJob(shot.id, role);
+        const used = (out && out.usedSlug) || made.slug;
+        noteWorked(used, role === 'image' ? 'image' : 'video');
+        model.lastUsed = { slug: used, via: made.via, at: Date.now() };
+        SB.Store.touch();
+        /* What it actually cost, from the two balances — only when this was
+         * the only job running at both ends, or the difference is somebody
+         * else's generation too. */
+        if (alone) {
+          before.then(function (was) {
+            if (!(was > 0) || runningJobs() !== 0) return null;
+            return balanceNow().then(function (now) {
+              if (!(now > 0)) return null;
+              const spent = Math.round((was - now) * 100) / 100;
+              if (spent > 0) noteCost(used, '', res, spent);
+              return null;
+            });
+          }).catch(function () { });
+        }
+        return out;
+      }).catch(function (e) {
+        endJob(shot.id, role, e);
+        throw e;
       });
-
-    return work.then(function (out) {
-      endJob(shot.id, role);
-      /* It produced something, so whatever any list says, this slug is real
-       * for this account. */
-      noteWorked(slugOf(model), role === 'image' ? 'image' : 'video');
-      /* On the model itself, so it travels with the board: what this entry
-       * last produced something with, and when. A teammate opening the file
-       * gets a name with evidence behind it rather than a guess. */
-      model.lastUsed = { slug: slugOf(model), via: transport(), at: Date.now() };
-      SB.Store.touch();
-      /* What it actually cost, from the two balances. Nothing depends on
-       * this working — an account that will not report a balance simply
-       * keeps the published estimate. */
-      before.then(function (was) {
-        if (!(was > 0)) return null;
-        return balanceNow().then(function (now) {
-          if (!(now > 0)) return null;
-          noteCost(slugOf(model), '', res, Math.round((was - now) * 100) / 100);
-          return null;
-        });
-      }).catch(function () { });
-      return out;
-    }).catch(function (e) {
-      endJob(shot.id, role, e);
-      throw e;
     });
   }
+
 
   /* The frame a clip animates from: the full-size original the board is
    * carrying, its ≤480p proxy if the original predates them being kept in the
@@ -2011,10 +2164,32 @@
     return all[catKey()] || null;
   }
 
+  function cleanCatalog(list) {
+    if (!Array.isArray(list)) return null;
+    const out = list.filter(function (m) {
+      return m && typeof m === 'object' && typeof m.slug === 'string' && m.slug;
+    }).map(function (m) {
+      return {
+        slug: m.slug,
+        kind: m.kind === 'image' ? 'image' : 'video',
+        mode: typeof m.mode === 'string' ? m.mode : '',
+        from: typeof m.from === 'string' ? m.from : 'account'
+      };
+    });
+    return out.length ? out : null;
+  }
+
+  /* A catalog can arrive from a file somebody else wrote, so it is checked
+   * rather than trusted: one malformed value used to be stored and then
+   * thrown on every later read, which took Settings down for good — in
+   * localStorage, so closing the file did not help. */
   function storeCatalog(list) {
+    const clean = cleanCatalog(list);
+    if (!clean) return false;
     const all = lsGet(K_CAT) || {};
-    all[catKey()] = { at: Date.now(), list: list };
+    all[catKey()] = { at: Date.now(), list: clean };
     lsSet(K_CAT, all);
+    return true;
   }
 
   /* Ask the account what it offers, and say what moved. Called on sign-in, by
@@ -2022,6 +2197,15 @@
    * is refused for a slug the account does not know — that refusal is the
    * catalog telling us it has changed. */
   function refreshCatalog() {
+    if (transport() === 'key') {
+      /* The account's tools describe the MCP surface; storing those names
+       * against the API key would offer the v2 datalist models it has never
+       * heard of. */
+      const e = new Error('The API-key transport uses the v2 REST list, which is built in. ' +
+        'Sign in to read your account\u2019s own models.');
+      e.soft = true;
+      return Promise.reject(e);
+    }
     if (!isSignedIn()) {
       return Promise.reject(new Error('Sign in and this becomes whatever your account offers.'));
     }
@@ -2065,7 +2249,8 @@
 
   function catalogAll() {
     const c = cachedCatalog();
-    const base = (c && c.list && c.list.length) ? c.list : shipped();
+    const cached = c && Array.isArray(c.list) && c.list.length ? c.list : null;
+    const base = cached || shipped();
     /* Proven slugs first, and never dropped for being absent from a list. */
     const proven = worked();
     if (!proven.length) return base;
@@ -2104,10 +2289,20 @@
     const all = lsGet(K_WORKED) || {};
     const mine = all[catKey()] || [];
     const at = mine.filter(function (x) { return x.slug === s; })[0];
-    if (at) { at.at = Date.now(); at.n = (at.n | 0) + 1; }
-    else mine.push({ slug: s, kind: kind, at: Date.now(), n: 1, from: 'worked' });
-    all[catKey()] = mine;
-    lsSet(K_WORKED, all);
+    if (at) { at.at = Date.now(); at.n = (at.n | 0) + 1; return void save(); }
+    /* Keep what is already known about this slug — proving one works must
+     * not erase which way round it runs, which is what the text-to-video
+     * guard reads. */
+    const known = modelInfo(s) || {};
+    mine.push({
+      slug: s, kind: kind || known.kind, mode: known.mode || '', deflt: !!known.deflt,
+      at: Date.now(), n: 1, from: 'worked'
+    });
+    save();
+    function save() {
+      all[catKey()] = mine;
+      lsSet(K_WORKED, all);
+    }
   }
 
   function modelInfo(slug) {
@@ -2540,7 +2735,11 @@
     const slug = slugOf(model);
     const res = resolutionFor(p, slug, 'video');
     const c = slug ? costFor(slug, '', res) : null;
-    if (costAsked || !c || !c.credits) { costAsked = true; then(); return; }
+    if (costAsked) { then(); return; }
+    /* No price for this one is not an answer to the question — latching here
+     * meant one unpriced model silenced the confirmation for every clip
+     * after it, including a nine-hundred-credit one. */
+    if (!c || !c.credits) { then(); return; }
     const acct = account();
     const bal = acct && typeof acct.credits === 'number' ? acct.credits : null;
     const body = SB.el('div');
@@ -2609,7 +2808,8 @@
     image: image, video: video, run: run, fetchClip: fetchClip,
     whyNot: whyNot, promptFor: promptFor,
     /* jobs */
-    job: job, busy: busy, clear: clear, onChange: onChange,
+    job: job, busy: busy, clear: clear, onChange: onChange, runningJobs: runningJobs,
+    ensureTools: ensureTools,
     /* exposed for the tests */
     _bind: bind, _pickScore: score, _harvest: harvest, _parseRpc: parseRpc,
     _fileVideo: fileVideo

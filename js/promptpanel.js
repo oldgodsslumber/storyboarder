@@ -703,14 +703,19 @@
 
     /* The clip this row already has, if any — the one place it can be played
        back without going and finding it. */
-    if (field === 'videoPrompt' && sh.video) {
-      const play = SB.el('button', 'mini', '\u25b7 clip' +
-        (sh.video.dur ? ' ' + sh.video.dur + 's' : ''));
-      play.title = (sh.video.ref
-        ? 'Play, replace or remove the clip on this card (' +
-          SB.Renders.fileName(sh.video.serial, sh.video.ext) + ')'
-        : 'Play the clip — held only as a link, which expires') +
-        (SB.Clip.label(sh.video) ? '\n' + SB.Clip.label(sh.video) : '');
+    /* One clip control per row, as on every card: it is the way IN to a clip
+       as well as the way to watch one, so a row with none needs it most. */
+    if (field === 'videoPrompt') {
+      const has = !!sh.video;
+      const play = SB.el('button', 'mini' + (has ? '' : ' quiet'), '▷ clip' +
+        (has && sh.video.dur ? ' ' + sh.video.dur + 's' : ''));
+      play.title = (!has
+        ? 'No clip on this row yet — shoot one, or add a file you already have'
+        : (sh.video.ref
+          ? 'Play, replace or remove the clip on this card (' +
+            SB.Renders.fileName(sh.video.serial, sh.video.ext) + ')'
+          : 'Play the clip — held only as a link, which expires')) +
+        (has && SB.Clip.label(sh.video) ? '\n' + SB.Clip.label(sh.video) : '');
       play.onclick = function () { SB.Clip.open(P(), sh); };
       foot.appendChild(play);
     }

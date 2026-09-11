@@ -378,6 +378,14 @@ window.SB = window.SB || {};
   };
 
   /* ---- modal ---- */
+  /* Every modal used to listen for Escape on the document, so one press
+   * closed all of them — Settings behind a report, and every unsaved edit in
+   * it. A modal answers only when it is the last one in the root. */
+  function topmostModal() {
+    const all = document.querySelectorAll('#modalRoot .modal-back');
+    return all.length ? all[all.length - 1] : null;
+  }
+
   SB.modal = function (opts) {
     const back = SB.el('div', 'modal-back');
     const m = SB.el('div', 'modal');
@@ -394,7 +402,14 @@ window.SB = window.SB || {};
       document.removeEventListener('keydown', onKey);
       if (opts.onClose) opts.onClose();
     }
-    function onKey(e) { if (e.key === 'Escape') close(); }
+    function onKey(e) {
+      if (e.key !== 'Escape') return;
+      /* only the one in front answers, or one press closes the dialog behind
+         it too and takes every unsaved edit in it */
+      if (topmostModal() !== back) return;
+      e.stopPropagation();
+      close();
+    }
     document.addEventListener('keydown', onKey);
     back.addEventListener('mousedown', function (e) { if (e.target === back) close(); });
 

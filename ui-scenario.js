@@ -1166,6 +1166,86 @@
         SB.app.changed(true);
       }
 
+      // what the second QA pass found
+      {
+        const nap = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+
+        /* Escape closes the modal in front, not the one behind it */
+        SB.Settings.open('imagine');
+        await nap(60);
+        const settingsBack = document.querySelectorAll('#modalRoot .modal-back').length;
+        SB.modal({ title: 'On top', width: '300px', body: SB.el('div', null, 'x'),
+          buttons: [{ label: 'Close', primary: true }] });
+        await nap(40);
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        await nap(60);
+        t('Escape closes the modal in front and leaves the one behind',
+          document.querySelectorAll('#modalRoot .modal-back').length === settingsBack,
+          document.querySelectorAll('#modalRoot .modal-back').length + ' of ' + settingsBack);
+
+        /* the weight table names the retired frames it counts */
+        const gTab = Array.prototype.filter.call(document.querySelectorAll('.modal .tab'),
+          function (x) { return x.textContent === 'General'; })[0];
+        gTab.click();
+        const per = SB.Personas.add(P(), { name: 'Understudy' });
+        per.image = SB.Blobs.image(P(), 'data:image/jpeg;base64,' + 'A'.repeat(200), 4, 3);
+        per.retired = [{ ref: SB.Blobs.put(P(), 'data:image/jpeg;base64,' + 'B'.repeat(400)),
+          w: 4, h: 3, label: 'back' }];
+        SB.Settings.open('general');
+        await nap(60);
+        /* two dialogs are open at this point; the one in front is the one
+           built after the persona existed */
+        const weighAll = document.querySelectorAll('.modal .weigh');
+        const weighTxt = weighAll[weighAll.length - 1].textContent;
+        t('the weight table names the retired frames it is counting',
+          /older reference frames/.test(weighTxt), weighTxt.slice(0, 120));
+
+        /* "How originals are kept" waits for Save like everything else */
+        const sel = Array.prototype.filter.call(document.querySelectorAll('.modal select'),
+          function (x) { return /Re-encoded at full size/.test(x.textContent); })[0];
+        const wasOriginals = P().settings.originals;
+        sel.value = 'source';
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+        Array.prototype.filter.call(document.querySelectorAll('.modal button'),
+          function (b) { return b.textContent === 'Cancel'; })[0].click();
+        await nap(40);
+        t('changing how originals are kept and pressing Cancel changes nothing',
+          P().settings.originals === wasOriginals, P().settings.originals);
+        P().personas = P().personas.filter(function (x) { return x.id !== per.id; });
+        SB.app.changed(true);
+        Array.prototype.forEach.call(document.querySelectorAll('#modalRoot .modal-back'),
+          function (el) { el.remove(); });
+        await nap(20);
+
+        /* a drop carrying a picture AND a clip keeps both */
+        const bothShot = P().scenes[0].shots[1];
+        const wasImg = bothShot.image, wasVid = bothShot.video;
+        bothShot.image = null; bothShot.video = null;
+        SB.app.changed(true);
+        const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAGCAIAAABxZ0i' +
+          'sAAAAFElEQVR4nGM8oaHBgA0wYRWlkwQAppoBJCiW4EgAAAAASUVORK5CYII=';
+        const pngRaw = atob(png.split(',')[1]);
+        const pngBytes = new Uint8Array(pngRaw.length);
+        for (let pi = 0; pi < pngRaw.length; pi++) pngBytes[pi] = pngRaw.charCodeAt(pi);
+        const dt = new DataTransfer();
+        dt.items.add(new File([pngBytes], 'frame.png', { type: 'image/png' }));
+        dt.items.add(new File([new Uint8Array(64)], 'clip.mp4', { type: 'video/mp4' }));
+        const frameEl = document.querySelector('.card[data-shot="' + bothShot.id + '"] .frame');
+        frameEl.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
+        for (let k = 0; k < 40 && !(bothShot.image && bothShot.video); k++) await nap(50);
+        t('a drop carrying a picture and a clip keeps both',
+          !!bothShot.image && !!bothShot.video,
+          'image=' + !!bothShot.image + ' clip=' + !!bothShot.video);
+        bothShot.image = wasImg; bothShot.video = wasVid;
+        SB.app.changed(true);
+
+        /* leave the page as this block found it: a dialog left open belongs
+           to whatever runs next, and it will fail there instead of here */
+        Array.prototype.forEach.call(document.querySelectorAll('#modalRoot .modal-back'),
+          function (el) { el.remove(); });
+        await nap(20);
+      }
+
       // the clip review: one control, one modal, both states
       {
         const rShot = P().scenes[0].shots[0];

@@ -1599,12 +1599,14 @@
       ev.preventDefault();
       f.classList.remove('drag-over');
       /* A video dropped on a card is a clip for that card, not a picture that
-         failed to decode — which is what it used to be reported as. */
+         failed to decode — which is what it used to be reported as. A drop
+         carrying both is two things for the same card, and taking only the
+         clip threw the picture away in silence. */
       const clips = SB.videosFromTransfer(ev.dataTransfer);
-      if (clips.length) { clipDrop(sh, clips); return; }
       SB.imageFromTransfer(ev.dataTransfer).then(function (src) {
-        if (!src) { SB.toast('No image or clip found in that drop', true); return; }
-        setImage(sh, src);
+        if (src) setImage(sh, src);
+        if (clips.length) { clipDrop(sh, clips); return; }
+        if (!src) SB.toast('No image or clip found in that drop', true);
       });
     });
     return f;
@@ -1693,6 +1695,15 @@
     const run = (at >= 0) ? list.slice(at, at + files.length) : [];
     const buttons = [{ label: 'Cancel' }];
     if (files.length > 1 && run.length === files.length) {
+      /* The spread replaces whatever those cards hold, and it used to do it
+         without a word — the warning above only ever looked at the card the
+         drop landed on. */
+      const over = run.filter(function (x) { return !!x.shot.video; });
+      if (over.length) {
+        box.appendChild(SB.el('div', 'pp-note warn',
+          'One each would also replace the clip' + (over.length === 1 ? '' : 's') + ' on ' +
+          over.map(function (x) { return x.code; }).join(', ') + '.'));
+      }
       buttons.push({
         label: 'One each, from ' + run[0].code,
         onClick: function (close) {

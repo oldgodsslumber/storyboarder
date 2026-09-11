@@ -1137,6 +1137,9 @@ body.comment-mode .frame{cursor:crosshair}
    row acting on itself — but it is the one that spends money, so it is the
    accented one and it never fires twice. */
 .mini.push{border-color:var(--accent);color:var(--accent)}
+/* the clip button on a row that has none: present, because it is the way in */
+.mini.quiet{opacity:.55}
+.pt-row:hover .mini.quiet{opacity:1}
 .mini.push:disabled{border-color:var(--line);color:var(--fg-dim);opacity:.6}
 .mini.push.running{
   border-color:var(--accent2);color:var(--accent2);opacity:1;
@@ -1242,7 +1245,7 @@ body.comment-mode .frame{cursor:crosshair}
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-09-11 17:40 · be9eab6+";</script>
+<script>window.SB_BUILD = "2026-09-11 18:14 · b6e037a+";</script>
 
 <div id="app">
 
@@ -1748,6 +1751,14 @@ window.SB = window.SB || {};
   };
 
   /* ---- modal ---- */
+  /* Every modal used to listen for Escape on the document, so one press
+   * closed all of them — Settings behind a report, and every unsaved edit in
+   * it. A modal answers only when it is the last one in the root. */
+  function topmostModal() {
+    const all = document.querySelectorAll('#modalRoot .modal-back');
+    return all.length ? all[all.length - 1] : null;
+  }
+
   SB.modal = function (opts) {
     const back = SB.el('div', 'modal-back');
     const m = SB.el('div', 'modal');
@@ -1764,7 +1775,14 @@ window.SB = window.SB || {};
       document.removeEventListener('keydown', onKey);
       if (opts.onClose) opts.onClose();
     }
-    function onKey(e) { if (e.key === 'Escape') close(); }
+    function onKey(e) {
+      if (e.key !== 'Escape') return;
+      /* only the one in front answers, or one press closes the dialog behind
+         it too and takes every unsaved edit in it */
+      if (topmostModal() !== back) return;
+      e.stopPropagation();
+      close();
+    }
     document.addEventListener('keydown', onKey);
     back.addEventListener('mousedown', function (e) { if (e.target === back) close(); });
 
@@ -4554,7 +4572,13 @@ window.SB = window.SB || {};
    * inquiry" through MCP. Best effort: a number if it can be found, nothing if
    * it cannot. Never blocks a generation. */
   function balance() {
-    return callTool('balance', {}).then(function (out) {
+    if (!orgId()) return Promise.resolve(acct);
+    const ask = toolNamed(TOOL.balance)
+      ? callRaw(TOOL.balance, { org_id: orgId() })
+      /* a server that does not publish get_balance falls back to the scored
+         picker, which is what that machinery is still for */
+      : callTool('balance', {});
+    return ask.then(function (out) {
       const n = firstNumber(out.text || '') ;
       acct = acct || { email: (tokens() || {}).email || '' };
       if (n !== null) acct.credits = n;
@@ -4919,20 +4943,44 @@ window.SB = window.SB || {};
    * gets emailed; a credential in one is a credential in somebody's mail
    * archive forever.
    */
+  /* Written on Save — but never to less than is already there. Every
+   * teammate presses Save eventually, and doing it while signed out used to
+   * replace the setup with an empty one: the catalog snapshot, the measured
+   * prices and the organization all gone from the file, for everybody. So
+   * each field is only replaced by something, and the stamp only moves when
+   * something actually changed. */
   function publishToBoard(p) {
     if (!p || !p.settings) return null;
+    const was = (p.settings.imagine && typeof p.settings.imagine === 'object')
+      ? p.settings.imagine : {};
     const share = p.settings.imagineShareOrg !== false;
     const t = tokens() || {};
+    const mineCat = (cachedCatalog() || {}).list;
+    const mineCost = measured();
+    const catalog = (Array.isArray(mineCat) && mineCat.length) ? mineCat
+      : (Array.isArray(was.catalog) && was.catalog.length ? was.catalog : null);
+    const costs = Object.keys(mineCost).length ? mineCost
+      : (was.costs && Object.keys(was.costs).length ? was.costs : null);
+    const oid = share ? (orgId() || (was.orgId || null)) : null;
+    const oname = share ? ((org() && org().name) || was.orgName || '') : '';
+
+    const changed = catalog !== was.catalog || costs !== was.costs ||
+      oid !== (was.orgId || null) || oname !== (was.orgName || '');
     const block = {
-      setUpBy: t.email || '',
-      at: Date.now(),
-      orgId: (share && orgId()) || null,
-      orgName: (share && org() && org().name) || '',
-      /* a snapshot, so a teammate who has not signed in still sees the right
-         models instead of the v2 REST floor */
-      catalog: (cachedCatalog() || {}).list || null,
-      costs: measured()
+      setUpBy: (t.email || was.setUpBy || ''),
+      at: changed ? Date.now() : (was.at || Date.now()),
+      orgId: oid,
+      orgName: oname,
+      catalog: catalog,
+      costs: costs || {}
     };
+    /* Nothing to hand anybody: leave the field off rather than writing an
+     * empty block that every opener is then offered. */
+    if (!block.orgId && !block.catalog && !Object.keys(block.costs).length) {
+      p.settings.imagine = was.at ? was : null;
+      SB.Store.touch();
+      return p.settings.imagine;
+    }
     p.settings.imagine = block;
     SB.Store.touch();
     return block;
@@ -4949,11 +4997,15 @@ window.SB = window.SB || {};
     const b = p && p.settings && p.settings.imagine;
     if (!b || !b.at) return null;
     if (lsStr(askedKey(p))) return null;
-    /* nothing to offer if this browser already has all of it */
+    /* nothing to offer if this browser already has all of it, or if the
+     * board is carrying nothing worth taking */
     const sameOrg = !b.orgId || (orgId() === b.orgId);
+    const hasCat = Array.isArray(b.catalog) && b.catalog.length;
+    const hasCost = b.costs && Object.keys(b.costs).length;
+    if (!b.orgId && !hasCat && !hasCost) return null;
     const haveCat = !!(cachedCatalog() || {}).list;
     const haveCost = Object.keys(measured()).length > 0;
-    if (sameOrg && (haveCat || !b.catalog) && (haveCost || !b.costs)) return null;
+    if (sameOrg && (haveCat || !hasCat) && (haveCost || !hasCost)) return null;
     return b;
   }
 
@@ -4965,11 +5017,26 @@ window.SB = window.SB || {};
   function adoptBoard(p) {
     const b = p && p.settings && p.settings.imagine;
     if (!b) return Promise.resolve(null);
+    /* Everything learned is filed against the account it was learned for, so
+     * adopting while signed out files it under "nobody" and it disappears
+     * the moment somebody signs in. Ask again later instead of burning the
+     * offer on a copy nobody will ever see. */
+    if (transport() !== 'key' && !isSignedIn()) {
+      return Promise.resolve({
+        took: [],
+        orgSkipped: 'sign in first — anything taken now would be filed against no account ' +
+          'and lost the moment you did'
+      });
+    }
     lsPut(askedKey(p), '1');
     const took = [];
-    if (b.catalog && b.catalog.length && !(cachedCatalog() || {}).list) {
-      storeCatalog(b.catalog.slice());
-      took.push(b.catalog.length + ' models');
+    if (Array.isArray(b.catalog) && b.catalog.length && !(cachedCatalog() || {}).list) {
+      /* storeCatalog says whether it recognised a catalog at all — counting
+         the thing we were handed used to report "10 models" for the string
+         "not-a-list". */
+      if (storeCatalog(b.catalog)) {
+        took.push(((cachedCatalog() || {}).list || []).length + ' models');
+      }
     }
     if (b.costs && Object.keys(b.costs).length) {
       const all = lsGet(K_COST) || {};
@@ -5187,11 +5254,19 @@ window.SB = window.SB || {};
         const blob = JSON.stringify((got.raw && got.raw.structuredContent) || {}) + ' ' + (got.text || '');
         const done = /"?status"?\s*[:=]\s*"?(complete|completed|success|finished)/i.test(blob);
         const failed = /"?status"?\s*[:=]\s*"?(error|failed)/i.test(blob);
-        if (failed) throw new Error(got.text ? got.text.slice(0, 200) : 'ImagineArt could not finish it.');
+        if (failed) afterSubmit(new Error(got.text ? got.text.slice(0, 200) : 'ImagineArt could not finish it.'));
         if (got.url && done) return got;
         if (got.url && !/queued|generating|processing|pending/i.test(blob)) return got;
+        if (done) {
+          /* Finished, and the file is not in the answer. Polling for ten
+           * more minutes will not conjure one, and the caller must not treat
+           * this as "the tools could not take it" — it was taken. */
+          afterSubmit(new Error('ImagineArt finished it but sent no file back. It is on ' +
+            'imagine.art under ' + id + '.'));
+        }
         if (Date.now() - started > 10 * 60 * 1000) {
-          throw new Error('Gave up waiting after ten minutes. It may still finish on imagine.art.');
+          afterSubmit(new Error('Gave up waiting after ten minutes. It may still finish on ' +
+            'imagine.art — look there before spending another generation.'));
         }
         if (onState) onState('waiting', Date.now() - started);
         return wait(3000).then(look);
@@ -5222,6 +5297,18 @@ window.SB = window.SB || {};
     const m = /\b([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b/i
       .exec((got && got.text) || '');
     return m ? m[1] : '';
+  }
+
+  /* The allow-lists, the model lists and the tool names all live in the
+   * descriptions, which only arrive with tools/list — and the generation
+   * path only ever did `initialize`. So a session that opened a board and
+   * pressed the button sent no resolution and no quality at all, which is
+   * the model's floor: exactly what asking for a resolution was meant to
+   * stop. Cached after the first call. */
+  function ensureTools() {
+    if (transport() === 'key' || !isSignedIn()) return Promise.resolve([]);
+    if (mcp.tools) return Promise.resolve(mcp.tools);
+    return toolList().catch(function () { return []; });
   }
 
   function needOrg() {
@@ -5309,8 +5396,8 @@ window.SB = window.SB || {};
     const ok = kind === 'video'
       ? /^video\//.test(t)
       : /^image\//.test(t);
-    if (ok) return blob;
     if (!blob || !blob.size) throw new Error('ImagineArt sent an empty file.');
+    if (ok) return blob;
     /* No type at all is common and usually fine for a direct asset URL; an
      * actively wrong one (a web page, a JSON error) never is. */
     if (!t && blob.size > 1024) return blob;
@@ -5496,22 +5583,34 @@ window.SB = window.SB || {};
   function door() { return lsStr(K_DOOR); }
   function noteDoor(d) { lsPut(K_DOOR, d); }
 
+  /* The fallback exists for one case: the account's tools could not take the
+   * job at all. It must never run after a generation has been SUBMITTED —
+   * that is a second one, and it is billed. A job that was accepted and then
+   * failed, timed out, or came back without a file has already cost money,
+   * and the honest answer is the failure.
+   *
+   * Anything thrown after submission carries `submitted`; an auth failure
+   * carries `auth`. Both stop here. */
   function firstOf(primary, fallback) {
     return primary().then(function (r) {
       if (r) return r;
       return fallback();
     }, function (e) {
-      /* A token the server rejected is not a reason to try the other door
-       * with the same token. */
-      if (e && e.auth) throw e;
+      if (e && (e.auth || e.submitted)) throw e;
       return fallback().catch(function () { throw e; });
     });
+  }
+
+  function afterSubmit(e) {
+    const err = (e instanceof Error) ? e : new Error(String(e));
+    err.submitted = true;
+    throw err;
   }
 
   /* One still. Resolves to {blob, dataUrl}. */
   function image(opts) {
     const canon = {
-      prompt: opts.prompt, slug: opts.slug,
+      prompt: opts.prompt, slug: opts.slug, restSlug: opts.restSlug || '',
       aspect: opts.aspect, resolution: opts.resolution || '', quality: opts.quality || '',
       onState: opts.onState
     };
@@ -5530,19 +5629,39 @@ window.SB = window.SB || {};
       };
       if (canon.resolution) args.resolution = canon.resolution;
       if (canon.quality) args.quality = canon.quality;
+      /* Everything inside this `then` happens after ImagineArt accepted the
+       * job, so every failure in it is a failure of a generation that has
+       * already cost something — never a reason to try the other door. A
+       * rejection from callRaw itself is the tools refusing the job, which
+       * is the one case the fallback is for. */
       return callRaw(TOOL.image, args).then(function (got) {
         const id = assetId(got);
-        return (got.url && !id) ? got : waitForAsset(id || got.text, canon.onState);
-      }).then(function (got) {
-        noteDoor('mcp');
-        return finishImage(got);
+        const settled = (got.url && !id)
+          ? Promise.resolve(got) : waitForAsset(id || got.text, canon.onState);
+        return settled.then(function (g2) {
+          noteDoor('mcp');
+          return finishImage(g2);
+        }).then(function (out) {
+          out.usedSlug = canon.slug || '';
+          out.via = 'mcp';
+          return out;
+        }).catch(afterSubmit);
       });
     };
     const viaRest = function () {
-      return restImage(canon).then(function (got) {
+      /* The v2 API knows this model by a different name, and the board
+       * carries both — sending the account's name here is a wasted round
+       * trip at best and a silent wrong model at worst. */
+      const restCanon = Object.assign({}, canon, { slug: canon.restSlug || canon.slug });
+      if (!restCanon.slug) return Promise.resolve(null);
+      return restImage(restCanon).then(function (got) {
         if (!got) return null;
         noteDoor('rest');
-        return finishImage(got);
+        return finishImage(got).then(function (out) {
+          out.usedSlug = restCanon.slug;
+          out.via = 'rest';
+          return out;
+        });
       });
     };
     if (transport() === 'key') {
@@ -5591,7 +5710,8 @@ window.SB = window.SB || {};
    * cross-origin read, and the URL is then all there is. */
   function video(opts) {
     const canon = {
-      prompt: opts.prompt, slug: opts.slug, aspect: opts.aspect,
+      prompt: opts.prompt, slug: opts.slug, restSlug: opts.restSlug || '',
+      aspect: opts.aspect,
       duration: opts.duration, resolution: opts.resolution || '',
       frame: opts.frame, frameName: opts.frameName,
       onState: opts.onState
@@ -5617,15 +5737,29 @@ window.SB = window.SB || {};
         })
         .then(function (got) {
           const id = assetId(got);
-          return (got.url && !id) ? got : waitForAsset(id || got.text, canon.onState);
-        })
-        .then(function (got) { noteDoor('mcp'); return finishVideo(got); });
+          const settled = (got.url && !id)
+            ? Promise.resolve(got) : waitForAsset(id || got.text, canon.onState);
+          return settled.then(function (g2) {
+            noteDoor('mcp');
+            return finishVideo(g2);
+          }).then(function (out) {
+            out.usedSlug = canon.slug || '';
+            out.via = 'mcp';
+            return out;
+          }).catch(afterSubmit);
+        });
     };
     const viaRest = function () {
-      return restVideo(canon).then(function (got) {
+      const restCanon = Object.assign({}, canon, { slug: canon.restSlug || canon.slug });
+      if (!restCanon.slug) return Promise.resolve(null);
+      return restVideo(restCanon).then(function (got) {
         if (!got) return null;
         noteDoor('rest');
-        return finishVideo(got);
+        return finishVideo(got).then(function (out) {
+          out.usedSlug = restCanon.slug;
+          out.via = 'rest';
+          return out;
+        });
       });
     };
     if (transport() === 'key') {
@@ -5679,6 +5813,13 @@ window.SB = window.SB || {};
   function key(shotId, role) { return shotId + ':' + role; }
 
   function job(shotId, role) { return JOBS[key(shotId, role)] || null; }
+  function runningJobs() {
+    return Object.keys(JOBS).filter(function (k) {
+      const j = JOBS[k];
+      return j && (j.state === 'working' || j.state === 'waiting');
+    }).length;
+  }
+
   function busy(shotId, role) {
     const j = job(shotId, role);
     return !!(j && (j.state === 'working' || j.state === 'waiting'));
@@ -5786,72 +5927,102 @@ window.SB = window.SB || {};
       }
     }
 
-    const j = start(shot.id, role);
-    const state = function (s) { j.state = s; notify(); };
+    /* The allow-lists and the model names live in the tool descriptions, so
+     * nothing below is knowable until the tools have been read. */
+    return ensureTools().then(function () {
+      const aspect = aspectOf(p);
+      const slugNow = slugOf(model);
+      const allowed = transport() === 'key'
+        ? null : allowFor(role === 'image' ? TOOL.image : TOOL.video, slugNow, 'aspect_ratio');
+      if (allowed && allowed.length && allowed.indexOf(aspect) < 0) {
+        /* The tool takes an unlisted ratio and silently makes 16:9 of it, so
+         * four of the six shapes on the board's list were paid-for lies. */
+        return Promise.reject(new Error('“' + slugNow + '” does not offer ' + aspect +
+          ' — it takes ' + allowed.join(', ') + '. Change the aspect ratio in ' +
+          'Settings → ImagineArt, or point this model somewhere that offers it.'));
+      }
 
-    /* Stamped onto whatever comes back, because an export that can say "these
-     * eleven were generated, off these prompts, by this model" is a different
-     * thing from one that hands over a folder of pictures. */
-    const made = {
-      by: 'imagine', role: role, model: model.name, modelId: model.id, slug: slugOf(model),
-      via: transport(), at: Date.now()
-    };
-    /* Which picture this clip is being made from, so it can be filed against
-     * that picture however the board is rearranged in the meantime. */
-    const frameRef = (shot.image && shot.image.ref) || '';
+      const j = start(shot.id, role);
+      const state = function (s2) { j.state = s2; notify(); };
 
-    const res = resolutionFor(p, slugOf(model), role);
-    const qual = role === 'image' ? qualityFor(p, slugOf(model)) : '';
-    made.resolution = res || '';
+      /* Stamped onto whatever comes back, because an export that can say
+       * "these eleven were generated, off these prompts, by this model" is a
+       * different thing from one that hands over a folder of pictures. The
+       * slug and the door are filled in from what actually carried it. */
+      const made = {
+        by: 'imagine', role: role, model: model.name, modelId: model.id,
+        slug: slugNow, via: transport(), at: Date.now()
+      };
+      const frameRef = (shot.image && shot.image.ref) || '';
 
-    /* The balance before, so the balance after says what this cost. */
-    const before = balanceNow();
+      const res = resolutionFor(p, slugNow, role);
+      const qual = role === 'image' ? qualityFor(p, slugNow) : '';
+      made.resolution = res || '';
 
-    const work = role === 'image'
-      ? image({
-        prompt: text, slug: slugOf(model), aspect: aspectOf(p),
-        resolution: res, quality: qual,
-        onState: function () { state('waiting'); }
-      })
-        .then(function (got) { return fileImage(p, shot, got, made); })
-      : startFrame(p, shot).then(function (frame) {
-        return video({
-          prompt: text, slug: slugOf(model), aspect: aspectOf(p),
-          resolution: res,
-          frame: frame && frame.blob, frameName: frame && frame.name,
-          onState: function () { state('waiting'); }
+      /* A measurement is only worth anything if this generation is the only
+       * one in the air: two at once and the difference is both of them. */
+      const alone = runningJobs() === 1;
+      const before = alone ? balanceNow() : Promise.resolve(null);
+
+      const work = role === 'image'
+        ? before.then(function () {
+          return image({
+            prompt: text, slug: slugNow, restSlug: slugOf(model, 'key'),
+            aspect: aspect, resolution: res, quality: qual,
+            onState: function () { state('waiting'); }
+          });
+        }).then(function (got) {
+          made.slug = got.usedSlug || made.slug;
+          made.via = got.via || made.via;
+          return fileImage(p, shot, got, made).then(function (out) {
+            out.usedSlug = got.usedSlug;
+            return out;
+          });
+        })
+        : before.then(function () { return startFrame(p, shot); }).then(function (frame) {
+          return video({
+            prompt: text, slug: slugNow, restSlug: slugOf(model, 'key'),
+            aspect: aspect, resolution: res,
+            frame: frame && frame.blob, frameName: frame && frame.name,
+            onState: function () { state('waiting'); }
+          });
+        }).then(function (got) {
+          made.slug = got.usedSlug || made.slug;
+          made.via = got.via || made.via;
+          return fileVideo(p, targetFor(p, shot, frameRef), got, made).then(function (out) {
+            out.usedSlug = got.usedSlug;
+            return out;
+          });
         });
-      }).then(function (got) {
-        return fileVideo(p, targetFor(p, shot, frameRef), got, made);
+
+      return work.then(function (out) {
+        endJob(shot.id, role);
+        const used = (out && out.usedSlug) || made.slug;
+        noteWorked(used, role === 'image' ? 'image' : 'video');
+        model.lastUsed = { slug: used, via: made.via, at: Date.now() };
+        SB.Store.touch();
+        /* What it actually cost, from the two balances — only when this was
+         * the only job running at both ends, or the difference is somebody
+         * else's generation too. */
+        if (alone) {
+          before.then(function (was) {
+            if (!(was > 0) || runningJobs() !== 0) return null;
+            return balanceNow().then(function (now) {
+              if (!(now > 0)) return null;
+              const spent = Math.round((was - now) * 100) / 100;
+              if (spent > 0) noteCost(used, '', res, spent);
+              return null;
+            });
+          }).catch(function () { });
+        }
+        return out;
+      }).catch(function (e) {
+        endJob(shot.id, role, e);
+        throw e;
       });
-
-    return work.then(function (out) {
-      endJob(shot.id, role);
-      /* It produced something, so whatever any list says, this slug is real
-       * for this account. */
-      noteWorked(slugOf(model), role === 'image' ? 'image' : 'video');
-      /* On the model itself, so it travels with the board: what this entry
-       * last produced something with, and when. A teammate opening the file
-       * gets a name with evidence behind it rather than a guess. */
-      model.lastUsed = { slug: slugOf(model), via: transport(), at: Date.now() };
-      SB.Store.touch();
-      /* What it actually cost, from the two balances. Nothing depends on
-       * this working — an account that will not report a balance simply
-       * keeps the published estimate. */
-      before.then(function (was) {
-        if (!(was > 0)) return null;
-        return balanceNow().then(function (now) {
-          if (!(now > 0)) return null;
-          noteCost(slugOf(model), '', res, Math.round((was - now) * 100) / 100);
-          return null;
-        });
-      }).catch(function () { });
-      return out;
-    }).catch(function (e) {
-      endJob(shot.id, role, e);
-      throw e;
     });
   }
+
 
   /* The frame a clip animates from: the full-size original the board is
    * carrying, its ≤480p proxy if the original predates them being kept in the
@@ -5989,10 +6160,32 @@ window.SB = window.SB || {};
     return all[catKey()] || null;
   }
 
+  function cleanCatalog(list) {
+    if (!Array.isArray(list)) return null;
+    const out = list.filter(function (m) {
+      return m && typeof m === 'object' && typeof m.slug === 'string' && m.slug;
+    }).map(function (m) {
+      return {
+        slug: m.slug,
+        kind: m.kind === 'image' ? 'image' : 'video',
+        mode: typeof m.mode === 'string' ? m.mode : '',
+        from: typeof m.from === 'string' ? m.from : 'account'
+      };
+    });
+    return out.length ? out : null;
+  }
+
+  /* A catalog can arrive from a file somebody else wrote, so it is checked
+   * rather than trusted: one malformed value used to be stored and then
+   * thrown on every later read, which took Settings down for good — in
+   * localStorage, so closing the file did not help. */
   function storeCatalog(list) {
+    const clean = cleanCatalog(list);
+    if (!clean) return false;
     const all = lsGet(K_CAT) || {};
-    all[catKey()] = { at: Date.now(), list: list };
+    all[catKey()] = { at: Date.now(), list: clean };
     lsSet(K_CAT, all);
+    return true;
   }
 
   /* Ask the account what it offers, and say what moved. Called on sign-in, by
@@ -6000,6 +6193,15 @@ window.SB = window.SB || {};
    * is refused for a slug the account does not know — that refusal is the
    * catalog telling us it has changed. */
   function refreshCatalog() {
+    if (transport() === 'key') {
+      /* The account's tools describe the MCP surface; storing those names
+       * against the API key would offer the v2 datalist models it has never
+       * heard of. */
+      const e = new Error('The API-key transport uses the v2 REST list, which is built in. ' +
+        'Sign in to read your account\u2019s own models.');
+      e.soft = true;
+      return Promise.reject(e);
+    }
     if (!isSignedIn()) {
       return Promise.reject(new Error('Sign in and this becomes whatever your account offers.'));
     }
@@ -6043,7 +6245,8 @@ window.SB = window.SB || {};
 
   function catalogAll() {
     const c = cachedCatalog();
-    const base = (c && c.list && c.list.length) ? c.list : shipped();
+    const cached = c && Array.isArray(c.list) && c.list.length ? c.list : null;
+    const base = cached || shipped();
     /* Proven slugs first, and never dropped for being absent from a list. */
     const proven = worked();
     if (!proven.length) return base;
@@ -6082,10 +6285,20 @@ window.SB = window.SB || {};
     const all = lsGet(K_WORKED) || {};
     const mine = all[catKey()] || [];
     const at = mine.filter(function (x) { return x.slug === s; })[0];
-    if (at) { at.at = Date.now(); at.n = (at.n | 0) + 1; }
-    else mine.push({ slug: s, kind: kind, at: Date.now(), n: 1, from: 'worked' });
-    all[catKey()] = mine;
-    lsSet(K_WORKED, all);
+    if (at) { at.at = Date.now(); at.n = (at.n | 0) + 1; return void save(); }
+    /* Keep what is already known about this slug — proving one works must
+     * not erase which way round it runs, which is what the text-to-video
+     * guard reads. */
+    const known = modelInfo(s) || {};
+    mine.push({
+      slug: s, kind: kind || known.kind, mode: known.mode || '', deflt: !!known.deflt,
+      at: Date.now(), n: 1, from: 'worked'
+    });
+    save();
+    function save() {
+      all[catKey()] = mine;
+      lsSet(K_WORKED, all);
+    }
   }
 
   function modelInfo(slug) {
@@ -6518,7 +6731,11 @@ window.SB = window.SB || {};
     const slug = slugOf(model);
     const res = resolutionFor(p, slug, 'video');
     const c = slug ? costFor(slug, '', res) : null;
-    if (costAsked || !c || !c.credits) { costAsked = true; then(); return; }
+    if (costAsked) { then(); return; }
+    /* No price for this one is not an answer to the question — latching here
+     * meant one unpriced model silenced the confirmation for every clip
+     * after it, including a nine-hundred-credit one. */
+    if (!c || !c.credits) { then(); return; }
     const acct = account();
     const bal = acct && typeof acct.credits === 'number' ? acct.credits : null;
     const body = SB.el('div');
@@ -6587,7 +6804,8 @@ window.SB = window.SB || {};
     image: image, video: video, run: run, fetchClip: fetchClip,
     whyNot: whyNot, promptFor: promptFor,
     /* jobs */
-    job: job, busy: busy, clear: clear, onChange: onChange,
+    job: job, busy: busy, clear: clear, onChange: onChange, runningJobs: runningJobs,
+    ensureTools: ensureTools,
     /* exposed for the tests */
     _bind: bind, _pickScore: score, _harvest: harvest, _parseRpc: parseRpc,
     _fileVideo: fileVideo
@@ -11884,12 +12102,14 @@ window.SB = window.SB || {};
       ev.preventDefault();
       f.classList.remove('drag-over');
       /* A video dropped on a card is a clip for that card, not a picture that
-         failed to decode — which is what it used to be reported as. */
+         failed to decode — which is what it used to be reported as. A drop
+         carrying both is two things for the same card, and taking only the
+         clip threw the picture away in silence. */
       const clips = SB.videosFromTransfer(ev.dataTransfer);
-      if (clips.length) { clipDrop(sh, clips); return; }
       SB.imageFromTransfer(ev.dataTransfer).then(function (src) {
-        if (!src) { SB.toast('No image or clip found in that drop', true); return; }
-        setImage(sh, src);
+        if (src) setImage(sh, src);
+        if (clips.length) { clipDrop(sh, clips); return; }
+        if (!src) SB.toast('No image or clip found in that drop', true);
       });
     });
     return f;
@@ -11978,6 +12198,15 @@ window.SB = window.SB || {};
     const run = (at >= 0) ? list.slice(at, at + files.length) : [];
     const buttons = [{ label: 'Cancel' }];
     if (files.length > 1 && run.length === files.length) {
+      /* The spread replaces whatever those cards hold, and it used to do it
+         without a word — the warning above only ever looked at the card the
+         drop landed on. */
+      const over = run.filter(function (x) { return !!x.shot.video; });
+      if (over.length) {
+        box.appendChild(SB.el('div', 'pp-note warn',
+          'One each would also replace the clip' + (over.length === 1 ? '' : 's') + ' on ' +
+          over.map(function (x) { return x.code; }).join(', ') + '.'));
+      }
       buttons.push({
         label: 'One each, from ' + run[0].code,
         onClick: function (close) {
@@ -14628,14 +14857,19 @@ window.SB = window.SB || {};
 
     /* The clip this row already has, if any — the one place it can be played
        back without going and finding it. */
-    if (field === 'videoPrompt' && sh.video) {
-      const play = SB.el('button', 'mini', '\u25b7 clip' +
-        (sh.video.dur ? ' ' + sh.video.dur + 's' : ''));
-      play.title = (sh.video.ref
-        ? 'Play, replace or remove the clip on this card (' +
-          SB.Renders.fileName(sh.video.serial, sh.video.ext) + ')'
-        : 'Play the clip — held only as a link, which expires') +
-        (SB.Clip.label(sh.video) ? '\n' + SB.Clip.label(sh.video) : '');
+    /* One clip control per row, as on every card: it is the way IN to a clip
+       as well as the way to watch one, so a row with none needs it most. */
+    if (field === 'videoPrompt') {
+      const has = !!sh.video;
+      const play = SB.el('button', 'mini' + (has ? '' : ' quiet'), '▷ clip' +
+        (has && sh.video.dur ? ' ' + sh.video.dur + 's' : ''));
+      play.title = (!has
+        ? 'No clip on this row yet — shoot one, or add a file you already have'
+        : (sh.video.ref
+          ? 'Play, replace or remove the clip on this card (' +
+            SB.Renders.fileName(sh.video.serial, sh.video.ext) + ')'
+          : 'Play the clip — held only as a link, which expires')) +
+        (has && SB.Clip.label(sh.video) ? '\n' + SB.Clip.label(sh.video) : '');
       play.onclick = function () { SB.Clip.open(P(), sh); };
       foot.appendChild(play);
     }
@@ -16272,6 +16506,8 @@ window.SB = window.SB || {};
     return (n / 1048576).toFixed(1) + ' MB';
   }
 
+  let pendingOriginals = null;
+
   function originalsBlock() {
     const box = SB.el('div', 'pp-block');
     box.appendChild(SB.el('div', 't', 'originals & clips'));
@@ -16284,7 +16520,8 @@ window.SB = window.SB || {};
     const w = SB.Renders.weigh(P());
     const table = SB.el('div', 'weigh');
     [['the board’s copies', w.proxies], ['full-size originals', w.originals],
-     ['clips', w.clips], ['ink', w.ink]].forEach(function (r) {
+     ['clips', w.clips], ['ink', w.ink],
+     ['older reference frames, no longer used', w.retired]].forEach(function (r) {
       if (!r[1].n) return;
       const line = SB.el('div', 'weigh-row');
       line.appendChild(SB.el('span', 'n', String(r[1].n)));
@@ -16333,10 +16570,9 @@ window.SB = window.SB || {};
       if ((P().settings.originals || 'webp') === o[0]) el.selected = true;
       pick.appendChild(el);
     });
-    pick.onchange = function () {
-      P().settings.originals = pick.value === 'source' ? 'source' : 'webp';
-      SB.Store.touch();
-    };
+    /* Every other project setting in this dialog is Save-gated, and this one
+       wrote on change — so Cancel left it changed and the board dirty. */
+    pick.onchange = function () { pendingOriginals = pick.value === 'source' ? 'source' : 'webp'; };
     const f = field('How originals are kept', pick);
     f.style.marginTop = '12px';
     box.appendChild(f);
@@ -16528,6 +16764,9 @@ window.SB = window.SB || {};
     panels.models.appendChild(listHost);
 
     const working = SB.clone(p.settings.models);
+    /* which door the slug column is editing; follows the transport picker on
+       the ImagineArt tab even though that tab is built later */
+    let pendingDoor = (SB.Imagine && SB.Imagine.transport()) || 'oauth';
 
     function drawModels() {
       listHost.innerHTML = '';
@@ -16552,7 +16791,7 @@ window.SB = window.SB || {};
         /* One model, two names: the account's tools and the v2 REST API
            call the same thing differently, so the field edits whichever
            belongs to the door in use and shows the other underneath. */
-        const door = (SB.Imagine && SB.Imagine.transport()) || 'oauth';
+        const door = pendingDoor;
         const slugField = door === 'key' ? 'restSlug' : 'imagineSlug';
         const slug = document.createElement('input');
         slug.type = 'text';
@@ -16603,7 +16842,7 @@ window.SB = window.SB || {};
           bits.push('last produced something on ' +
             new Date(m.lastUsed.at).toLocaleDateString() + ' as ' + m.lastUsed.slug);
         }
-        if (bits.length) row.appendChild(SB.el('div', 'pp-note dim', bits.join(' · ')));
+        const altNote = bits.length ? SB.el('div', 'pp-note dim', bits.join(' · ')) : null;
         const tpl = SB.el('button', 'mini', m.__open ? 'hide templates' : 'templates');
         tpl.onclick = function () { m.__open = !m.__open; drawModels(); };
         const rst = SB.el('button', 'mini', 'reset');
@@ -16618,9 +16857,11 @@ window.SB = window.SB || {};
         del.onclick = function () { working.splice(i, 1); drawModels(); };
         top.appendChild(name); top.appendChild(kind);
         top.appendChild(slug); top.appendChild(dl);
-        row.appendChild(slugNote);
         top.appendChild(tpl); top.appendChild(rst); top.appendChild(del);
         row.appendChild(top);
+        /* under the field, where the README says they are */
+        if (altNote) row.appendChild(altNote);
+        row.appendChild(slugNote);
 
         if (m.__open) {
           const ti = document.createElement('textarea');
@@ -16690,7 +16931,16 @@ window.SB = window.SB || {};
     const imBlocks = { oauth: SB.el('div', 'prov-block'), key: SB.el('div', 'prov-block') };
 
     function showImagine(id) {
+      const was = chosenImagine;
       chosenImagine = id === 'key' ? 'key' : 'oauth';
+      /* The slug field edits the name for the door in use, and it is drawn
+         once — so switching here used to leave the Models tab editing the
+         other door's field under this door's label, and Save then wrote the
+         typed name into the wrong one. */
+      if (was !== chosenImagine && typeof drawModels === 'function') {
+        pendingDoor = chosenImagine;
+        drawModels();
+      }
       Object.keys(imBtns).forEach(function (k) {
         imBtns[k].classList.toggle('on', k === chosenImagine);
       });
@@ -16837,10 +17087,13 @@ window.SB = window.SB || {};
         imModels.appendChild(document.createTextNode(' Last generation went through ' +
           (d === 'mcp' ? 'your account\u2019s tools.' : 'the v2 REST API.')));
       }
-      imRefresh.disabled = !IM.isSignedIn();
-      imRefresh.title = IM.isSignedIn()
+      const canRefresh = IM.isSignedIn() && IM.transport() !== 'key';
+      imRefresh.disabled = !canRefresh;
+      imRefresh.title = canRefresh
         ? 'Ask the account what it offers now. Models come and go.'
-        : 'Sign in to read your account\u2019s own list.';
+        : (IM.transport() === 'key'
+          ? 'The API key uses the built-in v2 list; sign in to read your account\u2019s own.'
+          : 'Sign in to read your account\u2019s own list.');
     }
 
     imRefresh.onclick = function () {
@@ -16923,6 +17176,22 @@ window.SB = window.SB || {};
     imOut.onclick = function () {
       IM.signOut();
       imDraw();
+    };
+
+    /* This had no handler at all: the only control that re-reads the email
+       and the credit balance after a reload did nothing when pressed. */
+    imCheck.onclick = function () {
+      imCheck.disabled = true;
+      imCheck.textContent = 'asking…';
+      IM.whoAmI().catch(function () { return null; })
+        .then(function () { return IM.ensureTools().catch(function () { return null; }); })
+        .then(function () { return IM.balance().catch(function () { return null; }); })
+        .then(function () {
+          imCheck.disabled = false;
+          imCheck.textContent = 'Check account';
+          imDraw();
+          drawCatalogLine();
+        });
     };
 
     /* The one question that cannot be answered from outside an account: what
@@ -17462,6 +17731,7 @@ window.SB = window.SB || {};
             if (!has(p.settings.videoModelId)) {
               p.settings.videoModelId = SB.Model.firstOfKind(p.settings.models, 'video');
             }
+            if (pendingOriginals) p.settings.originals = pendingOriginals;
             SB.Store.setApiKey(key.value.trim());
             SB.Store.setOoba({ url: oUrl.value, model: oobaModel, key: oKey.value });
             p.settings.imagineAspect = imAspect.value || '16:9';
@@ -18417,6 +18687,10 @@ window.SB = window.SB || {};
               data: data, bytes: bytesOf(data),
               code: r.code, scene: r.sceneName, shot: sh,
               rec: orig ? e.render : null,
+              /* the manifest asks this to decide boardCopy, and a fallback
+                 IS the board copy — it said false beside a kind that said
+                 otherwise */
+              isProxy: !orig,
               made: (orig && e.render && e.render.made) || null
             });
           });
@@ -18861,22 +19135,44 @@ window.SB = window.SB || {};
     if (!b) return;
     const who = b.setUpBy ? ' by ' + b.setUpBy : '';
     const when = b.at ? ' on ' + new Date(b.at).toLocaleDateString() : '';
-    SB.toast('This board was set up' + who + when +
-      (b.orgName ? ', billed to ' + b.orgName : '') + '.', false, {
-      ms: 20000,
-      action: {
-        label: 'Use these settings',
-        onClick: function () {
-          SB.Imagine.adoptBoard(app.project).then(function (r) {
-            if (!r) return;
-            SB.toast(r.took && r.took.length
-              ? 'Took ' + r.took.join(', ') + ' from the board.'
-              : 'Nothing to take — this browser already had it.',
-              false, r.orgSkipped ? { ms: 9000 } : undefined);
-            if (r.orgSkipped) SB.toast('The organization was left alone: ' + r.orgSkipped, true);
-          });
+    const body = SB.el('div');
+    body.appendChild(SB.el('p', null, 'This board was set up' + who + when +
+      (b.orgName ? ', billed to ' + b.orgName : '') + '.'));
+    const bits = [];
+    if (Array.isArray(b.catalog) && b.catalog.length) bits.push(b.catalog.length + ' models');
+    if (b.costs && Object.keys(b.costs).length) {
+      bits.push(Object.keys(b.costs).length + ' measured prices');
+    }
+    if (b.orgId) bits.push('the organization it bills to');
+    if (bits.length) {
+      body.appendChild(SB.el('p', 'pp-note', 'It carries ' + bits.join(', ') +
+        '. Taking them changes this browser, not the board.'));
+    }
+    /* Two answers, because there was only one before: declining was
+       unreachable, so the offer came back on every open and every version
+       restore. */
+    SB.modal({
+      title: 'Use this board’s ImagineArt settings?', width: '460px', body: body,
+      buttons: [
+        {
+          label: 'Keep mine', onClick: function (close) {
+            SB.Imagine.declineBoard(app.project);
+            close();
+          }
+        },
+        {
+          label: 'Use these', primary: true, onClick: function (close) {
+            close();
+            SB.Imagine.adoptBoard(app.project).then(function (r) {
+              if (!r) return;
+              SB.toast(r.took && r.took.length
+                ? 'Took ' + r.took.join(', ') + ' from the board.'
+                : 'Nothing to take — this browser already had it.');
+              if (r.orgSkipped) SB.toast('The organization was left alone: ' + r.orgSkipped, true);
+            });
+          }
         }
-      }
+      ]
     });
   };
 

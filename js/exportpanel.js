@@ -199,6 +199,10 @@
               data: data, bytes: bytesOf(data),
               code: r.code, scene: r.sceneName, shot: sh,
               rec: orig ? e.render : null,
+              /* the manifest asks this to decide boardCopy, and a fallback
+                 IS the board copy — it said false beside a kind that said
+                 otherwise */
+              isProxy: !orig,
               made: (orig && e.render && e.render.made) || null
             });
           });
