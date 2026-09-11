@@ -1,0 +1,276 @@
+[
+ {
+  "name": "generate_image",
+  "description": "Generate an image using the ImagineArt API. Returns immediately with a uuid and a widget\n\t\tthat mounts in the queued state \u2014 the widget itself polls fetch_status and updates in place as\n\t\tthe generation progresses (queued \u2192 generating \u2192 complete).\n\n\t\tArguments:\n\t\t  \u2022 org_id (required) \u2014 the organization id the user selected via select_organization. The same org_id applies for the whole chat.\n\t\t  \u2022 folder_id (optional) \u2014 a folder id the user picked via select_folder, to create the image inside\n\t\t    that folder. Omit to create it at the workspace root. Reuse the same folder_id for the whole chat.\n\t\t  \u2022 prompt (required) \u2014 the text prompt.\n\t\t  \u2022 image_url (optional) \u2014 a reference image to run image-to-image (edit / variation) mode instead of\n\t\t    text-to-image. If the user attaches an image, first call user_upload with it and pass the returned\n\t\t    url here; if the user gives an image URL directly, pass it as-is. Omit for plain text-to-image.\n\t\t    When set, the request automatically switches to the img2img variation (models that don't support\n\t\t    img2img silently fall back to text-to-image).\n\t\t  \u2022 model (optional) \u2014 one of: \"nano-banana-pro\" (default), \"imagine-art-2.0\", \"nano-banana-2\",\n\t\t    \"gpt-image-2\", \"imagine-art-1.5\", \"imagine-art-1.5-pro\", \"recraft-v4.1\", \"ideogram-v4\",\n\t\t    \"seedream-v5-lite\", \"xAI-grok-imagine\". Pass the model name exactly as written. Omit unless the\n\t\t    user asks for a specific model.\n\t\t  \u2022 aspect_ratio (optional) \u2014 pass when the user specifies one. Defaults to \"1:1\".\n\t\t    Per-model allow-lists:\n\t\t      - nano-banana-pro:     21:9, 16:9, 3:2, 4:3, 5:4, 1:1, 4:5, 3:4, 2:3, 9:16\n\t\t      - imagine-art-2.0:     1:1, 9:16, 16:9, 4:3, 3:4, 2:3, 3:2, 21:9, 4:5, 5:4\n\t\t      - nano-banana-2:       21:9, 16:9, 3:2, 4:3, 5:4, 1:1, 4:5, 3:4, 2:3, 9:16\n\t\t      - gpt-image-2:         1:1, 4:3, 3:4, 3:2, 16:9, 9:16, 21:9, 2:3\n\t\t      - imagine-art-1.5:     1:1, 9:16, 16:9, 4:3, 3:4, 1:3, 3:1, 2:3, 3:2\n\t\t      - imagine-art-1.5-pro: 1:1, 9:16, 16:9, 4:3, 3:4, 1:3, 3:1, 2:3, 3:2\n\t\t      - recraft-v4.1:        1:1, 4:3, 3:4, 16:9, 9:16\n\t\t      - ideogram-v4:         1:1, 4:3, 3:4, 16:9, 9:16\n\t\t      - seedream-v5-lite:    1:1, 2:3, 3:2, 4:3, 3:4, 16:9, 9:16\n\t\t      - xAI-grok-imagine:    2:1, 20:9, 19.5:9, 16:9, 4:3, 3:2, 1:1, 2:3, 3:4, 9:16, 9:19.5, 9:20, 1:2\n\t\t    An aspect_ratio that isn't in the chosen model's list silently falls back to 1:1; the\n\t\t    request will still succeed.\n\t\t  \u2022 resolution (optional) \u2014 only some models support it; pass only when the user asks for one.\n\t\t    Per-model allow-lists (first value is the default the model uses when omitted):\n\t\t      - nano-banana-pro:  1K, 2K, 4K\n\t\t      - nano-banana-2:    1K, 2K, 4K\n\t\t      - gpt-image-2:      1K, 2K, 4K\n\t\t      - seedream-v5-lite: 2K, 4K\n\t\t    Other models ignore resolution entirely. A value not in the chosen model's list silently\n\t\t    falls back to that model's default.\n\t\t  \u2022 quality (optional) \u2014 only gpt-image-2 supports it: \"low\", \"medium\", \"high\" (first value is\n\t\t    the default when omitted). Other models ignore quality. A value not in the model's list\n\t\t    silently falls back to the model's default.",
+  "takesImage": true,
+  "params": [
+   {
+    "name": "prompt",
+    "type": "string",
+    "required": true,
+    "enum": null,
+    "isModel": false
+   },
+   {
+    "name": "aspect_ratio",
+    "type": [
+     "null",
+     "string"
+    ],
+    "required": true,
+    "enum": null,
+    "isModel": false
+   },
+   {
+    "name": "model",
+    "type": [
+     "null",
+     "string"
+    ],
+    "required": true,
+    "enum": null,
+    "isModel": true
+   },
+   {
+    "name": "duration",
+    "type": [
+     "null",
+     "string"
+    ],
+    "required": true,
+    "enum": null,
+    "isModel": false
+   },
+   {
+    "name": "quality",
+    "type": [
+     "null",
+     "string"
+    ],
+    "required": false,
+    "enum": null,
+    "isModel": false
+   },
+   {
+    "name": "resolution",
+    "type": [
+     "null",
+     "string"
+    ],
+    "required": false,
+    "enum": null,
+    "isModel": false
+   },
+   {
+    "name": "org_id",
+    "type": "string",
+    "required": true,
+    "enum": null,
+    "isModel": false
+   },
+   {
+    "name": "folder_id",
+    "type": [
+     "null",
+     "string"
+    ],
+    "required": false,
+    "enum": null,
+    "isModel": false
+   },
+   {
+    "name": "image_url",
+    "type": [
+     "null",
+     "string"
+    ],
+    "required": false,
+    "enum": null,
+    "isModel": false
+   },
+   {
+    "name": "count",
+    "type": [
+     "null",
+     "integer"
+    ],
+    "required": false,
+    "enum": null,
+    "isModel": false
+   }
+  ]
+ },
+ {
+  "name": "generate_video",
+  "description": "Generate a video using the ImagineArt API. Returns immediately with a uuid and a widget\n\t\tthat mounts in the queued state \u2014 the widget itself polls fetch_status and updates in place as\n\t\tthe generation progresses (queued \u2192 generating \u2192 complete).\n\n\t\tArguments:\n\t\t  \u2022 org_id (required) \u2014 the organization id the user selected via select_organization. The same org_id applies for the whole chat.\n\t\t  \u2022 folder_id (optional) \u2014 a folder id the user picked via select_folder, to create the video inside\n\t\t    that folder. Omit to create it at the workspace root. Reuse the same folder_id for the whole chat.\n\t\t  \u2022 prompt (required) \u2014 the text prompt.\n\t\t  \u2022 image_url (optional) \u2014 an ARRAY of reference image URLs. For each image, if the user attaches it,\n\t\t    first call user_upload and pass the returned url; if the user gives a URL directly, pass it as-is.\n\t\t    Omit for plain text-to-video. Behaviour by count:\n\t\t      - exactly one image and no video_url/audio_url => image-to-video (animate a single still).\n\t\t      - two or more images, or any video_url/audio_url => reference-to-video (see below).\n\t\t  \u2022 video_url (optional) \u2014 an ARRAY of reference video URLs. Forwarded only for reference-to-video.\n\t\t  \u2022 audio_url (optional) \u2014 an ARRAY of reference audio URLs. Forwarded only for reference-to-video.\n\n\t\t  Reference-to-video is supported only by these models: seedance-2.5, seedance-2.0, seedance-2.0-fast,\n\t\t  happy_horse, wan-2.6, veo-3.1. Each accepts a different media set; passing media a model doesn't\n\t\t  accept is ignored:\n\t\t      - seedance-2.5, seedance-2.0, seedance-2.0-fast: image_url, video_url, audio_url (all optional)\n\t\t      - happy_horse: image_url (at least one REQUIRED)\n\t\t      - wan-2.6: video_url (at least one REQUIRED)\n\t\t      - veo-3.1: image_url (optional)\n\t\t    If a model's required reference media is missing the call fails with an \"Unable to\" error naming\n\t\t    what's required; relay it. Sending reference media to any other model falls back to image-to-video\n\t\t    (first image) or text-to-video.\n\t\t  \u2022 model (optional) \u2014 one of: \"ltx-2.3\" (default), \"seedance-2.5\", \"seedance-2.0-fast\", \"veo-3.1-fast\",\n\t\t    \"happy_horse\", \"seedance-2.0\", \"wan-2.6\", \"seedance-1.5-pro\", \"seedance-pro-fast\",\n\t\t    \"kling-2.6-pro\", \"kling-o3\", \"kling-3.0-pro\", \"pixverse-v6\", \"veo-3.1\", \"wan-2.2\". Pass the\n\t\t    model name exactly as written. Omit unless the user asks for a specific model.\n\t\t  \u2022 aspect_ratio (optional) \u2014 pass when the user specifies one. Defaults to \"16:9\".\n\t\t    Per-model allow-lists:\n\t\t      - seedance-2.5:       16:9, 4:3, 1:1, 3:4, 9:16, 21:9, adaptive\n\t\t                            (image-to-video always uses \"adaptive\" \u2014 any ratio you pass is overridden)\n\t\t      - seedance-2.0-fast:  21:9, 16:9, 9:16, 3:4, 4:3, 1:1, auto\n\t\t      - veo-3.1-fast:       16:9, 9:16\n\t\t      - happy_horse:        16:9, 9:16, 1:1, 4:3, 3:4\n\t\t      - seedance-2.0:       21:9, 16:9, 9:16, 3:4, 4:3, 1:1, auto\n\t\t      - ltx-2.3:            16:9, 9:16\n\t\t      - wan-2.6:            16:9, 9:16, 1:1, 4:3, 3:4\n\t\t      - seedance-1.5-pro:   21:9, 16:9, 9:16, 3:4, 4:3, 1:1\n\t\t      - seedance-pro-fast:  16:9, 4:3, 1:1, 9:16, 21:9, 3:4\n\t\t      - kling-2.6-pro:      16:9, 9:16, 1:1\n\t\t      - kling-o3:           16:9, 9:16, 1:1\n\t\t      - kling-3.0-pro:      16:9, 9:16, 1:1\n\t\t      - pixverse-v6:        16:9, 9:16, 4:3, 3:4, 1:1, 2:3, 3:2, 21:9\n\t\t      - veo-3.1:            16:9, 9:16\n\t\t      - wan-2.2:            (none \u2014 always uses 16:9)\n\t\t    An aspect_ratio that isn't in the chosen model's list silently falls back to 16:9 (or the\n\t\t    model's first listed ratio if it doesn't allow 16:9); the request will still succeed.\n\t\t  \u2022 duration (optional) \u2014 pass as a string (seconds, or \"auto\" where supported). Defaults to \"4\".\n\t\t    Per-model allow-lists:\n\t\t      - seedance-2.5:       4 through 30 (any whole second)\n\t\t      - seedance-2.0-fast:  auto, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15\n\t\t      - veo-3.1-fast:       4, 6, 8\n\t\t      - happy_horse:        3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15\n\t\t      - seedance-2.0:       auto, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15\n\t\t      - ltx-2.3:            6, 8, 10\n\t\t      - wan-2.6:            5, 10, 15\n\t\t      - seedance-1.5-pro:   4, 5, 6, 7, 8, 9, 10, 11, 12\n\t\t      - seedance-pro-fast:  3, 4, 5, 6, 7, 8, 9, 10, 11, 12\n\t\t      - kling-2.6-pro:      5, 10\n\t\t      - kling-o3:           3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15\n\t\t      - kling-3.0-pro:      3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15\n\t\t      - pixverse-v6:        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15\n\t\t      - veo-3.1:            4, 6, 8\n\t\t      - wan-2.2:            (none \u2014 always uses 4)\n\t\t    A duration that isn't in the chosen model's list silently falls back to \"4\" (or the model's\n\t\t    first listed duration if it doesn't allow \"4\", e.g. \"6\" for the default ltx-2.3); the request\n\t\t    will still succeed.\n\t\t  \u2022 resolution (optional) \u2014 only some models support it; pass only when the user asks for one.\n\t\t    Per-model allow-lists (first value is the default the model uses when omitted):\n\t\t      - seedance-2.5:       480p, 720p\n\t\t      - seedance-2.0-fast:  480p, 720p\n\t\t      - veo-3.1-fast:       720p, 1080p, 4k\n\t\t      - happy_horse:        720p, 1080p\n\t\t      - seedance-2.0:       480p, 720p, 1080p\n\t\t      - ltx-2.3:            1080p, 1440p, 2160p\n\t\t      - wan-2.6:            720p, 1080p\n\t\t      - seedance-1.5-pro:   480p, 720p\n\t\t      - seedance-pro-fast:  480p, 720p, 1080p\n\t\t      - pixverse-v6:        360p, 540p, 720p, 1080p\n\t\t      - veo-3.1:            720p, 1080p, 4k\n\t\t      - kling-2.6-pro, kling-o3, kling-3.0-pro, wan-2.2: (none \u2014 resolution is ignored)\n\t\t    A resolution that isn't in the chosen model's list silently falls back to that model's\n\t\t    default.",
+  "takesImage": true,
+  "params": [
+   {
+    "name": "prompt",
+    "type": "string",
+    "required": true,
+    "enum": null,
+    "isModel": false
+   },
+   {
+    "name": "aspect_ratio",
+    "type": [
+     "null",
+     "string"
+    ],
+    "required": true,
+    "enum": null,
+    "isModel": false
+   },
+   {
+    "name": "model",
+    "type": [
+     "null",
+     "string"
+    ],
+    "required": true,
+    "enum": null,
+    "isModel": true
+   },
+   {
+    "name": "duration",
+    "type": [
+     "null",
+     "string"
+    ],
+    "required": true,
+    "enum": null,
+    "isModel": false
+   },
+   {
+    "name": "resolution",
+    "type": [
+     "null",
+     "string"
+    ],
+    "required": false,
+    "enum": null,
+    "isModel": false
+   },
+   {
+    "name": "org_id",
+    "type": "string",
+    "required": true,
+    "enum": null,
+    "isModel": false
+   },
+   {
+    "name": "folder_id",
+    "type": [
+     "null",
+     "string"
+    ],
+    "required": false,
+    "enum": null,
+    "isModel": false
+   },
+   {
+    "name": "image_url",
+    "type": [
+     "null",
+     "array"
+    ],
+    "required": false,
+    "enum": null,
+    "isModel": false
+   },
+   {
+    "name": "video_url",
+    "type": [
+     "null",
+     "array"
+    ],
+    "required": false,
+    "enum": null,
+    "isModel": false
+   },
+   {
+    "name": "audio_url",
+    "type": [
+     "null",
+     "array"
+    ],
+    "required": false,
+    "enum": null,
+    "isModel": false
+   }
+  ]
+ },
+ {
+  "name": "fetch_status",
+  "description": "Status fetcher for queued image or video generations (the asset type is derived from\n\t\tthe generation, not fixed). The widget polls this silently via the callServerTool backchannel during\n\t\tthe queued \u2192 generating \u2192 complete transition. In\n\t\ttext-only contexts, pass sync:true to wait server-side for completion (bounded ~45s). Without sync\n\t\t(default), it's a single point-in-time check.",
+  "takesImage": false,
+  "params": [
+   {
+    "name": "id",
+    "type": "string",
+    "required": true,
+    "enum": null,
+    "isModel": false
+   },
+   {
+    "name": "sync",
+    "type": "boolean",
+    "required": false,
+    "enum": null,
+    "isModel": false
+   },
+   {
+    "name": "org_id",
+    "type": [
+     "null",
+     "string"
+    ],
+    "required": false,
+    "enum": null,
+    "isModel": false
+   }
+  ]
+ },
+ {
+  "name": "user_upload",
+  "description": "Used internally by the request_image_upload widget.\n\t\trequest_image_upload is how a user supplies their own image: native client attachments are not handed to this server, so one cannot be read and passed here as base64.",
+  "takesImage": true,
+  "params": [
+   {
+    "name": "file",
+    "type": "string",
+    "required": true,
+    "enum": null,
+    "isModel": false
+   },
+   {
+    "name": "org_id",
+    "type": "string",
+    "required": true,
+    "enum": null,
+    "isModel": false
+   }
+  ]
+ },
+ {
+  "name": "select_organization",
+  "description": "Fetch the user's ImagineArt organizations and present them for selection. In a widget-capable client this renders a picker. In other clients the result is marked NO WIDGET RENDERED and carries the list as structured text.\n\n\t\tUse this at the start of a chat, before any generation. ImagineArt users can belong to multiple organizations, and every generation is attributed to one. The user picks an organization\n\t\tin the widget; their pick is surfaced back into the chat as a message containing the chosen org_id.\n\t\tCapture that org_id and pass it as the org_id argument on every subsequent generation tool call\n\t\t(generate_image, generate_video, generate_music, enhance_image, remove_background) for the rest of\n\t\tthe chat. If the user hasn't selected one yet and you need to generate, call this tool and ask them\n\t\tto choose. The server is stateless and does not retain the selection; the same org_id is passed on each later call.",
+  "takesImage": false,
+  "params": []
+ },
+ {
+  "name": "get_balance",
+  "description": "Get the user's ImagineArt credit balance for an organization and render it in a widget.\n\n\t\torg_id (required) \u2014 the organization the user selected via select_organization; balance is per-organization. The same org_id applies for the whole chat.",
+  "takesImage": false,
+  "params": [
+   {
+    "name": "org_id",
+    "type": "string",
+    "required": true,
+    "enum": null,
+    "isModel": false
+   }
+  ]
+ }
+]

@@ -76,11 +76,26 @@ one generation — nothing is batched, nothing fires on its own.
   out of the credits on the imagine.art account. Nothing is stored but the token, and the
   token lives in this browser, never in the `.storyboard`.
 
-  Signed in, a push goes through **your account's own MCP tools first**; the older v2 REST
-  API is the fallback, for the one thing it is definitely better at — it takes an uploaded
-  frame — and Settings says which door carried the last generation. **What my account can
-  do** prints the account's tools, their parameters and any model lists verbatim, which is
-  the only way to find out whether a model can be named on that surface at all.
+  Signed in, a push goes through **your account's own MCP tools** — `generate_image` and
+  `generate_video`, called as ImagineArt publishes them. Three things about that contract
+  shape everything:
+
+  - **Every generation is billed to an organization**, and the server keeps no memory of
+    which, so `org_id` rides on every call. Settings → ImagineArt picks it once; nothing can
+    be generated until it is set, and the app says so rather than failing at the button.
+  - **Generation is asynchronous**: both tools answer immediately with a uuid, and
+    `fetch_status` reports on it. The app polls with `sync:true`, which waits server-side for
+    about 45 seconds, so a two-minute clip is a few long calls rather than a busy loop.
+  - **A reference image is a URL, never bytes.** `generate_image` takes one `image_url`;
+    `generate_video` takes an **array** (one entry animates a still, several would be
+    reference-to-video). Our frames are local, so `▶ shoot` uploads the frame through
+    `user_upload` first and hands over the URL that comes back.
+
+  The model lists live in the tool *descriptions* rather than in a JSON enum, so the app
+  parses them from there — 10 image models and 15 video ones on this account, with each
+  model's allowed aspect ratios and durations read from the same place. The older v2 REST API
+  stays as the fallback, and Settings says which door carried the last generation. **What my
+  account can do** prints the tools, their parameters and those lists verbatim.
 - **API key** — a key from [platform.imagine.art](https://platform.imagine.art/), billed
   against a separate metered API balance.
 

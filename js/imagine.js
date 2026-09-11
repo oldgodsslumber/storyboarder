@@ -76,6 +76,7 @@
   const K_CAT = 'sb.imagine.catalog';      // what the account offers, per account
   const K_DOOR = 'sb.imagine.lastDoor';    // 'mcp' | 'rest' — which one last worked
   const K_WORKED = 'sb.imagine.worked';    // slugs that have actually produced something
+  const K_ORG = 'sb.imagine.org';          // every generation is billed to one
 
   /* ---------------- the model catalog ----------------
    *
@@ -690,6 +691,116 @@
     });
   }
 
+  /* ---------------- the tools ImagineArt actually publishes ----------------
+   *
+   * Read off a real account's tools/list rather than guessed at. The shape is
+   * not what a generic binder would have produced, and three things about it
+   * decide how everything below works:
+   *
+   *   org_id is required on every generation. ImagineArt users can belong to
+   *   several organizations and a generation is attributed to one, so nothing
+   *   can be made until one is chosen. select_organization lists them; the
+   *   server is stateless, so the id rides on every later call.
+   *
+   *   generation is asynchronous. Both generators return a uuid immediately
+   *   and fetch_status reports on it — with sync:true it waits server-side
+   *   for about 45 seconds, which turns a poll loop into a few long calls.
+   *
+   *   a reference image is a URL, never bytes. generate_image takes one
+   *   image_url; generate_video takes an ARRAY, where one entry means
+   *   animate-this-still and two or more mean reference-to-video. Our frames
+   *   are local, so they have to be uploaded first — user_upload takes a file
+   *   and an org_id and hands back a URL.
+   *
+   * The model lists are in the tool descriptions rather than in an enum, so
+   * they are parsed from there: "model (optional) — one of: "a", "b", …".
+   */
+  const TOOL = {
+    image: 'generate_image',
+    video: 'generate_video',
+    status: 'fetch_status',
+    upload: 'user_upload',
+    orgs: 'select_organization',
+    balance: 'get_balance'
+  };
+
+  function toolNamed(name) {
+    return (mcp.tools || []).filter(function (t) { return t.name === name; })[0] || null;
+  }
+
+  /* The models a tool says it takes, in the order it lists them — the first
+   * is the one ImagineArt defaults to. */
+  function modelsFromTool(name) {
+    const t = toolNamed(name);
+    const d = (t && t.description) || '';
+    const m = /model \(optional\)[^:]*:([\s\S]*?)\. Pass the/.exec(d);
+    if (!m) return [];
+    const out = [];
+    const re = /"([^"]+)"/g;
+    let hit;
+    while ((hit = re.exec(m[1]))) if (out.indexOf(hit[1]) < 0) out.push(hit[1]);
+    return out;
+  }
+
+  /* Which aspect ratios and durations a given model will accept, off the same
+   * description — so a board asking for 21:9 on a model that only does 16:9
+   * can be told rather than silently downgraded. */
+  function allowFor(name, model, what) {
+    const t = toolNamed(name);
+    const d = (t && t.description) || '';
+    const sect = new RegExp(what + ' \\(optional\\)[\\s\\S]*?Per-model allow-lists:([\\s\\S]*?)(?:\n\\s*\u2022|$)')
+      .exec(d);
+    if (!sect) return null;
+    const line = new RegExp('-\\s*' + model.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') +
+      ':\\s*([^\n]+)').exec(sect[1]);
+    if (!line) return null;
+    if (/\(none/.test(line[1])) return [];
+    return line[1].split(',').map(function (x) { return x.trim(); })
+      .filter(function (x) { return x && !/^\(/.test(x); });
+  }
+
+  /* ---- the organisation ---- */
+
+  function org() {
+    const all = lsGet(K_ORG) || {};
+    return all[catKey()] || null;
+  }
+
+  /* The tools want the id, not the record the picker stored. */
+  function orgId() {
+    const o = org();
+    return (o && o.id) || '';
+  }
+
+  function setOrg(o) {
+    const all = lsGet(K_ORG) || {};
+    if (o) all[catKey()] = o; else delete all[catKey()];
+    lsSet(K_ORG, all);
+    notify();
+  }
+
+  /* select_organization renders a picker in a widget client and, in one like
+   * this, hands back the list as text. Ids are uuids; names sit beside them. */
+  function listOrgs() {
+    return callRaw(TOOL.orgs, {}).then(function (got) {
+      const text = got.text || JSON.stringify(got.raw || {});
+      const out = [];
+      const seen = {};
+      const re = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/gi;
+      let m;
+      while ((m = re.exec(text))) {
+        const id = m[1];
+        if (seen[id]) continue;
+        seen[id] = 1;
+        /* whatever reads like a name on the same line */
+        const line = (text.slice(0, m.index).split('\n').pop() + text.slice(m.index).split('\n')[0]);
+        const name = (line.replace(id, '').match(/[A-Za-z][\w .&'-]{1,40}/) || [''])[0].trim();
+        out.push({ id: id, name: name || id.slice(0, 8) });
+      }
+      return out;
+    });
+  }
+
   /* ---- picking the tool for a job ----
    *
    * Scored rather than matched, because the names are ImagineArt's to change.
@@ -808,6 +919,74 @@
       if (spec.enum && spec.enum.length) { out[k] = spec.enum[0]; return; }
     });
     return out;
+  }
+
+  /* A tool call by name with the arguments as published. The scored picker
+   * below stays for anything unnamed, but every path this app uses now knows
+   * exactly what it is calling. */
+  function callRaw(name, args) {
+    return mcpReady().then(function () {
+      return mcpPost({
+        jsonrpc: '2.0', id: ++mcp.id, method: 'tools/call',
+        params: { name: name, arguments: args || {} }
+      });
+    }).then(function (r) {
+      if (r && r.isError) throw new Error(harvest(r).text || 'ImagineArt refused the request.');
+      return harvest(r);
+    });
+  }
+
+  /* A generation comes back as a uuid and finishes later. sync:true waits
+   * server-side for about 45 seconds, so this is a handful of long calls
+   * rather than a busy loop — and it still gives up rather than hanging. */
+  function waitForAsset(id, onState) {
+    const started = Date.now();
+    const look = function () {
+      return callRaw(TOOL.status, { id: id, sync: true, org_id: orgId() }).then(function (got) {
+        const blob = JSON.stringify((got.raw && got.raw.structuredContent) || {}) + ' ' + (got.text || '');
+        const done = /"?status"?\s*[:=]\s*"?(complete|completed|success|finished)/i.test(blob);
+        const failed = /"?status"?\s*[:=]\s*"?(error|failed)/i.test(blob);
+        if (failed) throw new Error(got.text ? got.text.slice(0, 200) : 'ImagineArt could not finish it.');
+        if (got.url && done) return got;
+        if (got.url && !/queued|generating|processing|pending/i.test(blob)) return got;
+        if (Date.now() - started > 10 * 60 * 1000) {
+          throw new Error('Gave up waiting after ten minutes. It may still finish on imagine.art.');
+        }
+        if (onState) onState('waiting', Date.now() - started);
+        return wait(3000).then(look);
+      });
+    };
+    return look();
+  }
+
+  /* A local picture has to become a URL before either generator will look at
+   * it: the tools take image_url, never bytes. */
+  function uploadForUrl(blob) {
+    if (!blob) return Promise.resolve('');
+    return blobToDataUrl(blob).then(function (data) {
+      return callRaw(TOOL.upload, { file: data, org_id: orgId() });
+    }).then(function (got) {
+      if (!got.url) throw new Error('The upload came back without a URL.');
+      return got.url;
+    });
+  }
+
+  /* Both generators answer with a uuid and finish later. It arrives in the
+   * structured content where there is any, and in the prose where there is
+   * not. */
+  function assetId(got) {
+    const sc = (got && got.raw && got.raw.structuredContent) || null;
+    const fromSc = sc && (sc.uuid || sc.id || (sc.data && (sc.data.uuid || sc.data.id)));
+    if (fromSc && typeof fromSc === 'string') return fromSc;
+    const m = /\b([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b/i
+      .exec((got && got.text) || '');
+    return m ? m[1] : '';
+  }
+
+  function needOrg() {
+    if (org()) return '';
+    return 'No ImagineArt organization chosen — every generation is billed to one. ' +
+      'Settings → ImagineArt picks it.';
   }
 
   function callTool(kind, canon, opts) {
@@ -1083,8 +1262,25 @@
       aspect: opts.aspect, onState: opts.onState
     };
     const viaMcp = function () {
-      return callTool('image', canon, { noImage: true })
-        .then(function (got) { noteDoor('mcp'); return finishImage(got); });
+      const why = needOrg();
+      if (why) return Promise.reject(new Error(why));
+      /* aspect_ratio, model and duration are required-but-nullable on this
+       * tool, so the keys travel even when there is nothing to put in them. */
+      const args = {
+        org_id: orgId(),
+        prompt: canon.prompt,
+        model: canon.slug || null,
+        aspect_ratio: canon.aspect || null,
+        duration: null,
+        image_url: opts.imageUrl || null
+      };
+      return callRaw(TOOL.image, args).then(function (got) {
+        const id = assetId(got);
+        return (got.url && !id) ? got : waitForAsset(id || got.text, canon.onState);
+      }).then(function (got) {
+        noteDoor('mcp');
+        return finishImage(got);
+      });
     };
     const viaRest = function () {
       return restImage(canon).then(function (got) {
@@ -1144,13 +1340,26 @@
       onState: opts.onState
     };
     const viaMcp = function () {
-      return (opts.frame ? blobToDataUrl(opts.frame) : Promise.resolve(''))
-        .then(function (dataUrl) {
-          const c2 = {
-            prompt: canon.prompt, slug: canon.slug, aspect: canon.aspect,
-            duration: canon.duration, image: dataUrl || undefined
+      const why = needOrg();
+      if (why) return Promise.reject(new Error(why));
+      /* One image means "animate this still"; two or more would mean
+       * reference-to-video, which only some models take. The frame is local,
+       * so it has to become a URL first. */
+      return (opts.frame ? uploadForUrl(opts.frame) : Promise.resolve(''))
+        .then(function (url) {
+          const args = {
+            org_id: orgId(),
+            prompt: canon.prompt,
+            model: canon.slug || null,
+            aspect_ratio: canon.aspect || null,
+            duration: canon.duration ? String(canon.duration) : null,
+            image_url: url ? [url] : null
           };
-          return callTool('video', c2, { needsImage: !!opts.frame, noImage: !opts.frame });
+          return callRaw(TOOL.video, args);
+        })
+        .then(function (got) {
+          const id = assetId(got);
+          return (got.url && !id) ? got : waitForAsset(id || got.text, canon.onState);
         })
         .then(function (got) { noteDoor('mcp'); return finishVideo(got); });
     };
@@ -1301,7 +1510,11 @@
     /* An image-to-video model with no frame, or a text-to-video one with a
      * frame in hand, is a wasted generation — and on this platform the two
      * are different slugs, not a flag. Caught before the credits go. */
-    if (role === 'video') {
+    /* Only the v2 REST API splits a model into a text-to-video slug and an
+     * image-to-video one. The account's tools take one model and decide from
+     * whether an image came with it, so this check is about the REST
+     * transport and would be nonsense on the other. */
+    if (role === 'video' && transport() === 'key') {
       const info = modelInfo(slugOf(model));
       const has = !!(shot.render || shot.image);
       if (info && info.mode === 't2v' && has) {
@@ -1445,22 +1658,36 @@
    * the tool the enum was on rather than from guessing at the slug's spelling
    * — which is how "wan" ended up classified by a regex of model names I
    * happened to think of. */
+  /* What the account's own tools say they take.
+   *
+   * ImagineArt publishes its model lists in prose inside the tool
+   * description rather than as a JSON enum, so they are parsed from there —
+   * and the first one listed is the default that tool uses. Nothing here is
+   * a guess about spelling: the kind comes from which tool the list was on.
+   *
+   * An enum is still read where a tool has one, for any server that does it
+   * the ordinary way. */
   function fromAccount() {
     const out = [];
     const seen = {};
+    const take = function (slug, kind, extra) {
+      if (typeof slug !== 'string' || !slug || seen[slug]) return;
+      seen[slug] = 1;
+      out.push(Object.assign({ slug: slug, kind: kind, from: 'account' }, extra || {}));
+    };
+    modelsFromTool(TOOL.image).forEach(function (m, i) {
+      take(m, 'image', { deflt: i === 0 });
+    });
+    modelsFromTool(TOOL.video).forEach(function (m, i) {
+      take(m, 'video', { deflt: i === 0 });
+    });
     (mcp.tools || []).forEach(function (t) {
+      if (t.name === TOOL.image || t.name === TOOL.video) return;
       const kind = score(t, WANT.video) > score(t, WANT.image) ? 'video' : 'image';
       const ps = props(t);
       Object.keys(ps).forEach(function (k) {
         if (!SYNONYM.slug.test(k)) return;
-        (ps[k].enum || []).forEach(function (v) {
-          if (typeof v !== 'string' || seen[v]) return;
-          seen[v] = 1;
-          out.push({
-            slug: v, kind: kind, from: 'account',
-            mode: /-image-to-video$/.test(v) ? 'i2v' : (/-text-to-video$/.test(v) ? 't2v' : '')
-          });
-        });
+        (ps[k].enum || []).forEach(function (v) { take(v, kind); });
       });
     });
     return out;
@@ -1790,8 +2017,16 @@
         add('v2 REST fallback', rest === 'yes',
           rest === 'yes' ? 'your token is accepted there too' : 'your token is not accepted there');
       }
-      const d = door();
-      if (d) add('Last generation', true, 'went through ' + (d === 'mcp' ? 'these tools' : 'the v2 REST API'));
+      const named = [TOOL.image, TOOL.video, TOOL.status].filter(toolNamed);
+      add('The tools this app uses', named.length === 3,
+        named.length === 3
+          ? TOOL.image + ', ' + TOOL.video + ', ' + TOOL.status
+          : 'missing: ' + [TOOL.image, TOOL.video, TOOL.status].filter(function (n) {
+            return !toolNamed(n);
+          }).join(', '));
+      const o = org();
+      add('Organization', !!o, o ? (o.name || o.id) + ' — every generation is billed to it'
+        : 'not chosen yet; nothing can be generated until it is');
       return steps;
     }, function (e) {
       if (!e || !e.stopped) add('Tools', false, (e && e.message) || String(e));
@@ -1847,6 +2082,9 @@
     restVerdict: function () { return lsStr(K_REST); },
     catalog: catalog, catalogAll: catalogAll, catalogSource: catalogSource,
     worked: worked, noteWorked: noteWorked,
+    org: org, orgId: orgId, setOrg: setOrg, listOrgs: listOrgs, needOrg: needOrg,
+    allowFor: allowFor, modelsFromTool: modelsFromTool, TOOL: TOOL,
+    _assetId: assetId,
     catalogAge: catalogAge, refreshCatalog: refreshCatalog,
     modelInfo: modelInfo, labelFor: labelFor,
     guessSlug: function (name) { return GUESS[name] || ''; },

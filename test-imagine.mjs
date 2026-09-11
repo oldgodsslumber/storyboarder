@@ -34,7 +34,19 @@ const sandbox = {
   },
   fetch: () => Promise.reject(new Error('the tests never go to the network')),
   crypto: { getRandomValues: a => a, subtle: {} },
-  Uint8Array, TextEncoder, URL, FormData: class { append() { } }
+  Uint8Array, TextEncoder, URL, FormData: class { append() { } },
+  /* node has Blob but not FileReader, and the upload path reads a frame
+     into a data URL before it can hand ImagineArt a file */
+  FileReader: class {
+    readAsDataURL(b) {
+      const self = this;
+      b.arrayBuffer().then(function (ab) {
+        self.result = 'data:' + (b.type || 'application/octet-stream') +
+          ';base64,' + Buffer.from(ab).toString('base64');
+        if (self.onload) self.onload();
+      }, function (e) { if (self.onerror) self.onerror(e); });
+    }
+  }
 };
 sandbox.window = sandbox;
 vm.createContext(sandbox);
@@ -45,6 +57,24 @@ for (const f of ['js/util.js', 'js/doc.js', 'js/blobs.js', 'js/geminimodels.js',
   vm.runInContext(readFileSync(join(root, f), 'utf8'), sandbox, { filename: f });
 }
 const SB = sandbox.SB;
+
+/* The real thing: what a signed-in account's tools/list actually returns,
+   trimmed to the six tools this app uses. Everything below is asserted
+   against ImagineArt's own published contract rather than my reading of it. */
+const REAL_TOOLS = JSON.parse(readFileSync(join(root, 'test-imagine-tools.json'), 'utf8'))
+  .map(t => ({
+    name: t.name,
+    description: t.description,
+    inputSchema: {
+      type: 'object',
+      required: (t.params || []).filter(p2 => p2.required).map(p2 => p2.name),
+      properties: (t.params || []).reduce((o, p2) => {
+        o[p2.name] = { type: p2.type };
+        if (p2.enum) o[p2.name].enum = p2.enum;
+        return o;
+      }, {})
+    }
+  }));
 
 let pass = 0, fail = 0;
 function t(name, ok, got) {
@@ -415,6 +445,162 @@ section('a slug that worked outranks every published list');
   t('what the product advertises is carried too, for saying so',
     (sandbox.SB.ImagineModels.products || []).some(n => /FLUX 3/i.test(n)),
     JSON.stringify((sandbox.SB.ImagineModels.products || []).slice(0, 3)));
+}
+
+/* ------------------------------------- against the account's real tools */
+section('the tools ImagineArt actually publishes');
+
+{
+  const calls = [];
+  let nextResult = null;
+  const realFetch = globalThis.fetch;         // data: URLs still have to work
+  sandbox.fetch = function (url, init) {
+    if (!init || !init.body) return realFetch(url, init);
+    const msg = JSON.parse(init.body);
+    calls.push({ method: msg.method, name: msg.params && msg.params.name,
+      args: (msg.params && msg.params.arguments) || null });
+    let result = {};
+    if (msg.method === 'initialize') result = { serverInfo: { name: 'imagine', version: '1' } };
+    else if (msg.method === 'tools/list') result = { tools: REAL_TOOLS };
+    else if (msg.method === 'tools/call') result = nextResult || { content: [{ type: 'text', text: 'ok' }] };
+    return Promise.resolve({
+      ok: true, status: 200,
+      headers: { get: function () { return null; } },
+      text: function () {
+        return Promise.resolve(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: result }));
+      }
+    });
+  };
+  SB.Imagine.setTransport('oauth');
+  store.set('sb.imagine.tokens', JSON.stringify({
+    access_token: 'tok', refresh_token: 'r', expires_at: Date.now() + 3600000, email: 'real@test'
+  }));
+  store.delete('sb.imagine.catalog');
+  store.delete('sb.imagine.worked');
+
+  await SB.Imagine.toolList(true);
+  await SB.Imagine.refreshCatalog();
+
+  t('the model list is read out of the tool description, where ImagineArt puts it',
+    SB.Imagine.catalog('video').indexOf('kling-3.0-pro') >= 0 &&
+    SB.Imagine.catalog('video').indexOf('veo-3.1') >= 0,
+    SB.Imagine.catalog('video').slice(0, 4).join(', '));
+  t('stills come off the other tool',
+    SB.Imagine.catalog('image').indexOf('nano-banana-pro') === 0,
+    SB.Imagine.catalog('image').slice(0, 3).join(', '));
+  t('and the two do not mix',
+    SB.Imagine.catalog('image').indexOf('kling-3.0-pro') < 0 &&
+    SB.Imagine.catalog('video').indexOf('nano-banana-pro') < 0, '');
+  t('fifteen video models, ten image ones — the account\u2019s own numbers',
+    SB.Imagine.catalog('video').length === 15 && SB.Imagine.catalog('image').length === 10,
+    SB.Imagine.catalog('video').length + ' / ' + SB.Imagine.catalog('image').length);
+  t('what each model will accept is readable too',
+    (SB.Imagine.allowFor('generate_video', 'kling-3.0-pro', 'aspect_ratio') || []).join(',') ===
+      '16:9,9:16,1:1',
+    JSON.stringify(SB.Imagine.allowFor('generate_video', 'kling-3.0-pro', 'aspect_ratio')));
+  t('including how long it may run',
+    (SB.Imagine.allowFor('generate_video', 'veo-3.1', 'duration') || []).join(',') === '4,6,8',
+    JSON.stringify(SB.Imagine.allowFor('generate_video', 'veo-3.1', 'duration')));
+
+  /* nothing can be generated without an organization */
+  SB.Imagine.setOrg(null);
+  const p2 = SB.Model.newProject();
+  sandbox.SB.app = { project: p2, changed() { } };
+  const vm3 = SB.Model.videoModel(p2);
+  const im3 = SB.Model.imageModel(p2);
+  im3.imagineSlug = 'nano-banana-pro';
+  vm3.imagineSlug = 'kling-3.0-pro';
+  const sh3 = p2.scenes[0].shots[0];
+  sh3.prompts[im3.id] = { imagePrompt: 'A wide of the floor.', videoPrompt: '' };
+  sh3.prompts[vm3.id] = { imagePrompt: '', videoPrompt: 'She turns.' };
+
+  let why = '';
+  await SB.Imagine.run(sh3, 'image').catch(e => { why = e.message; });
+  t('without an organization it refuses, and says where to set one',
+    /organization/i.test(why) && /Settings/.test(why), why);
+
+  SB.Imagine.setOrg({ id: 'org-123', name: 'Pega' });
+  calls.length = 0;
+  nextResult = {
+    content: [{ type: 'text', text: 'queued 11111111-2222-3333-4444-555555555555' }],
+    structuredContent: { uuid: '11111111-2222-3333-4444-555555555555', status: 'queued' }
+  };
+  /* the status call answers complete, with a url */
+  let phase = 0;
+  const origFetch = sandbox.fetch;
+  sandbox.fetch = function (url, init) {
+    if (!init || !init.body) return realFetch(url, init);
+    const msg = JSON.parse(init.body);
+    if (msg.method === 'tools/call' && msg.params.name === 'fetch_status') {
+      phase++;
+      const result = {
+        content: [{ type: 'text', text: 'status: complete' }],
+        structuredContent: { status: 'complete', url: 'https://cdn.imagine.art/out.png' }
+      };
+      calls.push({ method: 'tools/call', name: 'fetch_status', args: msg.params.arguments });
+      return Promise.resolve({
+        ok: true, status: 200, headers: { get: () => null },
+        text: () => Promise.resolve(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: result }))
+      });
+    }
+    return origFetch(url, init);
+  };
+
+  await SB.Imagine.run(sh3, 'image').catch(e => { why = e.message; });
+  const gen = calls.filter(c => c.name === 'generate_image')[0];
+  t('the still goes to generate_image', !!gen, JSON.stringify(calls.map(c => c.name)));
+  t('with the organization id on it, not the record the picker stored',
+    gen.args.org_id === 'org-123', JSON.stringify(gen.args.org_id));
+  t('the prompt as written', gen.args.prompt === 'A wide of the floor.', gen.args.prompt);
+  t('the model named exactly as ImagineArt writes it',
+    gen.args.model === 'nano-banana-pro', gen.args.model);
+  t('the required-but-nullable keys present rather than missing',
+    'aspect_ratio' in gen.args && 'duration' in gen.args && 'image_url' in gen.args,
+    Object.keys(gen.args).join(','));
+  const st = calls.filter(c => c.name === 'fetch_status')[0];
+  t('and the uuid it came back with is polled, server-side',
+    !!st && st.args.id === '11111111-2222-3333-4444-555555555555' && st.args.sync === true,
+    JSON.stringify(st && st.args));
+
+  /* a clip, with a frame to animate */
+  calls.length = 0;
+  sh3.image = SB.Blobs.image(p2, 'data:image/jpeg;base64,' + 'q'.repeat(60), 8, 6);
+  sh3.render = { ref: SB.Blobs.put(p2, 'data:image/webp;base64,' + 'W'.repeat(60)),
+    serial: 1, ext: 'webp', w: 8, h: 6 };
+  const upload = { content: [{ type: 'text', text: 'https://asset.imagine.art/processed/abc.webp' }] };
+  const origFetch2 = sandbox.fetch;
+  sandbox.fetch = function (url, init) {
+    if (!init || !init.body) return realFetch(url, init);
+    const msg = JSON.parse(init.body);
+    if (msg.method === 'tools/call' && msg.params.name === 'user_upload') {
+      calls.push({ method: 'tools/call', name: 'user_upload', args: msg.params.arguments });
+      return Promise.resolve({
+        ok: true, status: 200, headers: { get: () => null },
+        text: () => Promise.resolve(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: upload }))
+      });
+    }
+    return origFetch2(url, init);
+  };
+  why = '';
+  await SB.Imagine.run(sh3, 'video').catch(e => { why = e.message; });
+  const up = calls.filter(c => c.name === 'user_upload')[0];
+  t('a local frame is uploaded first, because the tool takes a URL and never bytes',
+    !!up && /^data:image\//.test(up.args.file) && up.args.org_id === 'org-123',
+    up ? String(up.args.file).slice(0, 24) : ('no upload' + (why ? ' — ' + why : '')));
+  const vid = calls.filter(c => c.name === 'generate_video')[0];
+  t('and the clip call carries that URL in an ARRAY, as published',
+    !!vid && Array.isArray(vid.args.image_url) &&
+    vid.args.image_url[0] === 'https://asset.imagine.art/processed/abc.webp',
+    JSON.stringify(vid && vid.args.image_url));
+  t('with its own model and organization',
+    vid.args.model === 'kling-3.0-pro' && vid.args.org_id === 'org-123',
+    JSON.stringify({ m: vid.args.model, o: vid.args.org_id }));
+
+  sandbox.fetch = () => Promise.reject(new Error('no network in tests'));
+  SB.Imagine.signOut();
+  SB.Imagine.setOrg(null);
+  SB.Imagine.setTransport('key');
+  store.delete('sb.imagine.catalog');
 }
 
 /* ----------------------------------------------------------- the catalog */

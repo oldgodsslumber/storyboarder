@@ -470,6 +470,63 @@
     const imTools = SB.el('div', 'pp-note dim', '');
     imBlocks.oauth.appendChild(imTools);
 
+    /* Every generation is billed to an organization, and the server keeps no
+       memory of which — the id rides on each call. So it is chosen once here
+       rather than asked for at the moment somebody presses a button. */
+    const imOrg = SB.el('div', 'pp-note', '');
+    const imOrgRow = SB.el('div', 'pp-actions');
+    const imOrgPick = document.createElement('select');
+    imOrgPick.style.display = 'none';
+    const imOrgBtn = SB.el('button', 'tb', 'Choose organization');
+    imOrgRow.appendChild(imOrgPick);
+    imOrgRow.appendChild(imOrgBtn);
+    imBlocks.oauth.appendChild(imOrg);
+    imBlocks.oauth.appendChild(imOrgRow);
+
+    function drawOrg() {
+      if (!IM) return;
+      const o = IM.org();
+      imOrg.textContent = o
+        ? 'Billing to ' + (o.name || o.id) + '.'
+        : 'No organization chosen yet — every generation is attributed to one, so nothing can ' +
+          'be made until this is set.';
+      imOrg.classList.toggle('warn', !o && IM.isSignedIn());
+      imOrgBtn.textContent = o ? 'Change organization' : 'Choose organization';
+      imOrgBtn.disabled = !IM.isSignedIn();
+    }
+
+    imOrgBtn.onclick = function () {
+      imOrgBtn.disabled = true;
+      imOrgBtn.textContent = 'asking…';
+      IM.listOrgs().then(function (list) {
+        if (!list.length) throw new Error('ImagineArt listed no organizations for this account.');
+        if (list.length === 1) {
+          IM.setOrg(list[0]);
+          SB.toast('Billing to ' + (list[0].name || list[0].id));
+          return;
+        }
+        imOrgPick.innerHTML = '';
+        list.forEach(function (o) {
+          const el = document.createElement('option');
+          el.value = o.id;
+          el.textContent = o.name || o.id;
+          imOrgPick.appendChild(el);
+        });
+        imOrgPick.style.display = '';
+        imOrgPick.onchange = function () {
+          const hit = list.filter(function (o) { return o.id === imOrgPick.value; })[0];
+          if (hit) { IM.setOrg(hit); drawOrg(); SB.toast('Billing to ' + (hit.name || hit.id)); }
+        };
+        const cur = IM.org();
+        if (cur) imOrgPick.value = cur.id;
+      }).catch(function (e) {
+        SB.toast(e.message || String(e), true);
+      }).then(function () {
+        imOrgBtn.disabled = false;
+        drawOrg();
+      });
+    };
+
     /* Which model list the slug field is offering, and how old it is. Without
        this the field shows a number and no way to tell whose number it is. */
     const imModels = SB.el('div', 'pp-note', '');
@@ -574,6 +631,7 @@
       imNote.textContent = why || '';
       imNote.classList.toggle('err', !!why);
       drawCatalogLine();
+      drawOrg();
       const tools = IM.tools();
       if (inOk && tools.length) {
         imTools.textContent = tools.length + ' tools offered: ' +
