@@ -1017,6 +1017,116 @@
         SB.app.changed(true);
       }
 
+      window.__tinyMp4 = 'AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAAQibW9vdgAAAGxtdmhkAAAAAAAAAAAAAAAAAAAD6AAAB9AAAQAA' +
+        'AQAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' +
+        'AAAAAgAAA010cmFrAAAAXHRraGQAAAADAAAAAAAAAAAAAAABAAAAAAAAB9AAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAA' +
+        'AAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAEAAAAAkAAAAAAAkZWR0cwAAABxlbHN0AAAAAAAAAAEAAAfQAAAIAAABAAAAAALF' +
+        'bWRpYQAAACBtZGhkAAAAAAAAAAAAAAAAAAAoAAAAUABVxAAAAAAALWhkbHIAAAAAAAAAAHZpZGUAAAAAAAAAAAAAAABWaWRl' +
+        'b0hhbmRsZXIAAAACcG1pbmYAAAAUdm1oZAAAAAEAAAAAAAAAAAAAACRkaW5mAAAAHGRyZWYAAAAAAAAAAQAAAAx1cmwgAAAA' +
+        'AQAAAjBzdGJsAAAAwHN0c2QAAAAAAAAAAQAAALBhdmMxAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAEAAJABIAAAASAAAAAAA' +
+        'AAABFUxhdmM2Mi4xNS4xMDAgbGlieDI2NAAAAAAAAAAAAAAAGP//AAAANmF2Y0MBZAAK/+EAGWdkAAqs2UR/nwEQAAADABAA' +
+        'AAMBQPEiWWABAAZo6+PLIsD9+PgAAAAAEHBhc3AAAAABAAAAAQAAABRidHJ0AAAAAAAAD6AAAAAAAAAAGHN0dHMAAAAAAAAA' +
+        'AQAAABQAAAQAAAAAFHN0c3MAAAAAAAAAAQAAAAEAAACoY3R0cwAAAAAAAAATAAAAAQAACAAAAAABAAAUAAAAAAEAAAgAAAAA' +
+        'AQAAAAAAAAABAAAEAAAAAAEAABQAAAAAAQAACAAAAAABAAAAAAAAAAEAAAQAAAAAAQAAFAAAAAABAAAIAAAAAAEAAAAAAAAA' +
+        'AQAABAAAAAABAAAUAAAAAAEAAAgAAAAAAQAAAAAAAAABAAAEAAAAAAEAABAAAAAAAgAABAAAAAAcc3RzYwAAAAAAAAABAAAA' +
+        'AQAAABQAAAABAAAAZHN0c3oAAAAAAAAAAAAAABQAAALaAAAADgAAAAwAAAAMAAAADAAAABQAAAAOAAAADAAAAAwAAAAUAAAA' +
+        'DgAAAAwAAAAMAAAAFAAAAA4AAAAMAAAADAAAABQAAAAOAAAADAAAABRzdGNvAAAAAAAAAAEAAARSAAAAYXVkdGEAAABZbWV0' +
+        'YQAAAAAAAAAhaGRscgAAAAAAAAAAbWRpcmFwcGwAAAAAAAAAAAAAAAAsaWxzdAAAACSpdG9vAAAAHGRhdGEAAAABAAAAAExh' +
+        'dmY2Mi41LjEwMQAAAAhmcmVlAAAD8G1kYXQAAAKuBgX//6rcRem95tlIt5Ys2CDZI+7veDI2NCAtIGNvcmUgMTY1IHIzMjIy' +
+        'IGIzNTYwNWEgLSBILjI2NC9NUEVHLTQgQVZDIGNvZGVjIC0gQ29weWxlZnQgMjAwMy0yMDI1IC0gaHR0cDovL3d3dy52aWRl' +
+        'b2xhbi5vcmcveDI2NC5odG1sIC0gb3B0aW9uczogY2FiYWM9MSByZWY9MyBkZWJsb2NrPTE6MDowIGFuYWx5c2U9MHgzOjB4' +
+        'MTEzIG1lPWhleCBzdWJtZT03IHBzeT0xIHBzeV9yZD0xLjAwOjAuMDAgbWl4ZWRfcmVmPTEgbWVfcmFuZ2U9MTYgY2hyb21h' +
+        'X21lPTEgdHJlbGxpcz0xIDh4OGRjdD0xIGNxbT0wIGRlYWR6b25lPTIxLDExIGZhc3RfcHNraXA9MSBjaHJvbWFfcXBfb2Zm' +
+        'c2V0PS0yIHRocmVhZHM9MSBsb29rYWhlYWRfdGhyZWFkcz0xIHNsaWNlZF90aHJlYWRzPTAgbnI9MCBkZWNpbWF0ZT0xIGlu' +
+        'dGVybGFjZWQ9MCBibHVyYXlfY29tcGF0PTAgY29uc3RyYWluZWRfaW50cmE9MCBiZnJhbWVzPTMgYl9weXJhbWlkPTIgYl9h' +
+        'ZGFwdD0xIGJfYmlhcz0wIGRpcmVjdD0xIHdlaWdodGI9MSBvcGVuX2dvcD0wIHdlaWdodHA9MiBrZXlpbnQ9MjUwIGtleWlu' +
+        'dF9taW49MTAgc2NlbmVjdXQ9NDAgaW50cmFfcmVmcmVzaD0wIHJjX2xvb2thaGVhZD00MCByYz1jcmYgbWJ0cmVlPTEgY3Jm' +
+        'PTIzLjAgcWNvbXA9MC42MCBxcG1pbj0wIHFwbWF4PTY5IHFwc3RlcD00IGlwX3JhdGlvPTEuNDAgYXE9MToxLjAwAIAAAAAk' +
+        'ZYiEABH//ufj/AprKxHEv01QKM3ptdyoujXHtijNqS8fduE/AAAACkGaJGxBH/61OVgAAAAIQZ5CeId/CvkAAAAIAZ5hdEN/' +
+        'DegAAAAIAZ5jakN/DekAAAAQQZpoSahBaJlMCCP//rU5WQAAAApBnoZFESw7/wr5AAAACAGepXRDfw3pAAAACAGep2pDfw3o' +
+        'AAAAEEGarEmoQWyZTAgh//6qcrAAAAAKQZ7KRRUsO/8K+QAAAAgBnul0Q38N6AAAAAgBnutqQ38N6AAAABBBmvBJqEFsmUwI' +
+        'f//+qdOhAAAACkGfDkUVLDv/CvkAAAAIAZ8tdEN/DekAAAAIAZ8vakN/DegAAAAQQZszSahBbJlMCG///qfuQAAAAApBn1FF' +
+        'FSw3/w3pAAAACAGfcmpDfw3o';
+
+      // several clips in one drop: a card holds one, and it asks which
+      {
+        const dShots = P().scenes[0].shots;
+        const d0 = dShots[0];
+        const dWas = dShots.map(function (x) { return x.video; });
+        const raw = atob(window.__tinyMp4);
+        const bs = new Uint8Array(raw.length);
+        for (let i = 0; i < raw.length; i++) bs[i] = raw.charCodeAt(i);
+        const three = ['shot1c.mp4', 'shot1d.mp4', 'shot1e.mp4'].map(function (n) {
+          return new File([bs], n, { type: 'video/mp4' });
+        });
+
+        /* attach() reads the file and its metadata, so the card catches up a
+           few ticks after the click rather than in the same one */
+        const settle = async function (fn) {
+          for (let i = 0; i < 60 && !fn(); i++) await pauseTop();
+          return fn();
+        };
+
+        SB.Board.clipDrop(d0, three);
+        await settle(function () { return !!document.querySelector('.modal .clip-pick'); });
+        const pick = document.querySelector('.modal .clip-pick');
+        t('three clips in one drop asks which, instead of silently taking one',
+          !!pick && document.querySelectorAll('.modal .clip-row').length === 3,
+          document.querySelectorAll('.modal .clip-row').length + ' rows');
+        t('and names each file', /shot1d\.mp4/.test(pick.textContent), '');
+        t('the whole board is offered one each, by card code',
+          /One each, from/.test(document.querySelector('.modal').textContent), '');
+
+        /* take the second one for this card */
+        document.querySelectorAll('.modal .clip-row')[1].click();
+        await settle(function () { return !!d0.video; });
+        t('the one chosen is the one on the card', (d0.video || {}).name === 'shot1d.mp4',
+          JSON.stringify((d0.video || {}).name));
+        t('and no modal is left behind', !document.querySelector('.modal .clip-pick'), '');
+
+        /* dropping onto a card that already holds one says what is at stake */
+        SB.Board.clipDrop(d0, [three[2]]);
+        await settle(function () { return !!document.querySelector('.modal .clip-pick'); });
+        const warn = document.querySelector('.modal .clip-pick .pp-note.warn');
+        t('replacing an existing clip says so before it happens',
+          !!warn && /already holds/.test(warn.textContent) && /throws that away/.test(warn.textContent),
+          warn ? warn.textContent.slice(0, 60) : 'no warning');
+        document.querySelector('.modal .clip-row').click();
+        await settle(function () { return (d0.video || {}).name === 'shot1e.mp4'; });
+        t('and the replacement is what is there afterwards',
+          (d0.video || {}).name === 'shot1e.mp4', JSON.stringify((d0.video || {}).name));
+        t('one clip on the card, not three',
+          SB.Renders.weigh(P()).clips.n === 1, SB.Renders.weigh(P()).clips.n);
+
+        /* one each, across the cards that follow */
+        d0.video = null;
+        SB.app.changed(true);
+        SB.Board.clipDrop(d0, three);
+        await settle(function () { return !!document.querySelector('.modal .clip-pick'); });
+        const spread = Array.prototype.filter.call(document.querySelectorAll('.modal button'),
+          function (b) { return /One each, from/.test(b.textContent); })[0];
+        spread.click();
+        await settle(function () { return !!(dShots[2] && dShots[2].video); });
+        t('one each puts them on the cards that follow, in name order',
+          (dShots[0].video || {}).name === 'shot1c.mp4' &&
+          (dShots[1].video || {}).name === 'shot1d.mp4' &&
+          (dShots[2].video || {}).name === 'shot1e.mp4',
+          dShots.slice(0, 3).map(function (x) { return (x.video || {}).name; }).join(','));
+        t('all three cards carry one',
+          dShots.slice(0, 3).every(function (x) { return x.video && x.video.ref; }),
+          dShots.slice(0, 3).map(function (x) { return !!(x.video || {}).ref; }).join(','));
+        /* the three files are byte-identical here, and the blob map stores a
+           picture or a clip once however many things point at it */
+        t('and identical bytes are still stored once',
+          SB.Renders.weigh(P()).clips.n === 1, SB.Renders.weigh(P()).clips.n);
+        t('each card keeps its own serial, though',
+          new Set(dShots.slice(0, 3).map(function (x) { return x.video.serial; })).size === 3,
+          dShots.slice(0, 3).map(function (x) { return x.video.serial; }).join(','));
+
+        dShots.forEach(function (x, i) { x.video = dWas[i]; });
+        SB.app.changed(true);
+      }
+
       // a clip you already have, put on a card
       {
         const cShot = P().scenes[0].shots[0];

@@ -324,25 +324,38 @@ window.SB = window.SB || {};
   /* A clip out of a drop or a paste. Kept apart from imageFromTransfer rather
    * than folded into it: a drop carrying both should put the picture on the
    * card and the clip beside it, and the caller decides that. */
-  SB.videoFromTransfer = function (dt) {
-    if (!dt) return null;
+  /* Every clip in a drop, in name order.
+   *
+   * This used to hand back the first one and drop the rest on the floor, so
+   * dragging three mp4s onto a card put one of them somewhere and said
+   * nothing about the other two — which reads exactly like "they stacked up
+   * and I cannot see them". A card holds one clip; the caller asks which. */
+  SB.videosFromTransfer = function (dt) {
+    if (!dt) return [];
+    const out = [];
+    const seen = {};
+    const take = function (f) {
+      if (!f || !/^video\//.test(f.type || '')) return;
+      const key = (f.name || '') + ':' + f.size;
+      if (seen[key]) return;
+      seen[key] = 1;
+      out.push(f);
+    };
     const files = dt.files;
-    if (files) {
-      for (let i = 0; i < files.length; i++) {
-        if (/^video\//.test(files[i].type)) return files[i];
-      }
-    }
+    if (files) for (let i = 0; i < files.length; i++) take(files[i]);
     if (dt.items) {
       for (let i = 0; i < dt.items.length; i++) {
         const it = dt.items[i];
-        if (it.kind === 'file' && /^video\//.test(it.type)) {
-          const f = it.getAsFile();
-          if (f) return f;
-        }
+        if (it.kind === 'file' && /^video\//.test(it.type)) take(it.getAsFile());
       }
     }
-    return null;
+    out.sort(function (a, b) {
+      return String(a.name || '').localeCompare(String(b.name || ''), undefined, { numeric: true });
+    });
+    return out;
   };
+
+  SB.videoFromTransfer = function (dt) { return SB.videosFromTransfer(dt)[0] || null; };
 
   SB.pickVideoFile = function () {
     return new Promise(function (resolve) {

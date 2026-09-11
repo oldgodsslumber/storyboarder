@@ -458,7 +458,9 @@
     const imIn = SB.el('button', 'tb', 'Sign in');
     const imOut = SB.el('button', 'tb', 'Sign out');
     const imCheck = SB.el('button', 'tb', 'Check account');
-    imActs.appendChild(imIn); imActs.appendChild(imCheck); imActs.appendChild(imOut);
+    const imWhat = SB.el('button', 'tb', 'What my account can do');
+    imActs.appendChild(imIn); imActs.appendChild(imCheck);
+    imActs.appendChild(imWhat); imActs.appendChild(imOut);
     imBlocks.oauth.appendChild(imActs);
 
     const imNote = SB.el('div', 'pp-note', '');
@@ -497,13 +499,26 @@
         imModels.textContent = counts + 'From your account, checked ' + ago(IM.catalogAge()) + '.';
         imModels.classList.remove('warn');
       } else if (src === 'shipped') {
-        imModels.textContent = counts + 'The built-in list, published by ImagineArt on ' +
+        imModels.textContent = counts + 'This is the older v2 REST API\u2019s list, read off ' +
+          'ImagineArt\u2019s published listing on ' +
           ((SB.ImagineModels && SB.ImagineModels.fetchedAt) || 'an unknown date') +
-          '. Sign in and this becomes whatever your account actually offers.';
-        imModels.classList.toggle('warn', !IM.isSignedIn() ? false : true);
+          ' — not the same catalog as the Workflows canvas on the website, and not ' +
+          'necessarily what your account\u2019s own tools accept. ' +
+          (IM.isSignedIn()
+            ? 'Your account published no model list of its own; “What my account can do” ' +
+              'shows what it did publish.'
+            : 'Sign in and this becomes your account\u2019s own.');
+        imModels.classList.toggle('warn', IM.isSignedIn());
       } else {
         imModels.textContent = counts + 'A last-resort handful — the generated list did not load.';
         imModels.classList.add('warn');
+      }
+      /* With a fallback in play, "where did that come from" stops being
+         obvious — so the last answer is on screen. */
+      const d = IM.door();
+      if (d) {
+        imModels.appendChild(document.createTextNode(' Last generation went through ' +
+          (d === 'mcp' ? 'your account\u2019s tools.' : 'the v2 REST API.')));
       }
       imRefresh.disabled = !IM.isSignedIn();
       imRefresh.title = IM.isSignedIn()
@@ -531,6 +546,10 @@
       'The sign-in is ImagineArt’s own OAuth: a window opens, you approve, it closes. ' +
       'Nothing but the token is kept, and it is kept in this browser — never in the ' +
       '.storyboard file.'));
+    imBlocks.oauth.appendChild(SB.el('div', 'pp-note',
+      'Signed in, a push goes through your account’s own tools first. The older v2 REST API ' +
+      'is the fallback — it is the one that definitely takes an uploaded frame — and the ' +
+      'line below says which one carried the last one.'));
 
     function imDraw() {
       if (!IM) { imStatus.textContent = 'ImagineArt support is not loaded.'; return; }
@@ -586,6 +605,61 @@
     imOut.onclick = function () {
       IM.signOut();
       imDraw();
+    };
+
+    /* The one question that cannot be answered from outside an account: what
+       its tools are, what they take, and whether a model can be named at all.
+       Printed verbatim rather than summarised — a guess about somebody
+       else's schema is what got the model list wrong in the first place. */
+    imWhat.onclick = function () {
+      imWhat.disabled = true;
+      imWhat.textContent = 'asking…';
+      IM.capabilities().then(function (tools) {
+        const box = SB.el('div', 'caps');
+        if (!tools.length) {
+          box.appendChild(SB.el('div', 'pp-note warn',
+            'Your account exposes no tools at all through MCP.'));
+        }
+        box.appendChild(SB.el('div', 'pp-note',
+          tools.length + ' tool' + (tools.length === 1 ? '' : 's') +
+          '. A model can only be chosen where a parameter below offers one — if none do, ' +
+          'ImagineArt picks, and the slug column in Models & templates only applies to the ' +
+          'API-key transport.'));
+        tools.forEach(function (t) {
+          const card = SB.el('div', 'cap');
+          card.appendChild(SB.el('div', 'cap-name', t.name +
+            (t.takesImage ? '  · takes an image' : '')));
+          if (t.description) card.appendChild(SB.el('div', 'cap-desc', t.description));
+          t.params.forEach(function (pr) {
+            const row = SB.el('div', 'cap-param' + (pr.isModel ? ' model' : ''));
+            row.appendChild(SB.el('span', 'k', pr.name));
+            row.appendChild(SB.el('span', 'ty', pr.type + (pr.required ? ' · required' : '')));
+            if (pr.enum) {
+              row.appendChild(SB.el('span', 'en',
+                pr.enum.length + ': ' + pr.enum.slice(0, 8).join(', ') +
+                (pr.enum.length > 8 ? ', …' : '')));
+            }
+            card.appendChild(row);
+          });
+          box.appendChild(card);
+        });
+        const copy = SB.el('button', 'tb', 'Copy as JSON');
+        copy.onclick = function () {
+          navigator.clipboard.writeText(JSON.stringify(tools, null, 2))
+            .then(function () { SB.toast('Copied'); })
+            .catch(function () { SB.toast('Could not copy', true); });
+        };
+        const acts = SB.el('div', 'pp-actions');
+        acts.appendChild(copy);
+        box.appendChild(acts);
+        SB.modal({ title: 'What this account exposes', width: '680px', body: box,
+          buttons: [{ label: 'Close', primary: true }] });
+      }).catch(function (e) {
+        SB.toast(e.message || String(e), true);
+      }).then(function () {
+        imWhat.disabled = false;
+        imWhat.textContent = 'What my account can do';
+      });
     };
 
     imCheck.onclick = function () {

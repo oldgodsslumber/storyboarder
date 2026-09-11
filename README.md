@@ -59,6 +59,12 @@ one generation — nothing is batched, nothing fires on its own.
   tokens). A window opens, you approve, it closes; the board never reloads. Generations come
   out of the credits on the imagine.art account. Nothing is stored but the token, and the
   token lives in this browser, never in the `.storyboard`.
+
+  Signed in, a push goes through **your account's own MCP tools first**; the older v2 REST
+  API is the fallback, for the one thing it is definitely better at — it takes an uploaded
+  frame — and Settings says which door carried the last generation. **What my account can
+  do** prints the account's tools, their parameters and any model lists verbatim, which is
+  the only way to find out whether a model can be named on that surface at all.
 - **API key** — a key from [platform.imagine.art](https://platform.imagine.art/), billed
   against a separate metered API balance.
 
@@ -100,6 +106,12 @@ prints; the clip is the motion made from it.
   duration and dimensions read off the file. This is how a clip that already exists — cut
   last month, handed over by someone — gets onto a board; before this, `▶ shoot` was the
   only way a card could ever have one.
+- **A card holds exactly one clip, and it asks before it takes one.** Drop several at once
+  and it lists them by name and size and asks which belongs here — or offers **one each**
+  across the cards that follow, in name order, naming the codes it would fill. Drop one onto
+  a card that already has a clip and it says what is about to be thrown away first. Neither
+  used to be true: a multi-clip drop silently used the first and dropped the rest, and a
+  replacement happened instantly with a toast you could miss.
 - A clip put there by hand carries no provenance, so the Export panel's **only what was made
   in here** filter passes it by. That is the point of the filter.
 

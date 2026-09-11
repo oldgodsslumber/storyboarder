@@ -1190,10 +1190,31 @@ body.comment-mode .frame{cursor:crosshair}
 .ex-status{font-size:11px;color:var(--fg-dim);min-height:14px;font-variant-numeric:tabular-nums}
 .ex-acts{display:flex;gap:8px;justify-content:flex-end}
 
+/* what an account exposes — printed, not summarised */
+.caps{max-height:60vh;overflow:auto}
+.cap{border:1px solid var(--line);border-radius:6px;padding:8px;margin:8px 0;background:var(--bg3)}
+.cap-name{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--accent)}
+.cap-desc{font-size:11px;color:var(--fg-dim);margin:2px 0 6px}
+.cap-param{display:flex;gap:8px;align-items:baseline;font-size:11px;padding:1px 0}
+.cap-param .k{font-family:ui-monospace,Consolas,monospace;flex:0 0 150px}
+.cap-param .ty{color:var(--fg-dim);flex:0 0 120px}
+.cap-param .en{color:var(--accent2);min-width:0;overflow-wrap:anywhere}
+.cap-param.model .k{color:var(--accent)}
+
+/* choosing which clip lands on a card */
+.clip-pick .clip-row{
+  display:flex;gap:10px;align-items:baseline;width:100%;text-align:left;margin-top:5px;
+  background:var(--bg3);border:1px solid var(--line);border-radius:5px;
+  padding:6px 9px;color:var(--fg);cursor:pointer;font-size:12px;
+}
+.clip-pick .clip-row:hover{border-color:var(--accent);color:var(--accent)}
+.clip-pick .clip-row .n{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.clip-pick .clip-row .b{color:var(--fg-dim);font-variant-numeric:tabular-nums}
+
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-09-11 14:52 · 907a540+";</script>
+<script>window.SB_BUILD = "2026-09-11 15:06 · 04026d8+";</script>
 
 <div id="app">
 
@@ -1645,25 +1666,38 @@ window.SB = window.SB || {};
   /* A clip out of a drop or a paste. Kept apart from imageFromTransfer rather
    * than folded into it: a drop carrying both should put the picture on the
    * card and the clip beside it, and the caller decides that. */
-  SB.videoFromTransfer = function (dt) {
-    if (!dt) return null;
+  /* Every clip in a drop, in name order.
+   *
+   * This used to hand back the first one and drop the rest on the floor, so
+   * dragging three mp4s onto a card put one of them somewhere and said
+   * nothing about the other two — which reads exactly like "they stacked up
+   * and I cannot see them". A card holds one clip; the caller asks which. */
+  SB.videosFromTransfer = function (dt) {
+    if (!dt) return [];
+    const out = [];
+    const seen = {};
+    const take = function (f) {
+      if (!f || !/^video\//.test(f.type || '')) return;
+      const key = (f.name || '') + ':' + f.size;
+      if (seen[key]) return;
+      seen[key] = 1;
+      out.push(f);
+    };
     const files = dt.files;
-    if (files) {
-      for (let i = 0; i < files.length; i++) {
-        if (/^video\//.test(files[i].type)) return files[i];
-      }
-    }
+    if (files) for (let i = 0; i < files.length; i++) take(files[i]);
     if (dt.items) {
       for (let i = 0; i < dt.items.length; i++) {
         const it = dt.items[i];
-        if (it.kind === 'file' && /^video\//.test(it.type)) {
-          const f = it.getAsFile();
-          if (f) return f;
-        }
+        if (it.kind === 'file' && /^video\//.test(it.type)) take(it.getAsFile());
       }
     }
-    return null;
+    out.sort(function (a, b) {
+      return String(a.name || '').localeCompare(String(b.name || ''), undefined, { numeric: true });
+    });
+    return out;
   };
+
+  SB.videoFromTransfer = function (dt) { return SB.videosFromTransfer(dt)[0] || null; };
 
   SB.pickVideoFile = function () {
     return new Promise(function (resolve) {
@@ -3623,6 +3657,7 @@ window.SB = window.SB || {};
   const K_MODE = 'sb.imagine.transport';
   const K_REST = 'sb.imagine.oauthRest';   // '' unknown | 'yes' | 'no'
   const K_CAT = 'sb.imagine.catalog';      // what the account offers, per account
+  const K_DOOR = 'sb.imagine.lastDoor';    // 'mcp' | 'rest' — which one last worked
 
   /* ---------------- the model catalog ----------------
    *
@@ -4565,15 +4600,67 @@ window.SB = window.SB || {};
     return '';
   }
 
+  /* ---------------- which door ----------------
+   *
+   * Signing in is a choice of surface, not just of billing: the MCP server is
+   * ImagineArt's current product and the v2 REST API is an older, smaller one
+   * — six image models against the twenty-two the website offers, and a
+   * newest Kling of 1.6 against 2.6. A signed-in session that quietly went
+   * through REST because the token happened to be accepted there was
+   * answering a question the user thought they had already answered.
+   *
+   * So: signed in means MCP first. REST is the fallback, for the one thing it
+   * is definitely better at — it takes an uploaded frame — and for whatever
+   * the account's tools turn out not to do. The API-key transport has only
+   * ever had REST.
+   *
+   * Which door actually carried the last generation is recorded, because with
+   * a fallback in play "where did this come from" stops being obvious.
+   */
+  function door() { return lsStr(K_DOOR); }
+  function noteDoor(d) { lsPut(K_DOOR, d); }
+
+  function firstOf(primary, fallback) {
+    return primary().then(function (r) {
+      if (r) return r;
+      return fallback();
+    }, function (e) {
+      /* A token the server rejected is not a reason to try the other door
+       * with the same token. */
+      if (e && e.auth) throw e;
+      return fallback().catch(function () { throw e; });
+    });
+  }
+
   /* One still. Resolves to {blob, dataUrl}. */
   function image(opts) {
     const canon = {
       prompt: opts.prompt, slug: opts.slug,
       aspect: opts.aspect, onState: opts.onState
     };
-    return restImage(canon).then(function (got) {
-      if (got) return finishImage(got);
-      return callTool('image', canon, { noImage: !opts.frame }).then(finishImage);
+    const viaMcp = function () {
+      return callTool('image', canon, { noImage: true })
+        .then(function (got) { noteDoor('mcp'); return finishImage(got); });
+    };
+    const viaRest = function () {
+      return restImage(canon).then(function (got) {
+        if (!got) return null;
+        noteDoor('rest');
+        return finishImage(got);
+      });
+    };
+    if (transport() === 'key') {
+      return viaRest().then(function (r) {
+        if (!r) throw new Error('ImagineArt did not answer with a picture.');
+        return r;
+      });
+    }
+    return firstOf(viaMcp, function () {
+      return viaRest().then(function (r) {
+        if (!r) throw new Error('Neither your account\u2019s tools nor the REST API made that ' +
+          'picture. Settings → ImagineArt → what my account can do says what it offers.');
+        return r;
+      });
     });
   }
 
@@ -4612,8 +4699,7 @@ window.SB = window.SB || {};
       duration: opts.duration, frame: opts.frame, frameName: opts.frameName,
       onState: opts.onState
     };
-    return restVideo(canon).then(function (got) {
-      if (got) return finishVideo(got);
+    const viaMcp = function () {
       return (opts.frame ? blobToDataUrl(opts.frame) : Promise.resolve(''))
         .then(function (dataUrl) {
           const c2 = {
@@ -4622,7 +4708,27 @@ window.SB = window.SB || {};
           };
           return callTool('video', c2, { needsImage: !!opts.frame, noImage: !opts.frame });
         })
-        .then(finishVideo);
+        .then(function (got) { noteDoor('mcp'); return finishVideo(got); });
+    };
+    const viaRest = function () {
+      return restVideo(canon).then(function (got) {
+        if (!got) return null;
+        noteDoor('rest');
+        return finishVideo(got);
+      });
+    };
+    if (transport() === 'key') {
+      return viaRest().then(function (r) {
+        if (!r) throw new Error('ImagineArt did not answer with a clip.');
+        return r;
+      });
+    }
+    return firstOf(viaMcp, function () {
+      return viaRest().then(function (r) {
+        if (!r) throw new Error('Neither your account\u2019s tools nor the REST API made that ' +
+          'clip. Settings → ImagineArt → what my account can do says what it offers.');
+        return r;
+      });
     });
   }
 
@@ -5145,6 +5251,35 @@ window.SB = window.SB || {};
     return bits.join(' · ');
   }
 
+  /* Everything the account's tools say about themselves, flattened for
+   * reading. The whole question of which models an OAuth session can reach —
+   * and whether it can even be asked for one — is answered by this and
+   * nothing else, and it cannot be answered from outside an account at all.
+   * So it is one button rather than a support thread. */
+  function capabilities() {
+    return toolList(true).then(function (tools) {
+      return (tools || []).map(function (t) {
+        const ps = props(t);
+        const req = (t.inputSchema && t.inputSchema.required) || [];
+        return {
+          name: t.name,
+          description: t.description || '',
+          takesImage: hasImageParam(t),
+          params: Object.keys(ps).map(function (k) {
+            const spec = ps[k] || {};
+            return {
+              name: k,
+              type: spec.type || '',
+              required: req.indexOf(k) >= 0,
+              enum: Array.isArray(spec.enum) ? spec.enum.slice() : null,
+              isModel: SYNONYM.slug.test(k)
+            };
+          })
+        };
+      });
+    });
+  }
+
   SB.Clip = {
     play: playClip, attach: attachClip, drop: dropClip,
     label: clipLabel, meta: clipMeta
@@ -5160,6 +5295,7 @@ window.SB = window.SB || {};
     account: account, whoAmI: whoAmI, balance: balance,
     /* discovery, for the Settings readout */
     discover: discover, toolList: toolList, tools: function () { return mcp.tools || []; },
+    capabilities: capabilities, door: door,
     restVerdict: function () { return lsStr(K_REST); },
     catalog: catalog, catalogAll: catalogAll, catalogSource: catalogSource,
     catalogAge: catalogAge, refreshCatalog: refreshCatalog,
@@ -10395,7 +10531,7 @@ window.SB = window.SB || {};
       add.onclick = function (ev) {
         ev.stopPropagation();
         SB.pickVideoFile().then(function (file) {
-          if (file) takeClip(sh, file);
+          if (file) clipDrop(sh, [file]);
         });
       };
       tools.appendChild(add);
@@ -10418,8 +10554,8 @@ window.SB = window.SB || {};
       f.classList.remove('drag-over');
       /* A video dropped on a card is a clip for that card, not a picture that
          failed to decode — which is what it used to be reported as. */
-      const clip = SB.videoFromTransfer(ev.dataTransfer);
-      if (clip) { takeClip(sh, clip); return; }
+      const clips = SB.videosFromTransfer(ev.dataTransfer);
+      if (clips.length) { clipDrop(sh, clips); return; }
       SB.imageFromTransfer(ev.dataTransfer).then(function (src) {
         if (!src) { SB.toast('No image or clip found in that drop', true); return; }
         setImage(sh, src);
@@ -10443,14 +10579,99 @@ window.SB = window.SB || {};
    * its blob reference — the one thing that travels with a picture when cards
    * move. If nobody is holding that picture any more (replaced, deleted), the
    * record has nowhere to live and is dropped; gc() takes the bytes. */
+  function mb(n) { return (n / 1048576).toFixed(1) + ' MB'; }
+
+  /* Every card in board order, with its code — for spreading a multi-clip
+     drop across the cards that follow. */
+  function ordered() {
+    const p = P();
+    const out = [];
+    p.scenes.forEach(function (sc, si) {
+      sc.shots.forEach(function (s, sj) { out.push({ shot: s, code: SB.Model.code(si, sj) }); });
+    });
+    return out;
+  }
+
   function takeClip(sh, file) {
     const had = !!sh.video;
-    SB.Clip.attach(P(), sh, file).then(function (rec) {
-      if (!rec) return;
-      SB.toast((had ? 'Clip replaced' : 'Clip added') +
-        (SB.Clip.label(rec) ? ' — ' + SB.Clip.label(rec) : ''));
+    return SB.Clip.attach(P(), sh, file).then(function (rec) {
+      if (!rec) return null;
+      SB.toast((had ? 'Clip replaced — the one that was here is gone' : 'Clip added') +
+        (SB.Clip.label(rec) ? ' · ' + SB.Clip.label(rec) : ''));
+      return rec;
     }).catch(function (e) {
       SB.toast('That clip could not be stored: ' + (e.message || e), true);
+      return null;
+    });
+  }
+
+  /* One clip per card, said out loud at the moment it matters.
+   *
+   * Two things used to happen silently: a drop carrying several clips used
+   * one and ignored the rest, and a drop onto a card that already had one
+   * replaced it — bytes and all — with a toast you could easily miss. Both
+   * now ask, and the question names what is at stake either way. */
+  function clipDrop(sh, files) {
+    if (!files.length) return;
+    const p = P();
+    const here = SB.Model.findShot(p, sh.id);
+    const code = here ? here.code : 'this card';
+
+    if (files.length === 1 && !sh.video) { takeClip(sh, files[0]); return; }
+
+    const box = SB.el('div', 'clip-pick');
+    let m = null;
+
+    if (sh.video) {
+      const old = SB.Clip.label(sh.video) || 'a clip';
+      box.appendChild(SB.el('div', 'pp-note warn',
+        code + ' already holds ' + old + (sh.video.name ? ' (' + sh.video.name + ')' : '') +
+        '. A card holds one clip, so taking a new one throws that away.'));
+    }
+    box.appendChild(SB.el('div', 'pp-note', files.length === 1
+      ? 'Replace it with:'
+      : files.length + ' clips in that drop. A card holds one — which of them is ' + code + '?'));
+
+    files.forEach(function (f) {
+      const row = SB.el('button', 'clip-row');
+      row.appendChild(SB.el('span', 'n', f.name || 'clip'));
+      row.appendChild(SB.el('span', 'b', mb(f.size)));
+      row.onclick = function () { if (m) m.close(); takeClip(sh, f); };
+      box.appendChild(row);
+    });
+
+    /* The reason somebody drags four clips onto a board at once is that they
+       belong to four cards in a row. */
+    const list = ordered();
+    const at = list.map(function (x) { return x.shot.id; }).indexOf(sh.id);
+    const run = (at >= 0) ? list.slice(at, at + files.length) : [];
+    const buttons = [{ label: 'Cancel' }];
+    if (files.length > 1 && run.length === files.length) {
+      buttons.push({
+        label: 'One each, from ' + run[0].code,
+        onClick: function (close) {
+          close();
+          let n = 0;
+          const next = function (i) {
+            if (i >= files.length) {
+              SB.toast(n + ' clip' + (n === 1 ? '' : 's') + ' placed, ' +
+                run[0].code + ' to ' + run[run.length - 1].code);
+              return;
+            }
+            SB.Clip.attach(P(), run[i].shot, files[i]).then(function (rec) {
+              if (rec) n++;
+            }).catch(function () { }).then(function () { next(i + 1); });
+          };
+          next(0);
+        }
+      });
+    }
+
+    m = SB.modal({
+      title: files.length > 1 ? 'Which clip for ' + code + '?' : 'Replace the clip on ' + code + '?',
+      width: '460px',
+      body: box,
+      buttons: buttons
     });
   }
 
@@ -10534,7 +10755,7 @@ window.SB = window.SB || {};
     refreshFeed: refreshFeed,
     refreshSerial: refreshSerial,
     saveFeed: saveFeed,
-    setImage: setImage,
+    setImage: setImage, clipDrop: clipDrop,
     swap: doSwap,
     armSwap: armSwap,
     swapArmed: function () { return B.swapFrom || null; },
@@ -15073,7 +15294,9 @@ window.SB = window.SB || {};
     const imIn = SB.el('button', 'tb', 'Sign in');
     const imOut = SB.el('button', 'tb', 'Sign out');
     const imCheck = SB.el('button', 'tb', 'Check account');
-    imActs.appendChild(imIn); imActs.appendChild(imCheck); imActs.appendChild(imOut);
+    const imWhat = SB.el('button', 'tb', 'What my account can do');
+    imActs.appendChild(imIn); imActs.appendChild(imCheck);
+    imActs.appendChild(imWhat); imActs.appendChild(imOut);
     imBlocks.oauth.appendChild(imActs);
 
     const imNote = SB.el('div', 'pp-note', '');
@@ -15112,13 +15335,26 @@ window.SB = window.SB || {};
         imModels.textContent = counts + 'From your account, checked ' + ago(IM.catalogAge()) + '.';
         imModels.classList.remove('warn');
       } else if (src === 'shipped') {
-        imModels.textContent = counts + 'The built-in list, published by ImagineArt on ' +
+        imModels.textContent = counts + 'This is the older v2 REST API\u2019s list, read off ' +
+          'ImagineArt\u2019s published listing on ' +
           ((SB.ImagineModels && SB.ImagineModels.fetchedAt) || 'an unknown date') +
-          '. Sign in and this becomes whatever your account actually offers.';
-        imModels.classList.toggle('warn', !IM.isSignedIn() ? false : true);
+          ' — not the same catalog as the Workflows canvas on the website, and not ' +
+          'necessarily what your account\u2019s own tools accept. ' +
+          (IM.isSignedIn()
+            ? 'Your account published no model list of its own; “What my account can do” ' +
+              'shows what it did publish.'
+            : 'Sign in and this becomes your account\u2019s own.');
+        imModels.classList.toggle('warn', IM.isSignedIn());
       } else {
         imModels.textContent = counts + 'A last-resort handful — the generated list did not load.';
         imModels.classList.add('warn');
+      }
+      /* With a fallback in play, "where did that come from" stops being
+         obvious — so the last answer is on screen. */
+      const d = IM.door();
+      if (d) {
+        imModels.appendChild(document.createTextNode(' Last generation went through ' +
+          (d === 'mcp' ? 'your account\u2019s tools.' : 'the v2 REST API.')));
       }
       imRefresh.disabled = !IM.isSignedIn();
       imRefresh.title = IM.isSignedIn()
@@ -15146,6 +15382,10 @@ window.SB = window.SB || {};
       'The sign-in is ImagineArt’s own OAuth: a window opens, you approve, it closes. ' +
       'Nothing but the token is kept, and it is kept in this browser — never in the ' +
       '.storyboard file.'));
+    imBlocks.oauth.appendChild(SB.el('div', 'pp-note',
+      'Signed in, a push goes through your account’s own tools first. The older v2 REST API ' +
+      'is the fallback — it is the one that definitely takes an uploaded frame — and the ' +
+      'line below says which one carried the last one.'));
 
     function imDraw() {
       if (!IM) { imStatus.textContent = 'ImagineArt support is not loaded.'; return; }
@@ -15201,6 +15441,61 @@ window.SB = window.SB || {};
     imOut.onclick = function () {
       IM.signOut();
       imDraw();
+    };
+
+    /* The one question that cannot be answered from outside an account: what
+       its tools are, what they take, and whether a model can be named at all.
+       Printed verbatim rather than summarised — a guess about somebody
+       else's schema is what got the model list wrong in the first place. */
+    imWhat.onclick = function () {
+      imWhat.disabled = true;
+      imWhat.textContent = 'asking…';
+      IM.capabilities().then(function (tools) {
+        const box = SB.el('div', 'caps');
+        if (!tools.length) {
+          box.appendChild(SB.el('div', 'pp-note warn',
+            'Your account exposes no tools at all through MCP.'));
+        }
+        box.appendChild(SB.el('div', 'pp-note',
+          tools.length + ' tool' + (tools.length === 1 ? '' : 's') +
+          '. A model can only be chosen where a parameter below offers one — if none do, ' +
+          'ImagineArt picks, and the slug column in Models & templates only applies to the ' +
+          'API-key transport.'));
+        tools.forEach(function (t) {
+          const card = SB.el('div', 'cap');
+          card.appendChild(SB.el('div', 'cap-name', t.name +
+            (t.takesImage ? '  · takes an image' : '')));
+          if (t.description) card.appendChild(SB.el('div', 'cap-desc', t.description));
+          t.params.forEach(function (pr) {
+            const row = SB.el('div', 'cap-param' + (pr.isModel ? ' model' : ''));
+            row.appendChild(SB.el('span', 'k', pr.name));
+            row.appendChild(SB.el('span', 'ty', pr.type + (pr.required ? ' · required' : '')));
+            if (pr.enum) {
+              row.appendChild(SB.el('span', 'en',
+                pr.enum.length + ': ' + pr.enum.slice(0, 8).join(', ') +
+                (pr.enum.length > 8 ? ', …' : '')));
+            }
+            card.appendChild(row);
+          });
+          box.appendChild(card);
+        });
+        const copy = SB.el('button', 'tb', 'Copy as JSON');
+        copy.onclick = function () {
+          navigator.clipboard.writeText(JSON.stringify(tools, null, 2))
+            .then(function () { SB.toast('Copied'); })
+            .catch(function () { SB.toast('Could not copy', true); });
+        };
+        const acts = SB.el('div', 'pp-actions');
+        acts.appendChild(copy);
+        box.appendChild(acts);
+        SB.modal({ title: 'What this account exposes', width: '680px', body: box,
+          buttons: [{ label: 'Close', primary: true }] });
+      }).catch(function (e) {
+        SB.toast(e.message || String(e), true);
+      }).then(function () {
+        imWhat.disabled = false;
+        imWhat.textContent = 'What my account can do';
+      });
     };
 
     imCheck.onclick = function () {

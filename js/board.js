@@ -1583,7 +1583,7 @@
       add.onclick = function (ev) {
         ev.stopPropagation();
         SB.pickVideoFile().then(function (file) {
-          if (file) takeClip(sh, file);
+          if (file) clipDrop(sh, [file]);
         });
       };
       tools.appendChild(add);
@@ -1606,8 +1606,8 @@
       f.classList.remove('drag-over');
       /* A video dropped on a card is a clip for that card, not a picture that
          failed to decode — which is what it used to be reported as. */
-      const clip = SB.videoFromTransfer(ev.dataTransfer);
-      if (clip) { takeClip(sh, clip); return; }
+      const clips = SB.videosFromTransfer(ev.dataTransfer);
+      if (clips.length) { clipDrop(sh, clips); return; }
       SB.imageFromTransfer(ev.dataTransfer).then(function (src) {
         if (!src) { SB.toast('No image or clip found in that drop', true); return; }
         setImage(sh, src);
@@ -1631,14 +1631,99 @@
    * its blob reference — the one thing that travels with a picture when cards
    * move. If nobody is holding that picture any more (replaced, deleted), the
    * record has nowhere to live and is dropped; gc() takes the bytes. */
+  function mb(n) { return (n / 1048576).toFixed(1) + ' MB'; }
+
+  /* Every card in board order, with its code — for spreading a multi-clip
+     drop across the cards that follow. */
+  function ordered() {
+    const p = P();
+    const out = [];
+    p.scenes.forEach(function (sc, si) {
+      sc.shots.forEach(function (s, sj) { out.push({ shot: s, code: SB.Model.code(si, sj) }); });
+    });
+    return out;
+  }
+
   function takeClip(sh, file) {
     const had = !!sh.video;
-    SB.Clip.attach(P(), sh, file).then(function (rec) {
-      if (!rec) return;
-      SB.toast((had ? 'Clip replaced' : 'Clip added') +
-        (SB.Clip.label(rec) ? ' — ' + SB.Clip.label(rec) : ''));
+    return SB.Clip.attach(P(), sh, file).then(function (rec) {
+      if (!rec) return null;
+      SB.toast((had ? 'Clip replaced — the one that was here is gone' : 'Clip added') +
+        (SB.Clip.label(rec) ? ' · ' + SB.Clip.label(rec) : ''));
+      return rec;
     }).catch(function (e) {
       SB.toast('That clip could not be stored: ' + (e.message || e), true);
+      return null;
+    });
+  }
+
+  /* One clip per card, said out loud at the moment it matters.
+   *
+   * Two things used to happen silently: a drop carrying several clips used
+   * one and ignored the rest, and a drop onto a card that already had one
+   * replaced it — bytes and all — with a toast you could easily miss. Both
+   * now ask, and the question names what is at stake either way. */
+  function clipDrop(sh, files) {
+    if (!files.length) return;
+    const p = P();
+    const here = SB.Model.findShot(p, sh.id);
+    const code = here ? here.code : 'this card';
+
+    if (files.length === 1 && !sh.video) { takeClip(sh, files[0]); return; }
+
+    const box = SB.el('div', 'clip-pick');
+    let m = null;
+
+    if (sh.video) {
+      const old = SB.Clip.label(sh.video) || 'a clip';
+      box.appendChild(SB.el('div', 'pp-note warn',
+        code + ' already holds ' + old + (sh.video.name ? ' (' + sh.video.name + ')' : '') +
+        '. A card holds one clip, so taking a new one throws that away.'));
+    }
+    box.appendChild(SB.el('div', 'pp-note', files.length === 1
+      ? 'Replace it with:'
+      : files.length + ' clips in that drop. A card holds one — which of them is ' + code + '?'));
+
+    files.forEach(function (f) {
+      const row = SB.el('button', 'clip-row');
+      row.appendChild(SB.el('span', 'n', f.name || 'clip'));
+      row.appendChild(SB.el('span', 'b', mb(f.size)));
+      row.onclick = function () { if (m) m.close(); takeClip(sh, f); };
+      box.appendChild(row);
+    });
+
+    /* The reason somebody drags four clips onto a board at once is that they
+       belong to four cards in a row. */
+    const list = ordered();
+    const at = list.map(function (x) { return x.shot.id; }).indexOf(sh.id);
+    const run = (at >= 0) ? list.slice(at, at + files.length) : [];
+    const buttons = [{ label: 'Cancel' }];
+    if (files.length > 1 && run.length === files.length) {
+      buttons.push({
+        label: 'One each, from ' + run[0].code,
+        onClick: function (close) {
+          close();
+          let n = 0;
+          const next = function (i) {
+            if (i >= files.length) {
+              SB.toast(n + ' clip' + (n === 1 ? '' : 's') + ' placed, ' +
+                run[0].code + ' to ' + run[run.length - 1].code);
+              return;
+            }
+            SB.Clip.attach(P(), run[i].shot, files[i]).then(function (rec) {
+              if (rec) n++;
+            }).catch(function () { }).then(function () { next(i + 1); });
+          };
+          next(0);
+        }
+      });
+    }
+
+    m = SB.modal({
+      title: files.length > 1 ? 'Which clip for ' + code + '?' : 'Replace the clip on ' + code + '?',
+      width: '460px',
+      body: box,
+      buttons: buttons
     });
   }
 
@@ -1722,7 +1807,7 @@
     refreshFeed: refreshFeed,
     refreshSerial: refreshSerial,
     saveFeed: saveFeed,
-    setImage: setImage,
+    setImage: setImage, clipDrop: clipDrop,
     swap: doSwap,
     armSwap: armSwap,
     swapArmed: function () { return B.swapFrom || null; },

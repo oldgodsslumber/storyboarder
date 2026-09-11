@@ -1183,3 +1183,24 @@ body.comment-mode .frame{cursor:crosshair}
 .ex-warn{font-size:12px;color:var(--accent2);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .ex-status{font-size:11px;color:var(--fg-dim);min-height:14px;font-variant-numeric:tabular-nums}
 .ex-acts{display:flex;gap:8px;justify-content:flex-end}
+
+/* what an account exposes — printed, not summarised */
+.caps{max-height:60vh;overflow:auto}
+.cap{border:1px solid var(--line);border-radius:6px;padding:8px;margin:8px 0;background:var(--bg3)}
+.cap-name{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--accent)}
+.cap-desc{font-size:11px;color:var(--fg-dim);margin:2px 0 6px}
+.cap-param{display:flex;gap:8px;align-items:baseline;font-size:11px;padding:1px 0}
+.cap-param .k{font-family:ui-monospace,Consolas,monospace;flex:0 0 150px}
+.cap-param .ty{color:var(--fg-dim);flex:0 0 120px}
+.cap-param .en{color:var(--accent2);min-width:0;overflow-wrap:anywhere}
+.cap-param.model .k{color:var(--accent)}
+
+/* choosing which clip lands on a card */
+.clip-pick .clip-row{
+  display:flex;gap:10px;align-items:baseline;width:100%;text-align:left;margin-top:5px;
+  background:var(--bg3);border:1px solid var(--line);border-radius:5px;
+  padding:6px 9px;color:var(--fg);cursor:pointer;font-size:12px;
+}
+.clip-pick .clip-row:hover{border-color:var(--accent);color:var(--accent)}
+.clip-pick .clip-row .n{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.clip-pick .clip-row .b{color:var(--fg-dim);font-variant-numeric:tabular-nums}

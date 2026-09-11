@@ -74,6 +74,7 @@
   const K_MODE = 'sb.imagine.transport';
   const K_REST = 'sb.imagine.oauthRest';   // '' unknown | 'yes' | 'no'
   const K_CAT = 'sb.imagine.catalog';      // what the account offers, per account
+  const K_DOOR = 'sb.imagine.lastDoor';    // 'mcp' | 'rest' — which one last worked
 
   /* ---------------- the model catalog ----------------
    *
@@ -1016,15 +1017,67 @@
     return '';
   }
 
+  /* ---------------- which door ----------------
+   *
+   * Signing in is a choice of surface, not just of billing: the MCP server is
+   * ImagineArt's current product and the v2 REST API is an older, smaller one
+   * — six image models against the twenty-two the website offers, and a
+   * newest Kling of 1.6 against 2.6. A signed-in session that quietly went
+   * through REST because the token happened to be accepted there was
+   * answering a question the user thought they had already answered.
+   *
+   * So: signed in means MCP first. REST is the fallback, for the one thing it
+   * is definitely better at — it takes an uploaded frame — and for whatever
+   * the account's tools turn out not to do. The API-key transport has only
+   * ever had REST.
+   *
+   * Which door actually carried the last generation is recorded, because with
+   * a fallback in play "where did this come from" stops being obvious.
+   */
+  function door() { return lsStr(K_DOOR); }
+  function noteDoor(d) { lsPut(K_DOOR, d); }
+
+  function firstOf(primary, fallback) {
+    return primary().then(function (r) {
+      if (r) return r;
+      return fallback();
+    }, function (e) {
+      /* A token the server rejected is not a reason to try the other door
+       * with the same token. */
+      if (e && e.auth) throw e;
+      return fallback().catch(function () { throw e; });
+    });
+  }
+
   /* One still. Resolves to {blob, dataUrl}. */
   function image(opts) {
     const canon = {
       prompt: opts.prompt, slug: opts.slug,
       aspect: opts.aspect, onState: opts.onState
     };
-    return restImage(canon).then(function (got) {
-      if (got) return finishImage(got);
-      return callTool('image', canon, { noImage: !opts.frame }).then(finishImage);
+    const viaMcp = function () {
+      return callTool('image', canon, { noImage: true })
+        .then(function (got) { noteDoor('mcp'); return finishImage(got); });
+    };
+    const viaRest = function () {
+      return restImage(canon).then(function (got) {
+        if (!got) return null;
+        noteDoor('rest');
+        return finishImage(got);
+      });
+    };
+    if (transport() === 'key') {
+      return viaRest().then(function (r) {
+        if (!r) throw new Error('ImagineArt did not answer with a picture.');
+        return r;
+      });
+    }
+    return firstOf(viaMcp, function () {
+      return viaRest().then(function (r) {
+        if (!r) throw new Error('Neither your account\u2019s tools nor the REST API made that ' +
+          'picture. Settings → ImagineArt → what my account can do says what it offers.');
+        return r;
+      });
     });
   }
 
@@ -1063,8 +1116,7 @@
       duration: opts.duration, frame: opts.frame, frameName: opts.frameName,
       onState: opts.onState
     };
-    return restVideo(canon).then(function (got) {
-      if (got) return finishVideo(got);
+    const viaMcp = function () {
       return (opts.frame ? blobToDataUrl(opts.frame) : Promise.resolve(''))
         .then(function (dataUrl) {
           const c2 = {
@@ -1073,7 +1125,27 @@
           };
           return callTool('video', c2, { needsImage: !!opts.frame, noImage: !opts.frame });
         })
-        .then(finishVideo);
+        .then(function (got) { noteDoor('mcp'); return finishVideo(got); });
+    };
+    const viaRest = function () {
+      return restVideo(canon).then(function (got) {
+        if (!got) return null;
+        noteDoor('rest');
+        return finishVideo(got);
+      });
+    };
+    if (transport() === 'key') {
+      return viaRest().then(function (r) {
+        if (!r) throw new Error('ImagineArt did not answer with a clip.');
+        return r;
+      });
+    }
+    return firstOf(viaMcp, function () {
+      return viaRest().then(function (r) {
+        if (!r) throw new Error('Neither your account\u2019s tools nor the REST API made that ' +
+          'clip. Settings → ImagineArt → what my account can do says what it offers.');
+        return r;
+      });
     });
   }
 
@@ -1596,6 +1668,35 @@
     return bits.join(' · ');
   }
 
+  /* Everything the account's tools say about themselves, flattened for
+   * reading. The whole question of which models an OAuth session can reach —
+   * and whether it can even be asked for one — is answered by this and
+   * nothing else, and it cannot be answered from outside an account at all.
+   * So it is one button rather than a support thread. */
+  function capabilities() {
+    return toolList(true).then(function (tools) {
+      return (tools || []).map(function (t) {
+        const ps = props(t);
+        const req = (t.inputSchema && t.inputSchema.required) || [];
+        return {
+          name: t.name,
+          description: t.description || '',
+          takesImage: hasImageParam(t),
+          params: Object.keys(ps).map(function (k) {
+            const spec = ps[k] || {};
+            return {
+              name: k,
+              type: spec.type || '',
+              required: req.indexOf(k) >= 0,
+              enum: Array.isArray(spec.enum) ? spec.enum.slice() : null,
+              isModel: SYNONYM.slug.test(k)
+            };
+          })
+        };
+      });
+    });
+  }
+
   SB.Clip = {
     play: playClip, attach: attachClip, drop: dropClip,
     label: clipLabel, meta: clipMeta
@@ -1611,6 +1712,7 @@
     account: account, whoAmI: whoAmI, balance: balance,
     /* discovery, for the Settings readout */
     discover: discover, toolList: toolList, tools: function () { return mcp.tools || []; },
+    capabilities: capabilities, door: door,
     restVerdict: function () { return lsStr(K_REST); },
     catalog: catalog, catalogAll: catalogAll, catalogSource: catalogSource,
     catalogAge: catalogAge, refreshCatalog: refreshCatalog,
