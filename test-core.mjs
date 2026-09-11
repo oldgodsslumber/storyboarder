@@ -326,6 +326,62 @@ console.log('\n— the camera move is read back, not just forbidden —');
     'and then the move is left alone — the board asked for it');
 }
 
+console.log('\n— gender is cast, not guessed —');
+{
+  const M = SB.Model, B = SB.Brand, Per = SB.Personas;
+  const p = M.newProject();
+  const sc = p.scenes[0] || M.addScene(p, 0);
+
+  const nat = Per.add(p, {
+    name: 'Nat',
+    description: 'A woman in her forties, charcoal knit. She wears no jewellery.'
+  });
+  const cast = M.addShot(p, sc.id, {});
+  cast.description = 'Nat closes the ledger.';
+  cast.personaIds = [nat.id];
+
+  const bare = M.addShot(p, sc.id, {});
+  bare.description = 'A pair of hands closes the ledger.';
+
+  /* the half that was removed on purpose, and must stay removed */
+  eq(JSON.stringify(B.castSides(p, cast)), '{"f":true,"m":false}',
+    'a cast persona tells the board what she is');
+  eq(B.genderProblems(p, cast, 'She lowers her hand onto the ledger.').length, 0,
+    'so her own pronouns are never rewritten out of a prompt');
+  eq(B.genderProblems(p, cast,
+    'Nat, a woman in a charcoal knit, closes the ledger in front of her.').length, 0,
+    'nor the words the library uses for her');
+
+  /* the half that is worth keeping */
+  const guess = B.genderProblems(p, bare, 'His hands close the ledger.');
+  eq(guess.length, 1, 'a card that casts nobody flags an invented gender');
+  eq(/"his"/.test(guess[0]), true, 'and the rewrite request names the word');
+  eq(B.genderProblems(p, bare, 'The hands close the ledger; the knuckles whiten.').length, 0,
+    'while neutral wording is left alone');
+
+  const mixed = B.genderProblems(p, cast, 'She closes the ledger while a man waits behind her.');
+  eq(mixed.length, 1, 'a man invented alongside a cast woman is still caught');
+  eq(/"man"/.test(mixed[0]) && !/"she"/.test(mixed[0]), true,
+    'and only the invented side is named — hers is the board\u2019s');
+
+  const desc = M.addShot(p, sc.id, {});
+  desc.description = 'A man in a hi-vis vest waves the van through.';
+  eq(B.genderProblems(p, desc, 'The man in the hi-vis vest raises his arm.').length, 0,
+    'a description that says who someone is counts as the board saying it');
+
+  eq(B.genderedTerms('The human resources manager checks the history of the mishap.').length, 0,
+    '"human", "manager" and "history" are not gendered words');
+  eq(B.genderedTerms('The woman\u2019s coat').length > 0, true,
+    'and a curly apostrophe is still the word it looks like');
+
+  /* the rider says it before the rewrite ever has to */
+  const sys = B.systemFor(p, cast, 'image');
+  eq(/Never neutralise a person the board has cast/.test(sys), true,
+    'the writer is told the cast keeps its own words');
+  eq(/has no gender until somebody decides one/.test(sys), true,
+    'and that nobody else gets one assigned');
+}
+
 console.log('\n— brand style —');
 {
   const B = SB.Brand;

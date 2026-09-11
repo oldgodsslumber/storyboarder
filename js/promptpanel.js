@@ -681,8 +681,11 @@
       sh.prompts[m.id].at = Date.now();
       /* Editing by hand answers the camera-move flag, whatever it now says */
       delete sh.prompts[m.id].moved;
+      delete sh.prompts[m.id].gendered;
       const mvb = cell.querySelector('.moved');
       if (mvb) mvb.remove();
+      const gbb = cell.querySelector('.gendered');
+      if (gbb) gbb.remove();
       SB.Store.touch();
       SB.Board.refreshPromptStale();
     });
@@ -693,6 +696,14 @@
     if (pr && pr[field] && SB.Personas.staleFor(P(), sh, pr.at)) {
       const b = SB.el('span', 'badge warn stale', 'cast changed');
       b.title = 'Something on this card was edited after this prompt was written.';
+      foot.appendChild(b);
+    }
+
+    /* Gender decided for somebody nobody cast, kept through its one rewrite. */
+    if (pr && pr[field] && Array.isArray(pr.gendered) && pr.gendered.length) {
+      const b = SB.el('span', 'badge warn gendered', 'gendered');
+      b.title = 'This prompt decides someone\u2019s gender — "' + pr.gendered.join('", "') +
+        '" — for a person the board has not cast. Edit them out, or cast that person.';
       foot.appendChild(b);
     }
 

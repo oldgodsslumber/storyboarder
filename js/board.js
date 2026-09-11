@@ -1583,6 +1583,19 @@
     return b;
   }
 
+  /* Gender the writer decided on for somebody the board never cast. */
+  function genderBadge(sh, m, field) {
+    const pr = sh.prompts[m.id] || null;
+    const said = pr && Array.isArray(pr.gendered) ? pr.gendered : [];
+    if (!said.length || !(pr[field] || '').trim()) return null;
+    const b = SB.el('span', 'badge warn gendered', 'gendered');
+    b.title = 'This prompt decides someone\u2019s gender — "' + said.join('", "') + '" — for ' +
+      'a person the board has not cast. It was asked to rewrite it once and kept them. ' +
+      'Edit them out, or cast that person in the reference library so it is the board saying ' +
+      'it and not the model.';
+    return b;
+  }
+
   function staleBadge(sh, m, field) {
     const pr = sh.prompts[m.id] || null;
     if (!pr || !(pr[field] || '').trim()) return null;
@@ -1623,6 +1636,8 @@
     if (st) t.appendChild(st);
     const mv = moveBadge(sh, m, field);
     if (mv) t.appendChild(mv);
+    const gb = genderBadge(sh, m, field);
+    if (gb) t.appendChild(gb);
     const gen = SB.el('button', 'mini', 'generate');
     gen.style.marginLeft = 'auto';
     gen.onclick = function () {
@@ -1651,8 +1666,11 @@
       if (badge) badge.remove();
       /* Editing by hand is the answer to the move, whatever the words now say */
       delete sh.prompts[m.id].moved;
+      delete sh.prompts[m.id].gendered;
       const mvb = wrap.querySelector('.moved');
       if (mvb) mvb.remove();
+      const gbb = wrap.querySelector('.gendered');
+      if (gbb) gbb.remove();
       SB.app.changed(false);
     });
     wrap.appendChild(ta);

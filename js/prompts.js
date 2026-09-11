@@ -87,7 +87,8 @@
       map: function (res) { return { videoPrompt: SB.H3.assemble(sc, res) }; },
       check: function (res) {
         return SB.H3.problems(sc, res)
-          .concat(SB.Brand.moveProblems(P(), shot, res.detailed_description));
+          .concat(SB.Brand.moveProblems(P(), shot, res.detailed_description))
+          .concat(SB.Brand.genderProblems(P(), shot, res.detailed_description));
       }
     };
   }
@@ -114,7 +115,11 @@
         keys: ['imagePrompt', 'videoPrompt'],
         system: sys('both', im),
         targets: [{ model: im, field: 'imagePrompt' }, { model: vm, field: 'videoPrompt' }],
-        check: function (res) { return SB.Brand.moveProblems(P(), shot, res.videoPrompt); }
+        check: function (res) {
+          return SB.Brand.moveProblems(P(), shot, res.videoPrompt)
+            .concat(SB.Brand.genderProblems(P(), shot, res.imagePrompt))
+            .concat(SB.Brand.genderProblems(P(), shot, res.videoPrompt));
+        }
       });
       return jobs;
     }
@@ -123,7 +128,8 @@
         text: PREAMBLE + 'Return JSON with the key "imagePrompt".\n\n' + imageBlock(shot, im),
         keys: ['imagePrompt'],
         system: sys('image', im),
-        targets: [{ model: im, field: 'imagePrompt' }]
+        targets: [{ model: im, field: 'imagePrompt' }],
+        check: function (res) { return SB.Brand.genderProblems(P(), shot, res.imagePrompt); }
       });
     }
     if (wantV) {
@@ -132,7 +138,10 @@
         keys: ['videoPrompt'],
         system: sys('video', vm),
         targets: [{ model: vm, field: 'videoPrompt' }],
-        check: function (res) { return SB.Brand.moveProblems(P(), shot, res.videoPrompt); }
+        check: function (res) {
+          return SB.Brand.moveProblems(P(), shot, res.videoPrompt)
+            .concat(SB.Brand.genderProblems(P(), shot, res.videoPrompt));
+        }
       });
     }
     return jobs;
@@ -330,11 +339,25 @@
           /* One rewrite is all it gets. A move that survives it is not thrown
              away — the rest of the paragraph is usually right — but it is
              marked, so nobody ships a push in they never asked for. */
+          const pr = shot.prompts[t.model.id];
           if (t.field === 'videoPrompt') {
-            const pr = shot.prompts[t.model.id];
             const left = SB.Brand.moveProblems(P(), shot, vals[t.field]).length
               ? SB.Brand.movesIn(vals[t.field]) : [];
             if (left.length) pr.moved = left; else delete pr.moved;
+          }
+          /* Same bargain as the camera: the prompt is kept, and the words it
+             decided on its own are named on the card. */
+          const g = SB.Brand.genderProblems(P(), shot, vals[t.field]);
+          if (g.length) {
+            const said = SB.Brand.genderedTerms(vals[t.field]);
+            const allowed = SB.Brand.castSides(P(), shot);
+            pr.gendered = said.filter(function (w) {
+              const s2 = SB.Brand.castSides(P(), { description: w });
+              return (s2.f && !allowed.f) || (s2.m && !allowed.m);
+            });
+            if (!pr.gendered.length) delete pr.gendered;
+          } else {
+            delete pr.gendered;
           }
         });
       }).catch(function (e) {

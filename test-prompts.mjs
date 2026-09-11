@@ -31,7 +31,7 @@ window.fetch = function (url, opts) {
     r = { ok: true, status: 200, text: JSON.stringify({
       candidates: [{ content: { parts: [{ text: JSON.stringify(
         { imagePrompt: 'A quiet office, 35mm, f/2, window light.',
-          videoPrompt: 'She sets the cup down, looks up, then away. Two beats.' }) }] } }] }) };
+          videoPrompt: 'The cup goes down; the hands settle flat. Two beats.' }) }] } }] }) };
   }
   return Promise.resolve({
     ok: r.ok, status: r.status,

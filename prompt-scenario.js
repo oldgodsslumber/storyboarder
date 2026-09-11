@@ -85,6 +85,65 @@
       t('the cast reaches the request', /CAST/.test(sys2) && /Ops lead/.test(sys2), '');
       t('with the reference-image numbering', /image 1 = Ops lead/.test(sys2), '');
 
+      /* ---------- a gender nobody cast ---------- */
+      {
+        const guessed = 'A businessman leans over the desk, his sleeve catching the lamp.';
+        const neutral = 'A figure leans over the desk, one sleeve catching the lamp.';
+        window.__calls = [];
+        window.__reply = function (n) {
+          return { ok: true, status: 200, text: JSON.stringify({ candidates: [{ content: {
+            parts: [{ text: JSON.stringify({ imagePrompt: n === 1 ? guessed : neutral }) }] } }] }) };
+        };
+        shots.b.description = 'Someone leans over the desk in the dark.';
+        shots.b.personaIds = [];
+        await SB.Prompts.generateFor(shots.b, { image: true });
+        t('a gender the board never cast buys one corrective call',
+          window.__calls.length === 2, window.__calls.length);
+        const ask = window.__calls[1].body.contents[0].parts[0].text;
+        t('and the correction names the words',
+          /decided someone/.test(ask) && /businessman/.test(ask), ask.slice(-200));
+        const imId = P().settings.imageModelId;
+        t('the neutral rewrite is what gets stored',
+          shots.b.prompts[imId].imagePrompt === neutral, shots.b.prompts[imId].imagePrompt);
+        t('and nothing is flagged', !shots.b.prompts[imId].gendered, '');
+
+        /* the cast is the authority: with her cast, her pronouns cost nothing */
+        const nat = SB.Personas.add(P(), {
+          name: 'Nat', description: 'A woman in her forties, charcoal knit.'
+        });
+        shots.b.personaIds = [nat.id];
+        window.__calls = [];
+        window.__reply = function () {
+          return { ok: true, status: 200, text: JSON.stringify({ candidates: [{ content: {
+            parts: [{ text: JSON.stringify({
+              imagePrompt: 'Nat leans over the desk, her sleeve catching the lamp.'
+            }) }] } }] }) };
+        };
+        await SB.Prompts.generateFor(shots.b, { image: true });
+        t('a cast persona\u2019s own pronouns cost no second call',
+          window.__calls.length === 1, window.__calls.length);
+        t('and are never flagged', !shots.b.prompts[imId].gendered, '');
+
+        /* one that will not let go */
+        window.__calls = [];
+        shots.b.personaIds = [];
+        window.__reply = function () {
+          return { ok: true, status: 200, text: JSON.stringify({ candidates: [{ content: {
+            parts: [{ text: JSON.stringify({ imagePrompt: guessed }) }] } }] }) };
+        };
+        await SB.Prompts.generateFor(shots.b, { image: true });
+        t('a guess that survives the rewrite is kept, not thrown away',
+          shots.b.prompts[imId].imagePrompt === guessed, shots.b.prompts[imId].imagePrompt);
+        t('and the prompt is flagged with the words it chose',
+          Array.isArray(shots.b.prompts[imId].gendered) &&
+          shots.b.prompts[imId].gendered.indexOf('businessman') >= 0,
+          JSON.stringify(shots.b.prompts[imId].gendered));
+
+        window.__reply = null;
+        shots.b.personaIds = [];
+        shots.b.description = 'A desk in the dark.';
+      }
+
       /* ---------- a camera move nobody asked for ---------- */
       {
         const moved = 'The camera pushes in slowly on her hands as she lets go of the cup.';
@@ -180,11 +239,17 @@
         window.__calls.length === 2 && !window.__calls[1].body.generationConfig.responseSchema, '');
       window.__reply = null;
 
-      /* ---------- a written prompt is stored as written ----------
+      /* ---------- a cast woman is written as a woman ----------
          The app used to scan every draft for gendered words and spend a second
-         call rewriting them out. It neutered the descriptions the reference
-         frames are generated from, and a model handed a genderless person
-         draws a man — so the rule, the scan and the rewrite are all gone. */
+         call rewriting them out, whoever they were about. It neutered the
+         descriptions the reference frames are generated from, and a model
+         handed a genderless person draws a man. The scan is back, but the cast
+         is the authority — so this, the case that broke it, must cost nothing
+         and must be stored exactly as the writer put it. */
+      const her = SB.Personas.add(P(), {
+        name: 'Dana', description: 'A businesswoman in her fifties, navy coat.'
+      });
+      shots.a.personaIds = [her.id];
       window.__calls = [];
       window.__reply = function () {
         return { ok: true, status: 200, text: JSON.stringify({
@@ -192,19 +257,21 @@
             imagePrompt: 'A businesswoman adjusts her collar by the window.' }) }] } }] }) };
       };
       await SB.Prompts.generateFor(shots.a, { image: true });
-      t('a prompt naming a woman costs one call, not two', window.__calls.length === 1,
+      t('a prompt naming a cast woman costs one call, not two', window.__calls.length === 1,
         window.__calls.length);
       t('and it is stored exactly as written',
         shots.a.prompts[im.id].imagePrompt.indexOf('businesswoman') >= 0,
         shots.a.prompts[im.id].imagePrompt);
-      t('nothing is flagged, because nothing is policed',
-        !(shots.a.prompts[im.id].flagged || {}).imagePrompt,
-        JSON.stringify(shots.a.prompts[im.id].flagged || {}));
+      t('nothing is flagged, because the board cast her',
+        !shots.a.prompts[im.id].gendered,
+        JSON.stringify(shots.a.prompts[im.id].gendered || null));
       /* "Diversity across age, gender presentation…" is a casting note and
-         stays; what had to go is the instruction never to say so. */
-      t('and nothing in the system message forbids gendered language',
-        !/gendered language|no gender references/i.test(
-          SB.Brand.systemFor(SB.app.project, shots.a, 'image')), '');
+         stays; what had to go is the instruction never to say so at all. */
+      const gsys = SB.Brand.systemFor(SB.app.project, shots.a, 'image');
+      t('and nothing in the system message forbids saying who she is',
+        !/no gender references|avoid gendered|never use gendered/i.test(gsys) &&
+        /Never neutralise a person the board has cast/.test(gsys), '');
+      shots.a.personaIds = [];
       window.__reply = null;
 
       /* ---------- the failure paths say what to do ---------- */

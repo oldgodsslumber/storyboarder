@@ -624,6 +624,20 @@ Two things the app adds that a style guide can't know on its own:
   in order, and which beat this frame is — so the writer isn't composing in a vacuum, and
   the location, lighting mood and grade stay coherent across a scene. "No shot" fragments
   are left out. *Who* and *what* is in the frame is the reference library's job, below.
+- **Gender is cast, not guessed.** Returned prompts are scanned for gendered nouns, titles
+  and pronouns — but the **cast is the authority**. Anyone this card casts, and anyone the
+  shot description names, keeps exactly the words the board uses for them: a persona who is
+  a woman is written as a woman, every time. What gets caught is a gender the writer decided
+  on for somebody nobody cast — the passer-by who becomes a businessman, the pair of hands
+  that become his. That buys one rewrite naming the words, and if it survives, a **gendered**
+  badge. Editing the prompt clears it. (`human`, `manager` and `history` are not false
+  positives.)
+
+  This is deliberately *half* of an older rule. The flat no-gendered-language version was
+  removed because it neutered the persona descriptions the reference frames are generated
+  from, and a model handed a genderless person draws a man — the library kept coming back as
+  men who were not the people in the library. The half worth keeping is the other one.
+
 - **The locked-off camera is verified, not just requested.** A returned video prompt is read
   back for camera language — pushes, pulls, dollies, pans, tilts, zooms, cranes, orbits,
   rack focus, handheld, reframes, and anything the camera itself is *said* to do. A sentence

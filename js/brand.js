@@ -184,12 +184,131 @@
     'an actual moment, and a camera that holds unless the shot description asks for a move.'
   ].join('\n');
 
-  /* There was a no-gendered-language rule here, enforced with a word list and
-   * a corrective rewrite. It is gone on purpose. Stripping the gender out of a
-   * subject's description does not make the picture neutral — it makes the
-   * image model guess, and it guesses male. A reference frame has to be
-   * allowed to say what the person it is a reference FOR actually looks like.
-   */
+  /* ---------------- gender is cast, not guessed ----------------
+   *
+   * There was a flat no-gendered-language rule here once, and it was removed
+   * because it backfired exactly where it mattered: a persona description with
+   * the gender stripped out does not produce a neutral picture, it produces
+   * whatever the image model assumes, and it assumes a man. The people in the
+   * library came back as men who were not the people in the library.
+   *
+   * The half worth keeping is the other one. Where the board HAS cast someone,
+   * their gender is a fact of the board and the prompt must carry it. Where it
+   * has not — a passer-by, a second figure at the desk, a pair of hands — the
+   * writer invents one, and what it invents is not a decision anybody made.
+   *
+   * So the word list is back, and the cast is the authority: a term is fine if
+   * the people on this card, or the description itself, already say it. A term
+   * on a card that casts nobody is an invention, and buys one rewrite. */
+  const FEMININE = ['she', 'her', 'hers', 'herself', 'woman', 'women', "woman's",
+    'female', 'females', 'girl', 'girls', 'gal', 'gals', 'lady', 'ladies',
+    'mrs', 'ms', 'miss', 'madam', "ma'am",
+    'wife', 'mother', 'mom', 'mum', 'daughter', 'sister', 'aunt', 'niece',
+    'businesswoman', 'businesswomen', 'saleswoman', 'spokeswoman', 'chairwoman',
+    'actress', 'waitress', 'hostess', 'stewardess'];
+  const MASCULINE = ['he', 'him', 'his', 'himself', 'man', 'men', "man's",
+    'male', 'males', 'boy', 'boys', 'guy', 'guys', 'gentleman', 'gentlemen',
+    'mr', 'sir',
+    'husband', 'father', 'dad', 'son', 'brother', 'uncle', 'nephew',
+    'businessman', 'businessmen', 'salesman', 'spokesman', 'chairman'];
+
+  /* Word-bounded, so "human", "manager", "therapist" and "history" are safe.
+   * The apostrophes are the curly one too — a model writes "woman’s". */
+  function listRe(words) {
+    const esc = words.map(function (w) {
+      return w.replace(/'/g, "['\u2019]").replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    });
+    return new RegExp('\\b(' + esc.join('|') + ')\\b', 'gi');
+  }
+  const FEM_RE = listRe(FEMININE);
+  const MASC_RE = listRe(MASCULINE);
+
+  function hits(re, text) {
+    const found = String(text || '').match(re);
+    if (!found) return [];
+    const seen = {}, out = [];
+    found.forEach(function (h) {
+      const k = h.toLowerCase().replace(/\u2019/g, "'");
+      if (!seen[k]) { seen[k] = 1; out.push(k); }
+    });
+    return out;
+  }
+
+  /* Which gendered words a piece of text used, whichever side they are on. */
+  function genderedTerms(text) {
+    return hits(FEM_RE, text).concat(hits(MASC_RE, text));
+  }
+
+  /* Which sides a piece of text commits to. */
+  function sidesIn(text) {
+    return { f: hits(FEM_RE, text).length > 0, m: hits(MASC_RE, text).length > 0 };
+  }
+
+  /* What this card has actually cast: every persona on it — their name, their
+   * description, the prompt written for their reference frame — plus whatever
+   * the person storyboarding wrote in the description and the extra fields.
+   * All of it is the board's own word on who these people are. */
+  function castSides(p, shot) {
+    const out = { f: false, m: false };
+    if (!shot) return out;
+    const bits = [shot.description, shot.type];
+    if (shot.fields) {
+      Object.keys(shot.fields).forEach(function (k) { bits.push(shot.fields[k]); });
+    }
+    /* The same people the CAST block describes: every subject in the feed, not
+     * only the ones formally cast — a subject can be marked without being
+     * cast, and the writer is told about them either way. */
+    let people = [];
+    try {
+      people = SB.Refs.feed(p, shot)
+        .filter(function (e) { return e.kind === 'subject'; })
+        .map(function (e) { return e.subject; })
+        .filter(Boolean);
+    } catch (e) { people = []; }
+    if (!people.length && SB.Personas.forShot) people = SB.Personas.forShot(p, shot) || [];
+    people.forEach(function (per) {
+      bits.push(per.name, per.description, per.imagePrompt);
+      (SB.Personas.imagesOf(per) || []).forEach(function (im) { bits.push(im.label); });
+    });
+    const text = bits.filter(function (x) { return typeof x === 'string' && x; }).join('. ');
+    const s = sidesIn(text);
+    out.f = s.f; out.m = s.m;
+    return out;
+  }
+
+  /* [] when every gendered word in the prompt is one the board already said;
+   * otherwise one sentence naming the invented ones. */
+  function genderProblems(p, shot, prompt) {
+    const allowed = castSides(p, shot);
+    const bad = [];
+    if (!allowed.f) hits(FEM_RE, prompt).forEach(function (w) { bad.push(w); });
+    if (!allowed.m) hits(MASC_RE, prompt).forEach(function (w) { bad.push(w); });
+    if (!bad.length) return [];
+    const cast = allowed.f || allowed.m;
+    return ['You decided someone\u2019s gender: "' + bad.join('", "') + '". ' +
+      (cast
+        ? 'The people this card casts are described in the CAST block, and nobody there is ' +
+          'that. Whoever you used those words for is not cast, so their gender is not yours ' +
+          'to pick. '
+        : 'Nobody on this card is cast, and nothing in the shot description says it, so that ' +
+          'is a guess. ') +
+      'Write them again neutrally \u2014 "the subject", "the person", "they", "a figure", or ' +
+      'no pronoun at all. Everyone the CAST block does describe keeps exactly the words it ' +
+      'uses for them. Change nothing else.'];
+  }
+
+  /* Said to the writer up front, so the rewrite above is the exception rather
+   * than the routine. Not sent to the reference-frame writer, which has the
+   * opposite job: there, saying what the person looks like IS the work. */
+  const GENDER_RIDER = [
+    'WHO THESE PEOPLE ARE',
+    '- Anyone the CAST block describes is exactly who it says they are: use its words for ' +
+    'them, gendered or not. Never neutralise a person the board has cast.',
+    '- Anyone it does NOT describe — a passer-by, a second figure, a pair of hands, a face in ' +
+    'the background — has no gender until somebody decides one, and that is not your decision. ' +
+    'Write them as "the subject", "the person", "a figure", "they", or with no pronoun at all.',
+    '- The shot description is the board\u2019s own word too: if it says who someone is, follow it.'
+  ].join('\n');
 
   /* ---------------- the camera, checked rather than asked ----------------
    *
@@ -384,6 +503,10 @@
         'the grain, the lighting and the lens. Putting any of it back into words is what turns ' +
         'an edit into a re-render. Change what the description asks for; inherit the rest.');
     }
+    if (role === 'image' || role === 'video' || role === 'both') {
+      if (parts.length) parts.push('');
+      parts.push(GENDER_RIDER);
+    }
     if (role === 'image' || role === 'both') {
       if (parts.length) parts.push('');
       parts.push(FIRST_FRAME_RIDER);
@@ -432,6 +555,8 @@
   SB.Brand = {
     DEFAULT: DEFAULT_BRAND,
     movesIn: movesIn, moveAsked: moveAsked, moveProblems: moveProblems,
+    genderedTerms: genderedTerms, castSides: castSides,
+    genderProblems: genderProblems, GENDER_RIDER: GENDER_RIDER,
     VIDEO_RIDER: VIDEO_RIDER,
     FIRST_FRAME_RIDER: FIRST_FRAME_RIDER,
     DERIVED_RIDER: DERIVED_RIDER,
