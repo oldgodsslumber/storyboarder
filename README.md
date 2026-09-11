@@ -630,7 +630,12 @@ Two things the app adds that a style guide can't know on its own:
   **gendered** badge listing them. (`human`, `manager` and the like are not false positives.)
 
 Video prompts get the same house style plus motion rules — wardrobe and location must not
-change mid-shot, camera moves stay restrained and motivated.
+change mid-shot, and **the camera is locked off**. No push, pan, tilt, dolly, zoom, orbit or
+handheld drift is written unless the shot description asks for one *in words* ("push in",
+"pan left", "handheld"); everything else moves inside a static frame. Asking for a move in
+the description is the only thing that turns it on, and then only that move is written.
+Telling the writer to "name the move and its speed" was an order to invent one, which is
+what it did, on every shot.
 
 ## References — the library
 

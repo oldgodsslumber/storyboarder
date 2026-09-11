@@ -215,6 +215,53 @@ console.log('\n— free-call counting —');
   eq(G.limit('gemini-3.5-flash'), 0, 'unknown limits stay unset rather than guessed');
 }
 
+console.log('\n— the camera holds —');
+{
+  const M = SB.Model, B = SB.Brand;
+  const p = M.newProject();
+  const sc = p.scenes[0] || M.addScene(p, 0);
+  const sh = M.addShot(p, sc.id, { description: 'She reads the page and puts it down.' });
+
+  /* the rider rides on every video job, brand on or off */
+  const vid = B.systemFor(p, sh, 'video');
+  eq(/THE CAMERA DOES NOT MOVE/.test(vid), true, 'a video job is told the camera is locked off');
+  eq(/asks for in words/.test(vid), true, 'and that a move is something the description asks for');
+  eq(/Name the move and its speed/.test(vid), false,
+    'and is no longer told to name a move, which was an order to invent one');
+  p.settings.brand.enabled = false;
+  eq(/THE CAMERA DOES NOT MOVE/.test(B.systemFor(p, sh, 'video')), true,
+    'the rule survives the house style being switched off');
+  p.settings.brand.enabled = true;
+  eq(/THE CAMERA DOES NOT MOVE/.test(B.systemFor(p, sh, 'image')), false,
+    'a still is not told about camera movement at all');
+
+  /* both templates carry it, and the H3 rewrite actually matched */
+  eq(/LOCKED OFF/.test(M.VID_TPL), true, 'the video template says the camera is locked off');
+  eq(/Name the camera move and its speed/.test(M.VID_TPL), false,
+    'and no longer asks for a move by name');
+  eq(M.H3_VID_TPL !== M.H3_VID_TPL_V2, true, 'the H3 format was rewritten, not left behind');
+  eq(/LOCKED OFF/.test(M.H3_VID_TPL), true, 'and says the same thing in its own words');
+  eq(/and the camera move \(type, amplitude/.test(M.H3_VID_TPL), false,
+    'with the clause that asked for one gone');
+
+  /* an untouched board is brought up to date; an edited one is not */
+  const stale = M.migrate(JSON.parse(JSON.stringify(Object.assign(M.newProject(), {
+    settings: Object.assign({}, M.newProject().settings, {
+      models: [{ id: 'm1', name: 'LTX 2.3', kind: 'video', videoTemplate: M.VID_TPL_V2 }]
+    })
+  }))));
+  eq(stale.settings.models[0].videoTemplate, M.VID_TPL,
+    'a board carrying the old video template picks up the new rule');
+
+  const mine = M.migrate(JSON.parse(JSON.stringify(Object.assign(M.newProject(), {
+    settings: Object.assign({}, M.newProject().settings, {
+      models: [{ id: 'm1', name: 'LTX 2.3', kind: 'video', videoTemplate: 'MY OWN TEMPLATE' }]
+    })
+  }))));
+  eq(mine.settings.models[0].videoTemplate, 'MY OWN TEMPLATE',
+    'and a hand-edited one is left exactly alone');
+}
+
 console.log('\n— brand style —');
 {
   const B = SB.Brand;

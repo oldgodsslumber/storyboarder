@@ -40,7 +40,7 @@
    * frame is SUPPLIED to an image-to-video call, so none of it needs writing
    * down; saying that outright, and saying what to write instead, is the
    * difference between a motion prompt and a second description of the shot. */
-  const VID_TPL =
+  const VID_TPL_V2 =
     'Write a single image-to-video prompt for {{MODEL}}. The first frame is supplied with the ' +
     'call as a picture — the model can already see the set, the wardrobe, the faces, the light ' +
     'and the grade, so none of that is yours to write.\n' +
@@ -52,11 +52,30 @@
     'Keep it one paragraph, no preamble.\n\n' +
     'SHOT DESCRIPTION:\n{{DESCRIPTION}}';
 
+  /* "Name the camera move and its speed" is an order to produce one, and it
+   * was obeyed: every shot came back with a slow push nobody had asked for.
+   * The camera holds unless the description asks for a move. */
+  const VID_TPL =
+    'Write a single image-to-video prompt for {{MODEL}}. The first frame is supplied with the ' +
+    'call as a picture — the model can already see the set, the wardrobe, the faces, the light ' +
+    'and the grade, so none of that is yours to write.\n' +
+    'Shot type: {{SHOT_TYPE}}. Scene: {{SCENE}}.\n' +
+    'Write the MOTION out of that frame, in order: what moves first, what follows, at what pace, ' +
+    'and where the shot ends. Be specific about the action — which hand, which direction, how ' +
+    'far, how fast, what the body and the face are doing.\n' +
+    'THE CAMERA IS LOCKED OFF — a static frame on sticks. Write no push, pan, tilt, dolly, ' +
+    'zoom, orbit, handheld drift or reframe unless the shot description below asks for one in ' +
+    'words; if it does, write that move and name its speed, and no other. Otherwise say nothing ' +
+    'about the camera at all: the subject moves, the frame does not.\n' +
+    'Open on the action, not on the scene. Do not re-describe anything already in the frame.\n' +
+    'Keep it one paragraph, no preamble.\n\n' +
+    'SHOT DESCRIPTION:\n{{DESCRIPTION}}';
+
   /* MiniMax H3 does not take a paragraph. Its published prompt guide
    * (VIDEO_PROMPT_WRITING_GUIDE_ref_en.md) specifies a six-section rewrite with
    * its own reference labels, relationship markers and shot syntax; a prose
    * prompt is simply the wrong shape for it. Everything below is that format. */
-  const H3_VID_TPL =
+  const H3_VID_TPL_V2 =
     'Write the prose of a MiniMax H3 full-reference video prompt, starting from the first frame ' +
     'described below.\n' +
     'The app has already written subject_definitions and retention_analysis from the board, so ' +
@@ -83,6 +102,16 @@
     'SHOT DESCRIPTION:\n{{DESCRIPTION}}\n\n' +
     'THE SCRIPT THIS SHOT COVERS — what is happening, for action and timing only. The video is ' +
     'silent, so none of it is spoken aloud in what you write:\n{{SCRIPT}}';
+
+  /* One clause of the H3 format, under the same rule as the paragraph above.
+   * Written as a replacement rather than a second copy so the two versions
+   * cannot drift apart in anything but the sentence that changed. */
+  const H3_CAM_V2 = 'and the camera move ' +
+    '(type, amplitude and speed, in natural English). ';
+  const H3_CAM = 'The camera is LOCKED OFF unless the shot description asks for a move ' +
+    'in words — then, and only then, give its type, amplitude and speed in natural English; ' +
+    'otherwise state that the camera holds. ';
+  const H3_VID_TPL = H3_VID_TPL_V2.replace(H3_CAM_V2, H3_CAM);
 
   const H3_REF_TPL =
     'Reference images are supplied in the numbered order above. Their <Picture N> labels and the ' +
@@ -536,6 +565,15 @@
      * an edited one is the user's and is left exactly alone. */
     s.models.forEach(function (m) {
       if (m.videoTemplate === VID_TPL_V1) m.videoTemplate = VID_TPL;
+    });
+
+    /* Telling the writer to name the camera move is telling it there is one,
+     * and it duly invented one for every shot. Same rule as above: a board
+     * carrying the untouched wording is brought up to date, an edited one is
+     * the user's and is left alone. */
+    s.models.forEach(function (m) {
+      if (m.videoTemplate === VID_TPL_V2) m.videoTemplate = VID_TPL;
+      if (m.videoTemplate === H3_VID_TPL_V2) m.videoTemplate = H3_VID_TPL;
     });
 
     s.models.forEach(function (m) {
@@ -1129,7 +1167,8 @@
     CARD_COLORS: CARD_COLORS,
     DEFAULT_SHOT_TYPES: DEFAULT_SHOT_TYPES,
     IMG_TPL: IMG_TPL, IMG_TPL_V1: IMG_TPL_V1,
-    VID_TPL: VID_TPL, VID_TPL_V1: VID_TPL_V1, tplsFor: tplsFor,
+    VID_TPL: VID_TPL, VID_TPL_V1: VID_TPL_V1, VID_TPL_V2: VID_TPL_V2,
+    H3_VID_TPL: H3_VID_TPL, H3_VID_TPL_V2: H3_VID_TPL_V2, tplsFor: tplsFor,
     FRAME_ONLY: FRAME_ONLY, FULL_REFERENCE: FULL_REFERENCE,
     videoInherits: videoInherits,
     newProject: newProject, migrate: migrate, foldLineEndings: foldLineEndings,

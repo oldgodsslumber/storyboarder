@@ -126,12 +126,25 @@
    * handed the lit frame is the one thing not worth a word. What it was really
    * protecting — the look not drifting mid-shot — is now stated as a thing that
    * does not change rather than a thing to write down. */
+  /* "Camera moves are restrained and motivated" is a note about taste, and a
+   * writer reads taste as permission: asked to name the move and its speed, it
+   * named one on every shot, because the instruction assumed there was one.
+   * Every board came back a slow push. The camera is now locked off by
+   * default, and a move is something the shot description has to ask for in so
+   * many words — which is where the person storyboarding can actually say it.
+   * Restraint is not a matter of degree here; it is the absence of a move. */
   const VIDEO_RIDER = [
     'MOTION',
-    '- Camera moves are restrained and motivated — no flourishes the scene has not earned.',
-    '- Name the move and its speed: a slow push, a short handheld drift, a settle. Not "cinematic".',
+    '- THE CAMERA DOES NOT MOVE. It is locked off on sticks: no push, no pull, no pan, tilt, ' +
+    'dolly, track, crane, orbit, zoom, handheld drift, sway, shake, rack or reframe. Do not ' +
+    'write one in, and do not describe the camera at all unless the next line applies.',
+    '- The ONLY exception is a move the shot description asks for in words — "push in", "pan ' +
+    'left", "handheld", "tilt up". If it does, write that move and only that move, and name ' +
+    'its speed. Nothing in the house style, the shot type or the scene is such a request.',
+    '- Everything that moves, moves inside a still frame: the subject, the hands, the face, the ' +
+    'light, the things around them. That is where the shot comes from.',
     '- Movement is documentary-real: the pace of an actual moment, not choreography.',
-    '- End the shot somewhere: say where the camera settles and what the last beat is.'
+    '- End the shot somewhere: say what the last beat is and where the action leaves off.'
   ].join('\n');
 
   /* THE fix for a video prompt that comes back as a second description of the
@@ -149,8 +162,8 @@
     'wardrobe, hair, faces, colour, lighting, focal length, aperture, depth of field, grade or ' +
     'grain. Restating any of it re-renders the shot instead of moving it.',
     '- Open on the action. Spend the paragraph on movement: what moves, in what order, how far, ' +
-    'how fast, what the face and the body do, what the camera does and at what speed, and where ' +
-    'the shot ends.',
+    'how fast, and what the face and the body do. The camera is locked off unless the shot ' +
+    'description asks for a move, so it is usually not part of the answer.',
     '- Describe appearance ONLY where it CHANGES during the shot — a coat coming off, a lamp ' +
     'switched on, a screen changing state.',
     '- Whoever arrives after the first frame is not in the picture, so what they LOOK like is ' +

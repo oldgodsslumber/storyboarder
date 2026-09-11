@@ -1235,7 +1235,7 @@ body.comment-mode .frame{cursor:crosshair}
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-09-11 18:34 · 82e6791+";</script>
+<script>window.SB_BUILD = "2026-09-11 18:58 · 10c7a23+";</script>
 
 <div id="app">
 
@@ -3041,12 +3041,25 @@ window.SB = window.SB || {};
    * handed the lit frame is the one thing not worth a word. What it was really
    * protecting — the look not drifting mid-shot — is now stated as a thing that
    * does not change rather than a thing to write down. */
+  /* "Camera moves are restrained and motivated" is a note about taste, and a
+   * writer reads taste as permission: asked to name the move and its speed, it
+   * named one on every shot, because the instruction assumed there was one.
+   * Every board came back a slow push. The camera is now locked off by
+   * default, and a move is something the shot description has to ask for in so
+   * many words — which is where the person storyboarding can actually say it.
+   * Restraint is not a matter of degree here; it is the absence of a move. */
   const VIDEO_RIDER = [
     'MOTION',
-    '- Camera moves are restrained and motivated — no flourishes the scene has not earned.',
-    '- Name the move and its speed: a slow push, a short handheld drift, a settle. Not "cinematic".',
+    '- THE CAMERA DOES NOT MOVE. It is locked off on sticks: no push, no pull, no pan, tilt, ' +
+    'dolly, track, crane, orbit, zoom, handheld drift, sway, shake, rack or reframe. Do not ' +
+    'write one in, and do not describe the camera at all unless the next line applies.',
+    '- The ONLY exception is a move the shot description asks for in words — "push in", "pan ' +
+    'left", "handheld", "tilt up". If it does, write that move and only that move, and name ' +
+    'its speed. Nothing in the house style, the shot type or the scene is such a request.',
+    '- Everything that moves, moves inside a still frame: the subject, the hands, the face, the ' +
+    'light, the things around them. That is where the shot comes from.',
     '- Movement is documentary-real: the pace of an actual moment, not choreography.',
-    '- End the shot somewhere: say where the camera settles and what the last beat is.'
+    '- End the shot somewhere: say what the last beat is and where the action leaves off.'
   ].join('\n');
 
   /* THE fix for a video prompt that comes back as a second description of the
@@ -3064,8 +3077,8 @@ window.SB = window.SB || {};
     'wardrobe, hair, faces, colour, lighting, focal length, aperture, depth of field, grade or ' +
     'grain. Restating any of it re-renders the shot instead of moving it.',
     '- Open on the action. Spend the paragraph on movement: what moves, in what order, how far, ' +
-    'how fast, what the face and the body do, what the camera does and at what speed, and where ' +
-    'the shot ends.',
+    'how fast, and what the face and the body do. The camera is locked off unless the shot ' +
+    'description asks for a move, so it is usually not part of the answer.',
     '- Describe appearance ONLY where it CHANGES during the shot — a coat coming off, a lamp ' +
     'switched on, a screen changing state.',
     '- Whoever arrives after the first frame is not in the picture, so what they LOOK like is ' +
@@ -7976,7 +7989,7 @@ window.SB = window.SB || {};
    * frame is SUPPLIED to an image-to-video call, so none of it needs writing
    * down; saying that outright, and saying what to write instead, is the
    * difference between a motion prompt and a second description of the shot. */
-  const VID_TPL =
+  const VID_TPL_V2 =
     'Write a single image-to-video prompt for {{MODEL}}. The first frame is supplied with the ' +
     'call as a picture — the model can already see the set, the wardrobe, the faces, the light ' +
     'and the grade, so none of that is yours to write.\n' +
@@ -7988,11 +8001,30 @@ window.SB = window.SB || {};
     'Keep it one paragraph, no preamble.\n\n' +
     'SHOT DESCRIPTION:\n{{DESCRIPTION}}';
 
+  /* "Name the camera move and its speed" is an order to produce one, and it
+   * was obeyed: every shot came back with a slow push nobody had asked for.
+   * The camera holds unless the description asks for a move. */
+  const VID_TPL =
+    'Write a single image-to-video prompt for {{MODEL}}. The first frame is supplied with the ' +
+    'call as a picture — the model can already see the set, the wardrobe, the faces, the light ' +
+    'and the grade, so none of that is yours to write.\n' +
+    'Shot type: {{SHOT_TYPE}}. Scene: {{SCENE}}.\n' +
+    'Write the MOTION out of that frame, in order: what moves first, what follows, at what pace, ' +
+    'and where the shot ends. Be specific about the action — which hand, which direction, how ' +
+    'far, how fast, what the body and the face are doing.\n' +
+    'THE CAMERA IS LOCKED OFF — a static frame on sticks. Write no push, pan, tilt, dolly, ' +
+    'zoom, orbit, handheld drift or reframe unless the shot description below asks for one in ' +
+    'words; if it does, write that move and name its speed, and no other. Otherwise say nothing ' +
+    'about the camera at all: the subject moves, the frame does not.\n' +
+    'Open on the action, not on the scene. Do not re-describe anything already in the frame.\n' +
+    'Keep it one paragraph, no preamble.\n\n' +
+    'SHOT DESCRIPTION:\n{{DESCRIPTION}}';
+
   /* MiniMax H3 does not take a paragraph. Its published prompt guide
    * (VIDEO_PROMPT_WRITING_GUIDE_ref_en.md) specifies a six-section rewrite with
    * its own reference labels, relationship markers and shot syntax; a prose
    * prompt is simply the wrong shape for it. Everything below is that format. */
-  const H3_VID_TPL =
+  const H3_VID_TPL_V2 =
     'Write the prose of a MiniMax H3 full-reference video prompt, starting from the first frame ' +
     'described below.\n' +
     'The app has already written subject_definitions and retention_analysis from the board, so ' +
@@ -8019,6 +8051,16 @@ window.SB = window.SB || {};
     'SHOT DESCRIPTION:\n{{DESCRIPTION}}\n\n' +
     'THE SCRIPT THIS SHOT COVERS — what is happening, for action and timing only. The video is ' +
     'silent, so none of it is spoken aloud in what you write:\n{{SCRIPT}}';
+
+  /* One clause of the H3 format, under the same rule as the paragraph above.
+   * Written as a replacement rather than a second copy so the two versions
+   * cannot drift apart in anything but the sentence that changed. */
+  const H3_CAM_V2 = 'and the camera move ' +
+    '(type, amplitude and speed, in natural English). ';
+  const H3_CAM = 'The camera is LOCKED OFF unless the shot description asks for a move ' +
+    'in words — then, and only then, give its type, amplitude and speed in natural English; ' +
+    'otherwise state that the camera holds. ';
+  const H3_VID_TPL = H3_VID_TPL_V2.replace(H3_CAM_V2, H3_CAM);
 
   const H3_REF_TPL =
     'Reference images are supplied in the numbered order above. Their <Picture N> labels and the ' +
@@ -8472,6 +8514,15 @@ window.SB = window.SB || {};
      * an edited one is the user's and is left exactly alone. */
     s.models.forEach(function (m) {
       if (m.videoTemplate === VID_TPL_V1) m.videoTemplate = VID_TPL;
+    });
+
+    /* Telling the writer to name the camera move is telling it there is one,
+     * and it duly invented one for every shot. Same rule as above: a board
+     * carrying the untouched wording is brought up to date, an edited one is
+     * the user's and is left alone. */
+    s.models.forEach(function (m) {
+      if (m.videoTemplate === VID_TPL_V2) m.videoTemplate = VID_TPL;
+      if (m.videoTemplate === H3_VID_TPL_V2) m.videoTemplate = H3_VID_TPL;
     });
 
     s.models.forEach(function (m) {
@@ -9065,7 +9116,8 @@ window.SB = window.SB || {};
     CARD_COLORS: CARD_COLORS,
     DEFAULT_SHOT_TYPES: DEFAULT_SHOT_TYPES,
     IMG_TPL: IMG_TPL, IMG_TPL_V1: IMG_TPL_V1,
-    VID_TPL: VID_TPL, VID_TPL_V1: VID_TPL_V1, tplsFor: tplsFor,
+    VID_TPL: VID_TPL, VID_TPL_V1: VID_TPL_V1, VID_TPL_V2: VID_TPL_V2,
+    H3_VID_TPL: H3_VID_TPL, H3_VID_TPL_V2: H3_VID_TPL_V2, tplsFor: tplsFor,
     FRAME_ONLY: FRAME_ONLY, FULL_REFERENCE: FULL_REFERENCE,
     videoInherits: videoInherits,
     newProject: newProject, migrate: migrate, foldLineEndings: foldLineEndings,
