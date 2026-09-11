@@ -68,6 +68,12 @@ one generation — nothing is batched, nothing fires on its own.
   remote link only and the app says so — that link expires.
 - **▶ shoot** animates the shot's own full-size frame when it has one, and falls back to
   text-to-video when it does not. The button's tooltip says which it will do.
+- **A dark push button says why, on the row.** A push needs a prompt *written for the model
+  named above that column*, an ImagineArt model set for it, and an account with an
+  organization chosen. Prompts are kept per model because each one wants different wording,
+  so a row whose prompt was written for Wan is dark under Nano Banana — and it says
+  *"written for Wan"* rather than leaving you to guess. The header counts the board:
+  `▶ 14/30 frames · 2/30 clips`.
 
 **Settings → ImagineArt** picks how it is paid for:
 
