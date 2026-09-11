@@ -496,6 +496,17 @@
       gmSel.value = SB.GeminiModels.DEFAULT;
       gmSel.dispatchEvent(new Event('change', { bubbles: true }));
 
+      /* ---- the push, which is the other half of this table ---- */
+      const pushes = firstRow.querySelectorAll('.mini.push');
+      t('both prompt columns offer a push', pushes.length === 2, pushes.length);
+      t('a push with nothing set up is refused, and says why on the button',
+        pushes[0].disabled && /ImagineArt/.test(pushes[0].title), pushes[0].title);
+      t('nothing is running', !SB.Imagine.busy(ptShot.id, 'image'), '');
+      const acctChip = document.querySelector('.lib-head .pt-acct');
+      t('the table says who a push would be billed to',
+        !!acctChip && /Imagine/.test(acctChip.textContent),
+        acctChip ? acctChip.textContent : 'missing');
+
       /* leave the board as it was for everything after this */
       ptShot.prompts = {};
       SB.PromptPanel.close();
@@ -1053,7 +1064,7 @@
         return !!b;
       };
       t('settings modal', document.querySelectorAll('.modal').length === 1, '');
-      t('settings is tabbed', document.querySelectorAll('.modal .tab').length === 5,
+      t('settings is tabbed', document.querySelectorAll('.modal .tab').length === 6,
         document.querySelectorAll('.modal .tab').length);
       t('templates are not on the first tab',
         document.querySelectorAll('.modal .tab-panel.on textarea').length === 1,

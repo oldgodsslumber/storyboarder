@@ -17,6 +17,12 @@
   let root = null;
   let bodyEl, statusEl, usageEl, limitEl, headEl;
   let filter = 'all';
+  /* A push runs for minutes and this table re-renders on every keystroke, so
+     nothing about a running job is kept here — it is read back out of
+     SB.Imagine each time something is painted. These two only say that the
+     panel is listening. */
+  let unwatch = null;
+  let ticker = null;
 
   function P() { return SB.app.project; }
 
@@ -37,7 +43,22 @@
     document.addEventListener('keydown', onKey);
     document.getElementById('modalRoot').appendChild(root);
     document.getElementById('btnPrompts').classList.add('on');
+    watchJobs();
     render();
+  }
+
+  /* Repaint just the push buttons: once a second so the elapsed time on a
+     running job moves, and whenever a job starts, finishes or fails. A full
+     render() would throw away whatever textarea has the caret in it. */
+  function watchJobs() {
+    if (!SB.Imagine) return;
+    unwatch = SB.Imagine.onChange(paintPushes);
+    ticker = setInterval(paintPushes, 1000);
+  }
+
+  function stopWatching() {
+    if (unwatch) { unwatch(); unwatch = null; }
+    if (ticker) { clearInterval(ticker); ticker = null; }
   }
 
   function onKey(e) {
@@ -53,6 +74,7 @@
 
   function close() {
     if (!root) return;
+    stopWatching();
     root.remove();
     root = null;
     bodyEl = statusEl = usageEl = limitEl = headEl = null;
@@ -240,10 +262,50 @@
 
     r2.appendChild(SB.el('span', 'spacer'));
 
+    r2.appendChild(accountChip());
+
     const acts = SB.el('div', 'pt-acts');
     statusEl = SB.el('span', 'pt-status');
     acts.appendChild(statusEl);
     r2.appendChild(acts);
+  }
+
+  /* Who the pushes are billed to, in the one place they are pressed. Also the
+     way in to fix it, because "not signed in" with nowhere to click is just a
+     complaint. */
+  let acctEl = null;
+
+  function accountChip() {
+    acctEl = SB.el('button', 'tb pt-acct', '');
+    acctEl.onclick = function () { SB.Settings.open('imagine'); };
+    paintAccount();
+    return acctEl;
+  }
+
+  function paintAccount() {
+    if (!acctEl || !SB.Imagine) return;
+    const IM = SB.Imagine;
+    if (IM.transport() === 'key') {
+      const has = !!IM.apiKey();
+      acctEl.textContent = has ? 'Imagine · API key' : 'Imagine · no key';
+      acctEl.classList.toggle('warn', !has);
+      acctEl.title = has
+        ? 'Pushes are billed to the ImagineArt API key in this browser.'
+        : 'No ImagineArt API key yet — click to add one.';
+      return;
+    }
+    const a = IM.account();
+    if (!IM.isSignedIn()) {
+      acctEl.textContent = 'Imagine · sign in';
+      acctEl.classList.add('warn');
+      acctEl.title = 'Not signed in to ImagineArt — click to sign in.';
+      return;
+    }
+    acctEl.classList.remove('warn');
+    const cr = a && typeof a.credits === 'number' ? ' · ' + a.credits : '';
+    acctEl.textContent = 'Imagine' + cr;
+    acctEl.title = ((a && a.email) || 'signed in') +
+      (cr ? ' — ' + a.credits + ' credits left' : '') + '. Click for settings.';
   }
 
   /* the quota readout, kept because a run of thirty rows is where it matters */
@@ -417,6 +479,98 @@
     return f ? f.code : 'this shot';
   }
 
+  /* ------------------------------------------------------------ pushing
+   *
+   * The row already holds everything a generation needs: the prompt, the model
+   * it was written for, and (for a clip) the full-size frame the shot already
+   * has. So this is one button, and one press is one generation — never a
+   * batch, never automatic, and never while the same one is already running.
+   */
+  function roleOf(field) { return field === 'imagePrompt' ? 'image' : 'video'; }
+
+  function pushBtn(sh, m, field) {
+    const IM = SB.Imagine;
+    if (!IM) return null;
+    const role = roleOf(field);
+    const b = SB.el('button', 'mini push');
+    b.dataset.push = sh.id + ':' + role;
+    b.onclick = function () {
+      if (IM.busy(sh.id, role)) return;
+      IM.clear(sh.id, role);
+      paintPushes();
+      IM.run(sh, role).then(function (out) {
+        if (!out) return;
+        setStatus('');
+        if (out.remoteOnly) {
+          SB.toast('Clip made — no renders folder connected, so only the link is kept', true);
+        } else {
+          SB.toast(out.kind === 'video' ? 'Clip saved beside the render' : 'Frame updated');
+        }
+        /* The picture or the clip is new, so the row itself has changed. */
+        render();
+      }).catch(function (e) {
+        /* The reason stays on the button until the next press: the job registry
+           is the only place it is written down. */
+        paintPushes();
+        SB.toast(e.message, true);
+      });
+    };
+    paintPush(b, sh, m, role);
+    return b;
+  }
+
+  function paintPush(b, sh, m, role) {
+    const IM = SB.Imagine;
+    const job = IM.job(sh.id, role);
+    const noun = role === 'image' ? 'render' : 'shoot';
+    if (job && (job.state === 'working' || job.state === 'waiting')) {
+      const secs = Math.round((Date.now() - job.started) / 1000);
+      b.textContent = (job.state === 'waiting' ? 'waiting ' : 'sending ') +
+        Math.floor(secs / 60) + ':' + String(secs % 60).padStart(2, '0');
+      b.disabled = true;
+      b.classList.add('running');
+      b.classList.remove('failed');
+      b.title = 'ImagineArt is working on this one. Closing this panel does not stop it.';
+      return;
+    }
+    b.classList.remove('running');
+    b.classList.toggle('failed', !!(job && job.state === 'error'));
+    b.textContent = (job && job.state === 'error' ? '\u21ba retry' : '\u25b6 ' + noun);
+    const pr = sh.prompts[m.id] || null;
+    const text = pr && pr[role === 'image' ? 'imagePrompt' : 'videoPrompt'];
+    const why = IM.blocker(m) ||
+      (!(text || '').trim() ? 'Write the prompt first — there is nothing to send.' : '') ||
+      (sh.noShot ? 'A “no shot” card is never generated.' : '');
+    b.disabled = !!why;
+    if (job && job.state === 'error') {
+      b.title = job.error + ' — press to try again.';
+    } else if (why) {
+      b.title = why;
+    } else if (role === 'video') {
+      b.title = sh.render || sh.image
+        ? 'Animate this shot’s own frame with the prompt above.'
+        : 'No frame on this card yet, so this is text-to-video.';
+    } else {
+      b.title = 'Make this frame on ImagineArt and put it on the card.';
+    }
+  }
+
+  /* In place, without re-rendering: a running job ticks every second and the
+     boxes around it must keep their text and their caret. */
+  function paintPushes() {
+    if (!root || !P() || !SB.Imagine) return;
+    const p = P();
+    const im = SB.Model.imageModel(p), vm = SB.Model.videoModel(p);
+    bodyEl.querySelectorAll('[data-push]').forEach(function (b) {
+      const bits = b.dataset.push.split(':');
+      const f = SB.Model.findShot(p, bits[0]);
+      const m = bits[1] === 'image' ? im : vm;
+      if (!f || !m) return;
+      paintPush(b, f.shot, m, bits[1]);
+    });
+    paintAccount();
+  }
+
   function promptCell(sh, m, field) {
     const cell = SB.el('div', 'pt-cell pt-prompt');
     if (!m) {
@@ -458,7 +612,21 @@
     };
     foot.appendChild(copy);
 
+    /* The clip this row already has, if any — the one place it can be played
+       back from without hunting through the renders folder. */
+    if (field === 'videoPrompt' && sh.video) {
+      const play = SB.el('button', 'mini', '\u25b7 clip');
+      play.title = sh.video.serial
+        ? 'Play ' + SB.Renders.pad(sh.video.serial) + '.' + (sh.video.ext || 'mp4')
+        : 'Play the clip (held only as a link — it expires)';
+      play.onclick = function () { SB.Clip.play(P(), sh); };
+      foot.appendChild(play);
+    }
+
     foot.appendChild(SB.el('span', 'spacer'));
+
+    const push = pushBtn(sh, m, field);
+    if (push) foot.appendChild(push);
 
     const gen = SB.el('button', 'mini primary', '\u2726 generate');
     gen.disabled = !!sh.noShot || !(sh.description || '').trim();

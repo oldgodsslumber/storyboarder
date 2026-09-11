@@ -37,6 +37,37 @@ unaffected — it works normally as soon as a file is open.
 
 Serve the folder over http (any static server) and the reopen-last-project prompt returns.
 
+### Making the picture: ImagineArt
+
+The Prompts panel writes the prompt and now also sends it. Each prompt cell has a **▶
+render** (first frame) or **▶ shoot** (clip) beside `copy` and `✦ generate`. One press is
+one generation — nothing is batched, nothing fires on its own.
+
+- A generated still lands on the card exactly like a dropped one: ≤480p proxy in the
+  `.storyboard`, original in the renders folder under its serial, the take it replaced
+  moved into `_versions`.
+- A clip is too big for the project file, so it goes to `<project>/_video/NNNN.mp4` and
+  the card grows a ▷ badge that plays it. With no renders folder connected you keep the
+  remote link only, and the app says so — that link expires.
+- **▶ shoot** animates the shot's own full-size frame when it has one, and falls back to
+  text-to-video when it does not. The button's tooltip says which it will do.
+
+**Settings → ImagineArt** picks how it is paid for:
+
+- **Sign in with ImagineArt** — ImagineArt's own OAuth (dynamic registration, PKCE, refresh
+  tokens). A window opens, you approve, it closes; the board never reloads. Generations come
+  out of the credits on the imagine.art account. Nothing is stored but the token, and the
+  token lives in this browser, never in the `.storyboard`.
+- **API key** — a key from [platform.imagine.art](https://platform.imagine.art/), billed
+  against a separate metered API balance.
+
+Sign-in needs the app served over `http://` — the redirect has to come back to a real
+address, and `file://` has none. Opened straight off the disk, use the API key.
+
+**Settings → Models & templates** gains one field per model: which ImagineArt model it
+means (`flux-dev`, `kling-1.0-pro`, …). A model with none is never pushed; its prompts are
+still written and copied as before.
+
 ### How images are stored
 
 Every image — shot frames, persona references, comment ink — is stored **once**, under a

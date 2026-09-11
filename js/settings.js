@@ -102,7 +102,7 @@
     const tabs = SB.el('div', 'tabs');
     const panels = {};
     const order = [['general', 'General'], ['fields', 'Card fields'], ['brand', 'Brand style'],
-    ['models', 'Models & templates'], ['api', 'API']];
+    ['models', 'Models & templates'], ['imagine', 'ImagineArt'], ['api', 'API']];
     order.forEach(function (t) {
       const b = SB.el('button', 'tab', t[1]);
       b.dataset.tab = t[0];
@@ -297,6 +297,27 @@
           kind.appendChild(o);
         });
         kind.onchange = function () { m.kind = kind.value; };
+        /* Which ImagineArt model this one is, so the prompt table can push a
+           prompt at it. Free text with the known slugs offered: the catalog is
+           ImagineArt's to change, and a board must not be stuck waiting for
+           this app to hear about a new one. */
+        const slug = document.createElement('input');
+        slug.type = 'text';
+        slug.className = 'slug';
+        slug.value = m.imagineSlug || '';
+        slug.placeholder = 'ImagineArt model — none';
+        slug.title = 'The slug ImagineArt knows this model by. Blank means this model is ' +
+          'never pushed; the prompt is still written and copied as usual.';
+        const dlId = 'slugs-' + m.id;
+        slug.setAttribute('list', dlId);
+        const dl = document.createElement('datalist');
+        dl.id = dlId;
+        ((SB.Imagine && SB.Imagine.catalog(m.kind)) || []).forEach(function (v) {
+          const o = document.createElement('option');
+          o.value = v;
+          dl.appendChild(o);
+        });
+        slug.oninput = function () { m.imagineSlug = slug.value.trim(); };
         const tpl = SB.el('button', 'mini', m.__open ? 'hide templates' : 'templates');
         tpl.onclick = function () { m.__open = !m.__open; drawModels(); };
         const rst = SB.el('button', 'mini', 'reset');
@@ -310,6 +331,7 @@
         const del = SB.el('button', 'mini danger', 'remove');
         del.onclick = function () { working.splice(i, 1); drawModels(); };
         top.appendChild(name); top.appendChild(kind);
+        top.appendChild(slug); top.appendChild(dl);
         top.appendChild(tpl); top.appendChild(rst); top.appendChild(del);
         row.appendChild(top);
 
@@ -344,7 +366,7 @@
       const add = SB.el('button', 'tb', '+ Add model');
       add.onclick = function () {
         working.push({
-          id: SB.uid('m'), name: 'New model', kind: 'video',
+          id: SB.uid('m'), name: 'New model', kind: 'video', imagineSlug: '',
           imageTemplate: SB.Model.IMG_TPL, videoTemplate: SB.Model.VID_TPL, __open: true
         });
         drawModels();
@@ -352,6 +374,180 @@
       listHost.appendChild(add);
     }
     drawModels();
+
+    /* ---------------- ImagineArt ----------------
+     *
+     * Two doors, and they bill differently, so the user picks rather than the
+     * app guessing. Signing in spends the credits the imagine.art account
+     * already has and stores nothing but a token; an API key is a second bill
+     * but needs no address to come back to — which is the only way in when the
+     * app is opened straight off the disk.
+     */
+    const IM = SB.Imagine;
+    let chosenImagine = IM ? IM.transport() : 'oauth';
+
+    function imLink(href, text) {
+      const a = document.createElement('a');
+      a.href = href; a.target = '_blank'; a.rel = 'noopener';
+      a.textContent = text;
+      return a;
+    }
+
+    panels.imagine.appendChild(SB.el('div', 'pp-note',
+      'Where a finished prompt goes when you press ▶ in the Prompts panel. One press is ' +
+      'one generation — a still lands on the card like any other frame, a clip goes in ' +
+      'the renders folder beside it.'));
+
+    const imPick = SB.el('div', 'prov-pick');
+    const imBtns = {};
+    const imBlocks = { oauth: SB.el('div', 'prov-block'), key: SB.el('div', 'prov-block') };
+
+    function showImagine(id) {
+      chosenImagine = id === 'key' ? 'key' : 'oauth';
+      Object.keys(imBtns).forEach(function (k) {
+        imBtns[k].classList.toggle('on', k === chosenImagine);
+      });
+      Object.keys(imBlocks).forEach(function (k) {
+        imBlocks[k].classList.toggle('hidden', k !== chosenImagine);
+      });
+    }
+
+    [['oauth', 'Sign in with ImagineArt'], ['key', 'API key']].forEach(function (t) {
+      const b = SB.el('button', 'tb toggle', t[1]);
+      b.onclick = function () { showImagine(t[0]); };
+      imBtns[t[0]] = b;
+      imPick.appendChild(b);
+    });
+    panels.imagine.appendChild(imPick);
+    panels.imagine.appendChild(imBlocks.oauth);
+    panels.imagine.appendChild(imBlocks.key);
+
+    /* ---- signed in ---- */
+
+    const imStatus = SB.el('div', 'pp-status');
+    imBlocks.oauth.appendChild(imStatus);
+
+    const imActs = SB.el('div', 'pp-actions');
+    const imIn = SB.el('button', 'tb', 'Sign in');
+    const imOut = SB.el('button', 'tb', 'Sign out');
+    const imCheck = SB.el('button', 'tb', 'Check account');
+    imActs.appendChild(imIn); imActs.appendChild(imCheck); imActs.appendChild(imOut);
+    imBlocks.oauth.appendChild(imActs);
+
+    const imNote = SB.el('div', 'pp-note', '');
+    imBlocks.oauth.appendChild(imNote);
+
+    const imTools = SB.el('div', 'pp-note dim', '');
+    imBlocks.oauth.appendChild(imTools);
+
+    imBlocks.oauth.appendChild(SB.el('div', 'pp-note',
+      'The sign-in is ImagineArt’s own OAuth: a window opens, you approve, it closes. ' +
+      'Nothing but the token is kept, and it is kept in this browser — never in the ' +
+      '.storyboard file.'));
+
+    function imDraw() {
+      if (!IM) { imStatus.textContent = 'ImagineArt support is not loaded.'; return; }
+      const why = IM.signInBlocked();
+      const acct = IM.account();
+      const inOk = IM.isSignedIn();
+      imIn.style.display = inOk ? 'none' : '';
+      imOut.style.display = inOk ? '' : 'none';
+      imCheck.style.display = inOk ? '' : 'none';
+      imIn.disabled = !!why;
+      if (inOk) {
+        const who = (acct && acct.email) || 'signed in';
+        const cr = acct && typeof acct.credits === 'number'
+          ? ' · ' + acct.credits + ' credits' : '';
+        imStatus.textContent = who + cr;
+        imStatus.classList.remove('err');
+      } else {
+        imStatus.textContent = why ? 'Cannot sign in here' : 'Not signed in';
+        imStatus.classList.toggle('err', !!why);
+      }
+      imNote.textContent = why || '';
+      imNote.classList.toggle('err', !!why);
+      const tools = IM.tools();
+      if (inOk && tools.length) {
+        imTools.textContent = tools.length + ' tools offered: ' +
+          tools.slice(0, 8).map(function (t) { return t.name; }).join(', ') +
+          (tools.length > 8 ? ', …' : '');
+      } else {
+        imTools.textContent = '';
+      }
+    }
+
+    imIn.onclick = function () {
+      imIn.disabled = true;
+      imStatus.textContent = 'waiting for the sign-in window…';
+      IM.signIn().then(function () {
+        return IM.toolList(true).catch(function () { return null; });
+      }).then(function () {
+        return IM.balance().catch(function () { return null; });
+      }).then(function () {
+        imIn.disabled = false;
+        imDraw();
+        SB.toast('Signed in to ImagineArt');
+      }).catch(function (e) {
+        imIn.disabled = false;
+        imDraw();
+        imNote.textContent = e.message;
+        imNote.classList.add('err');
+      });
+    };
+
+    imOut.onclick = function () {
+      IM.signOut();
+      imDraw();
+    };
+
+    imCheck.onclick = function () {
+      imCheck.disabled = true;
+      imStatus.textContent = 'asking ImagineArt…';
+      IM.whoAmI().catch(function () { return null; }).then(function () {
+        return IM.toolList(true).catch(function () { return null; });
+      }).then(function () {
+        return IM.balance().catch(function () { return null; });
+      }).then(function () {
+        imCheck.disabled = false;
+        imDraw();
+      });
+    };
+
+    /* ---- key ---- */
+
+    const imKey = document.createElement('input');
+    imKey.type = 'password';
+    imKey.value = IM ? IM.apiKey() : '';
+    imKey.placeholder = 'vk-…';
+    imBlocks.key.appendChild(field('ImagineArt API key', imKey));
+    const imKeyHow = SB.el('div', 'pp-note');
+    imKeyHow.appendChild(document.createTextNode('Made at '));
+    imKeyHow.appendChild(imLink('https://platform.imagine.art/', 'platform.imagine.art ↗'));
+    imKeyHow.appendChild(document.createTextNode(
+      '. This is a separate, metered API balance — it is not the credits on the ' +
+      'imagine.art plan. Stored in this browser only.'));
+    imBlocks.key.appendChild(imKeyHow);
+
+    /* ---- shared ---- */
+
+    const imAspect = document.createElement('select');
+    ['16:9', '9:16', '1:1', '4:3', '3:4', '3:2'].forEach(function (r) {
+      const o = document.createElement('option');
+      o.value = r; o.textContent = r;
+      if ((p.settings.imagineAspect || '16:9') === r) o.selected = true;
+      imAspect.appendChild(o);
+    });
+    const imAspF = field('Aspect ratio asked for', imAspect);
+    imAspF.style.marginTop = '14px';
+    panels.imagine.appendChild(imAspF);
+    panels.imagine.appendChild(SB.el('div', 'pp-note',
+      'Saved with the project — it is how this board is shot, not a fact about this browser.'));
+    panels.imagine.appendChild(SB.el('div', 'pp-note',
+      'Which ImagineArt model each of your models means is set per model, in ' +
+      'Models & templates. A model with none is never pushed.'));
+
+    showImagine(chosenImagine);
+    imDraw();
 
     /* ---------------- API ----------------
      * Two backends, picked at the top: Google's Gemini, or any local
@@ -682,6 +878,11 @@
             }
             SB.Store.setApiKey(key.value.trim());
             SB.Store.setOoba({ url: oUrl.value, model: oobaModel, key: oKey.value });
+            p.settings.imagineAspect = imAspect.value || '16:9';
+            if (IM) {
+              IM.setTransport(chosenImagine);
+              IM.setApiKey(imKey.value);
+            }
             close();
             SB.app.changed(true);
             SB.PromptPanel.refresh();

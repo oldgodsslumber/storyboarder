@@ -1112,3 +1112,32 @@ select,.tb-select,.pp-row select,.modal select,.capture-form select,.card-head s
 /* comment mode tint */
 body.comment-mode #boardPanel{background:linear-gradient(180deg,rgba(255,179,71,.06),transparent 120px)}
 body.comment-mode .frame{cursor:crosshair}
+
+/* ---- ImagineArt: pushing a prompt, and the clip that comes back ---- */
+/* The push sits at the same weight as "generate" next to it — both are the
+   row acting on itself — but it is the one that spends money, so it is the
+   accented one and it never fires twice. */
+.mini.push{border-color:var(--accent);color:var(--accent)}
+.mini.push:disabled{border-color:var(--line);color:var(--fg-dim);opacity:.6}
+.mini.push.running{
+  border-color:var(--accent2);color:var(--accent2);opacity:1;
+  font-variant-numeric:tabular-nums;
+}
+.mini.push.failed{border-color:var(--danger);color:var(--danger)}
+.pt-acct{flex:0 0 auto;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pt-acct.warn{border-color:var(--accent2);color:var(--accent2)}
+
+/* A card with a clip says so in the corner, and unlike the frame tools it is
+   always visible: the clip is not in the project file, so this badge is the
+   only sign it exists at all. */
+.clip-badge{
+  position:absolute;left:4px;top:4px;z-index:2;
+  width:22px;height:22px;border-radius:50%;cursor:pointer;
+  border:1px solid var(--accent);background:rgba(0,0,0,.55);color:var(--accent);
+  font-size:11px;line-height:1;padding:0;
+}
+.clip-badge:hover{background:var(--accent);color:#000}
+.clip-box video{display:block;width:100%;max-height:70vh;background:#000;border-radius:6px}
+
+/* the model row grew a third box: name, kind, and which ImagineArt model */
+.model-row .top input.slug{flex:0 0 210px;font-family:ui-monospace,Consolas,monospace;font-size:11px}

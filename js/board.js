@@ -1546,6 +1546,15 @@
       f.appendChild(SB.el('div', 'drop-hint', 'drop / paste an image, or click to load'));
     }
 
+    /* A card whose frame has been animated says so, and plays it. Nothing else
+       on the board would ever mention the clip — it is not in the file. */
+    if (sh.video) {
+      const play = SB.el('button', 'clip-badge', '\u25b7');
+      play.title = 'Play the clip made from this frame';
+      play.onclick = function (ev) { ev.stopPropagation(); SB.Clip.play(P(), sh); };
+      f.appendChild(play);
+    }
+
     const tools = SB.el('div', 'frame-tools');
     if (SB.app.commentMode && sh.image) {
       const dr = SB.el('button', 'mini', 'draw');

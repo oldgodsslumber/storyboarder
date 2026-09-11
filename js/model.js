@@ -132,12 +132,21 @@
    * needed. */
   function videoInherits(m) { return !m || m.videoRefs !== FULL_REFERENCE; }
 
+  /* Which ImagineArt model a board model is pointed at. The knowledge lives in
+   * imagine.js, which is not loaded by the node tests, so it is asked for
+   * rather than assumed — an unmapped model simply has no slug, which is what
+   * Settings shows and what stops a push before it starts. */
+  function guessSlug(name) {
+    return (SB.Imagine && SB.Imagine.guessSlug) ? SB.Imagine.guessSlug(name) : '';
+  }
+
   function model(name, kind) {
     const t = tplsFor(name);
     return {
       id: SB.uid('m'), name: name, kind: kind,
       imageTemplate: t.image, videoTemplate: t.video,
-      referenceTemplate: t.reference, videoRefs: t.videoRefs
+      referenceTemplate: t.reference, videoRefs: t.videoRefs,
+      imagineSlug: guessSlug(name)
     };
   }
 
@@ -190,6 +199,11 @@
        * lives in the renders folder. The board keeps only the proxy; this is
        * the pointer to the real thing, and it rides with the content. */
       render: null,
+      /* {serial,ext,bytes,at,url} — the clip ImagineArt made from this frame.
+       * A clip is megabytes, so unlike a still it is NOT kept in the project
+       * file: this is a pointer into the renders folder, plus the remote copy
+       * for as long as that lasts. Null on every shot that has none. */
+      video: null,
       comments: [],
       prompts: {}                       // modelName -> {imagePrompt, videoPrompt}
     };
@@ -270,6 +284,9 @@
         videoModelId: null,
         aiProvider: 'gemini',
         geminiModel: SB.GeminiModels.DEFAULT,
+        /* What shape ImagineArt is asked for. A storyboard is nearly always
+         * widescreen, and it belongs to the board rather than the browser. */
+        imagineAspect: '16:9',
         brand: { enabled: true, custom: false },
         // prompt boxes stay off the cards until the user asks for them
         showImagePrompt: false,
@@ -483,6 +500,9 @@
       if (m.videoRefs !== FRAME_ONLY && m.videoRefs !== FULL_REFERENCE) {
         m.videoRefs = t.videoRefs;
       }
+      /* Blank is a real answer — "not pointed at anything on ImagineArt yet" —
+       * so only a missing field is filled in, never an emptied one. */
+      if (typeof m.imagineSlug !== 'string') m.imagineSlug = guessSlug(m.name);
     });
     /* A board keeps its own model list, so a model added to the app later
      * would never reach an existing project. Offer each shipped model once:
@@ -509,6 +529,7 @@
     /* Every board written before the local-model option existed was a Gemini
      * board, and normalize() says so for anything unrecognised too. */
     s.aiProvider = SB.Providers.normalize(s.aiProvider);
+    if (typeof s.imagineAspect !== 'string') s.imagineAspect = '16:9';
     s.brand = (s.brand && typeof s.brand === 'object') ? s.brand : {};
     if (typeof s.brand.enabled !== 'boolean') s.brand.enabled = true;
     // only a hand-edited house style is stored; the rest follow the app's
@@ -892,7 +913,7 @@
    * they stay behind when the imagery moves. */
   const CONTENT_KEYS = [
     'type', 'color', 'image', 'annotation', 'description',
-    'fields', 'prompts', 'personaIds', 'castEnters', 'comments', 'render'
+    'fields', 'prompts', 'personaIds', 'castEnters', 'comments', 'render', 'video'
   ];
 
   /* Swap two shots' contents, leaving each card's dialogue where it is. */
@@ -1012,7 +1033,7 @@
     videoInherits: videoInherits,
     newProject: newProject, migrate: migrate, foldLineEndings: foldLineEndings,
     newShot: newShot, newScene: newScene,
-    defaultModels: defaultModels, defaultExport: defaultExport,
+    defaultModels: defaultModels, defaultExport: defaultExport, guessSlug: guessSlug,
     eachShot: eachShot, code: code, findShot: findShot, findScene: findScene,
     windowFor: windowFor, applyMasterEdit: applyMasterEdit, applyShotEdit: applyShotEdit,
     breakLink: breakLink, coverage: coverage,

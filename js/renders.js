@@ -36,6 +36,7 @@
   const KEY_ROOT = 'rendersRoot';
   const VERSIONS = '_versions';
   const FEED = '_feed';
+  const VIDEO = '_video';
 
   const hasFS = typeof window.showDirectoryPicker === 'function';
 
@@ -269,6 +270,51 @@
     }).catch(function () { return null; });
   }
 
+  /* A clip, which is the one thing the board cannot hold itself.
+   *
+   * Every picture on a board is a proxy inside the .storyboard, so a project
+   * is one portable file. A ten-second clip is megabytes and cannot live
+   * there, so it goes in the folder or nowhere — and "nowhere" is a real
+   * answer: the caller keeps the remote URL and says out loud that it expires.
+   *
+   * Same serials, same archiving as a still, in a subfolder of their own so a
+   * folder full of stills stays a folder full of stills.
+   */
+  function videoExt(blob) {
+    const t = (blob && blob.type) || '';
+    const m = /^video\/([a-z0-9+.-]+)/i.exec(t);
+    let e = m ? m[1].toLowerCase() : '';
+    if (e === 'quicktime') e = 'mov';
+    if (e === 'x-matroska') e = 'mkv';
+    return /^[a-z0-9]{2,5}$/.test(e) ? e : 'mp4';
+  }
+
+  function keepVideo(p, blob, existing) {
+    if (!hasFS) return Promise.resolve(null);
+    if (!blob || !blob.size) return Promise.resolve(null);
+    return folder(p, true, true).then(function (dir) {
+      if (!dir) return null;
+      return sub(dir, VIDEO).then(function (vd) {
+        if (!vd) return null;
+        const ext = videoExt(blob);
+        const serial = (existing && existing.serial) || claim(p);
+        const name = fileName(serial, ext);
+        const fresh = !(existing && existing.serial);
+        const older = (existing && existing.ext && existing.ext !== ext)
+          ? archive(vd, fileName(serial, existing.ext)) : Promise.resolve();
+        return older.then(function () { return archive(vd, name); })
+          .then(function () { return writeFile(vd, name, blob); })
+          .then(function () {
+            return { serial: serial, ext: ext, bytes: blob.size, at: Date.now() };
+          })
+          .catch(function () {
+            if (fresh && p.renderSeq === serial) p.renderSeq = serial - 1;
+            return null;
+          });
+      });
+    }).catch(function () { return null; });
+  }
+
   /* ---------- reading ---------- */
 
   function file(p, rec) {
@@ -283,6 +329,20 @@
 
   function has(p, rec) {
     return file(p, rec).then(function (f) { return !!f; });
+  }
+
+  /* The clip behind a shot.video record, for playing it back. */
+  function videoFile(p, rec) {
+    if (!rec || !rec.serial) return Promise.resolve(null);
+    return folder(p, false).then(function (dir) {
+      if (!dir) return null;
+      return sub(dir, VIDEO).then(function (vd) {
+        if (!vd) return null;
+        return vd.getFileHandle(fileName(rec.serial, rec.ext))
+          .then(function (fh) { return fh.getFile(); })
+          .catch(function () { return null; });
+      });
+    }).catch(function () { return null; });
   }
 
   /* ---------- the feed ----------
@@ -378,7 +438,8 @@
     folder: folder, sub: sub, writeFile: writeFile,
     claim: claim, pad: pad, fileName: fileName, extOf: extOf,
     keep: keep, file: file, has: has, writeFeed: writeFeed, slug: slug,
-    VERSIONS: VERSIONS, FEED: FEED
+    keepVideo: keepVideo, videoFile: videoFile, videoExt: videoExt,
+    VERSIONS: VERSIONS, FEED: FEED, VIDEO: VIDEO
   };
 
 })(window.SB);
