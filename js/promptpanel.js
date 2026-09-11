@@ -502,8 +502,18 @@
         if (!out) return;
         setStatus('');
         if (out.remoteOnly) {
-          SB.toast('Clip made, but its bytes could not be read back — only the link is kept, ' +
-            'and links expire', true);
+          SB.toast('Clip made, but its bytes could not be read back — the board is holding a ' +
+            'link, and links expire', true, {
+            action: {
+              label: 'Try again',
+              onClick: function () {
+                SB.Imagine.fetchClip(sh).then(function (ok) {
+                  SB.toast(ok ? 'Clip is in the board now' : 'Nothing to fetch');
+                  render();
+                }).catch(function (e2) { SB.toast(e2.message, true); });
+              }
+            }
+          });
         } else {
           SB.toast(out.kind === 'video' ? 'Clip saved into the board' : 'Frame updated');
         }

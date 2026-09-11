@@ -239,6 +239,50 @@ t('a quicktime clip is named mov', SB.Renders.videoExt({ type: 'video/quicktime'
 t('something unrecognised still gets a sane extension',
   SB.Renders.videoExt({ type: '' }) === 'mp4', '');
 
+/* -------------------------------------------------------- filing a clip */
+section('what a finished clip leaves behind');
+
+{
+  /* The bug this guards: the record was rebuilt field by field and the ref was
+     not among them, so the bytes went into the file with nothing pointing at
+     them — the clip played until the next structural change swept it away. */
+  const kept = [];
+  const realRenders = SB.Renders;
+  let changed = 0;
+  sandbox.SB.app = { project: { blobs: {} }, changed: function () { changed++; } };
+  sandbox.SB.Renders = {
+    keepVideo: function (p, blob, existing, made) {
+      kept.push({ blob: blob, existing: existing, made: made });
+      return Promise.resolve({
+        ref: 'blob-key', serial: 4, ext: 'mp4', bytes: 99, made: made, at: 1
+      });
+    }
+  };
+
+  const shot = { id: 'sh1', video: null };
+  const made = { by: 'imagine', role: 'video', model: 'Kling', slug: 'kling-1.0-pro' };
+  await SB.Imagine._fileVideo(sandbox.SB.app.project, shot,
+    { blob: { size: 10 }, url: 'https://cdn.x/a.mp4', thumb: 'https://cdn.x/a.jpg' }, made);
+
+  t('the clip record points at the bytes in the file', shot.video.ref === 'blob-key',
+    JSON.stringify(shot.video));
+  t('and keeps its serial', shot.video.serial === 4, shot.video.serial);
+  t('the remote link rides along for preview', shot.video.url === 'https://cdn.x/a.mp4', '');
+  t('and so does what made it', shot.video.made === made, JSON.stringify(shot.video.made));
+  t('the board is told it changed', changed === 1, changed);
+  t('the provenance is handed to the store', kept[0].made === made, '');
+
+  /* no bytes: a link and an honest record, never a half-filed clip */
+  const shot2 = { id: 'sh2', video: null };
+  const out = await SB.Imagine._fileVideo(sandbox.SB.app.project, shot2,
+    { blob: null, url: 'https://cdn.x/b.mp4' }, made);
+  t('a clip whose bytes never arrived says so', out.remoteOnly === true, JSON.stringify(out));
+  t('and holds the link, with no ref pretending otherwise',
+    !shot2.video.ref && shot2.video.url === 'https://cdn.x/b.mp4', JSON.stringify(shot2.video));
+
+  sandbox.SB.Renders = realRenders;
+}
+
 /* ----------------------------------------------------------- the catalog */
 section('the model catalog');
 

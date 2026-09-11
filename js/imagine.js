@@ -1090,16 +1090,24 @@
     const j = start(shot.id, role);
     const state = function (s) { j.state = s; notify(); };
 
+    /* Stamped onto whatever comes back, because an export that can say "these
+     * eleven were generated, off these prompts, by this model" is a different
+     * thing from one that hands over a folder of pictures. */
+    const made = {
+      by: 'imagine', role: role, model: model.name, slug: slugOf(model),
+      via: transport(), at: Date.now()
+    };
+
     const work = role === 'image'
       ? image({ prompt: text, slug: slugOf(model), aspect: aspectOf(p), onState: function () { state('waiting'); } })
-        .then(function (got) { return fileImage(p, shot, got); })
+        .then(function (got) { return fileImage(p, shot, got, made); })
       : startFrame(p, shot).then(function (frame) {
         return video({
           prompt: text, slug: slugOf(model), aspect: aspectOf(p),
           frame: frame && frame.blob, frameName: frame && frame.name,
           onState: function () { state('waiting'); }
         });
-      }).then(function (got) { return fileVideo(p, shot, got); });
+      }).then(function (got) { return fileVideo(p, shot, got, made); });
 
     return work.then(function (out) {
       endJob(shot.id, role);
@@ -1127,32 +1135,61 @@
    * board, original in the file under its serial. Which is the point: the
    * next shot can reference it ten seconds later, and so can whoever the
    * board is handed to. */
-  function fileImage(p, shot, got) {
+  function fileImage(p, shot, got, made) {
     if (!got.blob) {
       throw new Error('ImagineArt made the picture but this browser could not read it back' +
         (got.url ? ' — it is at ' + got.url : '.'));
     }
-    return SB.Board.setImage(shot, got.blob).then(function () {
+    return SB.Board.setImage(shot, got.blob, made).then(function () {
       return { kind: 'image' };
     });
   }
 
-  function fileVideo(p, shot, got) {
-    const rec = { at: Date.now(), url: got.url || '', thumb: got.thumb || '' };
+  function fileVideo(p, shot, got, made) {
+    const rec = { at: Date.now(), url: got.url || '', thumb: got.thumb || '', made: made || null };
     if (!got.blob) {
       /* ImagineArt made it but the browser could not read the bytes back
-       * across origins: hold the link and be honest that it expires. */
+       * across origins: hold the link, say so, and leave a way to try again
+       * while the link is still alive. */
       shot.video = rec;
       SB.app.changed(true);
       return Promise.resolve({ kind: 'video', remoteOnly: true });
     }
-    return SB.Renders.keepVideo(p, got.blob, shot.video).then(function (saved) {
-      shot.video = saved ? {
-        serial: saved.serial, ext: saved.ext, bytes: saved.bytes,
-        at: saved.at, url: rec.url, thumb: rec.thumb
-      } : rec;
+    return SB.Renders.keepVideo(p, got.blob, shot.video, made).then(function (saved) {
+      /* The whole record, ref included. Rebuilding it field by field dropped
+       * the ref once, which put the bytes in the file with nothing pointing at
+       * them — so the clip played until the next structural change swept it
+       * away, and then the board had a link and no clip. */
+      if (saved) {
+        saved.url = rec.url;
+        saved.thumb = rec.thumb;
+      }
+      shot.video = saved || rec;
       SB.app.changed(true);
       return { kind: 'video', remoteOnly: !saved };
+    });
+  }
+
+  /* A second chance at a clip whose bytes never arrived. The link ImagineArt
+   * hands back works for a while and then does not, so this is worth reaching
+   * for the moment the board says "link only" rather than later. */
+  function fetchClip(shot) {
+    const p = SB.app.project;
+    const rec = shot && shot.video;
+    if (!rec || rec.ref) return Promise.resolve(false);
+    if (!rec.url) return Promise.reject(new Error('That clip has no link left to fetch from.'));
+    return fetch(rec.url).then(function (r) {
+      if (!r.ok) throw new Error('ImagineArt answered ' + r.status);
+      return r.blob();
+    }).then(function (b) {
+      return SB.Renders.keepVideo(p, b, rec, rec.made);
+    }).then(function (saved) {
+      if (!saved) throw new Error('the clip could not be stored');
+      saved.url = rec.url;
+      saved.thumb = rec.thumb;
+      shot.video = saved;
+      SB.app.changed(true);
+      return true;
     });
   }
 
@@ -1203,9 +1240,23 @@
       v.loop = true;
       box.appendChild(v);
       if (!f && rec.url) {
-        box.appendChild(SB.el('div', 'pp-note warn',
-          'Played from ImagineArt — this board has no copy of its own, and the link expires. ' +
-          'Shoot it again to get one that travels with the file.'));
+        const note = SB.el('div', 'pp-note warn',
+          'Played from ImagineArt — this board has no copy of its own, and that link expires. ');
+        const grab = SB.el('button', 'mini', 'bring it into the board');
+        grab.onclick = function () {
+          grab.disabled = true;
+          grab.textContent = 'fetching…';
+          SB.Imagine.fetchClip(shot).then(function (ok) {
+            SB.toast(ok ? 'Clip is in the board now' : 'Nothing to fetch');
+            grab.remove();
+          }).catch(function (e) {
+            grab.disabled = false;
+            grab.textContent = 'bring it into the board';
+            SB.toast(e.message, true);
+          });
+        };
+        note.appendChild(grab);
+        box.appendChild(note);
       }
       SB.modal({
         title: 'Clip',
@@ -1237,11 +1288,12 @@
     /* work */
     ready: function (model) { return !blocker(model); },
     blocker: blocker, slugOf: slugOf, aspectOf: aspectOf,
-    image: image, video: video, run: run,
+    image: image, video: video, run: run, fetchClip: fetchClip,
     /* jobs */
     job: job, busy: busy, clear: clear, onChange: onChange,
     /* exposed for the tests */
-    _bind: bind, _pickScore: score, _harvest: harvest, _parseRpc: parseRpc
+    _bind: bind, _pickScore: score, _harvest: harvest, _parseRpc: parseRpc,
+    _fileVideo: fileVideo
   };
 
 })(window.SB);

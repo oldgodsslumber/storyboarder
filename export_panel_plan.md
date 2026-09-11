@@ -17,21 +17,40 @@ set numbered in feed order — plus the PDF print sheets. That is not enough for
 end of the job: handing a cut to an editor, dropping a shot into Premiere, sending a client
 twelve frames, getting the clips onto a timeline.
 
+## What the board now records so this is possible
+
+Two things were added ahead of the panel, because neither can be reconstructed afterwards:
+
+- **Provenance.** Anything generated inside the app carries `made` on its record —
+  `{by:'imagine', role, model, slug, via, at}` — set when the still or the clip is filed
+  ([imagine.js](js/imagine.js) `run()`). Nothing else can tell a generated frame from a
+  dropped one later: the prompt on the card gets edited, the model selector moves on. This
+  is what makes **"export what we made"** a real option rather than "export everything and
+  sort it out by eye".
+- **Clips that are actually here.** A clip's record keeps its `ref` into the file, and when
+  ImagineArt's link could be read but the bytes could not, the board says so and offers to
+  fetch them again while the link is alive (`SB.Imagine.fetchClip`). An export must never
+  quietly ship a board that is holding links instead of clips.
+
 ## What people actually need out of a board
 
 Named in the order they come up on a real job:
 
 1. **Every original, as files.** `0007.webp` and the rest — the serials are already the
    names. For an editor, for an archive, for re-feeding a model outside this app.
-2. **The clips**, same thing, and the same names — so a clip and the frame it came from sort
-   next to each other.
-3. **One shot's reference set**, numbered in feed order — what "copy image set" does today,
+2. **The clips**, same thing, same names — `0012.mp4` — so a clip and the frame it came from
+   sort next to each other in the folder an editor opens.
+3. **Only what was made here.** The one filter that gets asked for by name: the eleven
+   stills and four clips ImagineArt generated, not the forty frames that were dropped in
+   from elsewhere. Backed by `made`, with a manifest beside them (below) saying which model
+   and which prompt produced each.
+4. **One shot's reference set**, numbered in feed order — what "copy image set" does today,
    which the panel should absorb rather than duplicate.
-4. **Contact sheets / the PDF**, which already exist in `js/pdf.js` and belong on the same
+5. **Contact sheets / the PDF**, which already exist in `js/pdf.js` and belong on the same
    panel, because "export" is one idea to the person doing it even if it is two code paths.
-5. **The board as a package** — the `.storyboard` plus a folder of originals and clips, for
+6. **The board as a package** — the `.storyboard` plus a folder of originals and clips, for
    handing to someone who does not have the app.
-6. **A shot list**, plain text or CSV: code, type, description, both prompts, the model each
+7. **A shot list**, plain text or CSV: code, type, description, both prompts, the model each
    was written for. This is what gets pasted into a call sheet or a ticket.
 
 ## Shape
@@ -44,11 +63,14 @@ Export ────────────────────────�
  what        [x] full-size originals   [x] clips
              [ ] board copies (854×480)  [ ] reference sets, per shot
              [ ] shot list (CSV)         [ ] contact sheet (PDF)
- which       (o) whole board  ( ) this scene  ( ) selected shots  ( ) shots with a clip
+             [ ] manifest (what made each one)
+ which       (o) whole board  ( ) this scene  ( ) selected shots
+             [x] only what was made in here (11 stills · 4 clips)
  naming      (o) 0007.webp — serial      ( ) 1C_0007.webp — shot code first
  where       [ Choose a folder… ]  or  [ Download ]
              ────────────────────────────────────────────────────
-             38 files · 47 MB          [ Export ]
+             15 files · 31 MB          [ Export ]
+             ⚠ 1 clip is a link, not a file — fetch it first
 ```
 
 Notes that matter more than the layout:
@@ -67,6 +89,13 @@ Notes that matter more than the layout:
   naming is decided, and already survive scripts other than Latin.
 - **Nothing new is stored.** The panel is a reader: everything it writes is already in the
   file, so there is no state to migrate and no way for an export to change a board.
+- **The manifest is the point of the generated-only export.** One JSON (or CSV) beside the
+  files: shot code, serial, filename, kind, model, slug, the prompt it was made from, and
+  when. That is what makes a folder of AI output auditable a month later, and it is the
+  thing nobody can rebuild from the pictures alone.
+- **Link-only clips are called out before the export runs**, not discovered afterwards —
+  the footer counts them and offers the fetch, because the link is the part with a clock
+  on it.
 
 ## Where it plugs in
 
@@ -76,6 +105,8 @@ Notes that matter more than the layout:
 | `js/pdf.js` | print sheets, unchanged; the panel calls it |
 | `board.js` `saveFeed` / `downloadFeed` | today's one exit; moves here and keeps working from the card |
 | `SB.Renders.dataUrl / fileName / slug / weigh` | everything the panel needs to read and name; `weigh()` already gives the size estimate for the footer |
+| `render.made` / `video.made` | the generated-only filter and the manifest; written since the ImagineArt push |
+| `SB.Imagine.fetchClip` | the "one clip is still a link" warning in the footer acts through it |
 
 ## What it does not do
 

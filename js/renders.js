@@ -200,7 +200,7 @@
    * Unlike the folder this replaced, there is no way for this to quietly do
    * nothing: if it cannot encode the picture it rejects, and the caller says
    * so out loud. */
-  function keep(p, src, existing) {
+  function keep(p, src, existing, made) {
     return encode(src, wantsSource(p)).then(function (enc) {
       const ref = SB.Blobs.put(p, enc.data);
       if (!ref) return null;
@@ -211,6 +211,12 @@
         w: enc.w, h: enc.h,
         bytes: dataUrlBytes(enc.data),
         source: !!enc.source,
+        /* Where this came from, when it came from inside the app: which model
+         * made it, off which prompt. Nothing can reconstruct that later — the
+         * prompt on the card is edited, the model selector moves on — and it
+         * is the difference between exporting "everything" and exporting
+         * "what we generated". */
+        made: made || (existing && existing.made) || null,
         at: Date.now()
       };
     });
@@ -218,7 +224,7 @@
 
   /* A clip goes in as it arrived: a second lossy pass would not be the clip
    * the model made, and a browser cannot do a cheap one anyway. */
-  function keepVideo(p, blob, existing) {
+  function keepVideo(p, blob, existing, made) {
     if (!blob || !blob.size) return Promise.resolve(null);
     return toDataUrl(blob).then(function (data) {
       if (!data) return null;
@@ -229,6 +235,7 @@
         serial: (existing && existing.serial) || claim(p),
         ext: videoExt(blob),
         bytes: blob.size,
+        made: made || (existing && existing.made) || null,
         at: Date.now()
       };
     });

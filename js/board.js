@@ -1593,12 +1593,12 @@
     return f;
   }
 
-  function setImage(sh, src) {
+  function setImage(sh, src, made) {
     /* Two copies of one picture: the proxy the board draws, and the original
        a model gets handed. Both go in the file. The original runs alongside
        rather than in front — it is an encode of a large picture, and the card
        should not sit empty while that happens. */
-    SB.Renders.keep(P(), src, sh.render).then(function (rec) {
+    SB.Renders.keep(P(), src, sh.render, made).then(function (rec) {
       if (!rec) return;
       sh.render = rec;
       SB.Store.touch();

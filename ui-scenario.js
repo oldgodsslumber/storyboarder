@@ -868,6 +868,36 @@
         SB.app.changed(true);
       }
 
+      // a clip goes into the file the same way a picture does
+      {
+        const vShot = P().scenes[0].shots[0];
+        const wasVideo = vShot.video;
+        const bytes = new Uint8Array(2048);
+        for (let vi = 0; vi < bytes.length; vi++) bytes[vi] = vi & 255;
+        const clip = new Blob([bytes], { type: 'video/mp4' });
+        const made = { by: 'imagine', role: 'video', model: 'Kling', slug: 'kling-1.0-pro' };
+        const rec = await SB.Renders.keepVideo(P(), clip, null, made);
+        vShot.video = rec;
+        t('a clip is kept in the file', !!(rec && rec.ref) && SB.Renders.has(P(), rec),
+          JSON.stringify(rec && { ref: !!rec.ref, ext: rec.ext, bytes: rec.bytes }));
+        t('named mp4 by its type', rec.ext === 'mp4', rec.ext);
+        t('with its own serial', rec.serial > 0, rec.serial);
+        t('and a record of what made it', rec.made === made, '');
+        /* the sweep runs on every structural change and knew nothing about
+           clips until it was taught — a clip it misses is a clip deleted */
+        SB.app.changed(true);
+        t('a structural change does not sweep the clip away', SB.Renders.has(P(), rec), '');
+        const carried = SB.Renders.weigh(P());
+        t('and Settings can count it', carried.clips.n >= 1 && carried.clips.bytes > 2000,
+          carried.clips.n + ' clips, ' + carried.clips.bytes + ' b');
+        t('the card offers to play it',
+          !!document.querySelector('.card[data-shot="' + vShot.id + '"] .clip-badge'), '');
+        vShot.video = wasVideo;
+        SB.app.changed(true);
+        t('and taking it off gives the weight back',
+          SB.Renders.weigh(P()).clips.n === 0, SB.Renders.weigh(P()).clips.n);
+      }
+
       // the scene organizer and the board banner are two windows onto one
       // scene. Whichever you are not typing into used to hold a stale copy,
       // and its next keystroke wrote that copy back over the newer text.
