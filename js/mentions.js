@@ -111,9 +111,8 @@
   /* What picking this would actually feed — said here, because a mark that
    * feeds nothing is the whole failure this is meant to prevent. */
   function note(per) {
-    const n = SB.Personas.imagesOf(per).length;
-    if (!n) return { text: 'no reference image', warn: true };
-    return { text: n === 1 ? '1 frame' : n + ' frames', warn: false };
+    if (!SB.Personas.hasImage(per)) return { text: 'no reference image', warn: true };
+    return { text: 'has a reference', warn: false };
   }
 
   function candidates() {

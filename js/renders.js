@@ -277,6 +277,7 @@
       originals: { n: 0, bytes: 0 },
       clips: { n: 0, bytes: 0 },
       ink: { n: 0, bytes: 0 },
+      retired: { n: 0, bytes: 0 },
       total: 0, unused: 0, legacy: 0, dangling: 0
     };
     const b = SB.Blobs.map(p);
@@ -303,12 +304,19 @@
     };
     const eachPersona = function (list) {
       (list || []).forEach(function (per) {
-        add('proxies', refOf(per.image));
-        (per.images || []).forEach(function (x) {
+        [per.image].concat(per.images || []).forEach(function (x) {
+          if (!x) return;
           add('proxies', refOf(x));
-          add('originals', x && x.render && x.render.ref);
-          if (isLegacy(x && x.render)) out.legacy++;
-          if (isDangling(p, x && x.render)) out.dangling++;
+          add('originals', x.render && x.render.ref);
+          if (isLegacy(x.render)) out.legacy++;
+          if (isDangling(p, x.render)) out.dangling++;
+        });
+        /* Counted apart: they are not references any more, they are weight
+           somebody has not decided about yet. */
+        (per.retired || []).forEach(function (x) {
+          if (!x) return;
+          add('retired', refOf(x));
+          add('retired', x.render && x.render.ref);
         });
       });
     };
@@ -322,7 +330,8 @@
     let all = 0;
     Object.keys(b).forEach(function (k) { all += (b[k] || '').length; });
     out.total = all;
-    out.unused = all - (out.proxies.bytes + out.originals.bytes + out.clips.bytes + out.ink.bytes);
+    out.unused = all - (out.proxies.bytes + out.originals.bytes + out.clips.bytes +
+      out.ink.bytes + out.retired.bytes);
     return out;
   }
 

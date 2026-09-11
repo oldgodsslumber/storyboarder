@@ -557,15 +557,20 @@
       var rmBtn = document.querySelector('.lib-refs .persona-frame .frame-x');
       t('the reference image is removed by an X in the corner',
         !!rmBtn && rmBtn.textContent === '✕', rmBtn ? rmBtn.textContent : 'none');
-      t('and the frame carries a filmstrip with room for another',
-        !!document.querySelector('.lib-refs .persona-strip .strip-thumb.add'), '');
+      /* One reference per subject now: the filmstrip and its + went with the
+         list, and the slot itself is what you drop a replacement on. */
+      t('there is no way to add a second reference',
+        !document.querySelector('.lib-refs .persona-strip .strip-thumb.add'), '');
+      t('and the slot says it replaces rather than adds',
+        /replace/i.test(document.querySelector('.lib-refs .persona-frame').title || ''),
+        document.querySelector('.lib-refs .persona-frame').title);
 
       /* a 9:16 subject is a tall card with its fields beside it, not a sliver */
       (function () {
         const tall = SB.Personas.add(P(), { name: 'Portrait', description: 'Standing.' });
-        SB.Personas.addImage(tall, SB.Blobs.image(P(), 'data:image/gif;base64,R0lGODlhAQABAAAAACw=', 270, 480), '');
+        SB.Personas.setImage(tall, SB.Blobs.image(P(), 'data:image/gif;base64,R0lGODlhAQABAAAAACw=', 270, 480), '');
         const flat = SB.Personas.add(P(), { name: 'Landscape', description: 'Wide.' });
-        SB.Personas.addImage(flat, SB.Blobs.image(P(), 'data:image/gif;base64,R0lGODlhAQABAAAAACw=', 854, 480), '');
+        SB.Personas.setImage(flat, SB.Blobs.image(P(), 'data:image/gif;base64,R0lGODlhAQABAAAAACw=', 854, 480), '');
         SB.PersonaPanel.refresh();
         const tc = document.querySelector('.persona[data-id="' + tall.id + '"]');
         const fc = document.querySelector('.persona[data-id="' + flat.id + '"]');
@@ -581,9 +586,8 @@
         t('while a landscape column takes the whole card',
           fc.querySelector('.persona-frames').style.width === '',
           fc.querySelector('.persona-frames').style.width);
-        t('a strip thumb is shaped like its own angle',
-          tc.querySelector('.strip-thumb').style.getPropertyValue('--ar').indexOf('0.5625') === 0,
-          tc.querySelector('.strip-thumb').style.getPropertyValue('--ar'));
+        t('the label box says what the one reference shows',
+          !!tc.querySelector('.strip-label'), 'no label box');
 
         /* the size dial is CSS only — no re-render, and the cards follow it */
         const refs = document.querySelector('.lib-refs');
@@ -1176,7 +1180,7 @@
           fr.querySelector('.feed-cell.empty .feed-n').textContent === '–', fr.textContent);
         /* give it a frame and it takes its place in the order */
         const handset = SB.Personas.all(P()).filter(function (x) { return x.name === 'Handset'; })[0];
-        SB.Personas.addImage(handset, SB.Blobs.image(P(),
+        SB.Personas.setImage(handset, SB.Blobs.image(P(),
           'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 4, 3), 'front');
         SB.Board.refreshFeed(mShotId);
         const fr1 = mCard.querySelector('.feed-row');

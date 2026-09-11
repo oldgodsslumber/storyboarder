@@ -364,11 +364,10 @@
         const png = 'data:image/gif;base64,R0lGODlhAQABAAAAACw=';
         const lead = SB.Personas.add(P(), { name: 'Ops lead',
           description: 'Charcoal knit, cropped hair.' });
-        SB.Personas.addImage(lead, SB.Blobs.image(P(), png, 270, 480), 'front');
-        SB.Personas.addImage(lead, SB.Blobs.image(P(), png, 270, 480), '3/4');
+        SB.Personas.setImage(lead, SB.Blobs.image(P(), png, 270, 480), 'front');
         const tech = SB.Personas.add(P(), { name: 'Technician',
           description: 'Navy work shirt.' });
-        SB.Personas.addImage(tech, SB.Blobs.image(P(), png, 854, 480), 'front');
+        SB.Personas.setImage(tech, SB.Blobs.image(P(), png, 854, 480), 'front');
         shots.a.personaIds = [lead.id, tech.id];
         SB.Personas.setEnters(shots.a, tech.id, true);
         shots.a.image = SB.Blobs.image(P(), png, 854, 480);
@@ -376,12 +375,12 @@
         const sc = SB.H3.scaffold(P(), shots.a);
         t('the first frame is <Picture 1>', /<Picture 1> is the first frame/.test(sc.definitions),
           sc.definitions.split('\n')[0]);
-        t('each subject gets one label, however many angles it has',
-          sc.subjects.length === 2 && sc.subjects[0].pictures.length === 2,
+        t('each subject gets one label and one picture',
+          sc.subjects.length === 2 && sc.subjects[0].pictures.length === 1,
           JSON.stringify(sc.subjects.map(function (x) { return x.pictures.length; })));
-        t('and cites every picture that defines it',
-          /<Subject 1> is Ops lead, seen in <Picture 2> and <Picture 3>: Charcoal knit/
-            .test(sc.definitions), sc.definitions);
+        t('and cites the picture that defines it',
+          /<Subject 1> is Ops lead, seen in <Picture 2>: Charcoal knit/.test(sc.definitions),
+          sc.definitions);
         t('retention_analysis is written from the board, not asked for',
           /<Subject 1> \(appears in \[Shot 1\]\): fully_preserved/.test(sc.retention) &&
           /<Picture 1> \(appears in \[Shot 1\]\): fully_preserved/.test(sc.retention),

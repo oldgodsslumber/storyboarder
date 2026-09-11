@@ -221,7 +221,7 @@ section('reference sets go in a folder of their own');
 {
   const { p, a, b } = board();
   const her = SB.Personas.add(p, { name: 'Nat' });
-  SB.Personas.addImage(her, SB.Blobs.image(p, 'data:image/jpeg;base64,' + 'e'.repeat(300), 4, 3), '',
+  SB.Personas.setImage(her, SB.Blobs.image(p, 'data:image/jpeg;base64,' + 'e'.repeat(300), 4, 3), '',
     { ref: SB.Blobs.put(p, 'data:image/webp;base64,' + 'F'.repeat(1200)), serial: 9, ext: 'webp' });
   b.description = 'Reverse of ' + SB.Refs.mark(a.id, '1A');
   b.personaIds = [her.id];
@@ -269,7 +269,7 @@ section('the things a QA pass found');
         must not report the original's bytes for a file it did not write */
   const { p, a, b } = board();
   const her = SB.Personas.add(p, { name: 'Nat' });
-  SB.Personas.addImage(her, SB.Blobs.image(p, 'data:image/jpeg;base64,' + 'e'.repeat(300), 854, 480),
+  SB.Personas.setImage(her, SB.Blobs.image(p, 'data:image/jpeg;base64,' + 'e'.repeat(300), 854, 480),
     '', { serial: 9, ext: 'webp', bytes: 1048576, w: 3840, h: 2160 });   // folder-era: no ref
   b.personaIds = [her.id];
   b.description = 'Nat at the rack.';

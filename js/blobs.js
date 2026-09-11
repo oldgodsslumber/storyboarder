@@ -110,10 +110,13 @@
     const walkPersonas = function (list) {
       (list || []).forEach(function (per) {
         mark(per.image);
-        (per.images || []).forEach(function (x) {
-          mark(x);
-          mark(x && x.render);
-        });
+        mark(per.image && per.image.render);
+        /* `images` is the pre-migration shape; `retired` is what a board that
+         * carried several keeps. Both are still bytes somebody owns — leaving
+         * retired out would have the first structural change delete frames the
+         * panel is at that moment offering to restore. */
+        (per.images || []).forEach(function (x) { mark(x); mark(x && x.render); });
+        (per.retired || []).forEach(function (x) { mark(x); mark(x && x.render); });
       });
     };
     walkScenes(p.scenes);

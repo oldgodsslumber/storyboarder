@@ -101,59 +101,89 @@
     };
   }
 
-  /* ---- reference images ----
+  /* ---- the reference image ----
    *
-   * Boards written before this held a single `image`. Reading through here
-   * rather than off the record means an unmigrated one — a hand-built test
-   * fixture, a snapshot restored out of an old file — still answers. */
+   * One per subject. It used to be a list, and the whole app was shaped around
+   * that list — ranges in the cast block ("images 3–5 — Nat"), a number per
+   * photo in the feed, an anchor per photo for H3, promote/label/remove per
+   * frame in the panel — but nothing ever sent more than one anywhere. A push
+   * carries a single picture, so the extra numbering was a promise made to a
+   * person who then dragged the files in by hand, and on a full-reference
+   * model the prompt named pictures the call never received.
+   *
+   * Cutting it to one made a guard sentence disappear rather than be
+   * maintained: the cast block had to explain that several images under one
+   * name were the same person, which is a workaround for a feature nobody
+   * could use. Two angles of a subject are now two subjects — "Nat" and
+   * "Nat (back)" — which is what the numbering could always express.
+   *
+   * `imagesOf` survives as a list of nought or one, so every reader — the
+   * feed, the blocks, the export — keeps working unchanged.
+   */
   function imagesOf(per) {
     if (!per) return [];
-    if (per.images && per.images.length) return per.images;
-    return per.image ? [per.image] : [];
+    /* `images` is what an unmigrated board carries — a hand-built fixture, a
+     * snapshot restored out of an old file. The live field is `image`. */
+    if (per.image) return [per.image];
+    if (per.images && per.images.length) return [per.images[0]];
+    return [];
   }
   function hero(per) { return imagesOf(per)[0] || null; }
   function hasImage(per) { return !!hero(per); }
 
-  function addImage(per, img, label, render) {
+  /* Frames a board carried before the cut, kept rather than deleted: since
+   * originals live in the .storyboard, dropping them on open would destroy the
+   * only copy. They are fed to nothing and exported by nothing, and the panel
+   * offers to use one or delete them. */
+  function retiredOf(per) {
+    return (per && Array.isArray(per.retired)) ? per.retired : [];
+  }
+
+  /* Replaces whatever is there. Returns the record, which is what the caller
+   * hangs the full-size original on when its encode finishes. */
+  function setImage(per, img, label, render) {
     if (!per || !img) return null;
-    per.images = imagesOf(per).slice();
-    delete per.image;
-    /* `render` points at the full-size original, in this same file, when
-     * there is one. The board still holds the proxy either way. */
     const rec = { ref: img.ref, w: img.w, h: img.h, label: label || '', render: render || null };
-    per.images.push(rec);
+    per.image = rec;
+    delete per.images;
     touch(per);
     return rec;
   }
 
-  function removeImage(per, idx) {
+  function clearImage(per) {
     if (!per) return;
-    const list = imagesOf(per).slice();
+    delete per.image;
+    delete per.images;
+    touch(per);
+  }
+
+  function labelImage(per, label) {
+    const rec = hero(per);
+    if (!rec) return;
+    rec.label = label || '';
+    per.image = rec;
+    delete per.images;
+    touch(per);
+  }
+
+  /* Swap a retired frame into the slot: the one that is there joins the
+   * retired list rather than being thrown away. */
+  function useRetired(per, idx) {
+    const list = retiredOf(per).slice();
     if (idx < 0 || idx >= list.length) return;
-    list.splice(idx, 1);
-    per.images = list;
-    delete per.image;
+    const pick = list.splice(idx, 1)[0];
+    const had = hero(per);
+    if (had) list.push(had);
+    per.image = pick;
+    delete per.images;
+    per.retired = list;
+    if (!per.retired.length) delete per.retired;
     touch(per);
   }
 
-  /* The first image is the one the board shows and the one a single-reference
-   * model gets, so promoting is how you say "this is the shot of them". */
-  function makeHero(per, idx) {
+  function dropRetired(per) {
     if (!per) return;
-    const list = imagesOf(per).slice();
-    if (idx <= 0 || idx >= list.length) return;
-    list.unshift(list.splice(idx, 1)[0]);
-    per.images = list;
-    delete per.image;
-    touch(per);
-  }
-
-  function labelImage(per, idx, label) {
-    const list = imagesOf(per);
-    if (!list[idx]) return;
-    list[idx].label = label || '';
-    per.images = list;
-    delete per.image;
+    delete per.retired;
     touch(per);
   }
 
@@ -360,16 +390,14 @@
     if (role === 'video' && SB.Model.videoInherits(model)) {
       return videoCastBlock(p, shot, cast);
     }
+    /* One reference per subject, so one number — the ranges this used to
+     * write ("images 3–5 — Nat") went with the list. */
     const rangeFor = function (per) {
-      const mine = numbered.filter(function (e) { return e.id === per.id; })
-        .map(function (e) { return e.n; });
-      if (!mine.length) return '';
-      if (mine.length === 1) return 'image ' + mine[0] + ' — ';
-      return 'images ' + mine[0] + '–' + mine[mine.length - 1] + ' — ';
+      const mine = numbered.filter(function (e) { return e.id === per.id; })[0];
+      return mine ? 'image ' + mine.n + ' — ' : '';
     };
 
     const lines = [];
-    let multi = false;
     KINDS.forEach(function (kind) {
       const mine = cast.filter(function (x) { return kindOf(x).id === kind.id; });
       if (!mine.length) return;
@@ -385,7 +413,6 @@
         const late = enters(shot, per.id) ? '  [ARRIVES DURING THE SHOT — NOT IN THE FIRST FRAME]' : '';
         lines.push('  ' + (i + 1) + '. ' + bits.join(': ') + late);
         if (!hasImage(per)) lines.push('     ' + kind.noImage);
-        if (imagesOf(per).length > 1) multi = true;
       });
     });
 
@@ -408,13 +435,6 @@
       SB.Refs.images(p, shot).forEach(function (e) {
         lines.push('  image ' + e.n + ' = ' + e.label + (e.role ? ' (' + e.role + ')' : ''));
       });
-      /* Several frames of one subject read as several subjects unless this is
-       * said outright — the failure is a second person walking into the shot. */
-      if (multi) {
-        lines.push('Where more than one image is listed against the same name, they are the SAME ' +
-          'subject seen from different angles — not different subjects. Do not add anybody or ' +
-          'anything to the shot on account of the extra frames.');
-      }
     }
     /* The shot description may itself name a wardrobe — older boards baked the
      * subject into every description, and that copy went stale the moment the
@@ -621,7 +641,8 @@
     KINDS: KINDS, kindOf: kindOf, ofKind: ofKind, IMAGE_ADVICE: IMAGE_ADVICE,
     newPersona: newPersona, all: all, find: find, add: add, remove: remove,
     imagesOf: imagesOf, hero: hero, hasImage: hasImage,
-    addImage: addImage, removeImage: removeImage, makeHero: makeHero, labelImage: labelImage,
+    setImage: setImage, clearImage: clearImage, labelImage: labelImage,
+    retiredOf: retiredOf, useRetired: useRetired, dropRetired: dropRetired,
     forShot: forShot, toggleOnShot: toggleOnShot, block: block, generate: generate,
     enters: enters, setEnters: setEnters, toggleEnters: toggleEnters,
     presentAtOpen: presentAtOpen, arriving: arriving, ARRIVAL_RE: ARRIVAL_RE,

@@ -502,12 +502,22 @@ They are one record with one set of behaviour, because to an image model a room 
 not change is the same problem as a face that must not change. Each holds a **name**, a
 **description**, the **reference image prompt**, and its **reference frames**.
 
-- **Several frames per subject.** One angle rarely pins a face or a room down, so a subject
-  holds as many as it needs — drop, paste or load them into the filmstrip, label each one
-  ("front", "3/4", "wide establishing"), and click a thumbnail to promote it to the **hero**
-  frame, which is the one the board shows and the one a single-reference model gets. Past
-  four, the panel says so: most image models start averaging references together instead of
-  reading them.
+- **One reference frame per subject.** Drop, paste or load it into the slot; dropping
+  another replaces it. A caption says what it shows ("front", "3/4", "wide establishing")
+  and that caption is what the prompt's mapping cites and what the export names the file.
+  For a second angle, make it a subject of its own — `Nat (back)` — and it gets its own
+  number in the feed.
+
+  It used to be a list, with a hero and any number of angles. Nothing ever sent more than
+  one anywhere: a push carries a single picture, so the extra numbering was a promise to
+  whoever was dragging the files in by hand, and on a full-reference model the prompt named
+  pictures the call never received. Cutting to one also retired the sentence the cast block
+  had to carry explaining that several frames of one name were not several people.
+
+  A board that already holds several keeps them — they are **retired**, fed to nothing and
+  exported by nothing, shown under the slot. Click one to use it instead, or delete them
+  deliberately; nothing is thrown away on open, because the `.storyboard` is now the only
+  copy of those originals.
 - **✦ Generate from script** reads the master script and the shot descriptions and invents
   recurring people — or locations, or objects — through the house style. Everything is
   editable afterwards, and **+ Person / + Location / + Object** skip the model entirely.

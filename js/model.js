@@ -373,10 +373,16 @@
      * so no card is falsely flagged as behind. */
     x.updatedAt = typeof x.updatedAt === 'number' ? x.updatedAt : 0;
 
-    const imgs = Array.isArray(x.images) ? x.images.slice() : [];
-    if (x.image) imgs.unshift(x.image);
-    delete x.image;
-    x.images = imgs.map(function (img) {
+    /* One reference per subject. A board that carried several keeps the first
+     * and the rest move to `retired` — fed to nothing, exported by nothing,
+     * but not deleted: the .storyboard is the only copy of those originals
+     * now, and throwing them away on open would destroy work in silence. The
+     * persona panel offers to use one or be rid of them. */
+    const imgs = [];
+    if (x.image) imgs.push(x.image);
+    (Array.isArray(x.images) ? x.images : []).forEach(function (i) { imgs.push(i); });
+    (Array.isArray(x.retired) ? x.retired : []).forEach(function (i) { imgs.push(i); });
+    const kept = imgs.map(function (img) {
       const a = SB.Blobs.adopt(p, img);
       if (!a) return null;
       a.label = typeof img.label === 'string' ? img.label : (a.label || '');
@@ -384,6 +390,11 @@
       if (a.render) p.renderSeq = Math.max(p.renderSeq | 0, a.render.serial);
       return a;
     }).filter(Boolean);
+    delete x.images;
+    delete x.image;
+    delete x.retired;
+    if (kept.length) x.image = kept[0];
+    if (kept.length > 1) x.retired = kept.slice(1);
   }
 
   /* Fill in anything an older/hand-edited file is missing. */

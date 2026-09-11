@@ -776,12 +776,18 @@ button.linkish{
 }
 .strip-cell.hero .strip-thumb{border-color:var(--accent);cursor:default}
 .strip-thumb img{width:100%;height:100%;object-fit:contain}
-.strip-thumb.add{color:var(--fg-dim);font-size:16px;border-style:dashed}
-.strip-thumb.add:hover{color:var(--accent);border-color:var(--accent)}
+/* One reference per subject, so the strip is only ever the retired frames a
+   board carried before the cut: dimmed, because they feed nothing until one
+   is clicked back into the slot. */
+.persona-strip.retired{margin-top:6px;opacity:.62}
+.persona-strip.retired .strip-thumb{border-style:dashed}
+.persona-strip.retired .strip-thumb:hover{opacity:1;border-color:var(--accent);border-style:solid}
 .strip-label{
   width:100%;background:var(--input-bg);color:var(--fg);border:1px solid var(--line);
   border-radius:3px;padding:1px 3px;font-size:9px;
 }
+/* the single reference's caption sits under the frame, not under a thumbnail */
+.strip-label.wide{font-size:11px;padding:3px 5px;margin-top:5px}
 .strip-label:focus{outline:none;border-color:var(--accent)}
 .pp-note.warn{color:var(--accent2)}
 
@@ -1185,7 +1191,7 @@ body.comment-mode .frame{cursor:crosshair}
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-09-11 13:48 · de9f0d0";</script>
+<script>window.SB_BUILD = "2026-09-11 14:32 · 22fb34c+";</script>
 
 <div id="app">
 
@@ -2022,10 +2028,13 @@ window.SB = window.SB || {};
     const walkPersonas = function (list) {
       (list || []).forEach(function (per) {
         mark(per.image);
-        (per.images || []).forEach(function (x) {
-          mark(x);
-          mark(x && x.render);
-        });
+        mark(per.image && per.image.render);
+        /* `images` is the pre-migration shape; `retired` is what a board that
+         * carried several keeps. Both are still bytes somebody owns — leaving
+         * retired out would have the first structural change delete frames the
+         * panel is at that moment offering to restore. */
+        (per.images || []).forEach(function (x) { mark(x); mark(x && x.render); });
+        (per.retired || []).forEach(function (x) { mark(x); mark(x && x.render); });
       });
     };
     walkScenes(p.scenes);
@@ -3346,6 +3355,7 @@ window.SB = window.SB || {};
       originals: { n: 0, bytes: 0 },
       clips: { n: 0, bytes: 0 },
       ink: { n: 0, bytes: 0 },
+      retired: { n: 0, bytes: 0 },
       total: 0, unused: 0, legacy: 0, dangling: 0
     };
     const b = SB.Blobs.map(p);
@@ -3372,12 +3382,19 @@ window.SB = window.SB || {};
     };
     const eachPersona = function (list) {
       (list || []).forEach(function (per) {
-        add('proxies', refOf(per.image));
-        (per.images || []).forEach(function (x) {
+        [per.image].concat(per.images || []).forEach(function (x) {
+          if (!x) return;
           add('proxies', refOf(x));
-          add('originals', x && x.render && x.render.ref);
-          if (isLegacy(x && x.render)) out.legacy++;
-          if (isDangling(p, x && x.render)) out.dangling++;
+          add('originals', x.render && x.render.ref);
+          if (isLegacy(x.render)) out.legacy++;
+          if (isDangling(p, x.render)) out.dangling++;
+        });
+        /* Counted apart: they are not references any more, they are weight
+           somebody has not decided about yet. */
+        (per.retired || []).forEach(function (x) {
+          if (!x) return;
+          add('retired', refOf(x));
+          add('retired', x.render && x.render.ref);
         });
       });
     };
@@ -3391,7 +3408,8 @@ window.SB = window.SB || {};
     let all = 0;
     Object.keys(b).forEach(function (k) { all += (b[k] || '').length; });
     out.total = all;
-    out.unused = all - (out.proxies.bytes + out.originals.bytes + out.clips.bytes + out.ink.bytes);
+    out.unused = all - (out.proxies.bytes + out.originals.bytes + out.clips.bytes +
+      out.ink.bytes + out.retired.bytes);
     return out;
   }
 
@@ -5248,59 +5266,89 @@ window.SB = window.SB || {};
     };
   }
 
-  /* ---- reference images ----
+  /* ---- the reference image ----
    *
-   * Boards written before this held a single `image`. Reading through here
-   * rather than off the record means an unmigrated one — a hand-built test
-   * fixture, a snapshot restored out of an old file — still answers. */
+   * One per subject. It used to be a list, and the whole app was shaped around
+   * that list — ranges in the cast block ("images 3–5 — Nat"), a number per
+   * photo in the feed, an anchor per photo for H3, promote/label/remove per
+   * frame in the panel — but nothing ever sent more than one anywhere. A push
+   * carries a single picture, so the extra numbering was a promise made to a
+   * person who then dragged the files in by hand, and on a full-reference
+   * model the prompt named pictures the call never received.
+   *
+   * Cutting it to one made a guard sentence disappear rather than be
+   * maintained: the cast block had to explain that several images under one
+   * name were the same person, which is a workaround for a feature nobody
+   * could use. Two angles of a subject are now two subjects — "Nat" and
+   * "Nat (back)" — which is what the numbering could always express.
+   *
+   * `imagesOf` survives as a list of nought or one, so every reader — the
+   * feed, the blocks, the export — keeps working unchanged.
+   */
   function imagesOf(per) {
     if (!per) return [];
-    if (per.images && per.images.length) return per.images;
-    return per.image ? [per.image] : [];
+    /* `images` is what an unmigrated board carries — a hand-built fixture, a
+     * snapshot restored out of an old file. The live field is `image`. */
+    if (per.image) return [per.image];
+    if (per.images && per.images.length) return [per.images[0]];
+    return [];
   }
   function hero(per) { return imagesOf(per)[0] || null; }
   function hasImage(per) { return !!hero(per); }
 
-  function addImage(per, img, label, render) {
+  /* Frames a board carried before the cut, kept rather than deleted: since
+   * originals live in the .storyboard, dropping them on open would destroy the
+   * only copy. They are fed to nothing and exported by nothing, and the panel
+   * offers to use one or delete them. */
+  function retiredOf(per) {
+    return (per && Array.isArray(per.retired)) ? per.retired : [];
+  }
+
+  /* Replaces whatever is there. Returns the record, which is what the caller
+   * hangs the full-size original on when its encode finishes. */
+  function setImage(per, img, label, render) {
     if (!per || !img) return null;
-    per.images = imagesOf(per).slice();
-    delete per.image;
-    /* `render` points at the full-size original, in this same file, when
-     * there is one. The board still holds the proxy either way. */
     const rec = { ref: img.ref, w: img.w, h: img.h, label: label || '', render: render || null };
-    per.images.push(rec);
+    per.image = rec;
+    delete per.images;
     touch(per);
     return rec;
   }
 
-  function removeImage(per, idx) {
+  function clearImage(per) {
     if (!per) return;
-    const list = imagesOf(per).slice();
+    delete per.image;
+    delete per.images;
+    touch(per);
+  }
+
+  function labelImage(per, label) {
+    const rec = hero(per);
+    if (!rec) return;
+    rec.label = label || '';
+    per.image = rec;
+    delete per.images;
+    touch(per);
+  }
+
+  /* Swap a retired frame into the slot: the one that is there joins the
+   * retired list rather than being thrown away. */
+  function useRetired(per, idx) {
+    const list = retiredOf(per).slice();
     if (idx < 0 || idx >= list.length) return;
-    list.splice(idx, 1);
-    per.images = list;
-    delete per.image;
+    const pick = list.splice(idx, 1)[0];
+    const had = hero(per);
+    if (had) list.push(had);
+    per.image = pick;
+    delete per.images;
+    per.retired = list;
+    if (!per.retired.length) delete per.retired;
     touch(per);
   }
 
-  /* The first image is the one the board shows and the one a single-reference
-   * model gets, so promoting is how you say "this is the shot of them". */
-  function makeHero(per, idx) {
+  function dropRetired(per) {
     if (!per) return;
-    const list = imagesOf(per).slice();
-    if (idx <= 0 || idx >= list.length) return;
-    list.unshift(list.splice(idx, 1)[0]);
-    per.images = list;
-    delete per.image;
-    touch(per);
-  }
-
-  function labelImage(per, idx, label) {
-    const list = imagesOf(per);
-    if (!list[idx]) return;
-    list[idx].label = label || '';
-    per.images = list;
-    delete per.image;
+    delete per.retired;
     touch(per);
   }
 
@@ -5507,16 +5555,14 @@ window.SB = window.SB || {};
     if (role === 'video' && SB.Model.videoInherits(model)) {
       return videoCastBlock(p, shot, cast);
     }
+    /* One reference per subject, so one number — the ranges this used to
+     * write ("images 3–5 — Nat") went with the list. */
     const rangeFor = function (per) {
-      const mine = numbered.filter(function (e) { return e.id === per.id; })
-        .map(function (e) { return e.n; });
-      if (!mine.length) return '';
-      if (mine.length === 1) return 'image ' + mine[0] + ' — ';
-      return 'images ' + mine[0] + '–' + mine[mine.length - 1] + ' — ';
+      const mine = numbered.filter(function (e) { return e.id === per.id; })[0];
+      return mine ? 'image ' + mine.n + ' — ' : '';
     };
 
     const lines = [];
-    let multi = false;
     KINDS.forEach(function (kind) {
       const mine = cast.filter(function (x) { return kindOf(x).id === kind.id; });
       if (!mine.length) return;
@@ -5532,7 +5578,6 @@ window.SB = window.SB || {};
         const late = enters(shot, per.id) ? '  [ARRIVES DURING THE SHOT — NOT IN THE FIRST FRAME]' : '';
         lines.push('  ' + (i + 1) + '. ' + bits.join(': ') + late);
         if (!hasImage(per)) lines.push('     ' + kind.noImage);
-        if (imagesOf(per).length > 1) multi = true;
       });
     });
 
@@ -5555,13 +5600,6 @@ window.SB = window.SB || {};
       SB.Refs.images(p, shot).forEach(function (e) {
         lines.push('  image ' + e.n + ' = ' + e.label + (e.role ? ' (' + e.role + ')' : ''));
       });
-      /* Several frames of one subject read as several subjects unless this is
-       * said outright — the failure is a second person walking into the shot. */
-      if (multi) {
-        lines.push('Where more than one image is listed against the same name, they are the SAME ' +
-          'subject seen from different angles — not different subjects. Do not add anybody or ' +
-          'anything to the shot on account of the extra frames.');
-      }
     }
     /* The shot description may itself name a wardrobe — older boards baked the
      * subject into every description, and that copy went stale the moment the
@@ -5768,7 +5806,8 @@ window.SB = window.SB || {};
     KINDS: KINDS, kindOf: kindOf, ofKind: ofKind, IMAGE_ADVICE: IMAGE_ADVICE,
     newPersona: newPersona, all: all, find: find, add: add, remove: remove,
     imagesOf: imagesOf, hero: hero, hasImage: hasImage,
-    addImage: addImage, removeImage: removeImage, makeHero: makeHero, labelImage: labelImage,
+    setImage: setImage, clearImage: clearImage, labelImage: labelImage,
+    retiredOf: retiredOf, useRetired: useRetired, dropRetired: dropRetired,
     forShot: forShot, toggleOnShot: toggleOnShot, block: block, generate: generate,
     enters: enters, setEnters: setEnters, toggleEnters: toggleEnters,
     presentAtOpen: presentAtOpen, arriving: arriving, ARRIVAL_RE: ARRIVAL_RE,
@@ -6279,10 +6318,16 @@ window.SB = window.SB || {};
      * so no card is falsely flagged as behind. */
     x.updatedAt = typeof x.updatedAt === 'number' ? x.updatedAt : 0;
 
-    const imgs = Array.isArray(x.images) ? x.images.slice() : [];
-    if (x.image) imgs.unshift(x.image);
-    delete x.image;
-    x.images = imgs.map(function (img) {
+    /* One reference per subject. A board that carried several keeps the first
+     * and the rest move to `retired` — fed to nothing, exported by nothing,
+     * but not deleted: the .storyboard is the only copy of those originals
+     * now, and throwing them away on open would destroy work in silence. The
+     * persona panel offers to use one or be rid of them. */
+    const imgs = [];
+    if (x.image) imgs.push(x.image);
+    (Array.isArray(x.images) ? x.images : []).forEach(function (i) { imgs.push(i); });
+    (Array.isArray(x.retired) ? x.retired : []).forEach(function (i) { imgs.push(i); });
+    const kept = imgs.map(function (img) {
       const a = SB.Blobs.adopt(p, img);
       if (!a) return null;
       a.label = typeof img.label === 'string' ? img.label : (a.label || '');
@@ -6290,6 +6335,11 @@ window.SB = window.SB || {};
       if (a.render) p.renderSeq = Math.max(p.renderSeq | 0, a.render.serial);
       return a;
     }).filter(Boolean);
+    delete x.images;
+    delete x.image;
+    delete x.retired;
+    if (kept.length) x.image = kept[0];
+    if (kept.length > 1) x.retired = kept.slice(1);
   }
 
   /* Fill in anything an older/hand-edited file is missing. */
@@ -13233,7 +13283,7 @@ window.SB = window.SB || {};
     del.onclick = function () {
       /* This cannot be undone — structural changes are deliberately outside the
          undo stack — and it takes more with it than the cards it is on. */
-      const frames = SB.Personas.imagesOf(per).length;
+      const frames = SB.Personas.imagesOf(per).length + SB.Personas.retiredOf(per).length;
       const marked = markedIn(per.id);
       const takes = [];
       if (used) takes.push('comes off ' + used + ' card' + (used === 1 ? '' : 's'));
@@ -13357,22 +13407,32 @@ window.SB = window.SB || {};
       : '';
   }
 
+  /* One reference frame per subject.
+   *
+   * It was a strip — a hero, then any number of angles, each with a label and
+   * a promote button. Nothing ever sent more than the first one anywhere, so
+   * the rest were numbering a person had to honour by hand. Two angles are two
+   * subjects now ("Nat", "Nat (back)"), which the feed can already number.
+   *
+   * What a board already had is not deleted: extra frames are retired, shown
+   * below, and either promoted back into the slot or thrown away deliberately.
+   */
   function frames(per, kind, wrap) {
     const box = SB.el('div', 'persona-frames');
-    const list = SB.Personas.imagesOf(per);
+    const one = SB.Personas.hero(per);
 
     const big = SB.el('div', 'persona-frame');
-    applyShape(wrap, box, big, ratioOf(list[0]));
-    if (list.length) {
+    applyShape(wrap, box, big, ratioOf(one));
+    if (one) {
       const img = document.createElement('img');
-      img.src = SB.Blobs.src(P(), list[0]);
+      img.src = SB.Blobs.src(P(), one);
       /* An old record carrying no dimensions learns its own shape the first
          time it is drawn, and the file keeps the answer. */
-      if (!ratioOf(list[0])) {
+      if (!ratioOf(one)) {
         img.onload = function () {
           const w = img.naturalWidth, h = img.naturalHeight;
           if (!w || !h) return;
-          list[0].w = w; list[0].h = h;
+          one.w = w; one.h = h;
           SB.Store.touch();
           applyShape(wrap, box, big, w / h);
         };
@@ -13382,7 +13442,7 @@ window.SB = window.SB || {};
       rm.title = 'Remove this reference image';
       rm.onclick = function (ev) {
         ev.stopPropagation();
-        SB.Personas.removeImage(per, 0);
+        SB.Personas.clearImage(per);
         SB.app.changed(true);
         renderRefs();
       };
@@ -13390,86 +13450,69 @@ window.SB = window.SB || {};
     } else {
       big.appendChild(SB.el('div', 'drop-hint', 'drop the reference frame here, or click to load'));
     }
-    big.title = list.length ? 'Drop or click to add another reference image' : '';
+    big.title = one ? 'Drop or click to replace this reference image' : '';
     dropTarget(big, per);
     box.appendChild(big);
 
-    const strip = SB.el('div', 'persona-strip');
-    list.forEach(function (img, i) {
-      const cell = SB.el('div', 'strip-cell' + (i === 0 ? ' hero' : ''));
-      const t = SB.el('div', 'strip-thumb');
-      const r = ratioOf(img);
-      if (r) t.style.setProperty('--ar', String(r));
-      const im = document.createElement('img');
-      im.src = SB.Blobs.src(P(), img);
-      if (!r) {
-        im.onload = function () {
-          if (!im.naturalWidth || !im.naturalHeight) return;
-          img.w = im.naturalWidth; img.h = im.naturalHeight;
-          SB.Store.touch();
-          t.style.setProperty('--ar', String(img.w / img.h));
-        };
-      }
-      t.appendChild(im);
-      t.title = i === 0 ? 'The hero frame' : 'Make this the hero frame';
-      if (i > 0) {
+    /* The label is what the prompt block cites — "image 2 = Ops lead (3/4)" —
+       and what the export names the file, so it keeps a box of its own. */
+    if (one) {
+      const lb = document.createElement('input');
+      lb.type = 'text';
+      lb.className = 'strip-label wide';
+      lb.value = one.label || '';
+      lb.placeholder = 'what this shows — front, 3/4, wardrobe…';
+      lb.addEventListener('input', function () {
+        SB.Personas.labelImage(per, lb.value);
+        SB.Store.touch();
+        SB.Board.refreshCastRows();
+      });
+      box.appendChild(lb);
+    }
+
+    const old = SB.Personas.retiredOf(per);
+    if (old.length) {
+      const strip = SB.el('div', 'persona-strip retired');
+      old.forEach(function (img, i) {
+        const cell = SB.el('div', 'strip-cell');
+        const t = SB.el('div', 'strip-thumb');
+        const r = ratioOf(img);
+        if (r) t.style.setProperty('--ar', String(r));
+        const im = document.createElement('img');
+        im.src = SB.Blobs.src(P(), img);
+        t.appendChild(im);
+        t.title = 'Use this one instead — the current reference moves down here';
         t.onclick = function () {
-          SB.Personas.makeHero(per, i);
+          SB.Personas.useRetired(per, i);
           SB.app.changed(true);
           renderRefs();
         };
-      }
-      const x = SB.el('button', 'frame-x small', '✕');
-      x.title = 'Remove this reference image';
-      x.onclick = function (ev) {
-        ev.stopPropagation();
-        SB.Personas.removeImage(per, i);
+        cell.appendChild(t);
+        strip.appendChild(cell);
+      });
+      box.appendChild(strip);
+
+      const note = SB.el('div', 'pp-note warn');
+      note.appendChild(document.createTextNode(
+        old.length + (old.length === 1 ? ' older frame is' : ' older frames are') +
+        ' still in this board but no longer used — one reference is fed per subject. ' +
+        'Click one to use it instead. '));
+      const drop = SB.el('button', 'mini danger', 'delete ' +
+        (old.length === 1 ? 'it' : 'them'));
+      SB.armButton(drop, 'delete for good', function () {
+        SB.Personas.dropRetired(per);
         SB.app.changed(true);
         renderRefs();
-      };
-      t.appendChild(x);
-      cell.appendChild(t);
-
-      /* The label is what the prompt block cites — "image 2 = Ops lead (3/4)" —
-         so it is worth a box of its own rather than being guessed at. */
-      const lb = document.createElement('input');
-      lb.type = 'text';
-      lb.className = 'strip-label';
-      lb.value = img.label || '';
-      lb.placeholder = i === 0 ? 'hero' : 'label';
-      lb.title = (img.label || '') || 'What this angle is: front, 3/4, wardrobe detail, wide…';
-      lb.addEventListener('input', function () {
-        SB.Personas.labelImage(per, i, lb.value);
-        lb.title = lb.value || 'What this angle is: front, 3/4, wardrobe detail, wide…';
-        SB.Store.touch();
-        /* the label is cited in the manifest and in the saved filename */
-        SB.Board.refreshCastRows();
+        SB.toast('Retired frames deleted');
       });
-      cell.appendChild(lb);
-      strip.appendChild(cell);
-    });
-
-    const add = SB.el('div', 'strip-cell');
-    const plus = SB.el('div', 'strip-thumb add', '+');
-    plus.title = 'Add another reference image';
-    plus.onclick = function () {
-      SB.pickImageFile().then(function (f) { if (f) addImage(per, f); });
-    };
-    dropTarget(plus, per);
-    add.appendChild(plus);
-    strip.appendChild(add);
-    box.appendChild(strip);
-
-    const n = list.length;
-    let note;
-    if (!n) note = 'No reference image — prompts will describe this in full instead.';
-    else note = (n === 1 ? 'One frame' : n + ' frames') + ', fed in this order wherever ' +
-      (per.name || 'this') + ' appears.';
-    if (n > SB.Personas.IMAGE_ADVICE) {
-      note += ' Past ' + SB.Personas.IMAGE_ADVICE + ', most image models start averaging ' +
-        'references together instead of reading them.';
+      note.appendChild(drop);
+      box.appendChild(note);
     }
-    box.appendChild(SB.el('div', 'pp-note' + (n > SB.Personas.IMAGE_ADVICE ? ' warn' : ''), note));
+
+    box.appendChild(SB.el('div', 'pp-note', one
+      ? 'One reference, fed wherever ' + (per.name || 'this') + ' appears. For a second ' +
+        'angle, make it a subject of its own — it gets its own number in the feed.'
+      : 'No reference image — prompts will describe this in full instead.'));
     return box;
   }
 
@@ -13498,14 +13541,16 @@ window.SB = window.SB || {};
        large original takes a moment, and a reference should appear the instant
        it is dropped. */
     return SB.downscaleImage(src).then(function (img) {
-      const rec = SB.Personas.addImage(per, SB.Blobs.image(P(), img.data, img.w, img.h), '');
+      const had = SB.Personas.hero(per);
+      const rec = SB.Personas.setImage(per, SB.Blobs.image(P(), img.data, img.w, img.h),
+        (had && had.label) || '');
       SB.app.changed(true);
       renderRefs();
       SB.Renders.keep(P(), src, null).then(function (r) {
         /* The reference may have been deleted while its original encoded —
            writing onto a record nobody holds any more would strand the bytes
            until the next sweep. */
-        if (!r || !rec || SB.Personas.imagesOf(per).indexOf(rec) < 0) return;
+        if (!r || !rec || SB.Personas.hero(per) !== rec) return;
         rec.render = r;
         SB.Store.touch();
         renderRefs();
@@ -13906,9 +13951,8 @@ window.SB = window.SB || {};
   /* What picking this would actually feed — said here, because a mark that
    * feeds nothing is the whole failure this is meant to prevent. */
   function note(per) {
-    const n = SB.Personas.imagesOf(per).length;
-    if (!n) return { text: 'no reference image', warn: true };
-    return { text: n === 1 ? '1 frame' : n + ' frames', warn: false };
+    if (!SB.Personas.hasImage(per)) return { text: 'no reference image', warn: true };
+    return { text: 'has a reference', warn: false };
   }
 
   function candidates() {

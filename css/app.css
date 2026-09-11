@@ -770,12 +770,18 @@ button.linkish{
 }
 .strip-cell.hero .strip-thumb{border-color:var(--accent);cursor:default}
 .strip-thumb img{width:100%;height:100%;object-fit:contain}
-.strip-thumb.add{color:var(--fg-dim);font-size:16px;border-style:dashed}
-.strip-thumb.add:hover{color:var(--accent);border-color:var(--accent)}
+/* One reference per subject, so the strip is only ever the retired frames a
+   board carried before the cut: dimmed, because they feed nothing until one
+   is clicked back into the slot. */
+.persona-strip.retired{margin-top:6px;opacity:.62}
+.persona-strip.retired .strip-thumb{border-style:dashed}
+.persona-strip.retired .strip-thumb:hover{opacity:1;border-color:var(--accent);border-style:solid}
 .strip-label{
   width:100%;background:var(--input-bg);color:var(--fg);border:1px solid var(--line);
   border-radius:3px;padding:1px 3px;font-size:9px;
 }
+/* the single reference's caption sits under the frame, not under a thumbnail */
+.strip-label.wide{font-size:11px;padding:3px 5px;margin-top:5px}
 .strip-label:focus{outline:none;border-color:var(--accent)}
 .pp-note.warn{color:var(--accent2)}
 

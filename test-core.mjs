@@ -382,42 +382,65 @@ console.log('\n— a subject holds as many reference frames as it needs —');
   const per = Per.add(p, { name: 'Ops lead', description: 'Charcoal knit.' });
   eq(Per.hasImage(per), false, 'a new subject has no frames');
 
-  Per.addImage(per, img('A'), 'front');
-  Per.addImage(per, img('B'), '3/4');
-  eq(Per.imagesOf(per).length, 2, 'frames are added in order');
-  eq(Per.hero(per).label, 'front', 'and the first one is the hero');
+  Per.setImage(per, img('A'), 'front');
+  eq(Per.imagesOf(per).length, 1, 'a subject holds one reference');
+  eq(Per.hero(per).label, 'front', 'labelled with what it shows');
 
-  Per.makeHero(per, 1);
-  eq(Per.hero(per).label, '3/4', 'promoting a frame moves it to the front');
-  Per.labelImage(per, 1, 'front view');
-  eq(Per.imagesOf(per)[1].label, 'front view', 'labels are editable in place');
+  Per.setImage(per, img('B'), '3/4');
+  eq(Per.imagesOf(per).length, 1, 'and a second one replaces it rather than joining it');
+  eq(Per.hero(per).label, '3/4', 'the new one brings its own label');
+  Per.labelImage(per, 'front view');
+  eq(Per.hero(per).label, 'front view', 'which stays editable in place');
 
   const mate = Per.add(p, { name: 'Technician', description: 'Navy work shirt.' });
-  Per.addImage(mate, img('C'));
+  Per.setImage(mate, img('C'));
   shot.personaIds = [per.id, mate.id];
 
   const blk = Per.block(p, shot, null);
-  eq(/images 1–2 — Ops lead/.test(blk), true, 'a subject with several frames cites the range');
-  eq(/image 3 — Technician/.test(blk), true, 'and numbering runs on across subjects');
-  eq(/image 2 = Ops lead \(front view\)/.test(blk), true, 'the mapping names the angle');
-  eq(/SAME\b[\s\S]*subject seen from different angles/.test(blk), true,
-    'and says outright that several frames are not several people');
+  eq(/image 1 — Ops lead/.test(blk), true, 'a subject cites its one image');
+  eq(/image 2 — Technician/.test(blk), true, 'and numbering runs on across subjects');
+  eq(/image 1 = Ops lead \(front view\)/.test(blk), true, 'the mapping names what it shows');
+  eq(/images \d+–\d+/.test(blk), false, 'no ranges, because nobody can hold two');
+  eq(/SAME\b[\s\S]*different angles/.test(blk), false,
+    'and the sentence explaining that several frames are one person is gone with them');
 
-  Per.removeImage(per, 0);
-  eq(Per.imagesOf(per).length, 1, 'a frame can be taken off');
-  eq(/SAME\b[\s\S]*different angles/.test(Per.block(p, shot, null)), false,
-    'and the warning goes with it once nobody has two');
+  Per.clearImage(per);
+  eq(Per.hasImage(per), false, 'a reference can be taken off');
 
   /* what gc() deletes is decided by the blob sweep, so every extra frame has
      to be visible to it or somebody loses their references */
   SB.Blobs.gc(p);                                  // the frame removed above goes here
   const before = Object.keys(p.blobs).length;
-  eq(before, 2, 'the two frames still pointed at are the two that are kept');
+  eq(before, 1, 'the one frame still pointed at is the one that is kept');
   SB.Blobs.gc(p);
-  eq(Object.keys(p.blobs).length, before, 'every reference frame survives a second collection');
-  Per.removeImage(mate, 0);
+  eq(Object.keys(p.blobs).length, before, 'a reference frame survives a second collection');
+  Per.clearImage(mate);
   SB.Blobs.gc(p);
   eq(Object.keys(p.blobs).length, before - 1, 'and one nothing points at any more does not');
+
+  /* what a board that carried several keeps */
+  const many = Per.add(p, { name: 'Understudy' });
+  many.images = [
+    { ref: SB.Blobs.put(p, 'data:image/jpeg;base64,' + 'X'.repeat(40)), w: 4, h: 3, label: 'front' },
+    { ref: SB.Blobs.put(p, 'data:image/jpeg;base64,' + 'Y'.repeat(40)), w: 4, h: 3, label: 'back' },
+    { ref: SB.Blobs.put(p, 'data:image/jpeg;base64,' + 'Z'.repeat(40)), w: 4, h: 3, label: 'hat' }
+  ];
+  SB.Model.migrate(p);
+  eq(Per.hero(many).label, 'front', 'migration keeps the first as the reference');
+  eq(Per.retiredOf(many).length, 2, 'and retires the rest rather than deleting them');
+  eq(Per.imagesOf(many).length, 1, 'only one is ever fed');
+  SB.Blobs.gc(p);
+  eq(Per.retiredOf(many).every(function (x) { return !!p.blobs[x.ref]; }), true,
+    'a retired frame is still referenced, so the sweep leaves it alone');
+  eq(SB.Renders.weigh(p).retired.n, 2, 'and Settings can say what they weigh');
+  Per.useRetired(many, 1);
+  eq(Per.hero(many).label, 'hat', 'one can be brought back');
+  eq(Per.retiredOf(many).map(function (x) { return x.label; }).indexOf('front') >= 0, true,
+    'and the one it replaced steps down rather than being lost');
+  Per.dropRetired(many);
+  eq(Per.retiredOf(many).length, 0, 'they can be thrown away deliberately');
+  SB.Blobs.gc(p);
+  eq(SB.Renders.weigh(p).retired.n, 0, 'which is when the bytes actually go');
 }
 
 console.log('\n— a shot naming the same subject twice ——');
@@ -429,8 +452,8 @@ console.log('\n— a shot naming the same subject twice ——');
 
   const dup = Per.add(p, { name: 'Dup', description: 'Twice named.' });
   const other = Per.add(p, { name: 'Other', description: 'Once named.' });
-  Per.addImage(dup, img('A'));
-  Per.addImage(other, img('B'));
+  Per.setImage(dup, img('A'));
+  Per.setImage(other, img('B'));
 
   /* not reachable through the UI — toggleOnShot and coverage both dedupe — but
      a hand-edited or third-party file can say this, and it used to produce
@@ -499,8 +522,8 @@ console.log('\n— a first frame is one instant —');
   /* the numbering has to mean the same thing in both prompts — it is the order
      the person feeding the model puts their files in */
   const im = function (c) { return SB.Blobs.image(p, 'data:image/jpeg;base64,' + c.repeat(60), 4, 3); };
-  Per.addImage(him, im('A'));
-  Per.addImage(her, im('B'));
+  Per.setImage(him, im('A'));
+  Per.setImage(her, im('B'));
   const a = Per.block(p, sh, null, 'image'), b = Per.block(p, sh, null, 'video');
   eq(/image 1 = Writer/.test(a) && /image 2 = Colleague/.test(a), true, 'the image job numbers both');
   /* ...and the frame-only video job numbers nothing, because it is handed no
@@ -549,8 +572,8 @@ console.log('\n— a version freezes its cast with it —');
 
   const lead = Per.add(p, { name: 'Ops lead', description: 'Charcoal knit.' });
   const room = Per.add(p, { kind: 'place', name: 'Server room', description: 'Cold aisle.' });
-  Per.addImage(lead, img('A'));
-  Per.addImage(room, img('B'));
+  Per.setImage(lead, img('A'));
+  Per.setImage(room, img('B'));
   sh.personaIds = [lead.id, room.id];
   Per.setEnters(sh, room.id, false);
 
@@ -573,7 +596,7 @@ console.log('\n— a version freezes its cast with it —');
   SB.Blobs.gc(p);
   eq(Object.keys(p.blobs).length, before,
     'deleting a subject afterwards does not collect the frames the version still needs');
-  eq(SB.Blobs.src(p, p.versions[0].snapshot.personas[0].images[0]).length > 0, true,
+  eq(SB.Blobs.src(p, SB.Personas.hero(p.versions[0].snapshot.personas[0])).length > 0, true,
     'and the frozen copy still resolves');
   eq(Per.all(p).length, 1, 'while the working board really has lost them');
 }
@@ -598,7 +621,7 @@ console.log('\n— an old file is brought up to date on load —');
 
   const p = SB.Model.migrate(old);
   eq(p.personas[0].kind, 'person', 'a persona from before kinds is a person');
-  eq(!!p.personas[0].images[0].ref, true, 'and its lone image became the first frame');
+  eq(!!SB.Personas.hero(p.personas[0]).ref, true, 'and its lone image became the reference');
   eq(Array.isArray(p.versions[0].snapshot.personas), true,
     'a snapshot with no cast is given one, so restoring it does not drop the cast');
   eq(p.versions[0].snapshot.personas[0].id, 'p1',
@@ -623,7 +646,7 @@ console.log('\n— a model that takes no reference wording —');
   const p = SB.Model.newProject();
   const sh = p.scenes[0].shots[0];
   const per = Per.add(p, { name: 'Ops lead', description: 'Knit.' });
-  Per.addImage(per, SB.Blobs.image(p, 'data:image/jpeg;base64,' + 'Q'.repeat(80), 4, 3));
+  Per.setImage(per, SB.Blobs.image(p, 'data:image/jpeg;base64,' + 'Q'.repeat(80), 4, 3));
   sh.personaIds = [per.id];
 
   const none = Per.block(p, sh, { name: 'Plain', referenceTemplate: '' }, 'image');
@@ -650,9 +673,8 @@ console.log('\n— @ means the model will be shown a picture of this —');
 
   const him = Per.add(p, { name: 'Writer', description: 'Charcoal knit.' });
   const her = Per.add(p, { name: 'Colleague', description: 'Rust-orange jacket.' });
-  Per.addImage(him, img('A'), 'front');
-  Per.addImage(her, img('B'), 'front');
-  Per.addImage(her, img('C'), '3/4');
+  Per.setImage(him, img('A'), 'front');
+  Per.setImage(her, img('B'), 'front');
 
   a.description = R.mark(him.id, 'Writer') + ' sits writing. ' +
     R.mark(her.id, 'Colleague') + ' walks in behind him.';
@@ -675,20 +697,20 @@ console.log('\n— @ means the model will be shown a picture of this —');
   eq(f.map(function (e) { return e.label; }), ['Writer', 'Colleague'],
     'the feed follows the sentence, not the order they were cast');
   eq(f[0].numbers, [1], 'the first mark takes image 1');
-  eq(f[1].numbers, [2, 3], 'and a subject with two frames takes the next two');
+  eq(f[1].numbers, [2], 'and each subject takes exactly one number');
   eq(R.images(p, a).map(function (e) { return e.n + ':' + e.label + ':' + e.role; }),
-    ['1:Writer:front', '2:Colleague:front', '3:Colleague:3/4'],
+    ['1:Writer:front', '2:Colleague:front'],
     'which is the list of files to hand over, in order, labelled');
 
   /* cast but never mentioned: still sent, because dropping it would change what
      every board made before this sends — but called out */
   const room = Per.add(p, { kind: 'place', name: 'The office', description: 'Night, one lamp.' });
-  Per.addImage(room, img('D'));
+  Per.setImage(room, img('D'));
   a.personaIds.push(room.id);
   f = R.feed(p, a);
   eq(f.length, 3, 'a cast subject nobody mentioned is still in the feed');
   eq(f[2].mentioned, false, 'flagged as unmentioned');
-  eq(f[2].numbers, [4], 'and last in the order, since nobody chose its place');
+  eq(f[2].numbers, [3], 'and last in the order, since nobody chose its place');
 
   /* a mark with nothing behind it takes no number — there is nothing to feed */
   const ghost = Per.add(p, { kind: 'thing', name: 'Handset' });
@@ -717,7 +739,7 @@ console.log('\n— a shot is a reference image too: that is riffing —');
   const img = function (c) { return SB.Blobs.image(p, 'data:image/jpeg;base64,' + c.repeat(80), 4, 3); };
 
   const her = Per.add(p, { name: 'Colleague', description: 'Rust-orange jacket.' });
-  Per.addImage(her, img('B'), 'front');
+  Per.setImage(her, img('B'), 'front');
   a.image = img('Z');                               // 1A has been rendered
   b.description = 'Push into ' + R.mark(a.id, '1A') + ' — tight on ' +
     R.mark(her.id, 'Colleague') + ' as she smiles.';
@@ -878,7 +900,7 @@ console.log('\n— what is fed is always what the prompt accounts for —');
 
   /* a subject marked but never cast is numbered — so it has to be described */
   const her = Per.add(p, { name: 'Colleague', description: 'Rust-orange jacket.' });
-  Per.addImage(her, img('B'), 'front');
+  Per.setImage(her, img('B'), 'front');
   b.description += ' ' + R.mark(her.id, 'Colleague') + ' turns.';
   const blk2 = Per.block(p, b, null, 'image');
   eq(/image 2 = Colleague \(front\)/.test(blk2), true, 'she is in the mapping');
@@ -1036,7 +1058,7 @@ console.log('\n— the pictures are in the file, so the file is the whole board 
   eq(w.unused, 0, 'with nothing unaccounted for');
 
   const her = SB.Personas.add(p, { name: 'Mara' });
-  SB.Personas.addImage(her,
+  SB.Personas.setImage(her,
     SB.Blobs.image(p, 'data:image/jpeg;base64,' + 'z'.repeat(200), 4, 3), '',
     { ref: SB.Blobs.put(p, 'data:image/webp;base64,' + 'R'.repeat(2000)), serial: 3, ext: 'webp' });
   SB.Blobs.gc(p);
@@ -1107,8 +1129,8 @@ console.log('\n— a prompt goes stale when anything it feeds changes —');
 
   const her = Per.add(p, { name: 'Mara', description: 'Navy depot fleece.' });
   const booth = Per.add(p, { kind: 'place', name: 'The booth', description: 'Glass, one lamp.' });
-  Per.addImage(her, img('A'));
-  Per.addImage(booth, img('B'));
+  Per.setImage(her, img('A'));
+  Per.setImage(booth, img('B'));
   a.image = img('Z');
   a.render = { serial: 1, ext: 'png', bytes: 9, at: 1000 };
   /* stamps in the past, so "written at 5000" means written after all of it */
@@ -1283,8 +1305,9 @@ console.log('\n— old boards migrate, and versions stop duplicating frames —'
   const p = SB.Model.migrate(old);
   eq(!!(p.scenes[0].shots[0].image.ref), true, 'shot frames become references');
   eq(!!(p.scenes[0].shots[0].annotation.ref), true, 'ink becomes a reference');
-  eq(!!(p.personas[0].images[0].ref), true, 'persona references migrate too');
-  eq(p.personas[0].image, undefined, 'and the lone image field is retired, not left to drift');
+  eq(!!SB.Personas.hero(p.personas[0]).ref, true, 'persona references migrate too');
+  eq(p.personas[0].images, undefined,
+    'and the list field is gone — one reference lives on `image`, as it did before the list');
   eq(p.personas[0].kind, 'person', 'a persona written before there were kinds is a person');
   eq(!!(p.versions[0].snapshot.scenes[0].shots[0].image.ref), true, 'so do frozen versions');
   eq(Object.keys(p.blobs).length, 2,
@@ -1584,7 +1607,7 @@ console.log('\n— boards saved by older builds still open —');
   v3.settings.imageModelId = 'm_old';
   v3.settings.videoModelId = 'm_old';
   const p3 = SB.Model.migrate(v3);
-  eq(SB.Blobs.src(p3, p3.personas[0].images[0]), frame, 'a persona reference image migrates');
+  eq(SB.Blobs.src(p3, SB.Personas.hero(p3.personas[0])), frame, 'a persona reference image migrates');
   eq(p3.scenes[0].shots[0].personaIds, ['p1'], 'cast assignments survive');
   eq(SB.Brand.brandOf(p3).text === SB.Brand.DEFAULT, true,
     'an unedited old house style is replaced by the current one');

@@ -508,7 +508,7 @@
     del.onclick = function () {
       /* This cannot be undone — structural changes are deliberately outside the
          undo stack — and it takes more with it than the cards it is on. */
-      const frames = SB.Personas.imagesOf(per).length;
+      const frames = SB.Personas.imagesOf(per).length + SB.Personas.retiredOf(per).length;
       const marked = markedIn(per.id);
       const takes = [];
       if (used) takes.push('comes off ' + used + ' card' + (used === 1 ? '' : 's'));
@@ -632,22 +632,32 @@
       : '';
   }
 
+  /* One reference frame per subject.
+   *
+   * It was a strip — a hero, then any number of angles, each with a label and
+   * a promote button. Nothing ever sent more than the first one anywhere, so
+   * the rest were numbering a person had to honour by hand. Two angles are two
+   * subjects now ("Nat", "Nat (back)"), which the feed can already number.
+   *
+   * What a board already had is not deleted: extra frames are retired, shown
+   * below, and either promoted back into the slot or thrown away deliberately.
+   */
   function frames(per, kind, wrap) {
     const box = SB.el('div', 'persona-frames');
-    const list = SB.Personas.imagesOf(per);
+    const one = SB.Personas.hero(per);
 
     const big = SB.el('div', 'persona-frame');
-    applyShape(wrap, box, big, ratioOf(list[0]));
-    if (list.length) {
+    applyShape(wrap, box, big, ratioOf(one));
+    if (one) {
       const img = document.createElement('img');
-      img.src = SB.Blobs.src(P(), list[0]);
+      img.src = SB.Blobs.src(P(), one);
       /* An old record carrying no dimensions learns its own shape the first
          time it is drawn, and the file keeps the answer. */
-      if (!ratioOf(list[0])) {
+      if (!ratioOf(one)) {
         img.onload = function () {
           const w = img.naturalWidth, h = img.naturalHeight;
           if (!w || !h) return;
-          list[0].w = w; list[0].h = h;
+          one.w = w; one.h = h;
           SB.Store.touch();
           applyShape(wrap, box, big, w / h);
         };
@@ -657,7 +667,7 @@
       rm.title = 'Remove this reference image';
       rm.onclick = function (ev) {
         ev.stopPropagation();
-        SB.Personas.removeImage(per, 0);
+        SB.Personas.clearImage(per);
         SB.app.changed(true);
         renderRefs();
       };
@@ -665,86 +675,69 @@
     } else {
       big.appendChild(SB.el('div', 'drop-hint', 'drop the reference frame here, or click to load'));
     }
-    big.title = list.length ? 'Drop or click to add another reference image' : '';
+    big.title = one ? 'Drop or click to replace this reference image' : '';
     dropTarget(big, per);
     box.appendChild(big);
 
-    const strip = SB.el('div', 'persona-strip');
-    list.forEach(function (img, i) {
-      const cell = SB.el('div', 'strip-cell' + (i === 0 ? ' hero' : ''));
-      const t = SB.el('div', 'strip-thumb');
-      const r = ratioOf(img);
-      if (r) t.style.setProperty('--ar', String(r));
-      const im = document.createElement('img');
-      im.src = SB.Blobs.src(P(), img);
-      if (!r) {
-        im.onload = function () {
-          if (!im.naturalWidth || !im.naturalHeight) return;
-          img.w = im.naturalWidth; img.h = im.naturalHeight;
-          SB.Store.touch();
-          t.style.setProperty('--ar', String(img.w / img.h));
-        };
-      }
-      t.appendChild(im);
-      t.title = i === 0 ? 'The hero frame' : 'Make this the hero frame';
-      if (i > 0) {
+    /* The label is what the prompt block cites — "image 2 = Ops lead (3/4)" —
+       and what the export names the file, so it keeps a box of its own. */
+    if (one) {
+      const lb = document.createElement('input');
+      lb.type = 'text';
+      lb.className = 'strip-label wide';
+      lb.value = one.label || '';
+      lb.placeholder = 'what this shows — front, 3/4, wardrobe…';
+      lb.addEventListener('input', function () {
+        SB.Personas.labelImage(per, lb.value);
+        SB.Store.touch();
+        SB.Board.refreshCastRows();
+      });
+      box.appendChild(lb);
+    }
+
+    const old = SB.Personas.retiredOf(per);
+    if (old.length) {
+      const strip = SB.el('div', 'persona-strip retired');
+      old.forEach(function (img, i) {
+        const cell = SB.el('div', 'strip-cell');
+        const t = SB.el('div', 'strip-thumb');
+        const r = ratioOf(img);
+        if (r) t.style.setProperty('--ar', String(r));
+        const im = document.createElement('img');
+        im.src = SB.Blobs.src(P(), img);
+        t.appendChild(im);
+        t.title = 'Use this one instead — the current reference moves down here';
         t.onclick = function () {
-          SB.Personas.makeHero(per, i);
+          SB.Personas.useRetired(per, i);
           SB.app.changed(true);
           renderRefs();
         };
-      }
-      const x = SB.el('button', 'frame-x small', '✕');
-      x.title = 'Remove this reference image';
-      x.onclick = function (ev) {
-        ev.stopPropagation();
-        SB.Personas.removeImage(per, i);
+        cell.appendChild(t);
+        strip.appendChild(cell);
+      });
+      box.appendChild(strip);
+
+      const note = SB.el('div', 'pp-note warn');
+      note.appendChild(document.createTextNode(
+        old.length + (old.length === 1 ? ' older frame is' : ' older frames are') +
+        ' still in this board but no longer used — one reference is fed per subject. ' +
+        'Click one to use it instead. '));
+      const drop = SB.el('button', 'mini danger', 'delete ' +
+        (old.length === 1 ? 'it' : 'them'));
+      SB.armButton(drop, 'delete for good', function () {
+        SB.Personas.dropRetired(per);
         SB.app.changed(true);
         renderRefs();
-      };
-      t.appendChild(x);
-      cell.appendChild(t);
-
-      /* The label is what the prompt block cites — "image 2 = Ops lead (3/4)" —
-         so it is worth a box of its own rather than being guessed at. */
-      const lb = document.createElement('input');
-      lb.type = 'text';
-      lb.className = 'strip-label';
-      lb.value = img.label || '';
-      lb.placeholder = i === 0 ? 'hero' : 'label';
-      lb.title = (img.label || '') || 'What this angle is: front, 3/4, wardrobe detail, wide…';
-      lb.addEventListener('input', function () {
-        SB.Personas.labelImage(per, i, lb.value);
-        lb.title = lb.value || 'What this angle is: front, 3/4, wardrobe detail, wide…';
-        SB.Store.touch();
-        /* the label is cited in the manifest and in the saved filename */
-        SB.Board.refreshCastRows();
+        SB.toast('Retired frames deleted');
       });
-      cell.appendChild(lb);
-      strip.appendChild(cell);
-    });
-
-    const add = SB.el('div', 'strip-cell');
-    const plus = SB.el('div', 'strip-thumb add', '+');
-    plus.title = 'Add another reference image';
-    plus.onclick = function () {
-      SB.pickImageFile().then(function (f) { if (f) addImage(per, f); });
-    };
-    dropTarget(plus, per);
-    add.appendChild(plus);
-    strip.appendChild(add);
-    box.appendChild(strip);
-
-    const n = list.length;
-    let note;
-    if (!n) note = 'No reference image — prompts will describe this in full instead.';
-    else note = (n === 1 ? 'One frame' : n + ' frames') + ', fed in this order wherever ' +
-      (per.name || 'this') + ' appears.';
-    if (n > SB.Personas.IMAGE_ADVICE) {
-      note += ' Past ' + SB.Personas.IMAGE_ADVICE + ', most image models start averaging ' +
-        'references together instead of reading them.';
+      note.appendChild(drop);
+      box.appendChild(note);
     }
-    box.appendChild(SB.el('div', 'pp-note' + (n > SB.Personas.IMAGE_ADVICE ? ' warn' : ''), note));
+
+    box.appendChild(SB.el('div', 'pp-note', one
+      ? 'One reference, fed wherever ' + (per.name || 'this') + ' appears. For a second ' +
+        'angle, make it a subject of its own — it gets its own number in the feed.'
+      : 'No reference image — prompts will describe this in full instead.'));
     return box;
   }
 
@@ -773,14 +766,16 @@
        large original takes a moment, and a reference should appear the instant
        it is dropped. */
     return SB.downscaleImage(src).then(function (img) {
-      const rec = SB.Personas.addImage(per, SB.Blobs.image(P(), img.data, img.w, img.h), '');
+      const had = SB.Personas.hero(per);
+      const rec = SB.Personas.setImage(per, SB.Blobs.image(P(), img.data, img.w, img.h),
+        (had && had.label) || '');
       SB.app.changed(true);
       renderRefs();
       SB.Renders.keep(P(), src, null).then(function (r) {
         /* The reference may have been deleted while its original encoded —
            writing onto a record nobody holds any more would strand the bytes
            until the next sweep. */
-        if (!r || !rec || SB.Personas.imagesOf(per).indexOf(rec) < 0) return;
+        if (!r || !rec || SB.Personas.hero(per) !== rec) return;
         rec.render = r;
         SB.Store.touch();
         renderRefs();
