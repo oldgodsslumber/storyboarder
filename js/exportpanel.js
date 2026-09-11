@@ -102,30 +102,10 @@
     return e;
   }
 
-  /* The prompt a generated picture was written from. `made` records the model
-   * by name, because that is what a person reads; the prompt is still on the
-   * card, under that model's id. It may have been edited since, so the
-   * manifest says so rather than pretending it is the exact string sent. */
-  /* The prompt a generated picture was written from. `made` carries the model
-   * id, which is the only stable handle: names are free text, two models can
-   * share one, and renaming or deleting a model used to turn the manifest's
-   * prompt silently blank with no way to tell "blank" from "gone". Assets
-   * generated before the id was recorded fall back to the name. */
+  /* One implementation, in SB.Imagine, because the clip review wants the
+     same answer and two copies of a lookup like this drift. */
   function promptFor(p, shot, made) {
-    if (!made) return null;
-    const models = p.settings.models || [];
-    let m = made.modelId
-      ? models.filter(function (x) { return x.id === made.modelId; })[0]
-      : null;
-    if (!m && made.model) {
-      const named = models.filter(function (x) { return x.name === made.model; });
-      if (named.length === 1) m = named[0];
-      else if (named.length > 1) return '(several models share that name — cannot say which)';
-    }
-    if (!m) return '(that model is no longer on this board)';
-    const pr = shot.prompts && shot.prompts[m.id];
-    if (!pr) return '';
-    return (made.role === 'video' ? pr.videoPrompt : pr.imagePrompt) || '';
+    return SB.Imagine.promptFor(p, shot, made);
   }
 
   /* Everything this export would write, as a list — the panel renders from

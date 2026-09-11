@@ -523,7 +523,16 @@
     b.dataset.push = sh.id + ':' + role;
     b.onclick = function () {
       if (IM.busy(sh.id, role)) return;
-      if (role === 'video' && !clipCostOk(sh, m)) return;
+      /* A clip asks once per session what it will cost, wherever the push
+         was started from — this button or the clip review. */
+      if (role === 'video') {
+        SB.Clip.confirmCost(P(), sh, m, function () { go(); });
+        return;
+      }
+      go();
+    };
+
+    function go() {
       IM.clear(sh.id, role);
       paintPushes();
       IM.run(sh, role).then(function (out) {
@@ -553,56 +562,16 @@
         paintPushes();
         SB.toast(e.message, true);
       });
-    };
+    }
     paintPush(b, sh, m, role);
     return b;
   }
 
   /* Why this row cannot be pushed, in the fewest words that are still an
-   * instruction — and the long version for the tooltip.
-   *
-   * The one that reads as a bug is the third: prompts are stored per model,
-   * because each model gets its own wording, so a row with a prompt written
-   * for Wan has nothing to send while the header says Nano Banana. That is
-   * correct and it is invisible, which is why it now names the model the
-   * prompt WAS written for. */
+     instruction — answered by SB.Imagine, because the clip review asks the
+     same question and one wording is better than two. */
   function pushBlock(sh, m, role) {
-    const IM = SB.Imagine;
-    const field = role === 'image' ? 'imagePrompt' : 'videoPrompt';
-    if (sh.noShot) return { short: 'no shot', long: 'A “no shot” card is never generated.' };
-    /* Row reasons before account reasons: the account one is the same on
-       every row and the chip in the header already says it, while the row
-       one is the whole reason this column differs from its neighbour. */
-    const gate = IM.blocker(m);
-    const gateNote = gate ? {
-      short: /signed in/.test(gate) ? 'sign in'
-        : /organization/.test(gate) ? 'pick an org'
-          : /API key/.test(gate) ? 'no key' : 'no model set',
-      long: gate
-    } : null;
-    const pr = sh.prompts[m.id] || null;
-    if ((pr && (pr[field] || '').trim())) return gateNote;
-    /* written for somebody else? */
-    const others = Object.keys(sh.prompts || {}).filter(function (id) {
-      return id !== m.id && ((sh.prompts[id] || {})[field] || '').trim();
-    }).map(function (id) {
-      const other = SB.Model.modelById(P(), id);
-      return (other && other.name) || (sh.prompts[id] || {}).modelName || 'another model';
-    });
-    if (others.length) {
-      return {
-        short: 'written for ' + others[0],
-        long: 'This row has a ' + (role === 'image' ? 'first-frame' : 'video') + ' prompt, but ' +
-          'it was written for ' + others.join(' and ') + ' — and the column above is set to ' +
-          m.name + '. Prompts are kept per model because each one wants different wording. ' +
-          'Switch the model at the top, or press ✦ generate to write one for ' + m.name + '.'
-      };
-    }
-    return {
-      short: 'no prompt yet',
-      long: 'Nothing to send: press ✦ generate to write the ' +
-        (role === 'image' ? 'first-frame' : 'video') + ' prompt for ' + m.name + ' first.'
-    };
+    return SB.Imagine.whyNot(P(), sh, m, role);
   }
 
   /* What this press will spend, and how much that figure is worth. A
@@ -633,43 +602,6 @@
     return bits.length ? '\n' + bits.join(' \u00b7 ') : '';
   }
 
-  /* A clip is the expensive one, and the moment before it goes is the only
-     moment the number is any use. Asked once per session, not once a press. */
-  let costAsked = false;
-
-  function clipCostOk(sh, m) {
-    if (costAsked) return true;
-    const pr = priceOf(m, 'video');
-    if (!pr || !pr.credits) { costAsked = true; return true; }
-    const acct = SB.Imagine.account();
-    const bal = acct && typeof acct.credits === 'number' ? acct.credits : null;
-    const body = SB.el('div');
-    body.appendChild(SB.el('p', null,
-      m.name + ' at ' + (pr.res || 'its default resolution') + ' \u2014 about ' + pr.credits +
-      ' credits' + (pr.from === 'measured' ? ', which is what it cost last time.'
-        : '. That is the published base price; a longer or larger clip costs more.')));
-    if (bal !== null) {
-      body.appendChild(SB.el('p', 'pp-note' + (bal < pr.credits ? ' warn' : ''),
-        'You have ' + bal + ' credits' + (bal < pr.credits ? ' \u2014 this may not go through.' : '.')));
-    }
-    body.appendChild(SB.el('div', 'pp-note',
-      'Asked once per session; every clip after this goes straight through.'));
-    SB.modal({
-      title: 'Shoot this clip?', width: '420px', body: body,
-      buttons: [
-        { label: 'Cancel' },
-        {
-          label: 'Shoot it', primary: true, onClick: function (close) {
-            costAsked = true;
-            close();
-            const again = document.querySelector('[data-push="' + sh.id + ':video"]');
-            if (again) again.click();
-          }
-        }
-      ]
-    });
-    return false;
-  }
 
   function paintPush(b, sh, m, role) {
     const IM = SB.Imagine;
@@ -779,7 +711,7 @@
           SB.Renders.fileName(sh.video.serial, sh.video.ext) + ')'
         : 'Play the clip — held only as a link, which expires') +
         (SB.Clip.label(sh.video) ? '\n' + SB.Clip.label(sh.video) : '');
-      play.onclick = function () { SB.Clip.play(P(), sh); };
+      play.onclick = function () { SB.Clip.open(P(), sh); };
       foot.appendChild(play);
     }
 

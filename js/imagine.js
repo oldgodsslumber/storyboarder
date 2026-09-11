@@ -2116,156 +2116,6 @@
     return catalogAll().filter(function (m) { return m.slug === s; })[0] || null;
   }
 
-  /* ---------------- playing one back ----------------
-   *
-   * The clip is in the file, so playing it is reading it back out of the blob
-   * map — with the remote copy as the fallback for the one case where the
-   * bytes never arrived, and where the link is all there is and will not last.
-   */
-  function playClip(p, shot) {
-    const rec = shot && shot.video;
-    if (!rec) return;
-    SB.Renders.videoFile(p, rec).then(function (f) {
-      const src = f ? URL.createObjectURL(f) : (rec.url || '');
-      if (!src) {
-        SB.toast('This board has no copy of that clip, and its link has gone', true);
-        return;
-      }
-      const box = SB.el('div', 'clip-box');
-      const v = document.createElement('video');
-      v.src = src;
-      v.controls = true;
-      v.autoplay = true;
-      v.loop = true;
-      box.appendChild(v);
-      if (!f && rec.url) {
-        const note = SB.el('div', 'pp-note warn',
-          'Played from ImagineArt — this board has no copy of its own, and that link expires. ');
-        const grab = SB.el('button', 'mini', 'bring it into the board');
-        grab.onclick = function () {
-          grab.disabled = true;
-          grab.textContent = 'fetching…';
-          SB.Imagine.fetchClip(shot).then(function (ok) {
-            SB.toast(ok ? 'Clip is in the board now' : 'Nothing to fetch');
-            grab.remove();
-          }).catch(function (e) {
-            grab.disabled = false;
-            grab.textContent = 'bring it into the board';
-            SB.toast(e.message, true);
-          });
-        };
-        note.appendChild(grab);
-        box.appendChild(note);
-      }
-      const line = clipLabel(rec);
-      if (line) box.appendChild(SB.el('div', 'pp-note', line + (rec.name ? ' · ' + rec.name : '')));
-
-      const acts = SB.el('div', 'pp-actions');
-      const swap = SB.el('button', 'tb', 'Replace…');
-      swap.title = 'Put a different file on this card';
-      swap.onclick = function () {
-        SB.pickVideoFile().then(function (file) {
-          if (!file) return;
-          return attachClip(p, shot, file).then(function () {
-            SB.toast('Clip replaced');
-            m.close();
-          });
-        }).catch(function (e) { SB.toast(e.message || String(e), true); });
-      };
-      const rm = SB.el('button', 'tb danger', 'Remove');
-      rm.title = 'Take the clip off this card. The bytes go with it.';
-      SB.armButton(rm, 'remove for good', function () {
-        dropClip(p, shot);
-        SB.toast('Clip removed');
-        m.close();
-      });
-      acts.appendChild(swap);
-      acts.appendChild(rm);
-      box.appendChild(acts);
-
-      const m = SB.modal({
-        title: 'Clip',
-        width: '760px',
-        body: box,
-        buttons: [{ label: 'Close', primary: true }],
-        onClose: function () {
-          v.pause();
-          if (f) URL.revokeObjectURL(src);
-        }
-      });
-    });
-  }
-
-  /* How long it runs and how big it is, read off the file itself. Worth the
-   * round trip: a badge that says "5s" is the difference between a card that
-   * has something and a card whose clip you have to open to identify. Failing
-   * to read it is not a failure to keep it. */
-  function clipMeta(blob) {
-    return new Promise(function (resolve) {
-      let url = '';
-      let done = false;
-      const finish = function (meta) {
-        if (done) return;
-        done = true;
-        if (url) URL.revokeObjectURL(url);
-        resolve(meta || {});
-      };
-      try {
-        url = URL.createObjectURL(blob);
-        const v = document.createElement('video');
-        v.preload = 'metadata';
-        v.onloadedmetadata = function () {
-          finish({
-            dur: isFinite(v.duration) ? Math.round(v.duration * 10) / 10 : 0,
-            w: v.videoWidth || 0, h: v.videoHeight || 0
-          });
-        };
-        v.onerror = function () { finish(null); };
-        v.src = url;
-      } catch (e) { finish(null); }
-      setTimeout(function () { finish(null); }, 4000);
-    });
-  }
-
-  /* A clip made somewhere else — rendered last month, cut in Premiere, handed
-   * over by somebody — put on a card. Nothing generated it here, so it carries
-   * no `made` and the export's "only what was made in here" filter correctly
-   * passes it by. */
-  function attachClip(p, shot, file) {
-    if (!file) return Promise.resolve(null);
-    if (!/^video\//.test(file.type || '')) {
-      return Promise.reject(new Error('That is not a video file.'));
-    }
-    return clipMeta(file).then(function (meta) {
-      return SB.Renders.keepVideo(p, file, shot.video).then(function (saved) {
-        if (!saved) throw new Error('the clip could not be stored');
-        if (meta.dur) saved.dur = meta.dur;
-        if (meta.w) { saved.w = meta.w; saved.h = meta.h; }
-        saved.name = file.name || '';
-        shot.video = saved;
-        SB.app.changed(true);
-        return saved;
-      });
-    });
-  }
-
-  function dropClip(p, shot) {
-    if (!shot || !shot.video) return;
-    shot.video = null;
-    SB.app.changed(true);
-  }
-
-  /* "5s · 1184×672 · 1.9 MB", as much of it as is known. */
-  function clipLabel(rec) {
-    if (!rec) return '';
-    const bits = [];
-    if (rec.dur) bits.push(rec.dur + 's');
-    if (rec.w) bits.push(rec.w + '×' + rec.h);
-    if (rec.bytes) bits.push((rec.bytes / 1048576).toFixed(1) + ' MB');
-    if (!rec.ref) bits.push('link only');
-    return bits.join(' · ');
-  }
-
   /* ---------------- the connection, step by step ----------------
    *
    * "It didn't work" is the least useful sentence in software, and a toast
@@ -2371,9 +2221,361 @@
     });
   }
 
+  /* ---------------- why a push cannot run ----------------
+   *
+   * Lives here rather than in the prompt table because it is about the push,
+   * and there are now three places that need the same answer in the same
+   * words: the table's row, the clip review, and anything after them.
+   *
+   * Row reasons come before account reasons. The account one is identical on
+   * every row and the chip already carries it; the row one is the entire
+   * reason one card differs from the one beside it.
+   */
+  function whyNot(p, shot, model, role) {
+    const field = role === 'image' ? 'imagePrompt' : 'videoPrompt';
+    if (!model) {
+      return { short: 'no model', long: 'No ' + role + ' model is selected for this board.' };
+    }
+    if (shot.noShot) {
+      return { short: 'no shot', long: 'A \u201cno shot\u201d card is never generated.' };
+    }
+    const gate = blocker(model);
+    const gateNote = gate ? {
+      short: /signed in/.test(gate) ? 'sign in'
+        : /organization/.test(gate) ? 'pick an org'
+          : /API key/.test(gate) ? 'no key' : 'no model set',
+      long: gate
+    } : null;
+    const pr = (shot.prompts || {})[model.id] || null;
+    if (pr && (pr[field] || '').trim()) return gateNote;
+
+    const others = Object.keys(shot.prompts || {}).filter(function (id) {
+      return id !== model.id && ((shot.prompts[id] || {})[field] || '').trim();
+    }).map(function (id) {
+      const other = SB.Model.modelById(p, id);
+      return (other && other.name) || (shot.prompts[id] || {}).modelName || 'another model';
+    });
+    if (others.length) {
+      return {
+        short: 'written for ' + others[0],
+        long: 'This shot has a ' + (role === 'image' ? 'first-frame' : 'video') + ' prompt, but ' +
+          'it was written for ' + others.join(' and ') + ' — and the model chosen here is ' +
+          model.name + '. Prompts are kept per model because each one wants different ' +
+          'wording. Switch the model, or write one for ' + model.name + '.'
+      };
+    }
+    return {
+      short: 'no prompt yet',
+      long: 'Nothing to send: write the ' + (role === 'image' ? 'first-frame' : 'video') +
+        ' prompt for ' + model.name + ' first, in the Prompts panel.'
+    };
+  }
+
+  /* The prompt a generated thing was made from. `made` carries the model id,
+   * which is the only stable handle — names are free text, two models can
+   * share one, and renaming or deleting one used to turn this silently
+   * blank. Assets generated before the id was recorded fall back to the
+   * name. Shared by the export manifest and the clip review. */
+  function promptFor(p, shot, made) {
+    if (!made) return null;
+    const models = (p.settings && p.settings.models) || [];
+    let m = made.modelId
+      ? models.filter(function (x) { return x.id === made.modelId; })[0]
+      : null;
+    if (!m && made.model) {
+      const named = models.filter(function (x) { return x.name === made.model; });
+      if (named.length === 1) m = named[0];
+      else if (named.length > 1) return '(several models share that name — cannot say which)';
+    }
+    if (!m) return '(that model is no longer on this board)';
+    const pr = shot.prompts && shot.prompts[m.id];
+    if (!pr) return '';
+    return (made.role === 'video' ? pr.videoPrompt : pr.imagePrompt) || '';
+  }
+
+  /* How long it runs and how big it is, read off the file itself. Worth the
+   * round trip: a badge that says "2s" is the difference between a card that
+   * has something and a card whose clip you have to open to identify.
+   * Failing to read it is not a failure to keep it. */
+  function clipMeta(blob) {
+    return new Promise(function (resolve) {
+      let url = '';
+      let done = false;
+      const finish = function (meta) {
+        if (done) return;
+        done = true;
+        if (url) URL.revokeObjectURL(url);
+        resolve(meta || {});
+      };
+      try {
+        url = URL.createObjectURL(blob);
+        const v = document.createElement('video');
+        v.preload = 'metadata';
+        v.onloadedmetadata = function () {
+          finish({
+            dur: isFinite(v.duration) ? Math.round(v.duration * 10) / 10 : 0,
+            w: v.videoWidth || 0, h: v.videoHeight || 0
+          });
+        };
+        v.onerror = function () { finish(null); };
+        v.src = url;
+      } catch (e) { finish(null); }
+      setTimeout(function () { finish(null); }, 4000);
+    });
+  }
+
+  /* A clip made somewhere else — rendered last month, cut in Premiere,
+   * handed over by somebody — put on a card. Nothing generated it here, so
+   * it carries no `made` and the export's "only what was made in here"
+   * filter correctly passes it by. */
+  function attachClip(p, shot, file) {
+    if (!file) return Promise.resolve(null);
+    if (!/^video\//.test(file.type || '')) {
+      return Promise.reject(new Error('That is not a video file.'));
+    }
+    return clipMeta(file).then(function (meta) {
+      return SB.Renders.keepVideo(p, file, shot.video).then(function (saved) {
+        if (!saved) throw new Error('the clip could not be stored');
+        if (meta.dur) saved.dur = meta.dur;
+        if (meta.w) { saved.w = meta.w; saved.h = meta.h; }
+        saved.name = file.name || '';
+        shot.video = saved;
+        SB.app.changed(true);
+        return saved;
+      });
+    });
+  }
+
+  function dropClip(p, shot) {
+    if (!shot || !shot.video) return;
+    shot.video = null;
+    SB.app.changed(true);
+  }
+
+  /* "2s · 1184×672 · 1.9 MB", as much of it as is known. */
+  function clipLabel(rec) {
+    if (!rec) return '';
+    const bits = [];
+    if (rec.dur) bits.push(rec.dur + 's');
+    if (rec.w) bits.push(rec.w + '×' + rec.h);
+    if (rec.bytes) bits.push((rec.bytes / 1048576).toFixed(1) + ' MB');
+    if (!rec.ref) bits.push('link only');
+    return bits.join(' · ');
+  }
+
+  /* ---------------- looking at a clip ----------------
+   *
+   * One modal, opened from the card and from the prompt table, and the same
+   * one whether the shot has a clip or not — because "is there one, and
+   * what is it" is a single question and it used to be answered by two
+   * buttons that did different things, one of which opened a file dialog
+   * with no warning.
+   *
+   * A clip is the only thing on a board with no thumbnail of its own: the
+   * card shows the still either way. So this is where it gets looked at,
+   * and everything known about it is here rather than spread between a
+   * tooltip and the export manifest.
+   */
+  function codeOf(p, shot) {
+    const f = SB.Model.findShot(p, shot.id);
+    return f ? f.code : '';
+  }
+
+  function describeMade(p, shot, rec) {
+    const made = rec && rec.made;
+    if (!made) {
+      return rec ? 'Added from a file' + (rec.name ? ' (' + rec.name + ')' : '') +
+        ' — nothing here generated it, so an export of “what was made in here” passes it by.'
+        : '';
+    }
+    const when = made.at ? ' on ' + new Date(made.at).toLocaleDateString() : '';
+    const res = made.resolution ? ' at ' + made.resolution : '';
+    const cost = costFor(made.slug || '', '', made.resolution || '');
+    return 'Made here' + when + ' by ' + (made.model || made.slug || 'a model') + res +
+      (cost ? ', about ' + cost.credits + ' credits' : '') + '.';
+  }
+
+  function openClip(p, shot) {
+    const rec = shot && shot.video;
+    const model = SB.Model.videoModel(p);
+    const box = SB.el('div', 'clip-box');
+    let objectUrl = '';
+    let m = null;
+
+    const close = function () { if (m) m.close(); };
+
+    const mount = function (file) {
+      if (rec && (file || rec.url)) {
+        const v = document.createElement('video');
+        objectUrl = file ? URL.createObjectURL(file) : '';
+        v.src = objectUrl || rec.url;
+        v.controls = true;
+        v.autoplay = true;
+        v.loop = true;
+        box.appendChild(v);
+        if (!file && rec.url) {
+          const note = SB.el('div', 'pp-note warn',
+            'Played from ImagineArt — this board has no copy of its own, and that link ' +
+            'expires. ');
+          const grab = SB.el('button', 'mini', 'bring it into the board');
+          grab.onclick = function () {
+            grab.disabled = true;
+            grab.textContent = 'fetching…';
+            fetchClip(shot).then(function (ok) {
+              SB.toast(ok ? 'Clip is in the board now' : 'Nothing to fetch');
+              close();
+            }).catch(function (e) {
+              grab.disabled = false;
+              grab.textContent = 'bring it into the board';
+              SB.toast(e.message, true);
+            });
+          };
+          note.appendChild(grab);
+          box.appendChild(note);
+        }
+      } else if (!rec) {
+        /* no clip: the still stands in, so the card is recognisable */
+        const src = shot.image ? SB.Blobs.src(p, shot.image) : '';
+        if (src) {
+          const im = document.createElement('img');
+          im.src = src;
+          im.className = 'clip-still';
+          box.appendChild(im);
+        }
+        box.appendChild(SB.el('div', 'pp-note',
+          'No clip on this card yet. Shoot one from the video prompt, or add a file you ' +
+          'already have — dropping an mp4 straight onto the card does the same thing.'));
+      } else {
+        box.appendChild(SB.el('div', 'pp-note warn',
+          'This board has no copy of that clip and its link has gone.'));
+      }
+
+      if (rec) {
+        const line = clipLabel(rec);
+        if (line) {
+          box.appendChild(SB.el('div', 'pp-note', line +
+            (rec.serial ? ' · ' + SB.Renders.fileName(rec.serial, rec.ext) : '')));
+        }
+        box.appendChild(SB.el('div', 'pp-note', describeMade(p, shot, rec)));
+        const prompt = promptFor(p, shot, rec.made);
+        if (prompt) {
+          const q = SB.el('div', 'clip-prompt', '“' + prompt + '”');
+          q.title = 'The video prompt on this card now — it may have been edited since.';
+          box.appendChild(q);
+        }
+      }
+
+      /* what can be done from here */
+      const acts = SB.el('div', 'pp-actions');
+      const why = whyNot(p, shot, model, 'video');
+
+      const shoot = SB.el('button', 'tb' + (rec ? '' : ' on'), rec ? 'Shoot it again' : 'Shoot it');
+      shoot.disabled = !!why;
+      shoot.title = why ? why.long
+        : 'Send the video prompt to ' + (model && model.name) + ' and replace what is here.';
+      shoot.onclick = function () {
+        close();
+        confirmCost(p, shot, model, function () {
+          SB.toast('Shooting ' + (codeOf(p, shot) || 'this shot') + '…');
+          run(shot, 'video').then(function () {
+            SB.toast('Clip ready on ' + (codeOf(p, shot) || 'the card'));
+          }).catch(function (e) { SB.toast(e.message, true); });
+        });
+      };
+      acts.appendChild(shoot);
+
+      const add = SB.el('button', 'tb', rec ? 'Replace…' : 'Add from a file…');
+      add.title = 'Put a file you already have on this card.';
+      add.onclick = function () {
+        SB.pickVideoFile().then(function (file) {
+          if (!file) return;
+          close();
+          return attachClip(p, shot, file).then(function (saved) {
+            SB.toast((rec ? 'Clip replaced' : 'Clip added') +
+              (clipLabel(saved) ? ' · ' + clipLabel(saved) : ''));
+          });
+        }).catch(function (e) { SB.toast(e.message || String(e), true); });
+      };
+      acts.appendChild(add);
+
+      if (rec) {
+        const rm = SB.el('button', 'tb danger', 'Remove');
+        rm.title = 'Take the clip off this card. The bytes go with it.';
+        SB.armButton(rm, 'remove for good', function () {
+          dropClip(p, shot);
+          SB.toast('Clip removed');
+          close();
+        });
+        acts.appendChild(rm);
+      }
+      box.appendChild(acts);
+
+      if (why) {
+        box.appendChild(SB.el('div', 'pp-note warn', why.long));
+      }
+
+      m = SB.modal({
+        title: 'Clip' + (codeOf(p, shot) ? ' · ' + codeOf(p, shot) : ''),
+        width: '760px',
+        body: box,
+        buttons: [{ label: 'Close', primary: true }],
+        onClose: function () {
+          const v = box.querySelector('video');
+          if (v) v.pause();
+          if (objectUrl) URL.revokeObjectURL(objectUrl);
+        }
+      });
+    };
+
+    if (rec && rec.ref) SB.Renders.videoFile(p, rec).then(mount);
+    else mount(null);
+  }
+
+  /* A clip is the expensive one, and the moment before it goes is the only
+   * moment the number is any use. Asked once per session, from wherever the
+   * push was started. */
+  let costAsked = false;
+
+  function confirmCost(p, shot, model, then) {
+    const slug = slugOf(model);
+    const res = resolutionFor(p, slug, 'video');
+    const c = slug ? costFor(slug, '', res) : null;
+    if (costAsked || !c || !c.credits) { costAsked = true; then(); return; }
+    const acct = account();
+    const bal = acct && typeof acct.credits === 'number' ? acct.credits : null;
+    const body = SB.el('div');
+    body.appendChild(SB.el('p', null,
+      model.name + ' at ' + (res || 'its default resolution') + ' — about ' + c.credits +
+      ' credits' + (c.from === 'measured' ? ', which is what it cost last time.'
+        : '. That is the published base price; a longer or larger clip costs more.')));
+    if (bal !== null) {
+      body.appendChild(SB.el('p', 'pp-note' + (bal < c.credits ? ' warn' : ''),
+        'You have ' + bal + ' credits' + (bal < c.credits ? ' — this may not go through.' : '.')));
+    }
+    body.appendChild(SB.el('div', 'pp-note',
+      'Asked once per session; every clip after this goes straight through.'));
+    SB.modal({
+      title: 'Shoot this clip?', width: '420px', body: body,
+      buttons: [
+        { label: 'Cancel' },
+        {
+          label: 'Shoot it', primary: true, onClick: function (cl) {
+            costAsked = true;
+            cl();
+            then();
+          }
+        }
+      ]
+    });
+  }
+
   SB.Clip = {
-    play: playClip, attach: attachClip, drop: dropClip,
-    label: clipLabel, meta: clipMeta
+    open: openClip,
+    /* the old name, because a rename that breaks a caller silently is not
+       worth the tidiness */
+    play: openClip,
+    attach: attachClip, drop: dropClip,
+    label: clipLabel, meta: clipMeta, confirmCost: confirmCost
   };
 
   SB.Imagine = {
@@ -2405,6 +2607,7 @@
     ready: function (model) { return !blocker(model); },
     blocker: blocker, slugOf: slugOf, aspectOf: aspectOf,
     image: image, video: video, run: run, fetchClip: fetchClip,
+    whyNot: whyNot, promptFor: promptFor,
     /* jobs */
     job: job, busy: busy, clear: clear, onChange: onChange,
     /* exposed for the tests */

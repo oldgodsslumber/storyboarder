@@ -185,14 +185,18 @@ by name.
 A card holds a still *and*, optionally, a clip — the still is what the board draws and what
 prints; the clip is the motion made from it.
 
-- **Telling them apart:** a card with a clip shows a `▷ 2s` badge in the top-left of the
-  frame. No badge, no clip. The Prompts panel's video column shows the same thing as a
-  `▷ clip 2s` button, and **Settings → General** counts clips separately from stills because
-  they are the heavy thing in a board.
-- **Watching, replacing, removing:** click the badge. The player opens with the clip's
-  length, size and filename, a **Replace…** button and an armed **Remove**.
-- **Putting one in:** drop an `.mp4` (or any video the browser reads) straight onto the card
-  — or use **▷+** in the frame's hover tools. It is kept whole, byte for byte, with its
+- **Telling them apart:** every card carries one clip control in the top-left of the frame —
+  `▷ 2s` when it has a clip, a quiet `▷` when it does not. The Prompts panel's video column
+  opens the same thing, and **Settings → General** counts clips separately from stills
+  because they are the heavy thing in a board.
+- **Reviewing one:** click it. The review plays the clip and says what it is — length,
+  size, filename — **what made it** (model, date, resolution, roughly what it cost) and
+  **the prompt it was made from**. From there: **Shoot it again**, **Replace…**, or an armed
+  **Remove**. With no clip yet it shows the still instead and offers the two things that
+  make sense — *Add from a file…* and *Shoot it*, the latter carrying the reason it cannot
+  run when it cannot.
+- **Putting one in:** drop an `.mp4` (or any video the browser reads) straight onto the
+  card, or use *Add from a file…* in the review. It is kept whole, byte for byte, with its
   duration and dimensions read off the file. This is how a clip that already exists — cut
   last month, handed over by someone — gets onto a board; before this, `▶ shoot` was the
   only way a card could ever have one.

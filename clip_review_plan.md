@@ -1,6 +1,6 @@
 # Reviewing a clip from the board — plan
 
-Status: **planned, not built.**
+Status: **built.** Kept for the reasoning.
 
 ## What the two buttons do today
 

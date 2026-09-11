@@ -512,7 +512,7 @@
         t('a prompt written for another model says so, by name',
           !!why2 && why2.textContent.indexOf(other.name) >= 0, why2 ? why2.textContent : 'no note');
         t('and the long version tells you how to fix it',
-          /Switch the model at the top|✦ generate/.test(why2.title), why2.title.slice(0, 60));
+          /Switch the model, or write one for/.test(why2.title), why2.title.slice(0, 80));
 
         ptShot.prompts = {};
         SB.PromptPanel.refresh();
@@ -1166,6 +1166,67 @@
         SB.app.changed(true);
       }
 
+      // the clip review: one control, one modal, both states
+      {
+        const rShot = P().scenes[0].shots[0];
+        const rWas = rShot.video;
+        rShot.video = null;
+        SB.app.changed(true);
+        const badge = document.querySelector('.card[data-shot="' + rShot.id + '"] .clip-badge');
+        t('a card with no clip still has the control', !!badge, 'none');
+        t('and it says so rather than claiming one',
+          badge.classList.contains('none') && /no clip/i.test(badge.title), badge.title);
+        t('the old add-a-file button is gone from the tools',
+          !document.querySelector('.card[data-shot="' + rShot.id + '"] .frame-tools .mini[title*="from a file"]'),
+          'still there');
+
+        badge.click();
+        await pauseTop();
+        const box = document.querySelector('.modal .clip-box');
+        t('pressing it opens the review even with nothing to play', !!box, 'no modal');
+        t('which offers the two things that make sense',
+          /Add from a file/.test(box.textContent) && /Shoot it/.test(box.textContent),
+          box.textContent.slice(0, 80));
+        t('and carries the reason a shoot cannot run',
+          /prompt|sign in|organization|model/i.test(box.querySelector('.pp-note.warn').textContent),
+          box.querySelector('.pp-note.warn').textContent.slice(0, 60));
+        Array.prototype.filter.call(document.querySelectorAll('.modal button'),
+          function (b) { return b.textContent === 'Close'; })[0].click();
+        await pauseTop();
+
+        /* now with a clip on it */
+        rShot.video = {
+          ref: SB.Blobs.put(P(), 'data:video/mp4;base64,' + 'V'.repeat(400)),
+          serial: 9, ext: 'mp4', bytes: 300, dur: 4, w: 1184, h: 672,
+          made: { by: 'imagine', role: 'video', model: 'Kling', slug: 'kling-3.0-pro',
+            resolution: '1080p', at: Date.now() }
+        };
+        rShot.prompts = rShot.prompts || {};
+        const vmR = SB.Model.videoModel(P());
+        rShot.prompts[vmR.id] = { imagePrompt: '', videoPrompt: 'She turns from the window.' };
+        rShot.video.made.modelId = vmR.id;
+        SB.app.changed(true);
+        const badge2 = document.querySelector('.card[data-shot="' + rShot.id + '"] .clip-badge');
+        t('the control now says how long the clip runs', /4s/.test(badge2.textContent),
+          badge2.textContent);
+        badge2.click();
+        await pauseTop();
+        const box2 = document.querySelector('.modal .clip-box');
+        t('the review plays it', !!box2.querySelector('video'), 'no video');
+        t('says what made it', /Made here/.test(box2.textContent) && /Kling/.test(box2.textContent),
+          box2.textContent.slice(0, 120));
+        t('and shows the prompt it was made from',
+          /She turns from the window/.test(box2.textContent), 'no prompt');
+        t('with all three things you might do to it',
+          /Shoot it again/.test(box2.textContent) && /Replace/.test(box2.textContent) &&
+          /Remove/.test(box2.textContent), box2.textContent.slice(-80));
+        Array.prototype.filter.call(document.querySelectorAll('.modal button'),
+          function (b) { return b.textContent === 'Close'; })[0].click();
+        await pauseTop();
+        rShot.video = rWas;
+        SB.app.changed(true);
+      }
+
       // a clip you already have, put on a card
       {
         const cShot = P().scenes[0].shots[0];
@@ -1235,8 +1296,12 @@
 
         SB.Clip.drop(P(), cShot);
         SB.app.changed(true);
+        /* the control stays — it is the way IN to a clip as well as the way
+           to watch one — but it goes quiet and stops claiming a duration */
+        const after = document.querySelector('.card[data-shot="' + cShot.id + '"] .clip-badge');
         t('removing it takes the card back to a still',
-          !cShot.video && !document.querySelector('.card[data-shot="' + cShot.id + '"] .clip-badge'), '');
+          !cShot.video && !!after && after.classList.contains('none') &&
+          !/\ds/.test(after.textContent), after ? after.textContent : 'no control');
         t('and the bytes go with it', SB.Renders.weigh(P()).clips.n === 0,
           SB.Renders.weigh(P()).clips.n);
 

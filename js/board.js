@@ -1544,16 +1544,24 @@
       f.appendChild(SB.el('div', 'drop-hint', 'drop / paste an image, or click to load'));
     }
 
-    /* A card carrying a clip says so at a glance — the picture is a still
-       either way, and nothing else on the board would mention it. Always
-       visible, unlike the hover tools: a clip you cannot see is a clip you
-       forget is there. */
-    if (sh.video) {
-      const play = SB.el('button', 'clip-badge',
-        '\u25b7' + (sh.video.dur ? ' ' + sh.video.dur + 's' : ''));
-      play.title = 'Play, replace or remove the clip on this card' +
-        (SB.Clip.label(sh.video) ? ' — ' + SB.Clip.label(sh.video) : '');
-      play.onclick = function (ev) { ev.stopPropagation(); SB.Clip.play(P(), sh); };
+    /* One clip control, in the same place, whatever the state — and the
+       same one the Prompts panel opens. It used to be two buttons that did
+       different things: a badge that played the clip, and a ▷+ in the hover
+       tools that went straight to a file dialog with no warning, so
+       pressing the one you could see when there was no clip yet produced no
+       popup at all.
+
+       Always visible, unlike the rest of the tools: the card draws the still
+       either way, so this badge is the only sign a clip exists. */
+    {
+      const has = !!sh.video;
+      const play = SB.el('button', 'clip-badge' + (has ? '' : ' none'),
+        '\u25b7' + (has && sh.video.dur ? ' ' + sh.video.dur + 's' : ''));
+      play.title = has
+        ? 'Play, replace or remove the clip on this card' +
+          (SB.Clip.label(sh.video) ? ' — ' + SB.Clip.label(sh.video) : '')
+        : 'No clip on this card yet — shoot one, or add a file you already have';
+      play.onclick = function (ev) { ev.stopPropagation(); SB.Clip.open(P(), sh); };
       f.appendChild(play);
     }
 
@@ -1573,20 +1581,6 @@
       rm.title = 'Remove image';
       rm.onclick = function (ev) { ev.stopPropagation(); sh.image = null; SB.app.changed(true); };
       tools.appendChild(rm);
-    }
-    if (!sh.video) {
-      /* A clip that already exists — rendered last month, cut elsewhere — had
-         no way into the board at all: sh.video was only ever written by a
-         push. */
-      const add = SB.el('button', 'mini', '\u25b7+');
-      add.title = 'Put a clip on this card from a file';
-      add.onclick = function (ev) {
-        ev.stopPropagation();
-        SB.pickVideoFile().then(function (file) {
-          if (file) clipDrop(sh, [file]);
-        });
-      };
-      tools.appendChild(add);
     }
     f.appendChild(tools);
 
