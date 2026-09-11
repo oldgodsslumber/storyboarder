@@ -45,7 +45,9 @@ one generation — nothing is batched, nothing fires on its own.
 
 - A generated still lands on the card exactly like a dropped one: the ≤480p proxy the
   board draws, and the full-size original beside it, both inside the `.storyboard`.
-- A clip is kept in the file too, and the card grows a ▷ badge that plays it. If
+- A clip is kept in the file too, and the card grows a **▷ badge** in the corner of the
+  frame — always visible, with how long it runs (`▷ 2s`) — that plays it, replaces it, or
+  removes it. If
   ImagineArt made the clip but the browser could not read the bytes back, you keep the
   remote link only and the app says so — that link expires.
 - **▶ shoot** animates the shot's own full-size frame when it has one, and falls back to
@@ -66,6 +68,25 @@ address, and `file://` has none. Opened straight off the disk, use the API key.
 **Settings → Models & templates** gains one field per model: which ImagineArt model it
 means (`flux-dev`, `kling-1.0-pro`, …). A model with none is never pushed; its prompts are
 still written and copied as before.
+
+### Clips on a card
+
+A card holds a still *and*, optionally, a clip — the still is what the board draws and what
+prints; the clip is the motion made from it.
+
+- **Telling them apart:** a card with a clip shows a `▷ 2s` badge in the top-left of the
+  frame. No badge, no clip. The Prompts panel's video column shows the same thing as a
+  `▷ clip 2s` button, and **Settings → General** counts clips separately from stills because
+  they are the heavy thing in a board.
+- **Watching, replacing, removing:** click the badge. The player opens with the clip's
+  length, size and filename, a **Replace…** button and an armed **Remove**.
+- **Putting one in:** drop an `.mp4` (or any video the browser reads) straight onto the card
+  — or use **▷+** in the frame's hover tools. It is kept whole, byte for byte, with its
+  duration and dimensions read off the file. This is how a clip that already exists — cut
+  last month, handed over by someone — gets onto a board; before this, `▶ shoot` was the
+  only way a card could ever have one.
+- A clip put there by hand carries no provenance, so the Export panel's **only what was made
+  in here** filter passes it by. That is the point of the filter.
 
 ### Getting things back out: the Export panel
 

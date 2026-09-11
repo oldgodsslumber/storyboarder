@@ -1342,7 +1342,33 @@
         note.appendChild(grab);
         box.appendChild(note);
       }
-      SB.modal({
+      const line = clipLabel(rec);
+      if (line) box.appendChild(SB.el('div', 'pp-note', line + (rec.name ? ' · ' + rec.name : '')));
+
+      const acts = SB.el('div', 'pp-actions');
+      const swap = SB.el('button', 'tb', 'Replace…');
+      swap.title = 'Put a different file on this card';
+      swap.onclick = function () {
+        SB.pickVideoFile().then(function (file) {
+          if (!file) return;
+          return attachClip(p, shot, file).then(function () {
+            SB.toast('Clip replaced');
+            m.close();
+          });
+        }).catch(function (e) { SB.toast(e.message || String(e), true); });
+      };
+      const rm = SB.el('button', 'tb danger', 'Remove');
+      rm.title = 'Take the clip off this card. The bytes go with it.';
+      SB.armButton(rm, 'remove for good', function () {
+        dropClip(p, shot);
+        SB.toast('Clip removed');
+        m.close();
+      });
+      acts.appendChild(swap);
+      acts.appendChild(rm);
+      box.appendChild(acts);
+
+      const m = SB.modal({
         title: 'Clip',
         width: '760px',
         body: box,
@@ -1355,7 +1381,80 @@
     });
   }
 
-  SB.Clip = { play: playClip };
+  /* How long it runs and how big it is, read off the file itself. Worth the
+   * round trip: a badge that says "5s" is the difference between a card that
+   * has something and a card whose clip you have to open to identify. Failing
+   * to read it is not a failure to keep it. */
+  function clipMeta(blob) {
+    return new Promise(function (resolve) {
+      let url = '';
+      let done = false;
+      const finish = function (meta) {
+        if (done) return;
+        done = true;
+        if (url) URL.revokeObjectURL(url);
+        resolve(meta || {});
+      };
+      try {
+        url = URL.createObjectURL(blob);
+        const v = document.createElement('video');
+        v.preload = 'metadata';
+        v.onloadedmetadata = function () {
+          finish({
+            dur: isFinite(v.duration) ? Math.round(v.duration * 10) / 10 : 0,
+            w: v.videoWidth || 0, h: v.videoHeight || 0
+          });
+        };
+        v.onerror = function () { finish(null); };
+        v.src = url;
+      } catch (e) { finish(null); }
+      setTimeout(function () { finish(null); }, 4000);
+    });
+  }
+
+  /* A clip made somewhere else — rendered last month, cut in Premiere, handed
+   * over by somebody — put on a card. Nothing generated it here, so it carries
+   * no `made` and the export's "only what was made in here" filter correctly
+   * passes it by. */
+  function attachClip(p, shot, file) {
+    if (!file) return Promise.resolve(null);
+    if (!/^video\//.test(file.type || '')) {
+      return Promise.reject(new Error('That is not a video file.'));
+    }
+    return clipMeta(file).then(function (meta) {
+      return SB.Renders.keepVideo(p, file, shot.video).then(function (saved) {
+        if (!saved) throw new Error('the clip could not be stored');
+        if (meta.dur) saved.dur = meta.dur;
+        if (meta.w) { saved.w = meta.w; saved.h = meta.h; }
+        saved.name = file.name || '';
+        shot.video = saved;
+        SB.app.changed(true);
+        return saved;
+      });
+    });
+  }
+
+  function dropClip(p, shot) {
+    if (!shot || !shot.video) return;
+    shot.video = null;
+    SB.app.changed(true);
+  }
+
+  /* "5s · 1184×672 · 1.9 MB", as much of it as is known. */
+  function clipLabel(rec) {
+    if (!rec) return '';
+    const bits = [];
+    if (rec.dur) bits.push(rec.dur + 's');
+    if (rec.w) bits.push(rec.w + '×' + rec.h);
+    if (rec.bytes) bits.push((rec.bytes / 1048576).toFixed(1) + ' MB');
+    if (!rec.ref) bits.push('link only');
+    return bits.join(' · ');
+  }
+
+  SB.Clip = {
+    play: playClip, attach: attachClip, drop: dropClip,
+    label: clipLabel, meta: clipMeta
+  };
 
   SB.Imagine = {
     /* config */

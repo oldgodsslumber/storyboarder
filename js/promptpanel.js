@@ -632,11 +632,13 @@
     /* The clip this row already has, if any — the one place it can be played
        back without going and finding it. */
     if (field === 'videoPrompt' && sh.video) {
-      const play = SB.el('button', 'mini', '\u25b7 clip');
-      play.title = sh.video.ref
-        ? 'Play the clip this board is carrying (' +
+      const play = SB.el('button', 'mini', '\u25b7 clip' +
+        (sh.video.dur ? ' ' + sh.video.dur + 's' : ''));
+      play.title = (sh.video.ref
+        ? 'Play, replace or remove the clip on this card (' +
           SB.Renders.fileName(sh.video.serial, sh.video.ext) + ')'
-        : 'Play the clip — held only as a link, which expires';
+        : 'Play the clip — held only as a link, which expires') +
+        (SB.Clip.label(sh.video) ? '\n' + SB.Clip.label(sh.video) : '');
       play.onclick = function () { SB.Clip.play(P(), sh); };
       foot.appendChild(play);
     }

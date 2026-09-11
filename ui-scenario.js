@@ -1017,6 +1017,84 @@
         SB.app.changed(true);
       }
 
+      // a clip you already have, put on a card
+      {
+        const cShot = P().scenes[0].shots[0];
+        const cWas = cShot.video;
+        /* a real two-second mp4, so the duration read is exercised rather
+           than stubbed */
+        const mp4 = 'AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAAQibW9vdgAAAGxtdmhkAAAAAAAAAAAAAAAAAAAD6AAAB9AAAQAA' +
+          'AQAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' +
+          'AAAAAgAAA010cmFrAAAAXHRraGQAAAADAAAAAAAAAAAAAAABAAAAAAAAB9AAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAA' +
+          'AAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAEAAAAAkAAAAAAAkZWR0cwAAABxlbHN0AAAAAAAAAAEAAAfQAAAIAAABAAAAAALF' +
+          'bWRpYQAAACBtZGhkAAAAAAAAAAAAAAAAAAAoAAAAUABVxAAAAAAALWhkbHIAAAAAAAAAAHZpZGUAAAAAAAAAAAAAAABWaWRl' +
+          'b0hhbmRsZXIAAAACcG1pbmYAAAAUdm1oZAAAAAEAAAAAAAAAAAAAACRkaW5mAAAAHGRyZWYAAAAAAAAAAQAAAAx1cmwgAAAA' +
+          'AQAAAjBzdGJsAAAAwHN0c2QAAAAAAAAAAQAAALBhdmMxAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAEAAJABIAAAASAAAAAAA' +
+          'AAABFUxhdmM2Mi4xNS4xMDAgbGlieDI2NAAAAAAAAAAAAAAAGP//AAAANmF2Y0MBZAAK/+EAGWdkAAqs2UR/nwEQAAADABAA' +
+          'AAMBQPEiWWABAAZo6+PLIsD9+PgAAAAAEHBhc3AAAAABAAAAAQAAABRidHJ0AAAAAAAAD6AAAAAAAAAAGHN0dHMAAAAAAAAA' +
+          'AQAAABQAAAQAAAAAFHN0c3MAAAAAAAAAAQAAAAEAAACoY3R0cwAAAAAAAAATAAAAAQAACAAAAAABAAAUAAAAAAEAAAgAAAAA' +
+          'AQAAAAAAAAABAAAEAAAAAAEAABQAAAAAAQAACAAAAAABAAAAAAAAAAEAAAQAAAAAAQAAFAAAAAABAAAIAAAAAAEAAAAAAAAA' +
+          'AQAABAAAAAABAAAUAAAAAAEAAAgAAAAAAQAAAAAAAAABAAAEAAAAAAEAABAAAAAAAgAABAAAAAAcc3RzYwAAAAAAAAABAAAA' +
+          'AQAAABQAAAABAAAAZHN0c3oAAAAAAAAAAAAAABQAAALaAAAADgAAAAwAAAAMAAAADAAAABQAAAAOAAAADAAAAAwAAAAUAAAA' +
+          'DgAAAAwAAAAMAAAAFAAAAA4AAAAMAAAADAAAABQAAAAOAAAADAAAABRzdGNvAAAAAAAAAAEAAARSAAAAYXVkdGEAAABZbWV0' +
+          'YQAAAAAAAAAhaGRscgAAAAAAAAAAbWRpcmFwcGwAAAAAAAAAAAAAAAAsaWxzdAAAACSpdG9vAAAAHGRhdGEAAAABAAAAAExh' +
+          'dmY2Mi41LjEwMQAAAAhmcmVlAAAD8G1kYXQAAAKuBgX//6rcRem95tlIt5Ys2CDZI+7veDI2NCAtIGNvcmUgMTY1IHIzMjIy' +
+          'IGIzNTYwNWEgLSBILjI2NC9NUEVHLTQgQVZDIGNvZGVjIC0gQ29weWxlZnQgMjAwMy0yMDI1IC0gaHR0cDovL3d3dy52aWRl' +
+          'b2xhbi5vcmcveDI2NC5odG1sIC0gb3B0aW9uczogY2FiYWM9MSByZWY9MyBkZWJsb2NrPTE6MDowIGFuYWx5c2U9MHgzOjB4' +
+          'MTEzIG1lPWhleCBzdWJtZT03IHBzeT0xIHBzeV9yZD0xLjAwOjAuMDAgbWl4ZWRfcmVmPTEgbWVfcmFuZ2U9MTYgY2hyb21h' +
+          'X21lPTEgdHJlbGxpcz0xIDh4OGRjdD0xIGNxbT0wIGRlYWR6b25lPTIxLDExIGZhc3RfcHNraXA9MSBjaHJvbWFfcXBfb2Zm' +
+          'c2V0PS0yIHRocmVhZHM9MSBsb29rYWhlYWRfdGhyZWFkcz0xIHNsaWNlZF90aHJlYWRzPTAgbnI9MCBkZWNpbWF0ZT0xIGlu' +
+          'dGVybGFjZWQ9MCBibHVyYXlfY29tcGF0PTAgY29uc3RyYWluZWRfaW50cmE9MCBiZnJhbWVzPTMgYl9weXJhbWlkPTIgYl9h' +
+          'ZGFwdD0xIGJfYmlhcz0wIGRpcmVjdD0xIHdlaWdodGI9MSBvcGVuX2dvcD0wIHdlaWdodHA9MiBrZXlpbnQ9MjUwIGtleWlu' +
+          'dF9taW49MTAgc2NlbmVjdXQ9NDAgaW50cmFfcmVmcmVzaD0wIHJjX2xvb2thaGVhZD00MCByYz1jcmYgbWJ0cmVlPTEgY3Jm' +
+          'PTIzLjAgcWNvbXA9MC42MCBxcG1pbj0wIHFwbWF4PTY5IHFwc3RlcD00IGlwX3JhdGlvPTEuNDAgYXE9MToxLjAwAIAAAAAk' +
+          'ZYiEABH//ufj/AprKxHEv01QKM3ptdyoujXHtijNqS8fduE/AAAACkGaJGxBH/61OVgAAAAIQZ5CeId/CvkAAAAIAZ5hdEN/' +
+          'DegAAAAIAZ5jakN/DekAAAAQQZpoSahBaJlMCCP//rU5WQAAAApBnoZFESw7/wr5AAAACAGepXRDfw3pAAAACAGep2pDfw3o' +
+          'AAAAEEGarEmoQWyZTAgh//6qcrAAAAAKQZ7KRRUsO/8K+QAAAAgBnul0Q38N6AAAAAgBnutqQ38N6AAAABBBmvBJqEFsmUwI' +
+          'f//+qdOhAAAACkGfDkUVLDv/CvkAAAAIAZ8tdEN/DekAAAAIAZ8vakN/DegAAAAQQZszSahBbJlMCG///qfuQAAAAApBn1FF' +
+          'FSw3/w3pAAAACAGfcmpDfw3o';
+        const raw = atob(mp4);
+        const bytes = new Uint8Array(raw.length);
+        for (let bi = 0; bi < raw.length; bi++) bytes[bi] = raw.charCodeAt(bi);
+        const file = new File([bytes], 'shot1c.mp4', { type: 'video/mp4' });
+
+        const rec = await SB.Clip.attach(P(), cShot, file);
+        t('a clip from a file lands on the card',
+          !!(rec && rec.ref) && SB.Renders.has(P(), rec), JSON.stringify(rec && rec.ext));
+        t('kept whole, byte for byte', rec.bytes === bytes.length, rec.bytes + ' of ' + bytes.length);
+        t('and it remembers the file it came from', rec.name === 'shot1c.mp4', rec.name);
+        t('nothing generated it, so nothing claims it was',
+          !rec.made, JSON.stringify(rec.made));
+        t('how long it runs is read off the file', rec.dur === 2, String(rec.dur));
+        t('and how big the picture is', rec.w === 64 && rec.h === 36, rec.w + 'x' + rec.h);
+        t('the label reads as one line',
+          /^2s · 64×36 · /.test(SB.Clip.label(rec)), SB.Clip.label(rec));
+
+        SB.app.changed(true);
+        const badge = document.querySelector('.card[data-shot="' + cShot.id + '"] .clip-badge');
+        t('the card says it is carrying one, and for how long',
+          !!badge && /2s/.test(badge.textContent), badge ? badge.textContent : 'no badge');
+        t('a structural change does not sweep it away', SB.Renders.has(P(), cShot.video), '');
+        t('and Settings counts it', SB.Renders.weigh(P()).clips.n === 1,
+          SB.Renders.weigh(P()).clips.n);
+
+        /* replacing is the same door, and the serial does not move */
+        const serial = rec.serial;
+        const again = await SB.Clip.attach(P(), cShot, file);
+        t('replacing keeps the serial the card is known by', again.serial === serial,
+          again.serial + ' vs ' + serial);
+
+        SB.Clip.drop(P(), cShot);
+        SB.app.changed(true);
+        t('removing it takes the card back to a still',
+          !cShot.video && !document.querySelector('.card[data-shot="' + cShot.id + '"] .clip-badge'), '');
+        t('and the bytes go with it', SB.Renders.weigh(P()).clips.n === 0,
+          SB.Renders.weigh(P()).clips.n);
+
+        cShot.video = cWas;
+        SB.app.changed(true);
+      }
+
       // the scene organizer and the board banner are two windows onto one
       // scene. Whichever you are not typing into used to hold a stale copy,
       // and its next keystroke wrote that copy back over the newer text.

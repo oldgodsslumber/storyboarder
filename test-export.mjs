@@ -357,5 +357,20 @@ section('the things a QA pass found');
     man.bytes + ' vs ' + man.text.length);
 }
 
+{
+  /* a clip that was dropped on a card rather than generated */
+  const { p, b } = board();
+  b.video = { ref: SB.Blobs.put(p, 'data:video/mp4;base64,' + 'M'.repeat(600)),
+    serial: 40, ext: 'mp4', bytes: 450, dur: 2, name: 'old-cut.mp4' };
+  const all = E.plan(p, withOpts({}));
+  t('a clip from a file exports like any other',
+    all.items.filter(i => i.name === '0040.mp4').length === 1,
+    all.items.map(i => i.name).join(' '));
+  const mine = E.plan(p, withOpts({ madeOnly: true }));
+  t('but "only what was made in here" passes it by',
+    mine.items.filter(i => i.name === '0040.mp4').length === 0,
+    mine.items.map(i => i.name).join(' '));
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

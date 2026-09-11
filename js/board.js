@@ -1544,11 +1544,15 @@
       f.appendChild(SB.el('div', 'drop-hint', 'drop / paste an image, or click to load'));
     }
 
-    /* A card whose frame has been animated says so, and plays it. Nothing else
-       on the board would ever mention the clip — it is not in the file. */
+    /* A card carrying a clip says so at a glance — the picture is a still
+       either way, and nothing else on the board would mention it. Always
+       visible, unlike the hover tools: a clip you cannot see is a clip you
+       forget is there. */
     if (sh.video) {
-      const play = SB.el('button', 'clip-badge', '\u25b7');
-      play.title = 'Play the clip made from this frame';
+      const play = SB.el('button', 'clip-badge',
+        '\u25b7' + (sh.video.dur ? ' ' + sh.video.dur + 's' : ''));
+      play.title = 'Play, replace or remove the clip on this card' +
+        (SB.Clip.label(sh.video) ? ' — ' + SB.Clip.label(sh.video) : '');
       play.onclick = function (ev) { ev.stopPropagation(); SB.Clip.play(P(), sh); };
       f.appendChild(play);
     }
@@ -1570,6 +1574,20 @@
       rm.onclick = function (ev) { ev.stopPropagation(); sh.image = null; SB.app.changed(true); };
       tools.appendChild(rm);
     }
+    if (!sh.video) {
+      /* A clip that already exists — rendered last month, cut elsewhere — had
+         no way into the board at all: sh.video was only ever written by a
+         push. */
+      const add = SB.el('button', 'mini', '\u25b7+');
+      add.title = 'Put a clip on this card from a file';
+      add.onclick = function (ev) {
+        ev.stopPropagation();
+        SB.pickVideoFile().then(function (file) {
+          if (file) takeClip(sh, file);
+        });
+      };
+      tools.appendChild(add);
+    }
     f.appendChild(tools);
 
     f.addEventListener('click', function () {
@@ -1586,8 +1604,12 @@
       if (ev.dataTransfer.types.indexOf(DND_SHOT) >= 0) return;
       ev.preventDefault();
       f.classList.remove('drag-over');
+      /* A video dropped on a card is a clip for that card, not a picture that
+         failed to decode — which is what it used to be reported as. */
+      const clip = SB.videoFromTransfer(ev.dataTransfer);
+      if (clip) { takeClip(sh, clip); return; }
       SB.imageFromTransfer(ev.dataTransfer).then(function (src) {
-        if (!src) { SB.toast('No image found in that drop', true); return; }
+        if (!src) { SB.toast('No image or clip found in that drop', true); return; }
         setImage(sh, src);
       });
     });
@@ -1609,6 +1631,17 @@
    * its blob reference — the one thing that travels with a picture when cards
    * move. If nobody is holding that picture any more (replaced, deleted), the
    * record has nowhere to live and is dropped; gc() takes the bytes. */
+  function takeClip(sh, file) {
+    const had = !!sh.video;
+    SB.Clip.attach(P(), sh, file).then(function (rec) {
+      if (!rec) return;
+      SB.toast((had ? 'Clip replaced' : 'Clip added') +
+        (SB.Clip.label(rec) ? ' — ' + SB.Clip.label(rec) : ''));
+    }).catch(function (e) {
+      SB.toast('That clip could not be stored: ' + (e.message || e), true);
+    });
+  }
+
   function setImage(sh, src, made) {
     return SB.downscaleImage(src).then(function (img) {
       const proxy = SB.Blobs.image(P(), img.data, img.w, img.h);

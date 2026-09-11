@@ -321,6 +321,39 @@ window.SB = window.SB || {};
     return SB.imageFromTransfer(dt).then(function (one) { return one ? [one] : []; });
   };
 
+  /* A clip out of a drop or a paste. Kept apart from imageFromTransfer rather
+   * than folded into it: a drop carrying both should put the picture on the
+   * card and the clip beside it, and the caller decides that. */
+  SB.videoFromTransfer = function (dt) {
+    if (!dt) return null;
+    const files = dt.files;
+    if (files) {
+      for (let i = 0; i < files.length; i++) {
+        if (/^video\//.test(files[i].type)) return files[i];
+      }
+    }
+    if (dt.items) {
+      for (let i = 0; i < dt.items.length; i++) {
+        const it = dt.items[i];
+        if (it.kind === 'file' && /^video\//.test(it.type)) {
+          const f = it.getAsFile();
+          if (f) return f;
+        }
+      }
+    }
+    return null;
+  };
+
+  SB.pickVideoFile = function () {
+    return new Promise(function (resolve) {
+      const inp = document.createElement('input');
+      inp.type = 'file';
+      inp.accept = 'video/*';
+      inp.onchange = function () { resolve(inp.files && inp.files[0] ? inp.files[0] : null); };
+      inp.click();
+    });
+  };
+
   SB.pickImageFile = function () {
     return new Promise(function (resolve) {
       const inp = document.createElement('input');
