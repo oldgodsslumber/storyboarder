@@ -898,6 +898,65 @@
           SB.Renders.weigh(P()).clips.n === 0, SB.Renders.weigh(P()).clips.n);
       }
 
+      // the export panel — the way back out, now that nothing is on disk
+      {
+        const xShot = P().scenes[0].shots[0];
+        const xWasImg = xShot.image, xWasRender = xShot.render;
+        const xPng = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAGCAIAAABxZ0i' +
+          'sAAAAFElEQVR4nGM8oaHBgA0wYRWlkwQAppoBJCiW4EgAAAAASUVORK5CYII=';
+        const xRec = await SB.Renders.keep(P(), xPng, null,
+          { by: 'imagine', role: 'image', model: 'Nano Banana (Gemini Image)', slug: 'flux-dev' });
+        xShot.render = xRec;
+        SB.app.changed(true);
+
+        SB.ExportPanel.open();
+        t('the export panel takes over the page',
+          !!document.querySelector('.lib-back .ex-body'), '');
+        t('it offers both ways out',
+          document.querySelectorAll('.ex-acts .tb').length === 2,
+          document.querySelectorAll('.ex-acts .tb').length);
+        const xSum = function () { return document.querySelector('.ex-sum').textContent; };
+        t('and says what you are about to get before you can ask for it',
+          /1 original/.test(xSum()), xSum());
+
+        const xOpt = function (k) {
+          return document.querySelector('.ex-body input[data-opt="' + k + '"]');
+        };
+        xOpt('clips').checked = false;
+        xOpt('clips').dispatchEvent(new Event('change', { bubbles: true }));
+        xOpt('manifest').checked = false;
+        xOpt('manifest').dispatchEvent(new Event('change', { bubbles: true }));
+        t('turning a thing off changes the count', /^1 original\b/.test(xSum()), xSum());
+
+        /* the filter that only exists because the board records what made
+           each picture — everything else on this board was dropped in */
+        xOpt('madeOnly').checked = true;
+        xOpt('madeOnly').dispatchEvent(new Event('change', { bubbles: true }));
+        t('made-in-here keeps the generated one', /1 original/.test(xSum()), xSum());
+        xShot.render = { ref: xRec.ref, serial: xRec.serial, ext: xRec.ext, bytes: xRec.bytes };
+        SB.ExportPanel.close();
+        SB.ExportPanel.open();
+        t('and drops it once it has no provenance',
+          /nothing selected/.test(document.querySelector('.ex-sum').textContent),
+          document.querySelector('.ex-sum').textContent);
+
+        /* put the panel back the way the next test expects to find it */
+        document.querySelector('.ex-body input[data-opt="madeOnly"]').checked = false;
+        document.querySelector('.ex-body input[data-opt="madeOnly"]')
+          .dispatchEvent(new Event('change', { bubbles: true }));
+        document.querySelector('.ex-body input[data-opt="clips"]').checked = true;
+        document.querySelector('.ex-body input[data-opt="clips"]')
+          .dispatchEvent(new Event('change', { bubbles: true }));
+        document.querySelector('.ex-body input[data-opt="manifest"]').checked = true;
+        document.querySelector('.ex-body input[data-opt="manifest"]')
+          .dispatchEvent(new Event('change', { bubbles: true }));
+        SB.ExportPanel.close();
+        t('closing takes it off the page', !document.querySelector('.ex-body'), '');
+        xShot.image = xWasImg;
+        xShot.render = xWasRender;
+        SB.app.changed(true);
+      }
+
       // the scene organizer and the board banner are two windows onto one
       // scene. Whichever you are not typing into used to hold a stale copy,
       // and its next keystroke wrote that copy back over the newer text.

@@ -67,6 +67,36 @@ address, and `file://` has none. Opened straight off the disk, use the API key.
 means (`flux-dev`, `kling-1.0-pro`, …). A model with none is never pushed; its prompts are
 still written and copied as before.
 
+### Getting things back out: the Export panel
+
+**Export** in the toolbar writes files. Everything it writes is already in the
+`.storyboard` — it is a reader, and no export can change a board.
+
+- **full-size originals** and **clips**, under their serials: `0007.webp` and `0012.mp4`
+  sort next to each other, so a clip lands beside the frame it came from. Or name them
+  `1C_0007.webp` with the shot code first.
+- **only what was made in here** — the filter that matters once you are generating. Anything
+  ImagineArt produced carries what made it (model, ImagineArt model, when), so this is the
+  eleven stills and four clips you generated, not the forty frames that came from elsewhere.
+- **a manifest** beside them: shot, scene, serial, pixels, which model made each file and
+  the prompt that is on that card now. This is the half nobody can rebuild from the
+  pictures a month later.
+- **a shot list** as CSV — code, type, description, both prompts, and the files each shot
+  points at — for the call sheet or the ticket.
+- **reference sets per shot**, numbered in feed order, in `refs/<shot code>/`, which is what
+  `copy image set` did on a card.
+- **board copies** (854×480) when the small ones are what you want.
+- **contact sheets** are the same PDF flow as before, one click away on the panel.
+
+Two ways out: **Choose a folder…** writes them where you point it, or **Download** puts them
+through the browser one at a time. The folder is picked inside the click, written to, and
+forgotten — no handle is stored and nothing about your machine ends up in the board. That is
+the whole difference between this and the renders folder it replaced.
+
+Before it writes anything the footer says what you are about to get and, more usefully, what
+you are not: a clip still held as an expiring link (with a button to fetch it into the board
+first), and frames from the folder era whose originals were never in the file.
+
 ### How images are stored
 
 Every image — shot frames, persona references, comment ink, the full-size originals and
@@ -738,6 +768,7 @@ js/personas.js    recurring people, places and things + reference-image wording
 js/fields.js      the extra card text boxes, per project
 js/personapanel.js the reference library + scene organizer
 js/renders.js     full-size originals and clips, kept in the file by serial
+js/exportpanel.js the way back out: files, a manifest, a shot list
 js/refs.js        marks, the feed, and the boundary a model reads
 js/refbox.js      the description box that draws a mark as a link
 js/mentions.js    the @ popover

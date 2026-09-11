@@ -262,6 +262,7 @@
     $('btnTheme').addEventListener('click', function () { SB.Theme.toggle(); });
 
     $('btnVersions').addEventListener('click', function () { SB.Versions.open(); });
+    $('btnExport').addEventListener('click', function () { SB.ExportPanel.toggle(); });
     $('btnPdf').addEventListener('click', function () { SB.ExportOptions.open(); });
     $('btnSettings').addEventListener('click', function () { SB.Settings.open(); });
 

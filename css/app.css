@@ -1157,3 +1157,21 @@ body.comment-mode .frame{cursor:crosshair}
 .weigh-row .l{flex:1;min-width:0}
 .weigh-row .b{flex:0 0 auto;font-variant-numeric:tabular-nums}
 .weigh-row.total{border-top:1px solid var(--line);margin-top:4px;padding-top:5px;font-weight:600}
+
+/* ---------- export panel ----------
+   Three questions down the page — what, which, how named — then one footer
+   that says what you are about to get before you can ask for it. */
+.ex-lib{max-width:680px}
+.ex-body{padding:4px 2px 10px;overflow:auto}
+.ex-group{padding:10px 0;border-bottom:1px solid var(--line)}
+.ex-group:last-child{border-bottom:0}
+.ex-t{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--fg-dim);margin-bottom:6px}
+.ex-opts{display:flex;flex-direction:column;gap:5px;align-items:flex-start}
+.ex-opts .pp-toggle{display:flex;align-items:baseline;gap:6px}
+.ex-check.off{opacity:.45}
+.ex-rule{height:1px;background:var(--line);align-self:stretch;margin:4px 0}
+.ex-foot{border-top:1px solid var(--line2);padding-top:10px;display:flex;flex-direction:column;gap:8px}
+.ex-sum{font-size:13px;font-variant-numeric:tabular-nums}
+.ex-warn{font-size:12px;color:var(--accent2);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.ex-status{font-size:11px;color:var(--fg-dim);min-height:14px;font-variant-numeric:tabular-nums}
+.ex-acts{display:flex;gap:8px;justify-content:flex-end}

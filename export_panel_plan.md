@@ -1,7 +1,9 @@
 # The export panel — plan
 
-Status: **planned, not built.** Written the day the originals moved inside the `.storyboard`
-(branch `V3`), because that move is what makes this panel necessary.
+Status: **built** — [js/exportpanel.js](js/exportpanel.js), toolbar → **Export**, covered by
+[test-export.mjs](test-export.mjs). This is the note it was built from; it is kept because
+the reasoning is the part worth re-reading, and the last section says what was deliberately
+left out.
 
 ## Why it has to exist now
 
@@ -112,3 +114,24 @@ Notes that matter more than the layout:
 
 Not a sync, not a "publish", not a second copy the board has to keep track of. It writes
 files out and forgets them. The `.storyboard` stays the only thing that has to be kept.
+
+---
+
+## What shipped, and what did not
+
+Built as described: originals, clips, board copies, per-shot reference sets, the CSV shot
+list, the manifest, the generated-only filter, both naming schemes, folder-or-download, and
+a footer that counts link-only clips and folder-era gaps before anything is written. The
+pure half is `SB.ExportPanel.plan(project, options)` — it returns the exact file list, which
+is what the panel renders and what the tests assert against.
+
+Left out on purpose:
+
+- **The PDF is still its own dialog**, reached by a button on the panel. Absorbing
+  `exportoptions.js` wholesale would have meant rebuilding its live preview inside a panel
+  that otherwise writes files; the seam is honest and the click count is the same.
+- **No zip.** Folder-or-download covers both real cases without a compression library, and
+  PNG/JPEG/WebP/MP4 do not compress twice.
+- **No "package the board"** (the `.storyboard` plus its assets in one folder) — the file
+  already carries everything, so the package is the file. If handing someone a folder they
+  can open without the app ever becomes the ask, it is one more checkbox here.
