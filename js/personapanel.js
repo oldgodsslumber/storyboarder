@@ -425,6 +425,7 @@
     const p = P();
     const kind = SB.Personas.kindOf(per);
     const wrap = SB.el('div', 'persona kind-' + kind.id + (targetId === per.id ? ' target' : ''));
+    wrap.dataset.per = per.id;
     wrap.dataset.id = per.id;
     /* Whatever you last touched is what a pasted image belongs to. */
     const claim = function () {
@@ -695,44 +696,11 @@
       box.appendChild(lb);
     }
 
-    const old = SB.Personas.retiredOf(per);
-    if (old.length) {
-      const strip = SB.el('div', 'persona-strip retired');
-      old.forEach(function (img, i) {
-        const cell = SB.el('div', 'strip-cell');
-        const t = SB.el('div', 'strip-thumb');
-        const r = ratioOf(img);
-        if (r) t.style.setProperty('--ar', String(r));
-        const im = document.createElement('img');
-        im.src = SB.Blobs.src(P(), img);
-        t.appendChild(im);
-        t.title = 'Use this one instead — the current reference moves down here';
-        t.onclick = function () {
-          SB.Personas.useRetired(per, i);
-          SB.app.changed(true);
-          renderRefs();
-        };
-        cell.appendChild(t);
-        strip.appendChild(cell);
-      });
-      box.appendChild(strip);
-
-      const note = SB.el('div', 'pp-note warn');
-      note.appendChild(document.createTextNode(
-        old.length + (old.length === 1 ? ' older frame is' : ' older frames are') +
-        ' still in this board but no longer used — one reference is fed per subject. ' +
-        'Click one to use it instead. '));
-      const drop = SB.el('button', 'mini danger', 'delete ' +
-        (old.length === 1 ? 'it' : 'them'));
-      SB.armButton(drop, 'delete for good', function () {
-        SB.Personas.dropRetired(per);
-        SB.app.changed(true);
-        renderRefs();
-        SB.toast('Retired frames deleted');
-      });
-      note.appendChild(drop);
-      box.appendChild(note);
-    }
+    /* Frames a board carried before the cut are still in the file, but they
+       are not shown here. A second thumbnail under the reference reads as a
+       second reference — which is the thing that was removed. They are
+       counted, and cleared out, in Settings → General, next to everything
+       else that weighs. */
 
     box.appendChild(SB.el('div', 'pp-note', one
       ? 'One reference, fed wherever ' + (per.name || 'this') + ' appears. For a second ' +

@@ -52,12 +52,60 @@
       line.appendChild(SB.el('span', 'b', kb(r[1].bytes)));
       table.appendChild(line);
     });
+    const retired = [];
+    P().personas.forEach(function (per) {
+      SB.Personas.retiredOf(per).forEach(function (img, i) {
+        retired.push({ per: per, img: img, i: i });
+      });
+    });
+
     const tot = SB.el('div', 'weigh-row total');
     tot.appendChild(SB.el('span', 'n', ''));
     tot.appendChild(SB.el('span', 'l', 'pictures in this file'));
     tot.appendChild(SB.el('span', 'b', kb(w.total)));
     table.appendChild(tot);
     box.appendChild(table);
+
+    /* The leftovers of the era when one subject could carry several frames.
+       Nothing feeds them, nothing exports them, and the reference panel does
+       not show them — so this is the only place they can be dealt with, and
+       they can be taken out of the file before they are deleted, since the
+       file is the only copy. */
+    if (retired.length) {
+      const note = SB.el('div', 'pp-note');
+      note.appendChild(document.createTextNode(
+        retired.length + (retired.length === 1 ? ' older reference frame is' :
+          ' older reference frames are') + ' still in this file, from when a subject ' +
+        'could carry several: ' +
+        retired.map(function (r) { return r.per.name || 'unnamed'; })
+          .filter(function (n, i, a) { return a.indexOf(n) === i; }).join(', ') +
+        '. One reference is fed per subject now, so nothing uses them. '));
+      const out = SB.el('button', 'mini', 'save them out');
+      out.title = 'Download them as files first — this board is the only copy';
+      out.onclick = function () {
+        retired.forEach(function (r, n) {
+          const a = document.createElement('a');
+          a.href = SB.Blobs.src(P(), r.img);
+          a.download = SB.Renders.slug(r.per.name || 'subject') + '-old-' + (n + 1) +
+            (r.img.label ? '-' + SB.Renders.slug(r.img.label) : '') + '.jpg';
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+        });
+        SB.toast('Saved ' + retired.length + ' frame' + (retired.length === 1 ? '' : 's'));
+      };
+      note.appendChild(out);
+      note.appendChild(document.createTextNode(' '));
+      const drop = SB.el('button', 'mini danger', 'delete them for good');
+      SB.armButton(drop, 'delete for good', function () {
+        P().personas.forEach(function (per) { SB.Personas.dropRetired(per); });
+        SB.app.changed(true);
+        SB.toast('Older reference frames deleted');
+        SB.Settings.open('general');
+      });
+      note.appendChild(drop);
+      box.appendChild(note);
+    }
 
     /* A clip is two orders of magnitude heavier than a still, and the whole
        file is rewritten on every autosave — so the number that matters is not

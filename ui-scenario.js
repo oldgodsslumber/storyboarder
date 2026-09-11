@@ -604,6 +604,30 @@
         /replace/i.test(document.querySelector('.lib-refs .persona-frame').title || ''),
         document.querySelector('.lib-refs .persona-frame').title);
 
+      /* A board written before the cut still carries the frames it had. They
+         used to be drawn under the reference as small thumbnails, which read
+         as "this subject has several" when it has exactly one. */
+      (function () {
+        const keeper = SB.Personas.add(P(), { name: 'Leftovers' });
+        keeper.image = SB.Blobs.image(P(), 'data:image/jpeg;base64,' + 'A'.repeat(200), 4, 3);
+        keeper.retired = [
+          { ref: SB.Blobs.put(P(), 'data:image/jpeg;base64,' + 'B'.repeat(400)), w: 4, h: 3, label: 'back' },
+          { ref: SB.Blobs.put(P(), 'data:image/jpeg;base64,' + 'C'.repeat(400)), w: 4, h: 3, label: '3/4' }
+        ];
+        SB.app.changed(true);
+        SB.PersonaPanel.open();
+        const card = document.querySelector('.lib-refs .persona[data-per="' + keeper.id + '"]');
+        t('a subject holding older frames still shows one picture, not a strip',
+          card.querySelectorAll('.persona-frames img').length === 1,
+          card.querySelectorAll('.persona-frames img').length + ' pictures');
+        t('and no thumbnail strip is drawn anywhere in the panel',
+          !document.querySelector('.lib-refs .persona-strip') &&
+          !document.querySelector('.lib-refs .strip-thumb'), '');
+        t('the older frames are still in the file, not deleted on sight',
+          SB.Personas.retiredOf(keeper).length === 2,
+          SB.Personas.retiredOf(keeper).length);
+      })();
+
       /* a 9:16 subject is a tall card with its fields beside it, not a sliver */
       (function () {
         const tall = SB.Personas.add(P(), { name: 'Portrait', description: 'Standing.' });
@@ -1199,6 +1223,16 @@
         const weighTxt = weighAll[weighAll.length - 1].textContent;
         t('the weight table names the retired frames it is counting',
           /older reference frames/.test(weighTxt), weighTxt.slice(0, 120));
+
+        /* the panel no longer shows them, so this is where they are dealt with */
+        const genTxt = document.querySelector('.modal').textContent;
+        const kill = Array.prototype.filter.call(document.querySelectorAll('.modal button'),
+          function (b) { return b.textContent === 'delete them for good'; })[0];
+        t('and Settings is where older frames are saved out or cleared',
+          /still in this file/.test(genTxt) && !!kill &&
+          !!Array.prototype.filter.call(document.querySelectorAll('.modal button'),
+            function (b) { return b.textContent === 'save them out'; })[0],
+          /still in this file/.test(genTxt) + ' ' + !!kill);
 
         /* "How originals are kept" waits for Save like everything else */
         const sel = Array.prototype.filter.call(document.querySelectorAll('.modal select'),

@@ -663,9 +663,11 @@ not change is the same problem as a face that must not change. Each holds a **na
   had to carry explaining that several frames of one name were not several people.
 
   A board that already holds several keeps them — they are **retired**, fed to nothing and
-  exported by nothing, shown under the slot. Click one to use it instead, or delete them
-  deliberately; nothing is thrown away on open, because the `.storyboard` is now the only
-  copy of those originals.
+  exported by nothing. Nothing is thrown away on open, because the `.storyboard` is now the
+  only copy of those originals, but they are **not shown in the panel**: a smaller thumbnail
+  under the reference read as a second reference, which is the thing that was removed. They
+  are counted in **Settings → General** with everything else that weighs, and that is where
+  they can be **saved out** as files and then **deleted for good**.
 - **✦ Generate from script** reads the master script and the shot descriptions and invents
   recurring people — or locations, or objects — through the house style. Everything is
   editable afterwards, and **+ Person / + Location / + Object** skip the model entirely.
