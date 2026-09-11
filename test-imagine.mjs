@@ -252,8 +252,30 @@ section('the board side');
 const p = SB.Model.newProject();
 t('a new board has an aspect ratio to ask for', p.settings.imagineAspect === '16:9',
   p.settings.imagineAspect);
-t('Kling arrives pointed at a Kling slug that ImagineArt actually lists',
-  !!SB.Imagine.modelInfo(p.settings.models.filter(m => m.name === 'Kling')[0].imagineSlug),
+/* The guesses name models as the ACCOUNT's tools name them, which is the
+   surface a signed-in push uses — so they are checked against the real tool
+   description rather than against the shipped REST floor, which calls the
+   same models something else entirely. */
+const REAL_VIDEO = (function () {
+  const d = REAL_TOOLS.filter(t => t.name === 'generate_video')[0].description;
+  const m = /model \(optional\)[^:]*:([\s\S]*?)\. Pass the/.exec(d);
+  return (m[1].match(/"([^"]+)"/g) || []).map(x => x.replace(/"/g, ''));
+})();
+const REAL_IMAGE = (function () {
+  const d = REAL_TOOLS.filter(t => t.name === 'generate_image')[0].description;
+  const m = /model \(optional\)[^:]*:([\s\S]*?)\. Pass the/.exec(d);
+  return (m[1].match(/"([^"]+)"/g) || []).map(x => x.replace(/"/g, ''));
+})();
+t('a new board opens on GPT Image and LTX 2.3',
+  p.settings.models.filter(m => m.id === p.settings.imageModelId)[0].name === 'GPT Image' &&
+  p.settings.models.filter(m => m.id === p.settings.videoModelId)[0].name === 'LTX (LTXV 2.3)',
+  p.settings.models.filter(m => m.id === p.settings.videoModelId)[0].name);
+t('pointed at models the account actually takes',
+  REAL_IMAGE.indexOf(p.settings.models.filter(m => m.id === p.settings.imageModelId)[0].imagineSlug) >= 0 &&
+  REAL_VIDEO.indexOf(p.settings.models.filter(m => m.id === p.settings.videoModelId)[0].imagineSlug) >= 0,
+  p.settings.models.filter(m => m.id === p.settings.videoModelId)[0].imagineSlug);
+t('and Kling is the Kling those tools list',
+  REAL_VIDEO.indexOf(p.settings.models.filter(m => m.name === 'Kling')[0].imagineSlug) >= 0,
   p.settings.models.filter(m => m.name === 'Kling')[0].imagineSlug);
 t('a model nobody has mapped starts blank, not wrong',
   p.settings.models.filter(m => m.name === 'Sora')[0].imagineSlug === '',

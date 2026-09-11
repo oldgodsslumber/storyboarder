@@ -1233,7 +1233,7 @@ body.comment-mode .frame{cursor:crosshair}
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-09-11 16:53 · 5a1b67f+";</script>
+<script>window.SB_BUILD = "2026-09-11 16:56 · 2ec39f8+";</script>
 
 <div id="app">
 
@@ -4100,11 +4100,21 @@ window.SB = window.SB || {};
   /* Board model names are display names; a few map onto a slug with no
    * ambiguity worth worrying about. Everything else starts blank, which reads
    * honestly in Settings as "not pointed at anything yet". */
+  /* Named as the account's own tools name them — which is the surface a
+   * signed-in push goes through. The v2 REST API calls the same models
+   * something else entirely (kling-v1.6-pro-image-to-video against
+   * kling-3.0-pro), so on the API-key transport these want changing; the
+   * field says so softly rather than refusing. */
   const GUESS = {
-    'Kling': 'kling-v1.6-pro-image-to-video',
-    'MiniMax H3 (Hailuo)': 'minimax-video-01-director-image-to-video',
-    'LTX (LTXV 2.3)': 'ltx-video-v095-image-to-video',
-    'Veo': 'veo2-image-to-video',
+    'GPT Image': 'gpt-image-2',
+    'LTX (LTXV 2.3)': 'ltx-2.3',
+    'Kling': 'kling-3.0-pro',
+    'Veo': 'veo-3.1',
+    'Wan': 'wan-2.6',
+    'Seedance': 'seedance-2.5',
+    'Nano Banana (Gemini Image)': 'nano-banana-pro',
+    'Ideogram': 'ideogram-v4',
+    'Qwen-Image': 'imagine-art-2.0',
     'FLUX': 'flux-dev'
   };
 
@@ -7626,6 +7636,11 @@ window.SB = window.SB || {};
     };
   }
 
+  function byName(models, name) {
+    const m = models.filter(function (x) { return x.name === name; })[0];
+    return m ? m.id : null;
+  }
+
   function firstOfKind(models, kind) {
     const m = models.filter(function (x) { return x.kind === kind; })[0] || models[0];
     return m ? m.id : null;
@@ -7678,8 +7693,15 @@ window.SB = window.SB || {};
         export: defaultExport()
       }
     };
-    p.settings.imageModelId = firstOfKind(p.settings.models, 'image');
-    p.settings.videoModelId = firstOfKind(p.settings.models, 'video');
+    /* The two a new board opens on. Named rather than taken from the top of
+     * the list, because the order of that list is about nothing in
+     * particular and these are a decision: GPT Image for stills, LTX 2.3 for
+     * clips. Both fall back to the first of their kind if somebody edits the
+     * names out from under them. */
+    p.settings.imageModelId = byName(p.settings.models, 'GPT Image') ||
+      firstOfKind(p.settings.models, 'image');
+    p.settings.videoModelId = byName(p.settings.models, 'LTX (LTXV 2.3)') ||
+      firstOfKind(p.settings.models, 'video');
     p.scenes[0].shots.push(newShot({ type: DEFAULT_SHOT_TYPES[0] }));
     return p;
   }
@@ -8461,6 +8483,7 @@ window.SB = window.SB || {};
     newProject: newProject, migrate: migrate, foldLineEndings: foldLineEndings,
     newShot: newShot, newScene: newScene,
     defaultModels: defaultModels, defaultExport: defaultExport, guessSlug: guessSlug,
+    byName: byName,
     eachShot: eachShot, code: code, findShot: findShot, findScene: findScene,
     windowFor: windowFor, applyMasterEdit: applyMasterEdit, applyShotEdit: applyShotEdit,
     breakLink: breakLink, coverage: coverage,

@@ -123,6 +123,13 @@ one generation — nothing is batched, nothing fires on its own.
 Sign-in needs the app served over `http://` — the redirect has to come back to a real
 address, and `file://` has none. Opened straight off the disk, use the API key.
 
+A new board opens on **GPT Image** for stills and **LTX 2.3** for clips, each already
+pointed at the model the account's tools take (`gpt-image-2`, `ltx-2.3`). The other shipped
+models are pointed at their current equivalents too — Kling at `kling-3.0-pro`, Veo at
+`veo-3.1`, Wan at `wan-2.6`. Those names belong to the MCP transport; the v2 REST API calls
+the same models something else, so on an API key they want changing, and the field says so
+softly rather than refusing.
+
 **Settings → Models & templates** gains one field per model: which ImagineArt model it
 means (`flux-dev`, `kling-v1.6-pro-image-to-video`, …), offered as a list filtered to that
 model's kind and labelled readably. A model with none is never pushed; its prompts are still

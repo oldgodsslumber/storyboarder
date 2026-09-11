@@ -252,6 +252,11 @@
     };
   }
 
+  function byName(models, name) {
+    const m = models.filter(function (x) { return x.name === name; })[0];
+    return m ? m.id : null;
+  }
+
   function firstOfKind(models, kind) {
     const m = models.filter(function (x) { return x.kind === kind; })[0] || models[0];
     return m ? m.id : null;
@@ -304,8 +309,15 @@
         export: defaultExport()
       }
     };
-    p.settings.imageModelId = firstOfKind(p.settings.models, 'image');
-    p.settings.videoModelId = firstOfKind(p.settings.models, 'video');
+    /* The two a new board opens on. Named rather than taken from the top of
+     * the list, because the order of that list is about nothing in
+     * particular and these are a decision: GPT Image for stills, LTX 2.3 for
+     * clips. Both fall back to the first of their kind if somebody edits the
+     * names out from under them. */
+    p.settings.imageModelId = byName(p.settings.models, 'GPT Image') ||
+      firstOfKind(p.settings.models, 'image');
+    p.settings.videoModelId = byName(p.settings.models, 'LTX (LTXV 2.3)') ||
+      firstOfKind(p.settings.models, 'video');
     p.scenes[0].shots.push(newShot({ type: DEFAULT_SHOT_TYPES[0] }));
     return p;
   }
@@ -1087,6 +1099,7 @@
     newProject: newProject, migrate: migrate, foldLineEndings: foldLineEndings,
     newShot: newShot, newScene: newScene,
     defaultModels: defaultModels, defaultExport: defaultExport, guessSlug: guessSlug,
+    byName: byName,
     eachShot: eachShot, code: code, findShot: findShot, findScene: findScene,
     windowFor: windowFor, applyMasterEdit: applyMasterEdit, applyShotEdit: applyShotEdit,
     breakLink: breakLink, coverage: coverage,

@@ -131,11 +131,21 @@
   /* Board model names are display names; a few map onto a slug with no
    * ambiguity worth worrying about. Everything else starts blank, which reads
    * honestly in Settings as "not pointed at anything yet". */
+  /* Named as the account's own tools name them — which is the surface a
+   * signed-in push goes through. The v2 REST API calls the same models
+   * something else entirely (kling-v1.6-pro-image-to-video against
+   * kling-3.0-pro), so on the API-key transport these want changing; the
+   * field says so softly rather than refusing. */
   const GUESS = {
-    'Kling': 'kling-v1.6-pro-image-to-video',
-    'MiniMax H3 (Hailuo)': 'minimax-video-01-director-image-to-video',
-    'LTX (LTXV 2.3)': 'ltx-video-v095-image-to-video',
-    'Veo': 'veo2-image-to-video',
+    'GPT Image': 'gpt-image-2',
+    'LTX (LTXV 2.3)': 'ltx-2.3',
+    'Kling': 'kling-3.0-pro',
+    'Veo': 'veo-3.1',
+    'Wan': 'wan-2.6',
+    'Seedance': 'seedance-2.5',
+    'Nano Banana (Gemini Image)': 'nano-banana-pro',
+    'Ideogram': 'ideogram-v4',
+    'Qwen-Image': 'imagine-art-2.0',
     'FLUX': 'flux-dev'
   };
 
