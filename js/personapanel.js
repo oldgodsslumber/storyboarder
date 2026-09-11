@@ -777,7 +777,10 @@
       SB.app.changed(true);
       renderRefs();
       SB.Renders.keep(P(), src, null).then(function (r) {
-        if (!r || !rec) return;
+        /* The reference may have been deleted while its original encoded —
+           writing onto a record nobody holds any more would strand the bytes
+           until the next sweep. */
+        if (!r || !rec || SB.Personas.imagesOf(per).indexOf(rec) < 0) return;
         rec.render = r;
         SB.Store.touch();
         renderRefs();

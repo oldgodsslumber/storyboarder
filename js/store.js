@@ -20,6 +20,12 @@
     lastSaved: 0,
     onState: null,
     getProject: null,  // set by app: () => project
+    /* Every edit bumps this. A write captures it before serialising and only
+     * clears `dirty` if it has not moved — otherwise the app announces "saved"
+     * for a state the file does not hold, beforeunload stops warning, and
+     * closing the tab there loses the edits. The debounce makes that window
+     * as long as the wait, which is up to three seconds on a heavy board. */
+    edits: 0,
     /* what this session has actually pushed to disk — the numbers a backend
      * would have to carry */
     stats: { writes: 0, bytes: 0, since: Date.now(), lastBytes: 0 }
@@ -123,6 +129,7 @@
     /* Serialising can throw (and once did leave the writing flag stuck on,
      * killing autosave for the rest of the session in silence). */
     let text;
+    const at = S.edits;                  // the state these bytes represent
     try {
       text = serialize(project);
     } catch (e) {
@@ -163,15 +170,18 @@
       return confirmOnDisk(text);
     }).then(function () {
       S.writing = false;
-      S.dirty = false;
+      /* Only if nothing was edited while this write was in the air. */
+      const behind = S.edits !== at;
+      S.dirty = behind;
       S.lastSaved = Date.now();
       S.lastGood = text;                     // the rescue copy
       S.stats.writes++;
       S.stats.lastBytes = text.length;
       S.stats.bytes += S.stats.lastBytes;
-      state('saved ' + new Date().toLocaleTimeString(), 'saved');
+      state(behind ? 'unsaved…' : 'saved ' + new Date().toLocaleTimeString(),
+        behind ? 'dirty' : 'saved');
       if (S.onSaved) S.onSaved(S.stats);
-      if (S.pending) { S.pending = false; return writeNow(); }
+      if (S.pending || behind) { S.pending = false; return writeNow(); }
     }).catch(function (e) {
       S.writing = false;
       S.pending = false;
@@ -244,6 +254,7 @@
   };
 
   function touch() {
+    S.edits++;
     S.dirty = true;
     if (S.handle) state('unsaved…', 'dirty');
     debouncedWrite();
@@ -445,8 +456,19 @@
     touch: touch,
     /* Flush any pending debounce, then hand back whatever write is running —
      * awaiting this means the bytes are on disk. */
+    /* Flush any pending debounce, then hand back whatever write is running —
+     * awaiting this means the bytes are on disk.
+     *
+     * With a write already in the air there is nothing to flush (the debounce
+     * has no timer), and handing back `inflight` used to be the end of it: the
+     * newer state was never queued, and the app reported saved. So the queue
+     * flag is set here, the same way writeNow() sets it for itself. */
     saveNow: function () {
       debouncedWrite.flush();
+      if (S.writing) {
+        S.pending = true;
+        return S.inflight || Promise.resolve();
+      }
       return S.inflight || writeNow();
     },
     saveWait: saveWait,

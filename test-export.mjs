@@ -58,6 +58,7 @@ function board() {
   const p = SB.Model.newProject();
   p.name = 'Bridge Crest';
   const sc = p.scenes[0];
+  sc.heading = 'INT. BRIDGECREST — DAY';
   const a = sc.shots[0];
   const b = SB.Model.addShot(p, sc.id, {});
   const c = SB.Model.addShot(p, sc.id, {});
@@ -69,11 +70,11 @@ function board() {
   a.image = SB.Blobs.image(p, 'data:image/jpeg;base64,' + 'b'.repeat(400), 854, 480);
   a.render = {
     ref: put('image/webp', 4000), serial: 1, ext: 'webp', w: 1184, h: 672, bytes: 3000,
-    made: { by: 'imagine', role: 'image', model: im.name, slug: 'flux-dev', at: 1 }
+    made: { by: 'imagine', role: 'image', model: im.name, modelId: im.id, slug: 'flux-dev', at: 1 }
   };
   a.video = {
     ref: put('video/mp4', 8000), serial: 2, ext: 'mp4', bytes: 6000,
-    made: { by: 'imagine', role: 'video', model: vm2.name, slug: 'kling-1.0-pro', at: 2 }
+    made: { by: 'imagine', role: 'video', model: vm2.name, modelId: vm2.id, slug: 'kling-1.0-pro', at: 2 }
   };
   a.prompts[im.id] = { imagePrompt: 'A wide of the floor, one lamp on.', videoPrompt: '' };
   a.prompts[vm2.id] = { imagePrompt: '', videoPrompt: 'She turns, slowly.' };
@@ -222,7 +223,7 @@ section('reference sets go in a folder of their own');
   const her = SB.Personas.add(p, { name: 'Nat' });
   SB.Personas.addImage(her, SB.Blobs.image(p, 'data:image/jpeg;base64,' + 'e'.repeat(300), 4, 3), '',
     { ref: SB.Blobs.put(p, 'data:image/webp;base64,' + 'F'.repeat(1200)), serial: 9, ext: 'webp' });
-  b.description = 'Reverse of ' + SB.Refs.mark(p, a.id, '1A');
+  b.description = 'Reverse of ' + SB.Refs.mark(a.id, '1A');
   b.personaIds = [her.id];
 
   const pl = E.plan(p, withOpts({ originals: false, clips: false, refsets: true }));
@@ -246,6 +247,114 @@ section('nothing selected');
   const pl = E.plan(p, withOpts({ originals: false, clips: false, manifest: false }));
   t('writes nothing at all', pl.items.length === 0, pl.items.length);
   t('and totals nothing', pl.bytes === 0, pl.bytes);
+}
+
+/* ------------------------------------------------- what QA found, fixed */
+section('the things a QA pass found');
+
+{
+  /* 1. a scene has a heading, not a name — every CSV row and every manifest
+        entry was reporting an empty scene */
+  const { p } = board();
+  const pl = E.plan(p, withOpts({ shotlist: true, manifest: true }));
+  const rows2 = pl.items.filter(i => /\.csv$/.test(i.name))[0].text.split('\r\n');
+  t('the CSV names the scene', rows2[1].indexOf('INT. BRIDGECREST — DAY') === 0, rows2[1]);
+  const man = JSON.parse(pl.items.filter(i => /\.json$/.test(i.name))[0].text);
+  t('and so does the manifest', man.files[0].scene === 'INT. BRIDGECREST — DAY',
+    man.files[0].scene);
+}
+
+{
+  /* 2. a reference set that falls back to the board copy must say so, and
+        must not report the original's bytes for a file it did not write */
+  const { p, a, b } = board();
+  const her = SB.Personas.add(p, { name: 'Nat' });
+  SB.Personas.addImage(her, SB.Blobs.image(p, 'data:image/jpeg;base64,' + 'e'.repeat(300), 854, 480),
+    '', { serial: 9, ext: 'webp', bytes: 1048576, w: 3840, h: 2160 });   // folder-era: no ref
+  b.personaIds = [her.id];
+  b.description = 'Nat at the rack.';
+  const pl = E.plan(p, withOpts({ originals: false, clips: false, refsets: true, manifest: true }));
+  const ref = pl.items.filter(i => /^refs\//.test(i.sub || ''))[0];
+  t('the fallback is labelled for what it is', ref.kind === 'reference (board copy)', ref.kind);
+  t('and weighs what was actually written', ref.bytes < 1000, ref.bytes);
+  t('the footer counts it as missing rather than shipping it quietly',
+    pl.missing === 1, pl.missing);
+  const man = JSON.parse(pl.items.filter(i => /\.json$/.test(i.name))[0].text);
+  t('the manifest does not claim 4K for a 480p file',
+    man.files[0].pixels === null && man.files[0].serial === null,
+    JSON.stringify(man.files[0]));
+}
+
+{
+  /* 3. a record pointing at bytes that are gone was invisible to everything */
+  const { p, b } = board();
+  b.render = { ref: 'nope-1', serial: 30, ext: 'webp', w: 100, h: 100, bytes: 10 };
+  t('a dangling reference counts as missing', E.plan(p, withOpts({})).missing === 2,
+    E.plan(p, withOpts({})).missing);
+  t('and weigh() sees it', SB.Renders.weigh(p).dangling === 1, SB.Renders.weigh(p).dangling);
+  t('Renders.isMissing covers both kinds',
+    SB.Renders.isMissing(p, b.render) &&
+    SB.Renders.isMissing(p, { serial: 4, ext: 'png' }) &&
+    !SB.Renders.isMissing(p, { serial: 1, ref: null }) === false, '');
+}
+
+{
+  /* 4. a clip with neither bytes nor a link is not nothing */
+  const { p, c } = board();
+  c.video = { serial: 22, ext: 'mp4', bytes: 5 };
+  t('a clip record with nothing behind it is counted',
+    E.plan(p, withOpts({})).missing === 2, E.plan(p, withOpts({})).missing);
+}
+
+{
+  /* 5. the manifest finds the model by id, and says so when it cannot */
+  const { p, a, im } = board();
+  const twin = JSON.parse(JSON.stringify(im));
+  twin.id = 'm_twin';
+  p.settings.models.push(twin);                       // two models, one name
+  const man1 = JSON.parse(E.plan(p, withOpts({ manifest: true }))
+    .items.filter(i => /\.json$/.test(i.name))[0].text);
+  t('a duplicate name cannot confuse it, because it looks up the id',
+    man1.files[0].promptOnTheCardNow === 'A wide of the floor, one lamp on.',
+    man1.files[0].promptOnTheCardNow);
+
+  p.settings.models = p.settings.models.filter(m => m.id !== im.id && m.id !== 'm_twin');
+  const man2 = JSON.parse(E.plan(p, withOpts({ manifest: true }))
+    .items.filter(i => /\.json$/.test(i.name))[0].text);
+  t('a model that has been deleted says so instead of going blank',
+    /no longer on this board/.test(man2.files[0].promptOnTheCardNow),
+    man2.files[0].promptOnTheCardNow);
+}
+
+{
+  /* 6. an empty plan is not an export */
+  const { p } = board();
+  const pl = E.plan(p, withOpts({ originals: false, clips: false, manifest: true }));
+  t('a manifest of nothing is not offered', pl.items.length === 0, pl.items.length);
+}
+
+{
+  /* 7. the CSV cannot be made to split a row or run a formula */
+  const { p, b, sc } = board();
+  b.description = 'Carriage\rreturn';
+  const one = E.csv(p, [{ scene: sc, shot: b, code: '1B', sceneName: sc.heading }]);
+  t('a lone carriage return is quoted', one.split('\r\n')[1].indexOf('"Carriage\rreturn"') >= 0,
+    JSON.stringify(one.split('\r\n')[1]));
+  b.description = '=cmd|\'/c calc\'!A1';
+  const two = E.csv(p, [{ scene: sc, shot: b, code: '1B', sceneName: sc.heading }]);
+  t('and a formula is defused with a leading quote',
+    two.indexOf("'=cmd") >= 0, two.split('\r\n')[1]);
+}
+
+{
+  /* 8. text sizes are bytes, not UTF-16 units */
+  const { p } = board();
+  p.name = '日本語 ボード';
+  const pl = E.plan(p, withOpts({ manifest: true }));
+  const man = pl.items.filter(i => /\.json$/.test(i.name))[0];
+  t('a manifest full of Japanese is measured in bytes',
+    man.bytes === new TextEncoder().encode(man.text).length && man.bytes > man.text.length,
+    man.bytes + ' vs ' + man.text.length);
 }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');

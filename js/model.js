@@ -443,6 +443,11 @@
           /* the arrival marks are a subset of the cast here too */
           sh.render = goodRender(sh.render);
         if (sh.render) p.renderSeq = Math.max(p.renderSeq | 0, sh.render.serial);
+        /* A clip claims from the same counter, so a board whose counter is
+           behind would hand a new one a serial that is already taken — and
+           the whole point of a serial is that it never repeats. */
+        sh.video = goodRender(sh.video);
+        if (sh.video) p.renderSeq = Math.max(p.renderSeq | 0, sh.video.serial);
         sh.personaIds = Array.isArray(sh.personaIds) ? sh.personaIds : [];
           sh.castEnters = (Array.isArray(sh.castEnters) ? sh.castEnters : [])
             .filter(function (id) { return sh.personaIds.indexOf(id) >= 0; });
@@ -591,6 +596,11 @@
         sh.prompts = sh.prompts || {};
         sh.render = goodRender(sh.render);
         if (sh.render) p.renderSeq = Math.max(p.renderSeq | 0, sh.render.serial);
+        /* A clip claims from the same counter, so a board whose counter is
+           behind would hand a new one a serial that is already taken — and
+           the whole point of a serial is that it never repeats. */
+        sh.video = goodRender(sh.video);
+        if (sh.video) p.renderSeq = Math.max(p.renderSeq | 0, sh.video.serial);
         sh.personaIds = Array.isArray(sh.personaIds) ? sh.personaIds : [];
         /* Empty for every board written before this, which is the right answer:
            nobody was marked as arriving, so everybody was already there. */
@@ -1022,6 +1032,26 @@
     p.updatedAt = Date.now();
   }
 
+  /* The shot whose frame is this exact picture, or null.
+   *
+   * Needed because anything filed asynchronously — an original being encoded,
+   * a clip being downloaded — has to land on the picture it belongs to, and
+   * the card it was dropped on is not a reliable address: swapping two cards
+   * moves their contents between shot objects while the ids stay put. Looked
+   * up by the blob reference, which is the one thing that travels WITH the
+   * picture. */
+  function shotHolding(p, ref) {
+    if (!ref) return null;
+    let hit = null;
+    eachShot(p, function (sh) {
+      if (hit) return;
+      const im = sh.image;
+      const r = im && (typeof im === 'string' ? im : im.ref);
+      if (r === ref) hit = sh;
+    });
+    return hit;
+  }
+
   function modelById(p, id) {
     return p.settings.models.filter(function (m) { return m.id === id; })[0] || null;
   }
@@ -1052,7 +1082,8 @@
     moveShot: moveShot, moveShots: moveShots, moveScene: moveScene,
     splitSceneAt: splitSceneAt, sceneFromShots: sceneFromShots,
     swapShotContent: swapShotContent, CONTENT_KEYS: CONTENT_KEYS,
-    modelById: modelById, imageModel: imageModel, videoModel: videoModel, firstOfKind: firstOfKind
+    modelById: modelById, imageModel: imageModel, videoModel: videoModel, firstOfKind: firstOfKind,
+    shotHolding: shotHolding
   };
 
 })(window.SB);

@@ -99,17 +99,6 @@
     return s.replace(/^-+|-+$/g, '').slice(0, 40);
   }
 
-  /* A subject's name, safe to put in a filename, in any script. Nothing here
-   * writes files any more, but every way OUT of the app names things after
-   * people and shots, so the one rule for it stays in one place. */
-  function slug(t) {
-    let s = String(t || '');
-    /* letters and digits in any script — dropping everything non-ASCII turned
-     * a subject named in Cyrillic or Japanese into "ref" */
-    try { s = s.replace(/[^\p{L}\p{N}_-]+/gu, '-'); }
-    catch (e) { s = s.replace(/[^\w-]+/g, '-'); }
-    return s.replace(/^-+|-+$/g, '').slice(0, 40);
-  }
 
   /* ---------- bytes in ---------- */
 
@@ -202,7 +191,9 @@
    * so out loud. */
   function keep(p, src, existing, made) {
     return encode(src, wantsSource(p)).then(function (enc) {
-      const ref = SB.Blobs.put(p, enc.data);
+      /* held: the caller assigns this reference a tick from now, and a sweep
+         landing in between would collect a picture that is about to be used */
+      const ref = SB.Blobs.put(p, enc.data, true);
       if (!ref) return null;
       return {
         ref: ref,
@@ -228,7 +219,7 @@
     if (!blob || !blob.size) return Promise.resolve(null);
     return toDataUrl(blob).then(function (data) {
       if (!data) return null;
-      const ref = SB.Blobs.put(p, data);
+      const ref = SB.Blobs.put(p, data, true);
       if (!ref) return null;
       return {
         ref: ref,
@@ -253,7 +244,16 @@
    * nothing else, and the pictures are wherever that machine's folder was. */
   function has(p, rec) { return !!dataUrl(p, rec); }
 
+  /* Filed when originals lived in a folder: a number, and the picture is on
+   * whatever machine that folder was on. */
   function isLegacy(rec) { return !!(rec && rec.serial && !rec.ref); }
+
+  /* A record pointing at bytes this file does not hold. Either of the two
+   * kinds — folder-era, or a ref whose blob has gone — and both have to be
+   * visible, because "neither has() nor isLegacy()" was a hole a record could
+   * fall through and be mentioned by nothing at all. */
+  function isDangling(p, rec) { return !!(rec && rec.ref && !dataUrl(p, rec)); }
+  function isMissing(p, rec) { return !!(rec && rec.serial && !has(p, rec)); }
 
   function blobOf(p, rec) {
     const u = dataUrl(p, rec);
@@ -277,7 +277,7 @@
       originals: { n: 0, bytes: 0 },
       clips: { n: 0, bytes: 0 },
       ink: { n: 0, bytes: 0 },
-      total: 0, unused: 0, legacy: 0
+      total: 0, unused: 0, legacy: 0, dangling: 0
     };
     const b = SB.Blobs.map(p);
     const seen = {};
@@ -296,6 +296,8 @@
           add('originals', sh.render && sh.render.ref);
           add('clips', sh.video && sh.video.ref);
           if (isLegacy(sh.render)) out.legacy++;
+          if (isDangling(p, sh.render)) out.dangling++;
+          if (isDangling(p, sh.video)) out.dangling++;
         });
       });
     };
@@ -306,6 +308,7 @@
           add('proxies', refOf(x));
           add('originals', x && x.render && x.render.ref);
           if (isLegacy(x && x.render)) out.legacy++;
+          if (isDangling(p, x && x.render)) out.dangling++;
         });
       });
     };
@@ -327,9 +330,9 @@
     CAP: CAP,
     claim: claim, pad: pad, fileName: fileName, extOf: extOf, videoExt: videoExt,
     slug: slug,
-    slug: slug,
     keep: keep, keepVideo: keepVideo,
-    file: file, videoFile: videoFile, dataUrl: dataUrl, has: has, isLegacy: isLegacy,
+    file: file, videoFile: videoFile, dataUrl: dataUrl, has: has,
+    isLegacy: isLegacy, isDangling: isDangling, isMissing: isMissing,
     weigh: weigh, wantsSource: wantsSource
   };
 

@@ -55,22 +55,41 @@
       sc.shots.forEach(function (sh, sj) {
         if (scope === 'scene' && sc.id !== SB.app.selectedSceneId) return;
         if (scope === 'selected' && sel.indexOf(sh.id) < 0) return;
-        out.push({ scene: sc, shot: sh, code: SB.Model.code(si, sj), si: si, sj: sj });
+        /* A scene's name is its heading — `.name` does not exist on a scene
+           and every other reader in the app knows that. Reading it gave an
+           empty Scene column in every CSV row and every manifest entry. */
+        out.push({
+          scene: sc, shot: sh, code: SB.Model.code(si, sj), si: si, sj: sj,
+          sceneName: sc.heading || ''
+        });
       });
     });
     return out;
   }
 
-  function bytesOf(rec, dataUrl) {
-    if (rec && rec.bytes) return rec.bytes;
+  /* Measured off the data URL that is actually going to be written, never
+     off the record — a reference set that fell back to the board copy used to
+     report the original's megabyte for a 300-byte file. `rec.bytes` is only
+     trusted when the bytes in hand are that record's. */
+  function bytesOf(dataUrl) {
     const i = String(dataUrl || '').indexOf(',');
     return i < 0 ? 0 : Math.round((dataUrl.length - i - 1) * 0.75);
+  }
+
+  /* UTF-8, not UTF-16 code units: a manifest full of Japanese was reported at
+     four fifths of what it weighs. */
+  function textBytes(t) {
+    try { return new TextEncoder().encode(t).length; } catch (e) { return t.length; }
   }
 
   function nameFor(code, rec, naming, fallbackExt) {
     const base = rec && rec.serial
       ? SB.Renders.fileName(rec.serial, rec.ext)
-      : (SB.Renders.slug(code) || 'shot') + '_board.' + (fallbackExt || 'jpg');
+      /* No serial: named for its card. A record with no serial but a type of
+         its own keeps that type, or it would export as a .jpg that is not one
+         and collide with that card's actual board copy. */
+      : (SB.Renders.slug(code) || 'shot') + '_board.' +
+        ((rec && rec.ext) || fallbackExt || 'jpg');
     if (naming !== 'code') return base;
     const c = SB.Renders.slug(code) || 'shot';
     return base.indexOf(c + '_') === 0 ? base : c + '_' + base;
@@ -87,10 +106,24 @@
    * by name, because that is what a person reads; the prompt is still on the
    * card, under that model's id. It may have been edited since, so the
    * manifest says so rather than pretending it is the exact string sent. */
+  /* The prompt a generated picture was written from. `made` carries the model
+   * id, which is the only stable handle: names are free text, two models can
+   * share one, and renaming or deleting a model used to turn the manifest's
+   * prompt silently blank with no way to tell "blank" from "gone". Assets
+   * generated before the id was recorded fall back to the name. */
   function promptFor(p, shot, made) {
-    if (!made) return '';
-    const m = p.settings.models.filter(function (x) { return x.name === made.model; })[0];
-    const pr = m && shot.prompts && shot.prompts[m.id];
+    if (!made) return null;
+    const models = p.settings.models || [];
+    let m = made.modelId
+      ? models.filter(function (x) { return x.id === made.modelId; })[0]
+      : null;
+    if (!m && made.model) {
+      const named = models.filter(function (x) { return x.name === made.model; });
+      if (named.length === 1) m = named[0];
+      else if (named.length > 1) return '(several models share that name — cannot say which)';
+    }
+    if (!m) return '(that model is no longer on this board)';
+    const pr = shot.prompts && shot.prompts[m.id];
     if (!pr) return '';
     return (made.role === 'video' ? pr.videoPrompt : pr.imagePrompt) || '';
   }
@@ -113,13 +146,15 @@
             const data = SB.Renders.dataUrl(p, rec);
             items.push({
               name: nameFor(r.code, rec, o.naming), kind: 'original', data: data,
-              bytes: bytesOf(rec, data), code: r.code, scene: r.scene.name || '',
+              bytes: bytesOf(data), code: r.code, scene: r.sceneName,
               shot: sh, rec: rec, made: rec.made || null
             });
           }
-        } else if (rec && SB.Renders.isLegacy(rec) && !o.madeOnly) {
-          /* A folder-era record: a number, and the picture is on whatever
-           * machine that folder was on. Counted, so the panel can say it. */
+        } else if (rec && SB.Renders.isMissing(p, rec) && !o.madeOnly) {
+          /* A number with no picture behind it — filed when originals lived
+           * in a folder, or a reference whose bytes have since gone. Either
+           * way it cannot be written, so it is counted and said out loud
+           * rather than dropped in silence. */
           missing++;
         }
       }
@@ -130,7 +165,7 @@
             const data = SB.Renders.dataUrl(p, sh.video);
             items.push({
               name: nameFor(r.code, sh.video, o.naming, 'mp4'), kind: 'clip', data: data,
-              bytes: bytesOf(sh.video, data), code: r.code, scene: r.scene.name || '',
+              bytes: bytesOf(data), code: r.code, scene: r.sceneName,
               shot: sh, rec: sh.video, made: sh.video.made || null
             });
           }
@@ -138,6 +173,9 @@
           /* Held as a link, not a file — and links expire. Worth saying
            * before the export runs rather than after. */
           linkOnly++;
+        } else if (!o.madeOnly) {
+          /* A clip record with neither bytes nor a link left. */
+          missing++;
         }
       }
 
@@ -147,8 +185,12 @@
           if (data) {
             items.push({
               name: nameFor(r.code, null, o.naming, extOfUrl(data)), kind: 'board copy',
-              data: data, bytes: bytesOf(null, data), code: r.code,
-              scene: r.scene.name || '', shot: sh, rec: null, made: null
+              data: data, bytes: bytesOf(data), code: r.code,
+              scene: r.sceneName, shot: sh, rec: null,
+              /* It only passed the made-in-here filter because the frame it is
+                 a copy of was generated — so the manifest says so instead of
+                 flatly denying it. */
+              made: (sh.render && sh.render.made) || null, isProxy: true
             });
           }
         }
@@ -162,15 +204,22 @@
         if (feed.length) {
           const dir = 'refs/' + (SB.Renders.slug(r.code) || 'shot');
           feed.forEach(function (e) {
-            const data = SB.Renders.dataUrl(p, e.render) || SB.Blobs.src(p, e.img);
+            const orig = SB.Renders.dataUrl(p, e.render);
+            const data = orig || SB.Blobs.src(p, e.img);
             if (!data) return;
+            /* Falling back to the board copy is fine; doing it silently is
+               not. The plan for this panel named this exact failure: an
+               export that shipped 854×480 where 4K was promised. */
+            if (!orig && e.render) missing++;
             const ext = extOfUrl(data);
             items.push({
               name: e.n + '_' + (SB.Renders.slug(e.label) || 'ref') +
                 (e.role ? '_' + SB.Renders.slug(e.role) : '') + '.' + ext,
-              sub: dir, kind: 'reference', data: data, bytes: bytesOf(e.render, data),
-              code: r.code, scene: r.scene.name || '', shot: sh, rec: e.render || null,
-              made: (e.render && e.render.made) || null
+              sub: dir, kind: orig ? 'reference' : 'reference (board copy)',
+              data: data, bytes: bytesOf(data),
+              code: r.code, scene: r.sceneName, shot: sh,
+              rec: orig ? e.render : null,
+              made: (orig && e.render && e.render.made) || null
             });
           });
         }
@@ -183,15 +232,17 @@
         text: csv(p, list), bytes: 0
       });
     }
-    if (o.manifest) {
+    /* A manifest of nothing is not an export. With no files to describe, the
+       panel says "nothing selected" instead of offering one empty JSON. */
+    if (o.manifest && items.length) {
       const text = manifest(p, items);
       items.push({
         name: (SB.Renders.slug(p.name) || 'board') + '-manifest.json', kind: 'list',
-        text: text, bytes: text.length
+        text: text, bytes: textBytes(text)
       });
     }
     items.forEach(function (it) {
-      if (!it.bytes && it.text) it.bytes = it.text.length;
+      if (!it.bytes && it.text) it.bytes = textBytes(it.text);
     });
 
     return {
@@ -206,8 +257,12 @@
   /* ---- the two text files ---- */
 
   function cell(v) {
-    const s = String(v == null ? '' : v);
-    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    let s = String(v == null ? '' : v);
+    /* A leading =, +, - or @ makes Excel and Sheets run the cell as a
+       formula. A description is text; it is prefixed so it stays text. */
+    if (/^[=+\-@]/.test(s)) s = "'" + s;
+    /* A lone CR splits the row in Excel just as a LF does. */
+    return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
   }
 
   function csv(p, list) {
@@ -222,7 +277,8 @@
       const ip = (im && sh.prompts[im.id] && sh.prompts[im.id].imagePrompt) || '';
       const vp = (vm && sh.prompts[vm.id] && sh.prompts[vm.id].videoPrompt) || '';
       lines.push([
-        r.scene.name || '', r.code, sh.noShot ? 'no shot' : (sh.type || ''),
+        r.sceneName || (r.scene && r.scene.heading) || '', r.code,
+        sh.noShot ? 'no shot' : (sh.type || ''),
         SB.Refs.plain(p, sh.description || ''), ip, vp,
         sh.render && sh.render.serial ? SB.Renders.fileName(sh.render.serial, sh.render.ext) : '',
         sh.video && sh.video.serial ? SB.Renders.fileName(sh.video.serial, sh.video.ext) : ''
@@ -248,6 +304,7 @@
           serial: (it.rec && it.rec.serial) || null,
           bytes: it.bytes || 0,
           pixels: it.rec && it.rec.w ? it.rec.w + '×' + it.rec.h : null,
+          boardCopy: !!it.isProxy,
           madeHere: !!m,
           model: m ? m.model : null,
           imagineModel: m ? m.slug : null,
@@ -308,6 +365,10 @@
       return done.then(function () {
         if (onEach) onEach(i, list.length, it);
         return next();
+      }).catch(function (e) {
+        /* Carry how far it got, so the failure can say it. */
+        e.wrote = i - 1;
+        throw e;
       });
     };
     return next();
@@ -339,6 +400,8 @@
     root.addEventListener('mousedown', function (ev) { if (ev.target === root) close(); });
     document.addEventListener('keydown', onKey);
     document.getElementById('modalRoot').appendChild(root);
+    const btn = document.getElementById('btnExport');
+    if (btn) btn.classList.add('on');
     render();
   }
 
@@ -356,6 +419,8 @@
     root = null;
     bodyEl = footEl = statusEl = null;
     document.removeEventListener('keydown', onKey);
+    const btn = document.getElementById('btnExport');
+    if (btn) btn.classList.remove('on');
   }
 
   function toggle() { root ? close() : open(); }
@@ -528,9 +593,19 @@
     return next(0);
   }
 
+  let writing = false;
+
   function go(dir) {
+    /* Two presses used to mean two complete exports — every file written
+       twice, two "done" toasts, and in folder mode two writables open on the
+       same handle. */
+    if (writing) return;
     const pl = plan(P(), opts);
     if (!pl.items.length) return;
+    writing = true;
+    if (footEl) {
+      footEl.querySelectorAll('.ex-acts .tb').forEach(function (b) { b.disabled = true; });
+    }
     if (statusEl) statusEl.textContent = 'writing 1 of ' + pl.items.length + '…';
     run(dir, pl.items, function (n, total) {
       if (statusEl) {
@@ -539,12 +614,19 @@
           : 'finishing…';
       }
     }).then(function (n) {
+      writing = false;
       if (statusEl) statusEl.textContent = '';
+      if (root) render();
       SB.toast(n + ' file' + (n === 1 ? '' : 's') + ' written' +
         (dir ? ' to ' + dir.name : '') + ' — ' + size(pl.bytes));
     }).catch(function (e) {
+      writing = false;
       if (statusEl) statusEl.textContent = '';
-      SB.toast('Export stopped: ' + (e.message || e), true);
+      if (root) render();
+      /* Say how far it got: the files already written are on disk and the
+         next attempt will overwrite them, which is only safe to do knowingly. */
+      SB.toast('Export stopped after ' + (e.wrote || 0) + ' of ' + pl.items.length +
+        ': ' + (e.message || e), true);
     });
   }
 

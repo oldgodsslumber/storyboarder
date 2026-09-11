@@ -78,9 +78,24 @@ t('aspect ratio is matched by synonym', a.aspect_ratio === '16:9', a.aspect_rati
 t('a required field we have no opinion about takes its default',
   a.quality === 'high', a.quality);
 
-const b = SB.Imagine._bind(toolA, { prompt: 'x', slug: 'flux-dev', aspect: '21:9' });
-t('an aspect the tool does not offer is dropped, not sent',
-  b.aspect_ratio === undefined, b.aspect_ratio);
+/* This used to assert that an unofferable aspect was silently dropped, which
+   meant the required-enum fill then chose 1:1 — a square frame where a
+   widescreen one was asked for, with nothing said. Refusing is the honest
+   answer, and it names what the model does take. */
+let aspectWhy = '';
+try { SB.Imagine._bind(toolA, { prompt: 'x', slug: 'flux-dev', aspect: '21:9' }); }
+catch (e) { aspectWhy = e.message; }
+t('an aspect the tool does not offer is refused, not quietly swapped',
+  /21:9/.test(aspectWhy) && /1:1, 16:9/.test(aspectWhy), aspectWhy);
+
+const emptyEnum = {
+  name: 'generate_image', description: 'text to image',
+  inputSchema: { type: 'object', properties: { prompt: { type: 'string' },
+    model: { type: 'string', enum: [] } }, required: ['prompt'] }
+};
+t('an empty enum is a schema saying nothing, not a list of none',
+  SB.Imagine._bind(emptyEnum, { prompt: 'x', slug: 'flux-dev' }).model === 'flux-dev',
+  JSON.stringify(SB.Imagine._bind(emptyEnum, { prompt: 'x', slug: 'flux-dev' })));
 
 let threw = '';
 try { SB.Imagine._bind(toolA, { prompt: 'x', slug: 'kling-1.0-pro' }); }

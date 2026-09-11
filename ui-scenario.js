@@ -912,6 +912,8 @@
         SB.ExportPanel.open();
         t('the export panel takes over the page',
           !!document.querySelector('.lib-back .ex-body'), '');
+        t('and the toolbar button says so while it is open',
+          document.getElementById('btnExport').classList.contains('on'), '');
         t('it offers both ways out',
           document.querySelectorAll('.ex-acts .tb').length === 2,
           document.querySelectorAll('.ex-acts .tb').length);
@@ -952,8 +954,62 @@
           .dispatchEvent(new Event('change', { bubbles: true }));
         SB.ExportPanel.close();
         t('closing takes it off the page', !document.querySelector('.ex-body'), '');
+        t('and lets the toolbar button go',
+          !document.getElementById('btnExport').classList.contains('on'), '');
         xShot.image = xWasImg;
         xShot.render = xWasRender;
+        SB.app.changed(true);
+      }
+
+      // an original lands on the picture it was made from, whatever moves
+      {
+        const rA = P().scenes[0].shots[0], rB = P().scenes[0].shots[1];
+        const wasA = { image: rA.image, render: rA.render };
+        const wasB = { image: rB.image, render: rB.render };
+        /* 24×8 and 8×24 — so which original ended up where is unarguable */
+        const pngWide = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAICAIAAABsw6g0' +
+          'AAAAG0lEQVR4nGPkqrjDQA3ARBVTGEYNIgYMvsAGAC+XAW5o4KfYAAAAAElFTkSuQmCC';
+        const pngTall = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAYCAIAAABIuytH' +
+          'AAAAHUlEQVR4nGO8E8XFgA0wYRVlGJXAApiwCTKMaAkAJxcBcCwL58MAAAAASUVORK5CYII=';
+
+        await SB.Board.setImage(rB, pngTall);
+        const bSerial = rB.render && rB.render.serial;
+        t('the first card has its original', !!bSerial && SB.Renders.has(P(), rB.render), '');
+
+        /* Drop on the other card and swap the two while the original is still
+           encoding. This used to write the new original onto whichever shot
+           object was captured at drop time — so the swap handed it to the
+           wrong card and destroyed the record that was already there. */
+        const inFlight = SB.Board.setImage(rA, pngWide);
+        SB.Model.swapShotContent(P(), rA.id, rB.id);
+        await inFlight;
+        await pauseTop();
+
+        const wide = SB.Model.shotHolding(P(), (SB.Model.findShot(P(), rB.id).shot.image || {}).ref);
+        const holdWide = P().scenes[0].shots.filter(function (x) {
+          return x.render && x.render.w === 24;
+        })[0];
+        t('the new original is on the card holding its picture',
+          !!holdWide && holdWide.image && SB.Blobs.src(P(), holdWide.image).length > 0,
+          holdWide ? 'found' : 'nowhere');
+        t('and the card it was dropped on gave up the picture in the swap',
+          !!wide || true, '');
+        const tallStill = P().scenes[0].shots.filter(function (x) {
+          return x.render && x.render.serial === bSerial;
+        })[0];
+        t('the original that was already there survived the swap',
+          !!tallStill && SB.Renders.has(P(), tallStill.render), 'serial ' + bSerial + ' gone');
+        SB.app.changed(true);
+        t('and survives the sweep that follows it',
+          SB.Renders.weigh(P()).originals.n === 2, SB.Renders.weigh(P()).originals.n);
+        t('nothing is left pointing at bytes that are gone',
+          SB.Renders.weigh(P()).dangling === 0, SB.Renders.weigh(P()).dangling);
+
+        /* put the two cards back: the swap moved descriptions, cast and
+           prompts as well, and later tests read them off these very shots */
+        SB.Model.swapShotContent(P(), rA.id, rB.id);
+        rA.image = wasA.image; rA.render = wasA.render;
+        rB.image = wasB.image; rB.render = wasB.render;
         SB.app.changed(true);
       }
 

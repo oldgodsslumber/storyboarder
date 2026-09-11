@@ -570,15 +570,20 @@
         return Array.isArray(j) ? (j.filter(function (x) { return x.id === id; })[0] || j[0]) : j;
       } catch (e) { return null; }
     }
-    let best = null;
+    /* A stream may carry messages that are not ours — the protocol allows it
+       — so the frame answering our id wins outright, and anything else is
+       only a fallback for a server that does not echo the id. */
+    let mine = null, other = null;
     t.split(/\r?\n/).forEach(function (line) {
       const m = /^data:\s*(.*)$/.exec(line);
       if (!m || !m[1] || m[1] === '[DONE]') return;
       let j = null;
       try { j = JSON.parse(m[1]); } catch (e) { return; }
-      if (j && (j.id === id || j.result || j.error)) best = j;
+      if (!j) return;
+      if (j.id === id) mine = j;
+      else if (j.id === undefined && (j.result || j.error)) other = j;
     });
-    return best;
+    return mine || other;
   }
 
   function mcpReady() {
@@ -697,17 +702,33 @@
       if (!hit) return;
       used[hit] = 1;
       const spec = p[hit] || {};
-      if (spec.enum && spec.enum.indexOf(v) < 0) {
-        /* The account's own list is the truth. A slug it does not know is the
-         * user's to fix, so say so rather than silently sending something
-         * else. */
+      /* An empty enum is not a list of allowed values, it is a schema saying
+         nothing — treating it as one refused every model with a message that
+         named no alternatives. */
+      if (spec.enum && spec.enum.length && spec.enum.indexOf(v) < 0) {
+        /* The account's own list is the truth. Something it does not offer is
+         * the user's to fix, so say so rather than silently sending something
+         * else — an aspect ratio quietly swapped for the first on the list is
+         * a square frame where a widescreen one was asked for. */
+        const offered = spec.enum.slice(0, 6).join(', ') + (spec.enum.length > 6 ? ', …' : '');
         if (field === 'slug') {
           throw new Error('“' + v + '” is not one of the models this account offers (' +
-            spec.enum.slice(0, 6).join(', ') + (spec.enum.length > 6 ? ', …' : '') + ').');
+            offered + ').');
+        }
+        if (field === 'aspect') {
+          throw new Error('This model does not offer ' + v + ' — it takes ' + offered +
+            '. Change the aspect ratio in Settings → ImagineArt.');
         }
         return;
       }
-      out[hit] = (spec.type === 'number' || spec.type === 'integer') ? Number(v) : v;
+      if (spec.type === 'number' || spec.type === 'integer') {
+        const n = Number(v);
+        /* Sending null for a duration is worse than not sending one. */
+        if (!isFinite(n)) return;
+        out[hit] = n;
+      } else {
+        out[hit] = v;
+      }
     });
     ((tool.inputSchema && tool.inputSchema.required) || []).forEach(function (k) {
       if (out[k] !== undefined) return;
@@ -768,14 +789,46 @@
     return out;
   }
 
-  function deepUrl(o, out, depth) {
-    if (!o || out.url || (depth | 0) > 4) return;
+  /* A structured reply can carry several URLs — the asset, and a docs or help
+   * link beside it. Key order decided which one won, so an error payload
+   * mentioning the documentation could be downloaded and filed as the clip.
+   * The keys that mean "this is the thing" are preferred, and anything that
+   * reads like documentation is taken last. */
+  const ASSET_KEY = /^(url|uri|generation|output|result|video|image|asset|file|download|src|link)$/i;
+  const DOCSY = /docs?\.|\/docs?\/|help|support|pricing|status\./i;
+
+  function deepUrl(o, out, depth, key) {
+    if (!o || (depth | 0) > 5) return;
     if (typeof o === 'string') {
-      if (/^https?:\/\//.test(o)) out.url = o;
+      if (!/^https?:\/\//.test(o)) return;
+      const rank = (ASSET_KEY.test(key || '') ? 2 : 0) + (DOCSY.test(o) ? -2 : 0);
+      if (!out.url || rank > (out.urlRank | 0)) { out.url = o; out.urlRank = rank; }
       return;
     }
     if (typeof o !== 'object') return;
-    Object.keys(o).forEach(function (k) { deepUrl(o[k], out, (depth | 0) + 1); });
+    Object.keys(o).forEach(function (k) { deepUrl(o[k], out, (depth | 0) + 1, k); });
+  }
+
+  /* An expiring CDN link does not fail — it answers 200 with an HTML page
+   * saying so. Filing that as an mp4 loses the clip AND removes the warning
+   * that would have told anyone to act, so what comes back is checked against
+   * what was asked for. */
+  function expectMedia(blob, kind) {
+    const t = String((blob && blob.type) || '').toLowerCase();
+    const ok = kind === 'video'
+      ? /^video\//.test(t)
+      : /^image\//.test(t);
+    if (ok) return blob;
+    if (!blob || !blob.size) throw new Error('ImagineArt sent an empty file.');
+    /* No type at all is common and usually fine for a direct asset URL; an
+     * actively wrong one (a web page, a JSON error) never is. */
+    if (!t && blob.size > 1024) return blob;
+    const e = new Error('That link did not give back ' +
+      (kind === 'video' ? 'a clip' : 'a picture') +
+      (t ? ' — it answered with ' + t : ' — it answered with nothing recognisable') +
+      '. ImagineArt links expire; shoot it again.');
+    e.wrongMedia = true;
+    throw e;
   }
 
   /* ---------------- REST transport ---------------- */
@@ -948,6 +1001,8 @@
         if (!r.ok) throw new Error('HTTP ' + r.status);
         return r.blob();
       }).then(function (b) {
+        return expectMedia(b, 'image');
+      }).then(function (b) {
         return blobToDataUrl(b).then(function (d) { return { blob: b, dataUrl: d, url: got.url }; });
       }).catch(function () {
         return { blob: null, dataUrl: '', url: got.url };
@@ -994,8 +1049,10 @@
       if (!r.ok) throw new Error('HTTP ' + r.status);
       return r.blob();
     }).then(function (b) {
-      return { blob: b, url: url, thumb: got.thumb || '' };
+      return { blob: expectMedia(b, 'video'), url: url, thumb: got.thumb || '' };
     }).catch(function () {
+      /* No bytes: the link is all there is, and the board says so rather than
+       * filing whatever came back. */
       return { blob: null, url: url, thumb: got.thumb || '' };
     });
   }
@@ -1062,9 +1119,15 @@
     notify();
   }
 
+  /* Clearing is for the error a row is still showing, not for a generation
+   * that is in the air: dropping the record would take the guard off and let
+   * a second one start — two clips, two charges, one shot. A running job ends
+   * when it ends. */
   function clear(shotId, role) {
+    if (busy(shotId, role)) return false;
     delete JOBS[key(shotId, role)];
     notify();
+    return true;
   }
 
   /* ---------------- run one ----------------
@@ -1080,6 +1143,12 @@
     const why = blocker(model);
     if (why) return Promise.reject(new Error(why));
 
+    /* The button refuses one of these too, but run() is the public door and
+     * has to hold the same line on its own. */
+    if (shot.noShot) {
+      return Promise.reject(new Error('A “no shot” card is never generated.'));
+    }
+
     const pr = shot.prompts && shot.prompts[model.id];
     const text = pr && (role === 'image' ? pr.imagePrompt : pr.videoPrompt);
     if (!(text || '').trim()) {
@@ -1094,9 +1163,12 @@
      * eleven were generated, off these prompts, by this model" is a different
      * thing from one that hands over a folder of pictures. */
     const made = {
-      by: 'imagine', role: role, model: model.name, slug: slugOf(model),
+      by: 'imagine', role: role, model: model.name, modelId: model.id, slug: slugOf(model),
       via: transport(), at: Date.now()
     };
+    /* Which picture this clip is being made from, so it can be filed against
+     * that picture however the board is rearranged in the meantime. */
+    const frameRef = (shot.image && shot.image.ref) || '';
 
     const work = role === 'image'
       ? image({ prompt: text, slug: slugOf(model), aspect: aspectOf(p), onState: function () { state('waiting'); } })
@@ -1107,7 +1179,9 @@
           frame: frame && frame.blob, frameName: frame && frame.name,
           onState: function () { state('waiting'); }
         });
-      }).then(function (got) { return fileVideo(p, shot, got, made); });
+      }).then(function (got) {
+        return fileVideo(p, targetFor(p, shot, frameRef), got, made);
+      });
 
     return work.then(function (out) {
       endJob(shot.id, role);
@@ -1143,6 +1217,16 @@
     return SB.Board.setImage(shot, got.blob, made).then(function () {
       return { kind: 'image' };
     });
+  }
+
+  /* Minutes pass between asking for a clip and filing it, which is plenty of
+   * time for two cards to be swapped. A clip belongs to the frame it was
+   * animated from, so it is filed against that picture rather than against
+   * the card that asked. */
+  function targetFor(p, shot, frameRef) {
+    if (!frameRef) return shot;
+    if (shot.image && shot.image.ref === frameRef) return shot;
+    return SB.Model.shotHolding(p, frameRef) || shot;
   }
 
   function fileVideo(p, shot, got, made) {
@@ -1182,7 +1266,7 @@
       if (!r.ok) throw new Error('ImagineArt answered ' + r.status);
       return r.blob();
     }).then(function (b) {
-      return SB.Renders.keepVideo(p, b, rec, rec.made);
+      return SB.Renders.keepVideo(p, expectMedia(b, 'video'), rec, rec.made);
     }).then(function (saved) {
       if (!saved) throw new Error('the clip could not be stored');
       saved.url = rec.url;

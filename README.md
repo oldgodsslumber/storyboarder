@@ -139,8 +139,11 @@ bytes live, so when a board goes online those same references become object-stor
 
 ### How the file is protected
 
-- Writes go through a swap file opened with `keepExistingData`, then truncate to length, so
-  a write that fails part-way can never leave a 0-byte project.
+- Writes go through a swap file that starts empty and is committed by `close()`, so there is
+  never a stale tail to trim and a write that fails part-way is thrown away by `abort()`,
+  leaving the board on disk untouched. (`truncate()` is deliberately not used: it counts
+  bytes while a JS string counts characters, so any board containing an em-dash was cut
+  short and would not reopen.)
 - A save that fails **stops the app and says so**, offering a rescue download — it is never
   reported only in the small status label.
 - The app refuses to write an empty or unserialisable project over a real one.

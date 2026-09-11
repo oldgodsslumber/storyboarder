@@ -1215,7 +1215,6 @@
       }
       cell.title = e.label + (e.why ? ' — ' + e.why : '') +
         (e.kind === 'dead' ? '\nClick to take the reference out and keep the name as text.' : '') +
-        (e.kind === 'dead' ? '\nClick to take the reference out and keep the name as text.' : '') +
         (sers.length
           ? '\nFull-size ' + sers.join(', ') + ' is what gets fed; the board copy stands in ' +
             'for anything whose original this file does not hold.'
@@ -1396,8 +1395,10 @@
       const a = document.createElement('a');
       a.href = src;
       const ext = (/^data:image\/([a-z0-9+]+)/i.exec(src) || [])[1] || 'jpg';
-      a.download = e.n + '_' + String(e.label || 'ref').replace(/[^\w-]+/g, '-') +
-        (e.role ? '_' + String(e.role).replace(/[^\w-]+/g, '-') : '') +
+      /* The same rule the export panel uses, so a name in any script comes
+         out the same whichever button you press. */
+      a.download = e.n + '_' + (SB.Renders.slug(e.label) || 'ref') +
+        (e.role ? '_' + SB.Renders.slug(e.role) : '') +
         '.' + (ext === 'jpeg' ? 'jpg' : ext);
       document.body.appendChild(a);
       a.click();
@@ -1593,27 +1594,44 @@
     return f;
   }
 
+  /* Two copies of one picture: the proxy the board draws, and the original a
+     model gets handed. Both go in the file.
+   *
+   * The proxy goes on first and the card is live from that moment; encoding
+   * the original takes longer and finishes on its own. That second half used
+   * to assign onto the shot object it was handed at drop time — which is not
+   * an address that holds still. Swapping two cards moves `render` and
+   * `image` between shot objects, so a swap landing mid-encode wrote the new
+   * original onto the OTHER card, overwriting that card's record; its bytes
+   * were then collected and a full-size original was gone with nothing said.
+   *
+   * So the original is filed against the picture it was made from, found by
+   * its blob reference — the one thing that travels with a picture when cards
+   * move. If nobody is holding that picture any more (replaced, deleted), the
+   * record has nowhere to live and is dropped; gc() takes the bytes. */
   function setImage(sh, src, made) {
-    /* Two copies of one picture: the proxy the board draws, and the original
-       a model gets handed. Both go in the file. The original runs alongside
-       rather than in front — it is an encode of a large picture, and the card
-       should not sit empty while that happens. */
-    SB.Renders.keep(P(), src, sh.render, made).then(function (rec) {
-      if (!rec) return;
-      sh.render = rec;
-      SB.Store.touch();
-      SB.Board.refreshFeed(sh.id);
-      refreshSerial(sh.id);
-    }).catch(function (e) {
-      /* The proxy is already on the card, so this is not a lost picture — but
-         it IS a lost original, and that is exactly what used to happen in
-         silence. */
-      SB.toast('Kept the board copy only — the full-size original could not be stored: ' +
-        (e.message || e), true);
-    });
     return SB.downscaleImage(src).then(function (img) {
-      sh.image = SB.Blobs.image(P(), img.data, img.w, img.h);
+      const proxy = SB.Blobs.image(P(), img.data, img.w, img.h);
+      sh.image = proxy;
       SB.app.changed(true);
+
+      const existing = sh.render;
+      return SB.Renders.keep(P(), src, existing, made).then(function (rec) {
+        if (!rec) return;
+        const target = (sh.image && sh.image.ref === proxy.ref)
+          ? sh : SB.Model.shotHolding(P(), proxy.ref);
+        if (!target) return;
+        target.render = rec;
+        SB.Store.touch();
+        SB.Board.refreshFeed(target.id);
+        refreshSerial(target.id);
+      }).catch(function (e) {
+        /* The proxy is already on the card, so this is not a lost picture —
+           but it IS a lost original, and that is exactly what used to happen
+           in silence. */
+        SB.toast('Kept the board copy only — the full-size original could not be stored: ' +
+          (e.message || e), true);
+      });
     }).catch(function (e) { SB.toast('Image failed: ' + e.message, true); });
   }
 

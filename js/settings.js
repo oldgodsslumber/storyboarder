@@ -66,6 +66,14 @@
         'dropping its take, gives the weight straight back.'));
     }
 
+    if (w.dangling) {
+      box.appendChild(SB.el('div', 'pp-note warn',
+        w.dangling + (w.dangling === 1 ? ' record points' : ' records point') +
+        ' at pictures this file no longer holds. That should not happen — if you know ' +
+        'which shots they are, drop the pictures in again; otherwise an older copy of ' +
+        'this board is the safer thing to work from.'));
+    }
+
     if (w.legacy) {
       box.appendChild(SB.el('div', 'pp-note warn',
         w.legacy + (w.legacy === 1 ? ' frame was' : ' frames were') + ' filed when originals ' +

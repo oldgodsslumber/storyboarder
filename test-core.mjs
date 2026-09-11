@@ -988,6 +988,22 @@ console.log('\n— a filename is only ever one of ours —');
   eq(R.videoExt({ type: '' }), 'mp4', 'and anything unrecognised is still nameable');
 }
 
+console.log('\n— a serial is claimed once, by a still or a clip —');
+{
+  const p = SB.Model.newProject();
+  const sh = p.scenes[0].shots[0];
+  sh.render = { ref: 'r', serial: 4, ext: 'webp' };
+  sh.video = { ref: 'v', serial: 9, ext: 'mp4' };
+  delete p.renderSeq;
+  SB.Model.migrate(p);
+  eq(p.renderSeq, 9, 'the counter is rebuilt from clips as well as stills');
+
+  const p2 = SB.Model.newProject();
+  p2.scenes[0].shots[0].video = { ref: 'v', serial: 'seven', ext: 'mp4' };
+  SB.Model.migrate(p2);
+  eq(p2.scenes[0].shots[0].video, null, 'a clip serial that is not a number is not a serial');
+}
+
 console.log('\n— the pictures are in the file, so the file is the whole board —');
 {
   const R = SB.Renders;
@@ -2433,6 +2449,22 @@ console.log('\n— end to end against a stubbed local server —');
   });
 
   delete sandbox.fetch;
+}
+
+console.log('\n— an edit is counted, so "saved" can mean what it says —');
+{
+  /* A write finishing while a newer edit waits on the debounce used to clear
+     the dirty flag and announce "saved": beforeunload then stopped warning,
+     and closing the tab there lost the edits. The counter is what lets the
+     write know it is behind. */
+  const S = SB.Store.S;
+  S.edits = 0;
+  S.dirty = false;
+  SB.Store.touch();
+  eq(S.edits, 1, 'an edit is counted');
+  eq(S.dirty, true, 'and marks the board dirty');
+  SB.Store.touch();
+  eq(S.edits, 2, 'every edit counts, not just the first');
 }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed\n');

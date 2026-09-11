@@ -1185,7 +1185,7 @@ body.comment-mode .frame{cursor:crosshair}
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-09-11 12:53 · a024cf8+";</script>
+<script>window.SB_BUILD = "2026-09-11 13:47 · 302a874+";</script>
 
 <div id="app">
 
@@ -1947,14 +1947,26 @@ window.SB = window.SB || {};
 
   function map(p) { return (p.blobs = p.blobs || {}); }
 
+  /* Bytes are stored a moment before anything points at them — the caller
+   * gets the reference back and assigns it on the next tick. gc() running in
+   * that gap would collect a picture that was about to be used, which is how
+   * an original can vanish and leave a reference pointing at nothing. So a
+   * fresh key is held briefly, and the sweep leaves it alone. */
+  const fresh = new Map();
+  const HOLD = 15000;
+
   /* Store a data URL, return its reference. Same bytes -> same reference. */
-  function put(p, dataUrl) {
+  function put(p, dataUrl, hold) {
     if (!dataUrl) return null;
     const b = map(p);
     let key = hash(dataUrl);
     let n = 1;
     while (b[key] !== undefined && b[key] !== dataUrl) key = hash(dataUrl) + '~' + (++n);
     b[key] = dataUrl;
+    /* `hold` is for bytes whose reference is assigned a tick later — an
+       original still being handed back to its caller. A proxy is attached to
+       its card in the same breath and needs no grace. */
+    if (hold) fresh.set(key, Date.now());
     return key;
   }
 
@@ -2030,9 +2042,15 @@ window.SB = window.SB || {};
   function gc(p) {
     const keep = referenced(p);
     const b = map(p);
+    const now = Date.now();
+    /* stop the held set growing for the life of the session */
+    fresh.forEach(function (at, k) { if (now - at > HOLD) fresh.delete(k); });
     let freed = 0;
     Object.keys(b).forEach(function (k) {
-      if (!keep[k]) { freed += (b[k] || '').length; delete b[k]; }
+      if (keep[k]) return;
+      if (fresh.has(k)) return;            // stored moments ago; give it its tick
+      freed += (b[k] || '').length;
+      delete b[k];
     });
     return freed;
   }
@@ -3150,17 +3168,6 @@ window.SB = window.SB || {};
     return s.replace(/^-+|-+$/g, '').slice(0, 40);
   }
 
-  /* A subject's name, safe to put in a filename, in any script. Nothing here
-   * writes files any more, but every way OUT of the app names things after
-   * people and shots, so the one rule for it stays in one place. */
-  function slug(t) {
-    let s = String(t || '');
-    /* letters and digits in any script — dropping everything non-ASCII turned
-     * a subject named in Cyrillic or Japanese into "ref" */
-    try { s = s.replace(/[^\p{L}\p{N}_-]+/gu, '-'); }
-    catch (e) { s = s.replace(/[^\w-]+/g, '-'); }
-    return s.replace(/^-+|-+$/g, '').slice(0, 40);
-  }
 
   /* ---------- bytes in ---------- */
 
@@ -3253,7 +3260,9 @@ window.SB = window.SB || {};
    * so out loud. */
   function keep(p, src, existing, made) {
     return encode(src, wantsSource(p)).then(function (enc) {
-      const ref = SB.Blobs.put(p, enc.data);
+      /* held: the caller assigns this reference a tick from now, and a sweep
+         landing in between would collect a picture that is about to be used */
+      const ref = SB.Blobs.put(p, enc.data, true);
       if (!ref) return null;
       return {
         ref: ref,
@@ -3279,7 +3288,7 @@ window.SB = window.SB || {};
     if (!blob || !blob.size) return Promise.resolve(null);
     return toDataUrl(blob).then(function (data) {
       if (!data) return null;
-      const ref = SB.Blobs.put(p, data);
+      const ref = SB.Blobs.put(p, data, true);
       if (!ref) return null;
       return {
         ref: ref,
@@ -3304,7 +3313,16 @@ window.SB = window.SB || {};
    * nothing else, and the pictures are wherever that machine's folder was. */
   function has(p, rec) { return !!dataUrl(p, rec); }
 
+  /* Filed when originals lived in a folder: a number, and the picture is on
+   * whatever machine that folder was on. */
   function isLegacy(rec) { return !!(rec && rec.serial && !rec.ref); }
+
+  /* A record pointing at bytes this file does not hold. Either of the two
+   * kinds — folder-era, or a ref whose blob has gone — and both have to be
+   * visible, because "neither has() nor isLegacy()" was a hole a record could
+   * fall through and be mentioned by nothing at all. */
+  function isDangling(p, rec) { return !!(rec && rec.ref && !dataUrl(p, rec)); }
+  function isMissing(p, rec) { return !!(rec && rec.serial && !has(p, rec)); }
 
   function blobOf(p, rec) {
     const u = dataUrl(p, rec);
@@ -3328,7 +3346,7 @@ window.SB = window.SB || {};
       originals: { n: 0, bytes: 0 },
       clips: { n: 0, bytes: 0 },
       ink: { n: 0, bytes: 0 },
-      total: 0, unused: 0, legacy: 0
+      total: 0, unused: 0, legacy: 0, dangling: 0
     };
     const b = SB.Blobs.map(p);
     const seen = {};
@@ -3347,6 +3365,8 @@ window.SB = window.SB || {};
           add('originals', sh.render && sh.render.ref);
           add('clips', sh.video && sh.video.ref);
           if (isLegacy(sh.render)) out.legacy++;
+          if (isDangling(p, sh.render)) out.dangling++;
+          if (isDangling(p, sh.video)) out.dangling++;
         });
       });
     };
@@ -3357,6 +3377,7 @@ window.SB = window.SB || {};
           add('proxies', refOf(x));
           add('originals', x && x.render && x.render.ref);
           if (isLegacy(x && x.render)) out.legacy++;
+          if (isDangling(p, x && x.render)) out.dangling++;
         });
       });
     };
@@ -3378,9 +3399,9 @@ window.SB = window.SB || {};
     CAP: CAP,
     claim: claim, pad: pad, fileName: fileName, extOf: extOf, videoExt: videoExt,
     slug: slug,
-    slug: slug,
     keep: keep, keepVideo: keepVideo,
-    file: file, videoFile: videoFile, dataUrl: dataUrl, has: has, isLegacy: isLegacy,
+    file: file, videoFile: videoFile, dataUrl: dataUrl, has: has,
+    isLegacy: isLegacy, isDangling: isDangling, isMissing: isMissing,
     weigh: weigh, wantsSource: wantsSource
   };
 
@@ -3961,15 +3982,20 @@ window.SB = window.SB || {};
         return Array.isArray(j) ? (j.filter(function (x) { return x.id === id; })[0] || j[0]) : j;
       } catch (e) { return null; }
     }
-    let best = null;
+    /* A stream may carry messages that are not ours — the protocol allows it
+       — so the frame answering our id wins outright, and anything else is
+       only a fallback for a server that does not echo the id. */
+    let mine = null, other = null;
     t.split(/\r?\n/).forEach(function (line) {
       const m = /^data:\s*(.*)$/.exec(line);
       if (!m || !m[1] || m[1] === '[DONE]') return;
       let j = null;
       try { j = JSON.parse(m[1]); } catch (e) { return; }
-      if (j && (j.id === id || j.result || j.error)) best = j;
+      if (!j) return;
+      if (j.id === id) mine = j;
+      else if (j.id === undefined && (j.result || j.error)) other = j;
     });
-    return best;
+    return mine || other;
   }
 
   function mcpReady() {
@@ -4088,17 +4114,33 @@ window.SB = window.SB || {};
       if (!hit) return;
       used[hit] = 1;
       const spec = p[hit] || {};
-      if (spec.enum && spec.enum.indexOf(v) < 0) {
-        /* The account's own list is the truth. A slug it does not know is the
-         * user's to fix, so say so rather than silently sending something
-         * else. */
+      /* An empty enum is not a list of allowed values, it is a schema saying
+         nothing — treating it as one refused every model with a message that
+         named no alternatives. */
+      if (spec.enum && spec.enum.length && spec.enum.indexOf(v) < 0) {
+        /* The account's own list is the truth. Something it does not offer is
+         * the user's to fix, so say so rather than silently sending something
+         * else — an aspect ratio quietly swapped for the first on the list is
+         * a square frame where a widescreen one was asked for. */
+        const offered = spec.enum.slice(0, 6).join(', ') + (spec.enum.length > 6 ? ', …' : '');
         if (field === 'slug') {
           throw new Error('“' + v + '” is not one of the models this account offers (' +
-            spec.enum.slice(0, 6).join(', ') + (spec.enum.length > 6 ? ', …' : '') + ').');
+            offered + ').');
+        }
+        if (field === 'aspect') {
+          throw new Error('This model does not offer ' + v + ' — it takes ' + offered +
+            '. Change the aspect ratio in Settings → ImagineArt.');
         }
         return;
       }
-      out[hit] = (spec.type === 'number' || spec.type === 'integer') ? Number(v) : v;
+      if (spec.type === 'number' || spec.type === 'integer') {
+        const n = Number(v);
+        /* Sending null for a duration is worse than not sending one. */
+        if (!isFinite(n)) return;
+        out[hit] = n;
+      } else {
+        out[hit] = v;
+      }
     });
     ((tool.inputSchema && tool.inputSchema.required) || []).forEach(function (k) {
       if (out[k] !== undefined) return;
@@ -4159,14 +4201,46 @@ window.SB = window.SB || {};
     return out;
   }
 
-  function deepUrl(o, out, depth) {
-    if (!o || out.url || (depth | 0) > 4) return;
+  /* A structured reply can carry several URLs — the asset, and a docs or help
+   * link beside it. Key order decided which one won, so an error payload
+   * mentioning the documentation could be downloaded and filed as the clip.
+   * The keys that mean "this is the thing" are preferred, and anything that
+   * reads like documentation is taken last. */
+  const ASSET_KEY = /^(url|uri|generation|output|result|video|image|asset|file|download|src|link)$/i;
+  const DOCSY = /docs?\.|\/docs?\/|help|support|pricing|status\./i;
+
+  function deepUrl(o, out, depth, key) {
+    if (!o || (depth | 0) > 5) return;
     if (typeof o === 'string') {
-      if (/^https?:\/\//.test(o)) out.url = o;
+      if (!/^https?:\/\//.test(o)) return;
+      const rank = (ASSET_KEY.test(key || '') ? 2 : 0) + (DOCSY.test(o) ? -2 : 0);
+      if (!out.url || rank > (out.urlRank | 0)) { out.url = o; out.urlRank = rank; }
       return;
     }
     if (typeof o !== 'object') return;
-    Object.keys(o).forEach(function (k) { deepUrl(o[k], out, (depth | 0) + 1); });
+    Object.keys(o).forEach(function (k) { deepUrl(o[k], out, (depth | 0) + 1, k); });
+  }
+
+  /* An expiring CDN link does not fail — it answers 200 with an HTML page
+   * saying so. Filing that as an mp4 loses the clip AND removes the warning
+   * that would have told anyone to act, so what comes back is checked against
+   * what was asked for. */
+  function expectMedia(blob, kind) {
+    const t = String((blob && blob.type) || '').toLowerCase();
+    const ok = kind === 'video'
+      ? /^video\//.test(t)
+      : /^image\//.test(t);
+    if (ok) return blob;
+    if (!blob || !blob.size) throw new Error('ImagineArt sent an empty file.');
+    /* No type at all is common and usually fine for a direct asset URL; an
+     * actively wrong one (a web page, a JSON error) never is. */
+    if (!t && blob.size > 1024) return blob;
+    const e = new Error('That link did not give back ' +
+      (kind === 'video' ? 'a clip' : 'a picture') +
+      (t ? ' — it answered with ' + t : ' — it answered with nothing recognisable') +
+      '. ImagineArt links expire; shoot it again.');
+    e.wrongMedia = true;
+    throw e;
   }
 
   /* ---------------- REST transport ---------------- */
@@ -4339,6 +4413,8 @@ window.SB = window.SB || {};
         if (!r.ok) throw new Error('HTTP ' + r.status);
         return r.blob();
       }).then(function (b) {
+        return expectMedia(b, 'image');
+      }).then(function (b) {
         return blobToDataUrl(b).then(function (d) { return { blob: b, dataUrl: d, url: got.url }; });
       }).catch(function () {
         return { blob: null, dataUrl: '', url: got.url };
@@ -4385,8 +4461,10 @@ window.SB = window.SB || {};
       if (!r.ok) throw new Error('HTTP ' + r.status);
       return r.blob();
     }).then(function (b) {
-      return { blob: b, url: url, thumb: got.thumb || '' };
+      return { blob: expectMedia(b, 'video'), url: url, thumb: got.thumb || '' };
     }).catch(function () {
+      /* No bytes: the link is all there is, and the board says so rather than
+       * filing whatever came back. */
       return { blob: null, url: url, thumb: got.thumb || '' };
     });
   }
@@ -4453,9 +4531,15 @@ window.SB = window.SB || {};
     notify();
   }
 
+  /* Clearing is for the error a row is still showing, not for a generation
+   * that is in the air: dropping the record would take the guard off and let
+   * a second one start — two clips, two charges, one shot. A running job ends
+   * when it ends. */
   function clear(shotId, role) {
+    if (busy(shotId, role)) return false;
     delete JOBS[key(shotId, role)];
     notify();
+    return true;
   }
 
   /* ---------------- run one ----------------
@@ -4471,6 +4555,12 @@ window.SB = window.SB || {};
     const why = blocker(model);
     if (why) return Promise.reject(new Error(why));
 
+    /* The button refuses one of these too, but run() is the public door and
+     * has to hold the same line on its own. */
+    if (shot.noShot) {
+      return Promise.reject(new Error('A “no shot” card is never generated.'));
+    }
+
     const pr = shot.prompts && shot.prompts[model.id];
     const text = pr && (role === 'image' ? pr.imagePrompt : pr.videoPrompt);
     if (!(text || '').trim()) {
@@ -4485,9 +4575,12 @@ window.SB = window.SB || {};
      * eleven were generated, off these prompts, by this model" is a different
      * thing from one that hands over a folder of pictures. */
     const made = {
-      by: 'imagine', role: role, model: model.name, slug: slugOf(model),
+      by: 'imagine', role: role, model: model.name, modelId: model.id, slug: slugOf(model),
       via: transport(), at: Date.now()
     };
+    /* Which picture this clip is being made from, so it can be filed against
+     * that picture however the board is rearranged in the meantime. */
+    const frameRef = (shot.image && shot.image.ref) || '';
 
     const work = role === 'image'
       ? image({ prompt: text, slug: slugOf(model), aspect: aspectOf(p), onState: function () { state('waiting'); } })
@@ -4498,7 +4591,9 @@ window.SB = window.SB || {};
           frame: frame && frame.blob, frameName: frame && frame.name,
           onState: function () { state('waiting'); }
         });
-      }).then(function (got) { return fileVideo(p, shot, got, made); });
+      }).then(function (got) {
+        return fileVideo(p, targetFor(p, shot, frameRef), got, made);
+      });
 
     return work.then(function (out) {
       endJob(shot.id, role);
@@ -4534,6 +4629,16 @@ window.SB = window.SB || {};
     return SB.Board.setImage(shot, got.blob, made).then(function () {
       return { kind: 'image' };
     });
+  }
+
+  /* Minutes pass between asking for a clip and filing it, which is plenty of
+   * time for two cards to be swapped. A clip belongs to the frame it was
+   * animated from, so it is filed against that picture rather than against
+   * the card that asked. */
+  function targetFor(p, shot, frameRef) {
+    if (!frameRef) return shot;
+    if (shot.image && shot.image.ref === frameRef) return shot;
+    return SB.Model.shotHolding(p, frameRef) || shot;
   }
 
   function fileVideo(p, shot, got, made) {
@@ -4573,7 +4678,7 @@ window.SB = window.SB || {};
       if (!r.ok) throw new Error('ImagineArt answered ' + r.status);
       return r.blob();
     }).then(function (b) {
-      return SB.Renders.keepVideo(p, b, rec, rec.made);
+      return SB.Renders.keepVideo(p, expectMedia(b, 'video'), rec, rec.made);
     }).then(function (saved) {
       if (!saved) throw new Error('the clip could not be stored');
       saved.url = rec.url;
@@ -5029,7 +5134,7 @@ window.SB = window.SB || {};
   }
 
   SB.Refs = {
-    mark: mark, parse: parse, plain: plain, target: target, unmark: unmark, unmark: unmark,
+    mark: mark, parse: parse, plain: plain, target: target, unmark: unmark,
     feed: feed, images: images, insert: insert,
     unlinked: unlinked, linkAll: linkAll, proseHits: proseHits,
     relink: relink, lostIn: lostIn
@@ -6244,6 +6349,11 @@ window.SB = window.SB || {};
           /* the arrival marks are a subset of the cast here too */
           sh.render = goodRender(sh.render);
         if (sh.render) p.renderSeq = Math.max(p.renderSeq | 0, sh.render.serial);
+        /* A clip claims from the same counter, so a board whose counter is
+           behind would hand a new one a serial that is already taken — and
+           the whole point of a serial is that it never repeats. */
+        sh.video = goodRender(sh.video);
+        if (sh.video) p.renderSeq = Math.max(p.renderSeq | 0, sh.video.serial);
         sh.personaIds = Array.isArray(sh.personaIds) ? sh.personaIds : [];
           sh.castEnters = (Array.isArray(sh.castEnters) ? sh.castEnters : [])
             .filter(function (id) { return sh.personaIds.indexOf(id) >= 0; });
@@ -6392,6 +6502,11 @@ window.SB = window.SB || {};
         sh.prompts = sh.prompts || {};
         sh.render = goodRender(sh.render);
         if (sh.render) p.renderSeq = Math.max(p.renderSeq | 0, sh.render.serial);
+        /* A clip claims from the same counter, so a board whose counter is
+           behind would hand a new one a serial that is already taken — and
+           the whole point of a serial is that it never repeats. */
+        sh.video = goodRender(sh.video);
+        if (sh.video) p.renderSeq = Math.max(p.renderSeq | 0, sh.video.serial);
         sh.personaIds = Array.isArray(sh.personaIds) ? sh.personaIds : [];
         /* Empty for every board written before this, which is the right answer:
            nobody was marked as arriving, so everybody was already there. */
@@ -6823,6 +6938,26 @@ window.SB = window.SB || {};
     p.updatedAt = Date.now();
   }
 
+  /* The shot whose frame is this exact picture, or null.
+   *
+   * Needed because anything filed asynchronously — an original being encoded,
+   * a clip being downloaded — has to land on the picture it belongs to, and
+   * the card it was dropped on is not a reliable address: swapping two cards
+   * moves their contents between shot objects while the ids stay put. Looked
+   * up by the blob reference, which is the one thing that travels WITH the
+   * picture. */
+  function shotHolding(p, ref) {
+    if (!ref) return null;
+    let hit = null;
+    eachShot(p, function (sh) {
+      if (hit) return;
+      const im = sh.image;
+      const r = im && (typeof im === 'string' ? im : im.ref);
+      if (r === ref) hit = sh;
+    });
+    return hit;
+  }
+
   function modelById(p, id) {
     return p.settings.models.filter(function (m) { return m.id === id; })[0] || null;
   }
@@ -6853,7 +6988,8 @@ window.SB = window.SB || {};
     moveShot: moveShot, moveShots: moveShots, moveScene: moveScene,
     splitSceneAt: splitSceneAt, sceneFromShots: sceneFromShots,
     swapShotContent: swapShotContent, CONTENT_KEYS: CONTENT_KEYS,
-    modelById: modelById, imageModel: imageModel, videoModel: videoModel, firstOfKind: firstOfKind
+    modelById: modelById, imageModel: imageModel, videoModel: videoModel, firstOfKind: firstOfKind,
+    shotHolding: shotHolding
   };
 
 })(window.SB);
@@ -7146,6 +7282,12 @@ window.SB = window.SB || {};
     lastSaved: 0,
     onState: null,
     getProject: null,  // set by app: () => project
+    /* Every edit bumps this. A write captures it before serialising and only
+     * clears `dirty` if it has not moved — otherwise the app announces "saved"
+     * for a state the file does not hold, beforeunload stops warning, and
+     * closing the tab there loses the edits. The debounce makes that window
+     * as long as the wait, which is up to three seconds on a heavy board. */
+    edits: 0,
     /* what this session has actually pushed to disk — the numbers a backend
      * would have to carry */
     stats: { writes: 0, bytes: 0, since: Date.now(), lastBytes: 0 }
@@ -7249,6 +7391,7 @@ window.SB = window.SB || {};
     /* Serialising can throw (and once did leave the writing flag stuck on,
      * killing autosave for the rest of the session in silence). */
     let text;
+    const at = S.edits;                  // the state these bytes represent
     try {
       text = serialize(project);
     } catch (e) {
@@ -7289,15 +7432,18 @@ window.SB = window.SB || {};
       return confirmOnDisk(text);
     }).then(function () {
       S.writing = false;
-      S.dirty = false;
+      /* Only if nothing was edited while this write was in the air. */
+      const behind = S.edits !== at;
+      S.dirty = behind;
       S.lastSaved = Date.now();
       S.lastGood = text;                     // the rescue copy
       S.stats.writes++;
       S.stats.lastBytes = text.length;
       S.stats.bytes += S.stats.lastBytes;
-      state('saved ' + new Date().toLocaleTimeString(), 'saved');
+      state(behind ? 'unsaved…' : 'saved ' + new Date().toLocaleTimeString(),
+        behind ? 'dirty' : 'saved');
       if (S.onSaved) S.onSaved(S.stats);
-      if (S.pending) { S.pending = false; return writeNow(); }
+      if (S.pending || behind) { S.pending = false; return writeNow(); }
     }).catch(function (e) {
       S.writing = false;
       S.pending = false;
@@ -7370,6 +7516,7 @@ window.SB = window.SB || {};
   };
 
   function touch() {
+    S.edits++;
     S.dirty = true;
     if (S.handle) state('unsaved…', 'dirty');
     debouncedWrite();
@@ -7571,8 +7718,19 @@ window.SB = window.SB || {};
     touch: touch,
     /* Flush any pending debounce, then hand back whatever write is running —
      * awaiting this means the bytes are on disk. */
+    /* Flush any pending debounce, then hand back whatever write is running —
+     * awaiting this means the bytes are on disk.
+     *
+     * With a write already in the air there is nothing to flush (the debounce
+     * has no timer), and handing back `inflight` used to be the end of it: the
+     * newer state was never queued, and the app reported saved. So the queue
+     * flag is set here, the same way writeNow() sets it for itself. */
     saveNow: function () {
       debouncedWrite.flush();
+      if (S.writing) {
+        S.pending = true;
+        return S.inflight || Promise.resolve();
+      }
       return S.inflight || writeNow();
     },
     saveWait: saveWait,
@@ -9453,7 +9611,6 @@ window.SB = window.SB || {};
       }
       cell.title = e.label + (e.why ? ' — ' + e.why : '') +
         (e.kind === 'dead' ? '\nClick to take the reference out and keep the name as text.' : '') +
-        (e.kind === 'dead' ? '\nClick to take the reference out and keep the name as text.' : '') +
         (sers.length
           ? '\nFull-size ' + sers.join(', ') + ' is what gets fed; the board copy stands in ' +
             'for anything whose original this file does not hold.'
@@ -9634,8 +9791,10 @@ window.SB = window.SB || {};
       const a = document.createElement('a');
       a.href = src;
       const ext = (/^data:image\/([a-z0-9+]+)/i.exec(src) || [])[1] || 'jpg';
-      a.download = e.n + '_' + String(e.label || 'ref').replace(/[^\w-]+/g, '-') +
-        (e.role ? '_' + String(e.role).replace(/[^\w-]+/g, '-') : '') +
+      /* The same rule the export panel uses, so a name in any script comes
+         out the same whichever button you press. */
+      a.download = e.n + '_' + (SB.Renders.slug(e.label) || 'ref') +
+        (e.role ? '_' + SB.Renders.slug(e.role) : '') +
         '.' + (ext === 'jpeg' ? 'jpg' : ext);
       document.body.appendChild(a);
       a.click();
@@ -9831,27 +9990,44 @@ window.SB = window.SB || {};
     return f;
   }
 
+  /* Two copies of one picture: the proxy the board draws, and the original a
+     model gets handed. Both go in the file.
+   *
+   * The proxy goes on first and the card is live from that moment; encoding
+   * the original takes longer and finishes on its own. That second half used
+   * to assign onto the shot object it was handed at drop time — which is not
+   * an address that holds still. Swapping two cards moves `render` and
+   * `image` between shot objects, so a swap landing mid-encode wrote the new
+   * original onto the OTHER card, overwriting that card's record; its bytes
+   * were then collected and a full-size original was gone with nothing said.
+   *
+   * So the original is filed against the picture it was made from, found by
+   * its blob reference — the one thing that travels with a picture when cards
+   * move. If nobody is holding that picture any more (replaced, deleted), the
+   * record has nowhere to live and is dropped; gc() takes the bytes. */
   function setImage(sh, src, made) {
-    /* Two copies of one picture: the proxy the board draws, and the original
-       a model gets handed. Both go in the file. The original runs alongside
-       rather than in front — it is an encode of a large picture, and the card
-       should not sit empty while that happens. */
-    SB.Renders.keep(P(), src, sh.render, made).then(function (rec) {
-      if (!rec) return;
-      sh.render = rec;
-      SB.Store.touch();
-      SB.Board.refreshFeed(sh.id);
-      refreshSerial(sh.id);
-    }).catch(function (e) {
-      /* The proxy is already on the card, so this is not a lost picture — but
-         it IS a lost original, and that is exactly what used to happen in
-         silence. */
-      SB.toast('Kept the board copy only — the full-size original could not be stored: ' +
-        (e.message || e), true);
-    });
     return SB.downscaleImage(src).then(function (img) {
-      sh.image = SB.Blobs.image(P(), img.data, img.w, img.h);
+      const proxy = SB.Blobs.image(P(), img.data, img.w, img.h);
+      sh.image = proxy;
       SB.app.changed(true);
+
+      const existing = sh.render;
+      return SB.Renders.keep(P(), src, existing, made).then(function (rec) {
+        if (!rec) return;
+        const target = (sh.image && sh.image.ref === proxy.ref)
+          ? sh : SB.Model.shotHolding(P(), proxy.ref);
+        if (!target) return;
+        target.render = rec;
+        SB.Store.touch();
+        SB.Board.refreshFeed(target.id);
+        refreshSerial(target.id);
+      }).catch(function (e) {
+        /* The proxy is already on the card, so this is not a lost picture —
+           but it IS a lost original, and that is exactly what used to happen
+           in silence. */
+        SB.toast('Kept the board copy only — the full-size original could not be stored: ' +
+          (e.message || e), true);
+      });
     }).catch(function (e) { SB.toast('Image failed: ' + e.message, true); });
   }
 
@@ -12159,8 +12335,14 @@ window.SB = window.SB || {};
     const line = SB.el('div', 'pt-code-line');
     line.appendChild(SB.el('span', 'code', r.code));
     if (sh.render && sh.render.serial) {
-      const ser = SB.el('span', 'code-serial', SB.Renders.pad(sh.render.serial));
-      ser.title = 'Full-size render: ' + SB.Renders.fileName(sh.render.serial, sh.render.ext);
+      const full = SB.Renders.has(P(), sh.render);
+      const ser = SB.el('span', 'code-serial' + (full ? '' : ' none'),
+        SB.Renders.pad(sh.render.serial));
+      ser.title = full
+        ? 'Full-size original in this file, exports as ' +
+          SB.Renders.fileName(sh.render.serial, sh.render.ext)
+        : 'This number is all that is left: the original is not in this file. Drop the ' +
+          'picture in again to bring it with you.';
       line.appendChild(ser);
     }
     c1.appendChild(line);
@@ -13320,7 +13502,10 @@ window.SB = window.SB || {};
       SB.app.changed(true);
       renderRefs();
       SB.Renders.keep(P(), src, null).then(function (r) {
-        if (!r || !rec) return;
+        /* The reference may have been deleted while its original encoded —
+           writing onto a record nobody holds any more would strand the bytes
+           until the next sweep. */
+        if (!r || !rec || SB.Personas.imagesOf(per).indexOf(rec) < 0) return;
         rec.render = r;
         SB.Store.touch();
         renderRefs();
@@ -14049,6 +14234,14 @@ window.SB = window.SB || {};
         'This board is heavy enough that saving it takes a noticeable moment — almost all of ' +
         'it is clips. Deleting a clip you have already cut with, or keeping the shot and ' +
         'dropping its take, gives the weight straight back.'));
+    }
+
+    if (w.dangling) {
+      box.appendChild(SB.el('div', 'pp-note warn',
+        w.dangling + (w.dangling === 1 ? ' record points' : ' records point') +
+        ' at pictures this file no longer holds. That should not happen — if you know ' +
+        'which shots they are, drop the pictures in again; otherwise an older copy of ' +
+        'this board is the safer thing to work from.'));
     }
 
     if (w.legacy) {
@@ -15666,22 +15859,41 @@ window.SB = window.SB || {};
       sc.shots.forEach(function (sh, sj) {
         if (scope === 'scene' && sc.id !== SB.app.selectedSceneId) return;
         if (scope === 'selected' && sel.indexOf(sh.id) < 0) return;
-        out.push({ scene: sc, shot: sh, code: SB.Model.code(si, sj), si: si, sj: sj });
+        /* A scene's name is its heading — `.name` does not exist on a scene
+           and every other reader in the app knows that. Reading it gave an
+           empty Scene column in every CSV row and every manifest entry. */
+        out.push({
+          scene: sc, shot: sh, code: SB.Model.code(si, sj), si: si, sj: sj,
+          sceneName: sc.heading || ''
+        });
       });
     });
     return out;
   }
 
-  function bytesOf(rec, dataUrl) {
-    if (rec && rec.bytes) return rec.bytes;
+  /* Measured off the data URL that is actually going to be written, never
+     off the record — a reference set that fell back to the board copy used to
+     report the original's megabyte for a 300-byte file. `rec.bytes` is only
+     trusted when the bytes in hand are that record's. */
+  function bytesOf(dataUrl) {
     const i = String(dataUrl || '').indexOf(',');
     return i < 0 ? 0 : Math.round((dataUrl.length - i - 1) * 0.75);
+  }
+
+  /* UTF-8, not UTF-16 code units: a manifest full of Japanese was reported at
+     four fifths of what it weighs. */
+  function textBytes(t) {
+    try { return new TextEncoder().encode(t).length; } catch (e) { return t.length; }
   }
 
   function nameFor(code, rec, naming, fallbackExt) {
     const base = rec && rec.serial
       ? SB.Renders.fileName(rec.serial, rec.ext)
-      : (SB.Renders.slug(code) || 'shot') + '_board.' + (fallbackExt || 'jpg');
+      /* No serial: named for its card. A record with no serial but a type of
+         its own keeps that type, or it would export as a .jpg that is not one
+         and collide with that card's actual board copy. */
+      : (SB.Renders.slug(code) || 'shot') + '_board.' +
+        ((rec && rec.ext) || fallbackExt || 'jpg');
     if (naming !== 'code') return base;
     const c = SB.Renders.slug(code) || 'shot';
     return base.indexOf(c + '_') === 0 ? base : c + '_' + base;
@@ -15698,10 +15910,24 @@ window.SB = window.SB || {};
    * by name, because that is what a person reads; the prompt is still on the
    * card, under that model's id. It may have been edited since, so the
    * manifest says so rather than pretending it is the exact string sent. */
+  /* The prompt a generated picture was written from. `made` carries the model
+   * id, which is the only stable handle: names are free text, two models can
+   * share one, and renaming or deleting a model used to turn the manifest's
+   * prompt silently blank with no way to tell "blank" from "gone". Assets
+   * generated before the id was recorded fall back to the name. */
   function promptFor(p, shot, made) {
-    if (!made) return '';
-    const m = p.settings.models.filter(function (x) { return x.name === made.model; })[0];
-    const pr = m && shot.prompts && shot.prompts[m.id];
+    if (!made) return null;
+    const models = p.settings.models || [];
+    let m = made.modelId
+      ? models.filter(function (x) { return x.id === made.modelId; })[0]
+      : null;
+    if (!m && made.model) {
+      const named = models.filter(function (x) { return x.name === made.model; });
+      if (named.length === 1) m = named[0];
+      else if (named.length > 1) return '(several models share that name — cannot say which)';
+    }
+    if (!m) return '(that model is no longer on this board)';
+    const pr = shot.prompts && shot.prompts[m.id];
     if (!pr) return '';
     return (made.role === 'video' ? pr.videoPrompt : pr.imagePrompt) || '';
   }
@@ -15724,13 +15950,15 @@ window.SB = window.SB || {};
             const data = SB.Renders.dataUrl(p, rec);
             items.push({
               name: nameFor(r.code, rec, o.naming), kind: 'original', data: data,
-              bytes: bytesOf(rec, data), code: r.code, scene: r.scene.name || '',
+              bytes: bytesOf(data), code: r.code, scene: r.sceneName,
               shot: sh, rec: rec, made: rec.made || null
             });
           }
-        } else if (rec && SB.Renders.isLegacy(rec) && !o.madeOnly) {
-          /* A folder-era record: a number, and the picture is on whatever
-           * machine that folder was on. Counted, so the panel can say it. */
+        } else if (rec && SB.Renders.isMissing(p, rec) && !o.madeOnly) {
+          /* A number with no picture behind it — filed when originals lived
+           * in a folder, or a reference whose bytes have since gone. Either
+           * way it cannot be written, so it is counted and said out loud
+           * rather than dropped in silence. */
           missing++;
         }
       }
@@ -15741,7 +15969,7 @@ window.SB = window.SB || {};
             const data = SB.Renders.dataUrl(p, sh.video);
             items.push({
               name: nameFor(r.code, sh.video, o.naming, 'mp4'), kind: 'clip', data: data,
-              bytes: bytesOf(sh.video, data), code: r.code, scene: r.scene.name || '',
+              bytes: bytesOf(data), code: r.code, scene: r.sceneName,
               shot: sh, rec: sh.video, made: sh.video.made || null
             });
           }
@@ -15749,6 +15977,9 @@ window.SB = window.SB || {};
           /* Held as a link, not a file — and links expire. Worth saying
            * before the export runs rather than after. */
           linkOnly++;
+        } else if (!o.madeOnly) {
+          /* A clip record with neither bytes nor a link left. */
+          missing++;
         }
       }
 
@@ -15758,8 +15989,12 @@ window.SB = window.SB || {};
           if (data) {
             items.push({
               name: nameFor(r.code, null, o.naming, extOfUrl(data)), kind: 'board copy',
-              data: data, bytes: bytesOf(null, data), code: r.code,
-              scene: r.scene.name || '', shot: sh, rec: null, made: null
+              data: data, bytes: bytesOf(data), code: r.code,
+              scene: r.sceneName, shot: sh, rec: null,
+              /* It only passed the made-in-here filter because the frame it is
+                 a copy of was generated — so the manifest says so instead of
+                 flatly denying it. */
+              made: (sh.render && sh.render.made) || null, isProxy: true
             });
           }
         }
@@ -15773,15 +16008,22 @@ window.SB = window.SB || {};
         if (feed.length) {
           const dir = 'refs/' + (SB.Renders.slug(r.code) || 'shot');
           feed.forEach(function (e) {
-            const data = SB.Renders.dataUrl(p, e.render) || SB.Blobs.src(p, e.img);
+            const orig = SB.Renders.dataUrl(p, e.render);
+            const data = orig || SB.Blobs.src(p, e.img);
             if (!data) return;
+            /* Falling back to the board copy is fine; doing it silently is
+               not. The plan for this panel named this exact failure: an
+               export that shipped 854×480 where 4K was promised. */
+            if (!orig && e.render) missing++;
             const ext = extOfUrl(data);
             items.push({
               name: e.n + '_' + (SB.Renders.slug(e.label) || 'ref') +
                 (e.role ? '_' + SB.Renders.slug(e.role) : '') + '.' + ext,
-              sub: dir, kind: 'reference', data: data, bytes: bytesOf(e.render, data),
-              code: r.code, scene: r.scene.name || '', shot: sh, rec: e.render || null,
-              made: (e.render && e.render.made) || null
+              sub: dir, kind: orig ? 'reference' : 'reference (board copy)',
+              data: data, bytes: bytesOf(data),
+              code: r.code, scene: r.sceneName, shot: sh,
+              rec: orig ? e.render : null,
+              made: (orig && e.render && e.render.made) || null
             });
           });
         }
@@ -15794,15 +16036,17 @@ window.SB = window.SB || {};
         text: csv(p, list), bytes: 0
       });
     }
-    if (o.manifest) {
+    /* A manifest of nothing is not an export. With no files to describe, the
+       panel says "nothing selected" instead of offering one empty JSON. */
+    if (o.manifest && items.length) {
       const text = manifest(p, items);
       items.push({
         name: (SB.Renders.slug(p.name) || 'board') + '-manifest.json', kind: 'list',
-        text: text, bytes: text.length
+        text: text, bytes: textBytes(text)
       });
     }
     items.forEach(function (it) {
-      if (!it.bytes && it.text) it.bytes = it.text.length;
+      if (!it.bytes && it.text) it.bytes = textBytes(it.text);
     });
 
     return {
@@ -15817,8 +16061,12 @@ window.SB = window.SB || {};
   /* ---- the two text files ---- */
 
   function cell(v) {
-    const s = String(v == null ? '' : v);
-    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    let s = String(v == null ? '' : v);
+    /* A leading =, +, - or @ makes Excel and Sheets run the cell as a
+       formula. A description is text; it is prefixed so it stays text. */
+    if (/^[=+\-@]/.test(s)) s = "'" + s;
+    /* A lone CR splits the row in Excel just as a LF does. */
+    return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
   }
 
   function csv(p, list) {
@@ -15833,7 +16081,8 @@ window.SB = window.SB || {};
       const ip = (im && sh.prompts[im.id] && sh.prompts[im.id].imagePrompt) || '';
       const vp = (vm && sh.prompts[vm.id] && sh.prompts[vm.id].videoPrompt) || '';
       lines.push([
-        r.scene.name || '', r.code, sh.noShot ? 'no shot' : (sh.type || ''),
+        r.sceneName || (r.scene && r.scene.heading) || '', r.code,
+        sh.noShot ? 'no shot' : (sh.type || ''),
         SB.Refs.plain(p, sh.description || ''), ip, vp,
         sh.render && sh.render.serial ? SB.Renders.fileName(sh.render.serial, sh.render.ext) : '',
         sh.video && sh.video.serial ? SB.Renders.fileName(sh.video.serial, sh.video.ext) : ''
@@ -15859,6 +16108,7 @@ window.SB = window.SB || {};
           serial: (it.rec && it.rec.serial) || null,
           bytes: it.bytes || 0,
           pixels: it.rec && it.rec.w ? it.rec.w + '×' + it.rec.h : null,
+          boardCopy: !!it.isProxy,
           madeHere: !!m,
           model: m ? m.model : null,
           imagineModel: m ? m.slug : null,
@@ -15919,6 +16169,10 @@ window.SB = window.SB || {};
       return done.then(function () {
         if (onEach) onEach(i, list.length, it);
         return next();
+      }).catch(function (e) {
+        /* Carry how far it got, so the failure can say it. */
+        e.wrote = i - 1;
+        throw e;
       });
     };
     return next();
@@ -15950,6 +16204,8 @@ window.SB = window.SB || {};
     root.addEventListener('mousedown', function (ev) { if (ev.target === root) close(); });
     document.addEventListener('keydown', onKey);
     document.getElementById('modalRoot').appendChild(root);
+    const btn = document.getElementById('btnExport');
+    if (btn) btn.classList.add('on');
     render();
   }
 
@@ -15967,6 +16223,8 @@ window.SB = window.SB || {};
     root = null;
     bodyEl = footEl = statusEl = null;
     document.removeEventListener('keydown', onKey);
+    const btn = document.getElementById('btnExport');
+    if (btn) btn.classList.remove('on');
   }
 
   function toggle() { root ? close() : open(); }
@@ -16139,9 +16397,19 @@ window.SB = window.SB || {};
     return next(0);
   }
 
+  let writing = false;
+
   function go(dir) {
+    /* Two presses used to mean two complete exports — every file written
+       twice, two "done" toasts, and in folder mode two writables open on the
+       same handle. */
+    if (writing) return;
     const pl = plan(P(), opts);
     if (!pl.items.length) return;
+    writing = true;
+    if (footEl) {
+      footEl.querySelectorAll('.ex-acts .tb').forEach(function (b) { b.disabled = true; });
+    }
     if (statusEl) statusEl.textContent = 'writing 1 of ' + pl.items.length + '…';
     run(dir, pl.items, function (n, total) {
       if (statusEl) {
@@ -16150,12 +16418,19 @@ window.SB = window.SB || {};
           : 'finishing…';
       }
     }).then(function (n) {
+      writing = false;
       if (statusEl) statusEl.textContent = '';
+      if (root) render();
       SB.toast(n + ' file' + (n === 1 ? '' : 's') + ' written' +
         (dir ? ' to ' + dir.name : '') + ' — ' + size(pl.bytes));
     }).catch(function (e) {
+      writing = false;
       if (statusEl) statusEl.textContent = '';
-      SB.toast('Export stopped: ' + (e.message || e), true);
+      if (root) render();
+      /* Say how far it got: the files already written are on disk and the
+         next attempt will overwrite them, which is only safe to do knowingly. */
+      SB.toast('Export stopped after ' + (e.wrote || 0) + ' of ' + pl.items.length +
+        ': ' + (e.message || e), true);
     });
   }
 

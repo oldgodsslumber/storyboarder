@@ -335,7 +335,7 @@
   }
 
   SB.Refs = {
-    mark: mark, parse: parse, plain: plain, target: target, unmark: unmark, unmark: unmark,
+    mark: mark, parse: parse, plain: plain, target: target, unmark: unmark,
     feed: feed, images: images, insert: insert,
     unlinked: unlinked, linkAll: linkAll, proseHits: proseHits,
     relink: relink, lostIn: lostIn

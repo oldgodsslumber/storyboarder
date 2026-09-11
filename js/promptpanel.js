@@ -411,8 +411,14 @@
     const line = SB.el('div', 'pt-code-line');
     line.appendChild(SB.el('span', 'code', r.code));
     if (sh.render && sh.render.serial) {
-      const ser = SB.el('span', 'code-serial', SB.Renders.pad(sh.render.serial));
-      ser.title = 'Full-size render: ' + SB.Renders.fileName(sh.render.serial, sh.render.ext);
+      const full = SB.Renders.has(P(), sh.render);
+      const ser = SB.el('span', 'code-serial' + (full ? '' : ' none'),
+        SB.Renders.pad(sh.render.serial));
+      ser.title = full
+        ? 'Full-size original in this file, exports as ' +
+          SB.Renders.fileName(sh.render.serial, sh.render.ext)
+        : 'This number is all that is left: the original is not in this file. Drop the ' +
+          'picture in again to bring it with you.';
       line.appendChild(ser);
     }
     c1.appendChild(line);

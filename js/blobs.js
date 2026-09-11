@@ -35,14 +35,26 @@
 
   function map(p) { return (p.blobs = p.blobs || {}); }
 
+  /* Bytes are stored a moment before anything points at them — the caller
+   * gets the reference back and assigns it on the next tick. gc() running in
+   * that gap would collect a picture that was about to be used, which is how
+   * an original can vanish and leave a reference pointing at nothing. So a
+   * fresh key is held briefly, and the sweep leaves it alone. */
+  const fresh = new Map();
+  const HOLD = 15000;
+
   /* Store a data URL, return its reference. Same bytes -> same reference. */
-  function put(p, dataUrl) {
+  function put(p, dataUrl, hold) {
     if (!dataUrl) return null;
     const b = map(p);
     let key = hash(dataUrl);
     let n = 1;
     while (b[key] !== undefined && b[key] !== dataUrl) key = hash(dataUrl) + '~' + (++n);
     b[key] = dataUrl;
+    /* `hold` is for bytes whose reference is assigned a tick later — an
+       original still being handed back to its caller. A proxy is attached to
+       its card in the same breath and needs no grace. */
+    if (hold) fresh.set(key, Date.now());
     return key;
   }
 
@@ -118,9 +130,15 @@
   function gc(p) {
     const keep = referenced(p);
     const b = map(p);
+    const now = Date.now();
+    /* stop the held set growing for the life of the session */
+    fresh.forEach(function (at, k) { if (now - at > HOLD) fresh.delete(k); });
     let freed = 0;
     Object.keys(b).forEach(function (k) {
-      if (!keep[k]) { freed += (b[k] || '').length; delete b[k]; }
+      if (keep[k]) return;
+      if (fresh.has(k)) return;            // stored moments ago; give it its tick
+      freed += (b[k] || '').length;
+      delete b[k];
     });
     return freed;
   }
