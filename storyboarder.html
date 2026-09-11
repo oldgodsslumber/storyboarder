@@ -1233,7 +1233,7 @@ body.comment-mode .frame{cursor:crosshair}
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-09-11 16:56 · 2ec39f8+";</script>
+<script>window.SB_BUILD = "2026-09-11 17:10 · 6adf7a4+";</script>
 
 <div id="app">
 
@@ -4076,6 +4076,14 @@ window.SB = window.SB || {};
     { slug: 'minimax-video-01-director-image-to-video', kind: 'video', mode: 'i2v' }
   ];
 
+  /* Is this name one the v2 REST listing publishes? Used by the migration
+   * to tell an old slug from a new one. */
+  function isRestSlug(v) {
+    const m = SB.ImagineModels;
+    if (!m || !m.list) return false;
+    return m.list.some(function (x) { return x.slug === v; });
+  }
+
   function shipped() {
     const m = SB.ImagineModels;
     return (m && m.list && m.list.length) ? m.list : FALLBACK;
@@ -4100,11 +4108,25 @@ window.SB = window.SB || {};
   /* Board model names are display names; a few map onto a slug with no
    * ambiguity worth worrying about. Everything else starts blank, which reads
    * honestly in Settings as "not pointed at anything yet". */
-  /* Named as the account's own tools name them — which is the surface a
-   * signed-in push goes through. The v2 REST API calls the same models
-   * something else entirely (kling-v1.6-pro-image-to-video against
-   * kling-3.0-pro), so on the API-key transport these want changing; the
-   * field says so softly rather than refusing. */
+  /* ---------------- one model, two names ----------------
+   *
+   * The account's tools and the v2 REST API carry the same models under
+   * different identifiers — kling-3.0-pro against
+   * kling-v1.6-pro-image-to-video — and which one is right depends on which
+   * door a push goes through, not on the board. A board set up by somebody
+   * signed in used to look entirely wrong to a teammate on an API key.
+   *
+   * So a model entry carries both, and slugOf picks by transport. */
+  const GUESS_REST = {
+    'Kling': 'kling-v1.6-pro-image-to-video',
+    'MiniMax H3 (Hailuo)': 'minimax-video-01-director-image-to-video',
+    'LTX (LTXV 2.3)': 'ltx-video-v095-image-to-video',
+    'Veo': 'veo2-image-to-video',
+    'FLUX': 'flux-dev',
+    'GPT Image': '',
+    'Nano Banana (Gemini Image)': ''
+  };
+
   const GUESS = {
     'GPT Image': 'gpt-image-2',
     'LTX (LTXV 2.3)': 'ltx-2.3',
@@ -4874,6 +4896,101 @@ window.SB = window.SB || {};
     }).catch(function () { return null; });
   }
 
+  /* ---------------- what travels with the board ----------------
+   *
+   * The model list, the slug for each model, which two are selected, the
+   * aspect ratio and the resolution policy have always been project state,
+   * so they already travel. What did not was everything the app learned
+   * about an account: the catalog it read, the prices it measured, and which
+   * organization the work was billed to. Those are facts about how this
+   * board is made rather than about who is making it, so they belong in the
+   * file too — and then one person can set a board up and hand it over.
+   *
+   * The token and the API key are the line that does not move. A .storyboard
+   * gets emailed; a credential in one is a credential in somebody's mail
+   * archive forever.
+   */
+  function publishToBoard(p) {
+    if (!p || !p.settings) return null;
+    const share = p.settings.imagineShareOrg !== false;
+    const t = tokens() || {};
+    const block = {
+      setUpBy: t.email || '',
+      at: Date.now(),
+      orgId: (share && orgId()) || null,
+      orgName: (share && org() && org().name) || '',
+      /* a snapshot, so a teammate who has not signed in still sees the right
+         models instead of the v2 REST floor */
+      catalog: (cachedCatalog() || {}).list || null,
+      costs: measured()
+    };
+    p.settings.imagine = block;
+    SB.Store.touch();
+    return block;
+  }
+
+  /* Has this browser already been asked about this board's block? Keyed by
+   * the stamp, so a board set up again asks again. */
+  function askedKey(p) {
+    const b = p && p.settings && p.settings.imagine;
+    return b ? 'sb.imagine.asked.' + (p.id || '') + '.' + b.at : '';
+  }
+
+  function boardOffer(p) {
+    const b = p && p.settings && p.settings.imagine;
+    if (!b || !b.at) return null;
+    if (lsStr(askedKey(p))) return null;
+    /* nothing to offer if this browser already has all of it */
+    const sameOrg = !b.orgId || (orgId() === b.orgId);
+    const haveCat = !!(cachedCatalog() || {}).list;
+    const haveCost = Object.keys(measured()).length > 0;
+    if (sameOrg && (haveCat || !b.catalog) && (haveCost || !b.costs)) return null;
+    return b;
+  }
+
+  function declineBoard(p) { lsPut(askedKey(p), '1'); }
+
+  /* Take the board's settings for this browser. The organization is checked
+   * against the account rather than assumed: a board can travel further than
+   * the team that made it. */
+  function adoptBoard(p) {
+    const b = p && p.settings && p.settings.imagine;
+    if (!b) return Promise.resolve(null);
+    lsPut(askedKey(p), '1');
+    const took = [];
+    if (b.catalog && b.catalog.length && !(cachedCatalog() || {}).list) {
+      storeCatalog(b.catalog.slice());
+      took.push(b.catalog.length + ' models');
+    }
+    if (b.costs && Object.keys(b.costs).length) {
+      const all = lsGet(K_COST) || {};
+      const mine = all[catKey()] || {};
+      Object.keys(b.costs).forEach(function (k) { if (!mine[k]) mine[k] = b.costs[k]; });
+      all[catKey()] = mine;
+      lsSet(K_COST, all);
+      took.push(Object.keys(b.costs).length + ' measured prices');
+    }
+    if (!b.orgId || orgId() === b.orgId) {
+      notify();
+      return Promise.resolve({ took: took });
+    }
+    if (!isSignedIn()) {
+      return Promise.resolve({ took: took, orgSkipped: 'sign in first, then set it in Settings' });
+    }
+    return listOrgs().then(function (list) {
+      const hit = list.filter(function (o) { return o.id === b.orgId; })[0];
+      if (!hit) {
+        return { took: took, orgSkipped: 'your account is not a member of the organization ' +
+          'this board was set up against' };
+      }
+      setOrg(hit);
+      took.push('the organization (' + (hit.name || hit.id) + ')');
+      return { took: took };
+    }).catch(function () {
+      return { took: took, orgSkipped: 'the organization could not be checked' };
+    });
+  }
+
   /* ---- the organisation ---- */
 
   function org() {
@@ -5320,8 +5437,15 @@ window.SB = window.SB || {};
     return (p && p.settings && p.settings.imagineAspect) || '16:9';
   }
 
-  function slugOf(model) {
-    return (model && (model.imagineSlug || '').trim()) || '';
+  /* The name this door knows the model by, falling back to the other one —
+   * a single name is better than none, and an unrecognised one is flagged
+   * rather than refused. */
+  function slugOf(model, forTransport) {
+    if (!model) return '';
+    const mcp = (model.imagineSlug || '').trim();
+    const rest = (model.restSlug || '').trim();
+    const door = forTransport || transport();
+    return door === 'key' ? (rest || mcp) : (mcp || rest);
   }
 
   /* Why a push cannot happen yet, or '' if it can. Said in one place so the
@@ -5697,6 +5821,11 @@ window.SB = window.SB || {};
       /* It produced something, so whatever any list says, this slug is real
        * for this account. */
       noteWorked(slugOf(model), role === 'image' ? 'image' : 'video');
+      /* On the model itself, so it travels with the board: what this entry
+       * last produced something with, and when. A teammate opening the file
+       * gets a name with evidence behind it rather than a guess. */
+      model.lastUsed = { slug: slugOf(model), via: transport(), at: Date.now() };
+      SB.Store.touch();
       /* What it actually cost, from the two balances. Nothing depends on
        * this working — an account that will not report a balance simply
        * keeps the published estimate. */
@@ -6231,13 +6360,16 @@ window.SB = window.SB || {};
     catalog: catalog, catalogAll: catalogAll, catalogSource: catalogSource,
     worked: worked, noteWorked: noteWorked,
     org: org, orgId: orgId, setOrg: setOrg, listOrgs: listOrgs, needOrg: needOrg,
+    publishToBoard: publishToBoard, boardOffer: boardOffer,
+    adoptBoard: adoptBoard, declineBoard: declineBoard,
     allowFor: allowFor, modelsFromTool: modelsFromTool, TOOL: TOOL,
-    resolutionFor: resolutionFor, qualityFor: qualityFor,
+    resolutionFor: resolutionFor, qualityFor: qualityFor, isRestSlug: isRestSlug,
     costFor: costFor, noteCost: noteCost, balanceNow: balanceNow,
     _assetId: assetId,
     catalogAge: catalogAge, refreshCatalog: refreshCatalog,
     modelInfo: modelInfo, labelFor: labelFor,
     guessSlug: function (name) { return GUESS[name] || ''; },
+    guessRestSlug: function (name) { return GUESS_REST[name] || ''; },
     /* work */
     ready: function (model) { return !blocker(model); },
     blocker: blocker, slugOf: slugOf, aspectOf: aspectOf,
@@ -7524,13 +7656,19 @@ window.SB = window.SB || {};
     return (SB.Imagine && SB.Imagine.guessSlug) ? SB.Imagine.guessSlug(name) : '';
   }
 
+  function guessRestSlug(name) {
+    return (SB.Imagine && SB.Imagine.guessRestSlug) ? SB.Imagine.guessRestSlug(name) : '';
+  }
+
   function model(name, kind) {
     const t = tplsFor(name);
     return {
       id: SB.uid('m'), name: name, kind: kind,
       imageTemplate: t.image, videoTemplate: t.video,
       referenceTemplate: t.reference, videoRefs: t.videoRefs,
-      imagineSlug: guessSlug(name)
+      /* what the account's tools call it, and what the v2 REST API calls it */
+      imagineSlug: guessSlug(name),
+      restSlug: guessRestSlug(name)
     };
   }
 
@@ -7682,6 +7820,14 @@ window.SB = window.SB || {};
          *             480p on Seedance, 720p on Veo, 1K and "low" quality on
          *             the stills. Sending nothing is not sending "normal". */
         imagineResolution: 'best',
+        /* Whether the organization travels in the file. It is not a secret
+         * and a team shares one, so it saves everybody a step — but a board
+         * can travel further than the team that made it. */
+        imagineShareOrg: true,
+        /* Written by Settings: the catalog, the measured prices and the org
+         * this board was set up against, for whoever opens it next. Never a
+         * token and never a key. */
+        imagine: null,
         /* 'webp'   — originals re-encoded at native size (16x smaller, and
          *            still far past what a reference needs)
          * 'source' — the bytes exactly as they arrived, and the file it makes */
@@ -7925,6 +8071,23 @@ window.SB = window.SB || {};
       /* Blank is a real answer — "not pointed at anything on ImagineArt yet" —
        * so only a missing field is filled in, never an emptied one. */
       if (typeof m.imagineSlug !== 'string') m.imagineSlug = guessSlug(m.name);
+      /* A board from before the two names: whatever is in imagineSlug was
+       * typed for the REST API, because that is all there was. It moves to
+       * the field that means that, and the account-side name is filled in
+       * from the same table a new board uses — nothing the user chose is
+       * overwritten, and the REST transport keeps working exactly as it
+       * did. Recognised by being in the published REST list. */
+      if (typeof m.restSlug !== 'string') {
+        const looksRest = m.imagineSlug &&
+          (/-(text|image)-to-video$/.test(m.imagineSlug) ||
+            (SB.Imagine && SB.Imagine.isRestSlug && SB.Imagine.isRestSlug(m.imagineSlug)));
+        if (looksRest) {
+          m.restSlug = m.imagineSlug;
+          m.imagineSlug = guessSlug(m.name);
+        } else {
+          m.restSlug = guessRestSlug(m.name);
+        }
+      }
     });
     /* A board keeps its own model list, so a model added to the app later
      * would never reach an existing project. Offer each shipped model once:
@@ -7954,6 +8117,11 @@ window.SB = window.SB || {};
     if (typeof s.imagineAspect !== 'string') s.imagineAspect = '16:9';
     if (s.originals !== 'webp' && s.originals !== 'source') s.originals = 'webp';
     if (['best', '1080p', 'default'].indexOf(s.imagineResolution) < 0) s.imagineResolution = 'best';
+    if (typeof s.imagineShareOrg !== 'boolean') s.imagineShareOrg = true;
+    if (s.imagine && typeof s.imagine !== 'object') s.imagine = null;
+    /* belt and braces: a board that has been through a version of this app
+     * that stored a token here does not carry it any further */
+    if (s.imagine) { delete s.imagine.token; delete s.imagine.apiKey; }
     s.brand = (s.brand && typeof s.brand === 'object') ? s.brand : {};
     if (typeof s.brand.enabled !== 'boolean') s.brand.enabled = true;
     // only a hand-edited house style is stored; the rest follow the app's
@@ -16243,11 +16411,16 @@ window.SB = window.SB || {};
            prompt at it. Free text with the known slugs offered: the catalog is
            ImagineArt's to change, and a board must not be stuck waiting for
            this app to hear about a new one. */
+        /* One model, two names: the account's tools and the v2 REST API
+           call the same thing differently, so the field edits whichever
+           belongs to the door in use and shows the other underneath. */
+        const door = (SB.Imagine && SB.Imagine.transport()) || 'oauth';
+        const slugField = door === 'key' ? 'restSlug' : 'imagineSlug';
         const slug = document.createElement('input');
         slug.type = 'text';
         slug.className = 'slug';
-        slug.value = m.imagineSlug || '';
-        slug.placeholder = 'ImagineArt model — none';
+        slug.value = m[slugField] || '';
+        slug.placeholder = door === 'key' ? 'v2 API model — none' : 'ImagineArt model — none';
         slug.title = 'The slug ImagineArt knows this model by. Blank means this model is ' +
           'never pushed; the prompt is still written and copied as usual.';
         const dlId = 'slugs-' + m.id;
@@ -16270,7 +16443,8 @@ window.SB = window.SB || {};
         slugNote.style.display = 'none';
         const checkSlug = function () {
           const v = (m.imagineSlug || '').trim();
-          const known = !v || !SB.Imagine || !!SB.Imagine.modelInfo(v);
+          const known = !v || !SB.Imagine || door === 'key' ||
+            !!SB.Imagine.modelInfo(v);
           slug.classList.toggle('unknown', !known);
           slugNote.style.display = known ? 'none' : '';
           if (!known) {
@@ -16280,8 +16454,18 @@ window.SB = window.SB || {};
               'time it produces something.';
           }
         };
-        slug.oninput = function () { m.imagineSlug = slug.value.trim(); checkSlug(); };
+        slug.oninput = function () { m[slugField] = slug.value.trim(); checkSlug(); };
         checkSlug();
+
+        /* the other door's name, and what this entry last actually made */
+        const alt = door === 'key' ? m.imagineSlug : m.restSlug;
+        const bits = [];
+        if (alt) bits.push((door === 'key' ? 'your account calls it ' : 'the v2 API calls it ') + alt);
+        if (m.lastUsed && m.lastUsed.slug) {
+          bits.push('last produced something on ' +
+            new Date(m.lastUsed.at).toLocaleDateString() + ' as ' + m.lastUsed.slug);
+        }
+        if (bits.length) row.appendChild(SB.el('div', 'pp-note dim', bits.join(' · ')));
         const tpl = SB.el('button', 'mini', m.__open ? 'hide templates' : 'templates');
         tpl.onclick = function () { m.__open = !m.__open; drawModels(); };
         const rst = SB.el('button', 'mini', 'reset');
@@ -16740,6 +16924,21 @@ window.SB = window.SB || {};
       'Veo 720p, the stills 1K, and GPT Image at low quality. Asked for the best it has, ' +
       'LTX gives 2160p.'));
 
+    const imShare = document.createElement('input');
+    imShare.type = 'checkbox';
+    imShare.checked = p.settings.imagineShareOrg !== false;
+    const imShareL = SB.el('label', 'pp-toggle');
+    imShareL.appendChild(imShare);
+    imShareL.appendChild(document.createTextNode(
+      ' Carry the organization in the file, so the team inherits it'));
+    imShareL.style.marginTop = '12px';
+    panels.imagine.appendChild(imShareL);
+    panels.imagine.appendChild(SB.el('div', 'pp-note',
+      'Saving writes what this board was set up with — the models each entry means, the ' +
+      'catalog your account offers, and what generations actually cost — into the ' +
+      '.storyboard, so handing the file over hands over the setup. The token and the API ' +
+      'key never go in: a board gets emailed.'));
+
     const imAspF = field('Aspect ratio asked for', imAspect);
     imAspF.style.marginTop = '14px';
     panels.imagine.appendChild(imAspF);
@@ -17129,6 +17328,8 @@ window.SB = window.SB || {};
             SB.Store.setOoba({ url: oUrl.value, model: oobaModel, key: oKey.value });
             p.settings.imagineAspect = imAspect.value || '16:9';
             p.settings.imagineResolution = imRes.value || 'best';
+            p.settings.imagineShareOrg = imShare.checked;
+            if (IM) IM.publishToBoard(p);
             if (IM) {
               IM.setTransport(chosenImagine);
               IM.setApiKey(imKey.value);
@@ -18532,6 +18733,35 @@ window.SB = window.SB || {};
     pendingHandle: null
   };
 
+  /* A board that was set up by somebody else arrives carrying their setup.
+   * Nothing is applied silently — this offers once and remembers the answer,
+   * because a board opened on a colleague's machine should not quietly
+   * repoint their account. */
+  app.offerBoardSettings = function () {
+    if (!SB.Imagine || !SB.Imagine.boardOffer) return;
+    const b = SB.Imagine.boardOffer(app.project);
+    if (!b) return;
+    const who = b.setUpBy ? ' by ' + b.setUpBy : '';
+    const when = b.at ? ' on ' + new Date(b.at).toLocaleDateString() : '';
+    SB.toast('This board was set up' + who + when +
+      (b.orgName ? ', billed to ' + b.orgName : '') + '.', false, {
+      ms: 20000,
+      action: {
+        label: 'Use these settings',
+        onClick: function () {
+          SB.Imagine.adoptBoard(app.project).then(function (r) {
+            if (!r) return;
+            SB.toast(r.took && r.took.length
+              ? 'Took ' + r.took.join(', ') + ' from the board.'
+              : 'Nothing to take — this browser already had it.',
+              false, r.orgSkipped ? { ms: 9000 } : undefined);
+            if (r.orgSkipped) SB.toast('The organization was left alone: ' + r.orgSkipped, true);
+          });
+        }
+      }
+    });
+  };
+
   /* Any change at all. structural = the card layout must be rebuilt. */
   app.changed = function (structural) {
     if (structural) {
@@ -18583,6 +18813,8 @@ window.SB = window.SB || {};
     SB.ScriptMode.refresh();
     SB.PromptPanel.refresh();
     SB.PersonaPanel.refresh();
+    /* every way a board becomes the current one comes through here */
+    app.offerBoardSettings();
   }
 
   /* ---------------- boot ---------------- */

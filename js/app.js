@@ -10,6 +10,35 @@
     pendingHandle: null
   };
 
+  /* A board that was set up by somebody else arrives carrying their setup.
+   * Nothing is applied silently — this offers once and remembers the answer,
+   * because a board opened on a colleague's machine should not quietly
+   * repoint their account. */
+  app.offerBoardSettings = function () {
+    if (!SB.Imagine || !SB.Imagine.boardOffer) return;
+    const b = SB.Imagine.boardOffer(app.project);
+    if (!b) return;
+    const who = b.setUpBy ? ' by ' + b.setUpBy : '';
+    const when = b.at ? ' on ' + new Date(b.at).toLocaleDateString() : '';
+    SB.toast('This board was set up' + who + when +
+      (b.orgName ? ', billed to ' + b.orgName : '') + '.', false, {
+      ms: 20000,
+      action: {
+        label: 'Use these settings',
+        onClick: function () {
+          SB.Imagine.adoptBoard(app.project).then(function (r) {
+            if (!r) return;
+            SB.toast(r.took && r.took.length
+              ? 'Took ' + r.took.join(', ') + ' from the board.'
+              : 'Nothing to take — this browser already had it.',
+              false, r.orgSkipped ? { ms: 9000 } : undefined);
+            if (r.orgSkipped) SB.toast('The organization was left alone: ' + r.orgSkipped, true);
+          });
+        }
+      }
+    });
+  };
+
   /* Any change at all. structural = the card layout must be rebuilt. */
   app.changed = function (structural) {
     if (structural) {
@@ -61,6 +90,8 @@
     SB.ScriptMode.refresh();
     SB.PromptPanel.refresh();
     SB.PersonaPanel.refresh();
+    /* every way a board becomes the current one comes through here */
+    app.offerBoardSettings();
   }
 
   /* ---------------- boot ---------------- */

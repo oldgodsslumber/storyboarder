@@ -320,14 +320,16 @@ section('the wrong way round');
   SB.Imagine.setTransport('key');
   SB.Imagine.setApiKey('vk-test');
 
-  vm.imagineSlug = 'kling-v1.6-standard-text-to-video';
+  /* the REST field, because this rule is a REST rule and the key transport
+     reads that name */
+  vm.restSlug = 'kling-v1.6-standard-text-to-video';
   sh.image = { ref: 'x', w: 8, h: 6 };
   let why = '';
   await SB.Imagine.run(sh, 'video').catch(e => { why = e.message; });
   t('a text-to-video model with a frame in hand is refused, by name',
     /text-to-video/.test(why) && /image-to-video/.test(why), why);
 
-  vm.imagineSlug = 'kling-v1.6-standard-image-to-video';
+  vm.restSlug = 'kling-v1.6-standard-image-to-video';
   sh.image = null;
   sh.render = null;
   why = '';
@@ -542,6 +544,108 @@ section('asking for a resolution instead of taking the floor');
   SB.Imagine.setTransport('key');
   store.delete('sb.imagine.cost');
   sandbox.fetch = () => Promise.reject(new Error('no network in tests'));
+}
+
+/* ----------------------------------- what the board hands the next person */
+section('a board that was set up for you');
+
+{
+  const p5 = SB.Model.newProject();
+  sandbox.SB.app = { project: p5, changed() { } };
+  store.delete('sb.imagine.catalog');
+  store.delete('sb.imagine.cost');
+  store.delete('sb.imagine.org');
+
+  /* one model, two names, and the door decides which is sent */
+  const vm5 = SB.Model.videoModel(p5);
+  t('a shipped model carries both names',
+    vm5.imagineSlug === 'ltx-2.3' && vm5.restSlug === 'ltx-video-v095-image-to-video',
+    vm5.imagineSlug + ' / ' + vm5.restSlug);
+  SB.Imagine.setTransport('oauth');
+  t('signed in, the account name is the one sent',
+    SB.Imagine.slugOf(vm5) === 'ltx-2.3', SB.Imagine.slugOf(vm5));
+  SB.Imagine.setTransport('key');
+  t('on an API key, the v2 name is', SB.Imagine.slugOf(vm5) === 'ltx-video-v095-image-to-video',
+    SB.Imagine.slugOf(vm5));
+  t('and a model with only one name still sends it',
+    SB.Imagine.slugOf({ imagineSlug: 'nano-banana-pro' }) === 'nano-banana-pro', '');
+
+  /* an old board's slug was written for REST, so that is where it lands */
+  const oldBoard = SB.Model.newProject();
+  oldBoard.settings.models.forEach(function (m) { delete m.restSlug; });
+  const k = oldBoard.settings.models.filter(function (m) { return m.name === 'Kling'; })[0];
+  k.imagineSlug = 'kling-v1.6-pro-image-to-video';
+  SB.Model.migrate(oldBoard);
+  const k2 = oldBoard.settings.models.filter(function (m) { return m.name === 'Kling'; })[0];
+  t('a board from before the two names keeps its old slug where it works',
+    k2.restSlug === 'kling-v1.6-pro-image-to-video', k2.restSlug);
+  t('and gains the account-side name beside it',
+    k2.imagineSlug === 'kling-3.0-pro', k2.imagineSlug);
+
+  /* what gets written into the file */
+  SB.Imagine.setTransport('oauth');
+  store.set('sb.imagine.tokens', JSON.stringify({
+    access_token: 'tok', refresh_token: 'r', expires_at: Date.now() + 3600000, email: 'lead@pega.com'
+  }));
+  SB.Imagine.setOrg({ id: 'org-1', name: 'Pega' });
+  SB.Imagine.noteCost('ltx-2.3', '', '2160p', 215);
+  const block = SB.Imagine.publishToBoard(p5);
+  t('the board records who set it up', block.setUpBy === 'lead@pega.com', block.setUpBy);
+  t('and the organization, because the switch is on',
+    block.orgId === 'org-1' && p5.settings.imagineShareOrg === true, block.orgId);
+  t('and the prices it measured', block.costs['ltx-2.3||2160p'].credits === 215,
+    JSON.stringify(block.costs));
+  t('the token is not in it, and never is',
+    JSON.stringify(block).indexOf('tok') < 0, JSON.stringify(block).slice(0, 120));
+
+  p5.settings.imagineShareOrg = false;
+  t('and with the switch off the organization stays out',
+    SB.Imagine.publishToBoard(p5).orgId === null, '');
+  p5.settings.imagineShareOrg = true;
+  SB.Imagine.publishToBoard(p5);
+
+  /* the next person opens it */
+  store.delete('sb.imagine.org');
+  store.delete('sb.imagine.cost');
+  const offer = SB.Imagine.boardOffer(p5);
+  t('a teammate is offered what the board carries', !!offer && offer.setUpBy === 'lead@pega.com',
+    JSON.stringify(!!offer));
+  const took = await SB.Imagine.adoptBoard(p5);
+  t('taking it brings the measured prices across',
+    SB.Imagine.costFor('ltx-2.3', '', '2160p').credits === 215,
+    JSON.stringify(SB.Imagine.costFor('ltx-2.3', '', '2160p')));
+  t('and says what it took', (took.took || []).join(' ').indexOf('prices') >= 0,
+    JSON.stringify(took));
+  t('and having answered, it does not ask again',
+    SB.Imagine.boardOffer(p5) === null, '');
+
+  /* an organization the account is not in is left alone */
+  const p6 = SB.Model.newProject();
+  p6.settings.imagine = { setUpBy: 'someone@else.com', at: Date.now(), orgId: 'org-nope',
+    catalog: null, costs: {} };
+  sandbox.fetch = function (url, init) {
+    const msg = JSON.parse(init.body);
+    const result = msg.method === 'initialize'
+      ? { serverInfo: { name: 'x', version: '1' } }
+      : { content: [{ type: 'text', text: 'Pega 11111111-2222-3333-4444-555555555555' }] };
+    return Promise.resolve({
+      ok: true, status: 200, headers: { get: () => null },
+      text: () => Promise.resolve(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: result }))
+    });
+  };
+  SB.Imagine.setOrg({ id: 'org-mine', name: 'Mine' });
+  const orgBefore = SB.Imagine.orgId();
+  const r6 = await SB.Imagine.adoptBoard(p6);
+  t('an organization this account is not in is refused, with a reason',
+    /not a member/.test(r6.orgSkipped || ''), JSON.stringify(r6));
+  t('and whatever organization was already in hand is untouched',
+    SB.Imagine.orgId() === orgBefore, SB.Imagine.orgId() + ' vs ' + orgBefore);
+
+  sandbox.fetch = () => Promise.reject(new Error('no network in tests'));
+  SB.Imagine.signOut();
+  SB.Imagine.setOrg(null);
+  SB.Imagine.setTransport('key');
+  store.delete('sb.imagine.cost');
 }
 
 /* ------------------------------------- against the account's real tools */

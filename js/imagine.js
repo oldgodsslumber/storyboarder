@@ -107,6 +107,14 @@
     { slug: 'minimax-video-01-director-image-to-video', kind: 'video', mode: 'i2v' }
   ];
 
+  /* Is this name one the v2 REST listing publishes? Used by the migration
+   * to tell an old slug from a new one. */
+  function isRestSlug(v) {
+    const m = SB.ImagineModels;
+    if (!m || !m.list) return false;
+    return m.list.some(function (x) { return x.slug === v; });
+  }
+
   function shipped() {
     const m = SB.ImagineModels;
     return (m && m.list && m.list.length) ? m.list : FALLBACK;
@@ -131,11 +139,25 @@
   /* Board model names are display names; a few map onto a slug with no
    * ambiguity worth worrying about. Everything else starts blank, which reads
    * honestly in Settings as "not pointed at anything yet". */
-  /* Named as the account's own tools name them — which is the surface a
-   * signed-in push goes through. The v2 REST API calls the same models
-   * something else entirely (kling-v1.6-pro-image-to-video against
-   * kling-3.0-pro), so on the API-key transport these want changing; the
-   * field says so softly rather than refusing. */
+  /* ---------------- one model, two names ----------------
+   *
+   * The account's tools and the v2 REST API carry the same models under
+   * different identifiers — kling-3.0-pro against
+   * kling-v1.6-pro-image-to-video — and which one is right depends on which
+   * door a push goes through, not on the board. A board set up by somebody
+   * signed in used to look entirely wrong to a teammate on an API key.
+   *
+   * So a model entry carries both, and slugOf picks by transport. */
+  const GUESS_REST = {
+    'Kling': 'kling-v1.6-pro-image-to-video',
+    'MiniMax H3 (Hailuo)': 'minimax-video-01-director-image-to-video',
+    'LTX (LTXV 2.3)': 'ltx-video-v095-image-to-video',
+    'Veo': 'veo2-image-to-video',
+    'FLUX': 'flux-dev',
+    'GPT Image': '',
+    'Nano Banana (Gemini Image)': ''
+  };
+
   const GUESS = {
     'GPT Image': 'gpt-image-2',
     'LTX (LTXV 2.3)': 'ltx-2.3',
@@ -905,6 +927,101 @@
     }).catch(function () { return null; });
   }
 
+  /* ---------------- what travels with the board ----------------
+   *
+   * The model list, the slug for each model, which two are selected, the
+   * aspect ratio and the resolution policy have always been project state,
+   * so they already travel. What did not was everything the app learned
+   * about an account: the catalog it read, the prices it measured, and which
+   * organization the work was billed to. Those are facts about how this
+   * board is made rather than about who is making it, so they belong in the
+   * file too — and then one person can set a board up and hand it over.
+   *
+   * The token and the API key are the line that does not move. A .storyboard
+   * gets emailed; a credential in one is a credential in somebody's mail
+   * archive forever.
+   */
+  function publishToBoard(p) {
+    if (!p || !p.settings) return null;
+    const share = p.settings.imagineShareOrg !== false;
+    const t = tokens() || {};
+    const block = {
+      setUpBy: t.email || '',
+      at: Date.now(),
+      orgId: (share && orgId()) || null,
+      orgName: (share && org() && org().name) || '',
+      /* a snapshot, so a teammate who has not signed in still sees the right
+         models instead of the v2 REST floor */
+      catalog: (cachedCatalog() || {}).list || null,
+      costs: measured()
+    };
+    p.settings.imagine = block;
+    SB.Store.touch();
+    return block;
+  }
+
+  /* Has this browser already been asked about this board's block? Keyed by
+   * the stamp, so a board set up again asks again. */
+  function askedKey(p) {
+    const b = p && p.settings && p.settings.imagine;
+    return b ? 'sb.imagine.asked.' + (p.id || '') + '.' + b.at : '';
+  }
+
+  function boardOffer(p) {
+    const b = p && p.settings && p.settings.imagine;
+    if (!b || !b.at) return null;
+    if (lsStr(askedKey(p))) return null;
+    /* nothing to offer if this browser already has all of it */
+    const sameOrg = !b.orgId || (orgId() === b.orgId);
+    const haveCat = !!(cachedCatalog() || {}).list;
+    const haveCost = Object.keys(measured()).length > 0;
+    if (sameOrg && (haveCat || !b.catalog) && (haveCost || !b.costs)) return null;
+    return b;
+  }
+
+  function declineBoard(p) { lsPut(askedKey(p), '1'); }
+
+  /* Take the board's settings for this browser. The organization is checked
+   * against the account rather than assumed: a board can travel further than
+   * the team that made it. */
+  function adoptBoard(p) {
+    const b = p && p.settings && p.settings.imagine;
+    if (!b) return Promise.resolve(null);
+    lsPut(askedKey(p), '1');
+    const took = [];
+    if (b.catalog && b.catalog.length && !(cachedCatalog() || {}).list) {
+      storeCatalog(b.catalog.slice());
+      took.push(b.catalog.length + ' models');
+    }
+    if (b.costs && Object.keys(b.costs).length) {
+      const all = lsGet(K_COST) || {};
+      const mine = all[catKey()] || {};
+      Object.keys(b.costs).forEach(function (k) { if (!mine[k]) mine[k] = b.costs[k]; });
+      all[catKey()] = mine;
+      lsSet(K_COST, all);
+      took.push(Object.keys(b.costs).length + ' measured prices');
+    }
+    if (!b.orgId || orgId() === b.orgId) {
+      notify();
+      return Promise.resolve({ took: took });
+    }
+    if (!isSignedIn()) {
+      return Promise.resolve({ took: took, orgSkipped: 'sign in first, then set it in Settings' });
+    }
+    return listOrgs().then(function (list) {
+      const hit = list.filter(function (o) { return o.id === b.orgId; })[0];
+      if (!hit) {
+        return { took: took, orgSkipped: 'your account is not a member of the organization ' +
+          'this board was set up against' };
+      }
+      setOrg(hit);
+      took.push('the organization (' + (hit.name || hit.id) + ')');
+      return { took: took };
+    }).catch(function () {
+      return { took: took, orgSkipped: 'the organization could not be checked' };
+    });
+  }
+
   /* ---- the organisation ---- */
 
   function org() {
@@ -1351,8 +1468,15 @@
     return (p && p.settings && p.settings.imagineAspect) || '16:9';
   }
 
-  function slugOf(model) {
-    return (model && (model.imagineSlug || '').trim()) || '';
+  /* The name this door knows the model by, falling back to the other one —
+   * a single name is better than none, and an unrecognised one is flagged
+   * rather than refused. */
+  function slugOf(model, forTransport) {
+    if (!model) return '';
+    const mcp = (model.imagineSlug || '').trim();
+    const rest = (model.restSlug || '').trim();
+    const door = forTransport || transport();
+    return door === 'key' ? (rest || mcp) : (mcp || rest);
   }
 
   /* Why a push cannot happen yet, or '' if it can. Said in one place so the
@@ -1728,6 +1852,11 @@
       /* It produced something, so whatever any list says, this slug is real
        * for this account. */
       noteWorked(slugOf(model), role === 'image' ? 'image' : 'video');
+      /* On the model itself, so it travels with the board: what this entry
+       * last produced something with, and when. A teammate opening the file
+       * gets a name with evidence behind it rather than a guess. */
+      model.lastUsed = { slug: slugOf(model), via: transport(), at: Date.now() };
+      SB.Store.touch();
       /* What it actually cost, from the two balances. Nothing depends on
        * this working — an account that will not report a balance simply
        * keeps the published estimate. */
@@ -2262,13 +2391,16 @@
     catalog: catalog, catalogAll: catalogAll, catalogSource: catalogSource,
     worked: worked, noteWorked: noteWorked,
     org: org, orgId: orgId, setOrg: setOrg, listOrgs: listOrgs, needOrg: needOrg,
+    publishToBoard: publishToBoard, boardOffer: boardOffer,
+    adoptBoard: adoptBoard, declineBoard: declineBoard,
     allowFor: allowFor, modelsFromTool: modelsFromTool, TOOL: TOOL,
-    resolutionFor: resolutionFor, qualityFor: qualityFor,
+    resolutionFor: resolutionFor, qualityFor: qualityFor, isRestSlug: isRestSlug,
     costFor: costFor, noteCost: noteCost, balanceNow: balanceNow,
     _assetId: assetId,
     catalogAge: catalogAge, refreshCatalog: refreshCatalog,
     modelInfo: modelInfo, labelFor: labelFor,
     guessSlug: function (name) { return GUESS[name] || ''; },
+    guessRestSlug: function (name) { return GUESS_REST[name] || ''; },
     /* work */
     ready: function (model) { return !blocker(model); },
     blocker: blocker, slugOf: slugOf, aspectOf: aspectOf,

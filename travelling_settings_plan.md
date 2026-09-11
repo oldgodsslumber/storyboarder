@@ -1,6 +1,6 @@
 # Setting it up once, for everybody — plan
 
-Status: **planned, not built.**
+Status: **built.** All four steps and the two-name fix. Kept for the reasoning.
 
 The ask: set the models up for the team, hand over the `.storyboard`, and have your choices
 arrive with it.

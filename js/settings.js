@@ -306,11 +306,16 @@
            prompt at it. Free text with the known slugs offered: the catalog is
            ImagineArt's to change, and a board must not be stuck waiting for
            this app to hear about a new one. */
+        /* One model, two names: the account's tools and the v2 REST API
+           call the same thing differently, so the field edits whichever
+           belongs to the door in use and shows the other underneath. */
+        const door = (SB.Imagine && SB.Imagine.transport()) || 'oauth';
+        const slugField = door === 'key' ? 'restSlug' : 'imagineSlug';
         const slug = document.createElement('input');
         slug.type = 'text';
         slug.className = 'slug';
-        slug.value = m.imagineSlug || '';
-        slug.placeholder = 'ImagineArt model — none';
+        slug.value = m[slugField] || '';
+        slug.placeholder = door === 'key' ? 'v2 API model — none' : 'ImagineArt model — none';
         slug.title = 'The slug ImagineArt knows this model by. Blank means this model is ' +
           'never pushed; the prompt is still written and copied as usual.';
         const dlId = 'slugs-' + m.id;
@@ -333,7 +338,8 @@
         slugNote.style.display = 'none';
         const checkSlug = function () {
           const v = (m.imagineSlug || '').trim();
-          const known = !v || !SB.Imagine || !!SB.Imagine.modelInfo(v);
+          const known = !v || !SB.Imagine || door === 'key' ||
+            !!SB.Imagine.modelInfo(v);
           slug.classList.toggle('unknown', !known);
           slugNote.style.display = known ? 'none' : '';
           if (!known) {
@@ -343,8 +349,18 @@
               'time it produces something.';
           }
         };
-        slug.oninput = function () { m.imagineSlug = slug.value.trim(); checkSlug(); };
+        slug.oninput = function () { m[slugField] = slug.value.trim(); checkSlug(); };
         checkSlug();
+
+        /* the other door's name, and what this entry last actually made */
+        const alt = door === 'key' ? m.imagineSlug : m.restSlug;
+        const bits = [];
+        if (alt) bits.push((door === 'key' ? 'your account calls it ' : 'the v2 API calls it ') + alt);
+        if (m.lastUsed && m.lastUsed.slug) {
+          bits.push('last produced something on ' +
+            new Date(m.lastUsed.at).toLocaleDateString() + ' as ' + m.lastUsed.slug);
+        }
+        if (bits.length) row.appendChild(SB.el('div', 'pp-note dim', bits.join(' · ')));
         const tpl = SB.el('button', 'mini', m.__open ? 'hide templates' : 'templates');
         tpl.onclick = function () { m.__open = !m.__open; drawModels(); };
         const rst = SB.el('button', 'mini', 'reset');
@@ -803,6 +819,21 @@
       'Veo 720p, the stills 1K, and GPT Image at low quality. Asked for the best it has, ' +
       'LTX gives 2160p.'));
 
+    const imShare = document.createElement('input');
+    imShare.type = 'checkbox';
+    imShare.checked = p.settings.imagineShareOrg !== false;
+    const imShareL = SB.el('label', 'pp-toggle');
+    imShareL.appendChild(imShare);
+    imShareL.appendChild(document.createTextNode(
+      ' Carry the organization in the file, so the team inherits it'));
+    imShareL.style.marginTop = '12px';
+    panels.imagine.appendChild(imShareL);
+    panels.imagine.appendChild(SB.el('div', 'pp-note',
+      'Saving writes what this board was set up with — the models each entry means, the ' +
+      'catalog your account offers, and what generations actually cost — into the ' +
+      '.storyboard, so handing the file over hands over the setup. The token and the API ' +
+      'key never go in: a board gets emailed.'));
+
     const imAspF = field('Aspect ratio asked for', imAspect);
     imAspF.style.marginTop = '14px';
     panels.imagine.appendChild(imAspF);
@@ -1192,6 +1223,8 @@
             SB.Store.setOoba({ url: oUrl.value, model: oobaModel, key: oKey.value });
             p.settings.imagineAspect = imAspect.value || '16:9';
             p.settings.imagineResolution = imRes.value || 'best';
+            p.settings.imagineShareOrg = imShare.checked;
+            if (IM) IM.publishToBoard(p);
             if (IM) {
               IM.setTransport(chosenImagine);
               IM.setApiKey(imKey.value);

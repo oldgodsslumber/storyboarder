@@ -130,6 +130,26 @@ models are pointed at their current equivalents too — Kling at `kling-3.0-pro`
 the same models something else, so on an API key they want changing, and the field says so
 softly rather than refusing.
 
+**Set it up once for the team.** The model list, what each entry means, which two are
+selected, the aspect ratio and the resolution policy are project state and always travel in
+the `.storyboard`. Saving Settings also writes what this board was *set up with* — the
+catalog your account offers, what generations actually cost, and (with the switch on) the
+organization — so handing the file over hands over the setup. Opening a board somebody else
+configured offers it once: *"This board was set up by you@pega.com on 11 Sep, billed to
+Pega — use these settings?"* Nothing is applied silently, an organization your account is
+not a member of is refused with a reason, and the token and API key are never written into a
+file that gets emailed.
+
+Each model also records what it **last actually produced something with**, and when — a name
+with evidence behind it rather than a guess, for whoever opens the board next.
+
+**One model, two names.** The account's MCP tools and the v2 REST API call the same model
+different things (`ltx-2.3` against `ltx-video-v095-image-to-video`), so each entry carries
+both and the push sends whichever belongs to the door it is going through. The field in
+Settings edits the one for your current transport and shows the other underneath. Boards
+from before this keep their old slug as the REST name and gain the account-side one beside
+it.
+
 **Settings → Models & templates** gains one field per model: which ImagineArt model it
 means (`flux-dev`, `kling-v1.6-pro-image-to-video`, …), offered as a list filtered to that
 model's kind and labelled readably. A model with none is never pushed; its prompts are still

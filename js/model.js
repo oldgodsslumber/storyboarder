@@ -140,13 +140,19 @@
     return (SB.Imagine && SB.Imagine.guessSlug) ? SB.Imagine.guessSlug(name) : '';
   }
 
+  function guessRestSlug(name) {
+    return (SB.Imagine && SB.Imagine.guessRestSlug) ? SB.Imagine.guessRestSlug(name) : '';
+  }
+
   function model(name, kind) {
     const t = tplsFor(name);
     return {
       id: SB.uid('m'), name: name, kind: kind,
       imageTemplate: t.image, videoTemplate: t.video,
       referenceTemplate: t.reference, videoRefs: t.videoRefs,
-      imagineSlug: guessSlug(name)
+      /* what the account's tools call it, and what the v2 REST API calls it */
+      imagineSlug: guessSlug(name),
+      restSlug: guessRestSlug(name)
     };
   }
 
@@ -298,6 +304,14 @@
          *             480p on Seedance, 720p on Veo, 1K and "low" quality on
          *             the stills. Sending nothing is not sending "normal". */
         imagineResolution: 'best',
+        /* Whether the organization travels in the file. It is not a secret
+         * and a team shares one, so it saves everybody a step — but a board
+         * can travel further than the team that made it. */
+        imagineShareOrg: true,
+        /* Written by Settings: the catalog, the measured prices and the org
+         * this board was set up against, for whoever opens it next. Never a
+         * token and never a key. */
+        imagine: null,
         /* 'webp'   — originals re-encoded at native size (16x smaller, and
          *            still far past what a reference needs)
          * 'source' — the bytes exactly as they arrived, and the file it makes */
@@ -541,6 +555,23 @@
       /* Blank is a real answer — "not pointed at anything on ImagineArt yet" —
        * so only a missing field is filled in, never an emptied one. */
       if (typeof m.imagineSlug !== 'string') m.imagineSlug = guessSlug(m.name);
+      /* A board from before the two names: whatever is in imagineSlug was
+       * typed for the REST API, because that is all there was. It moves to
+       * the field that means that, and the account-side name is filled in
+       * from the same table a new board uses — nothing the user chose is
+       * overwritten, and the REST transport keeps working exactly as it
+       * did. Recognised by being in the published REST list. */
+      if (typeof m.restSlug !== 'string') {
+        const looksRest = m.imagineSlug &&
+          (/-(text|image)-to-video$/.test(m.imagineSlug) ||
+            (SB.Imagine && SB.Imagine.isRestSlug && SB.Imagine.isRestSlug(m.imagineSlug)));
+        if (looksRest) {
+          m.restSlug = m.imagineSlug;
+          m.imagineSlug = guessSlug(m.name);
+        } else {
+          m.restSlug = guessRestSlug(m.name);
+        }
+      }
     });
     /* A board keeps its own model list, so a model added to the app later
      * would never reach an existing project. Offer each shipped model once:
@@ -570,6 +601,11 @@
     if (typeof s.imagineAspect !== 'string') s.imagineAspect = '16:9';
     if (s.originals !== 'webp' && s.originals !== 'source') s.originals = 'webp';
     if (['best', '1080p', 'default'].indexOf(s.imagineResolution) < 0) s.imagineResolution = 'best';
+    if (typeof s.imagineShareOrg !== 'boolean') s.imagineShareOrg = true;
+    if (s.imagine && typeof s.imagine !== 'object') s.imagine = null;
+    /* belt and braces: a board that has been through a version of this app
+     * that stored a token here does not carry it any further */
+    if (s.imagine) { delete s.imagine.token; delete s.imagine.apiKey; }
     s.brand = (s.brand && typeof s.brand === 'object') ? s.brand : {};
     if (typeof s.brand.enabled !== 'boolean') s.brand.enabled = true;
     // only a hand-edited house style is stored; the rest follow the app's
