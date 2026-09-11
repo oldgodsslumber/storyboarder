@@ -328,6 +328,66 @@ section('what a finished clip leaves behind');
   sandbox.SB.Renders = realRenders;
 }
 
+/* --------------------------------------- the headers a browser may send */
+section('what actually goes on the wire');
+
+{
+  /* mcp.imagine.art answers a preflight with a fixed allow-list, and
+     MCP-Protocol-Version is not on it — so sending that header made the
+     browser refuse the request before it existed, and the handshake failed
+     with nothing in any log. */
+  const sent = [];
+  const realFetch = sandbox.fetch;
+  sandbox.fetch = function (url, init) {
+    sent.push({ url: String(url), headers: (init && init.headers) || {}, body: init && init.body });
+    return Promise.resolve({
+      ok: true, status: 200,
+      headers: { get: function () { return null; } },
+      text: function () {
+        return Promise.resolve(JSON.stringify({
+          jsonrpc: '2.0', id: JSON.parse(init.body).id,
+          result: { serverInfo: { name: 'imagine-mcp', version: '1' }, tools: [] }
+        }));
+      }
+    });
+  };
+  SB.Imagine.setTransport('oauth');
+  store.set('sb.imagine.tokens', JSON.stringify({
+    access_token: 'tok', refresh_token: 'r', expires_at: Date.now() + 3600000, email: 'a@b.c'
+  }));
+
+  await SB.Imagine.toolList(true).catch(() => null);
+  const call = sent.filter(x => /mcp\.imagine\.art/.test(x.url))[0];
+  t('the handshake is sent at all', !!call, JSON.stringify(sent.map(x => x.url)));
+  const keys = Object.keys((call && call.headers) || {}).map(k => k.toLowerCase());
+  t('no MCP-Protocol-Version header, which the server does not allow',
+    keys.indexOf('mcp-protocol-version') < 0, keys.join(','));
+  t('no session header either, which it also does not allow',
+    keys.indexOf('mcp-session-id') < 0, keys.join(','));
+  t('the token and the content type still travel',
+    keys.indexOf('authorization') >= 0 && keys.indexOf('content-type') >= 0, keys.join(','));
+  t('and the protocol version rides in the params instead',
+    JSON.parse(call.body).params.protocolVersion === '2025-06-18',
+    JSON.parse(call.body).params.protocolVersion);
+
+  /* a fetch that rejects means it never left the browser */
+  sandbox.fetch = function () { return Promise.reject(new TypeError('Failed to fetch')); };
+  SB.Imagine.signOut();
+  store.set('sb.imagine.tokens', JSON.stringify({
+    access_token: 'tok', refresh_token: 'r', expires_at: Date.now() + 3600000, email: 'a@b.c'
+  }));
+  const steps = await SB.Imagine.report();
+  const hand = steps.filter(x => x.name === 'MCP handshake')[0];
+  t('a blocked request is reported as blocked, not as a mystery',
+    !!hand && !hand.ok && /never left the browser/.test(hand.detail),
+    hand ? hand.detail : JSON.stringify(steps.map(x => x.name)));
+  t('and says nothing was billed for it', !!hand && /nothing was billed/.test(hand.detail), '');
+
+  sandbox.fetch = realFetch;
+  SB.Imagine.signOut();
+  SB.Imagine.setTransport('key');
+}
+
 /* ------------------------------------------------ what actually worked */
 section('a slug that worked outranks every published list');
 

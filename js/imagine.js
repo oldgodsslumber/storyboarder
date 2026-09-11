@@ -567,16 +567,40 @@
    */
   const mcp = { session: null, ready: null, tools: null, id: 0 };
 
+  /* ---- the headers a browser is actually allowed to send ----
+   *
+   * mcp.imagine.art answers a preflight with a FIXED allow-list, and neither
+   * MCP-Protocol-Version nor Mcp-Session-Id is on it. A browser will not send
+   * a non-safelisted header that the server has not allowed, so the preflight
+   * fails and fetch rejects before the request exists — the handshake failing
+   * with nothing in any log, because nothing was ever sent. curl has no such
+   * rule, which is why probing from a terminal said the endpoint was fine.
+   *
+   * So the protocol version travels where it also belongs, in the initialize
+   * params, and the session id is not sent at all — it could not be read back
+   * either, since mcp-session-id is not in the server's expose-headers. That
+   * makes this a stateless client, which the transport allows.
+   *
+   * Accept is CORS-safelisted, Content-Type and Authorization are both on the
+   * server's list, so what is left preflights cleanly. */
   function mcpPost(msg) {
     return accessToken().then(function (tok) {
       const headers = {
         'Content-Type': 'application/json',
         Accept: 'application/json, text/event-stream',
-        'MCP-Protocol-Version': MCP_PROTOCOL,
         Authorization: 'Bearer ' + tok
       };
-      if (mcp.session) headers['Mcp-Session-Id'] = mcp.session;
       return fetch(RESOURCE, { method: 'POST', headers: headers, body: JSON.stringify(msg) })
+        .catch(function (e) {
+          /* A rejected fetch means it never left the browser. Against this
+           * host that is nearly always CORS, and a bare "Failed to fetch" is
+           * the least helpful sentence available. */
+          const err = new Error('The request never left the browser — ' +
+            'ImagineArt\u2019s server did not allow it from this page (CORS). ' +
+            (e && e.message ? '[' + e.message + ']' : ''));
+          err.cors = true;
+          throw err;
+        })
         .then(function (res) {
           const sid = res.headers.get('mcp-session-id');
           if (sid) mcp.session = sid;
@@ -636,6 +660,8 @@
     mcp.ready = mcpPost({
       jsonrpc: '2.0', id: ++mcp.id, method: 'initialize',
       params: {
+        /* the only place the version can travel: the header a browser would
+           normally carry it in is not one this server allows */
         protocolVersion: MCP_PROTOCOL,
         capabilities: {},
         clientInfo: { name: CLIENT_NAME, version: String(window.SB_BUILD || 'dev') }
@@ -1750,7 +1776,14 @@
       add('MCP handshake', true, si ? ((si.name || 'server') + ' ' + (si.version || '')).trim()
         : 'accepted');
       return toolList(true);
-    }, bail('MCP handshake')).then(function (list) {
+    }, function (e) {
+      add('MCP handshake', false, ((e && e.message) || String(e)) +
+        (e && e.cors ? ' — nothing was sent, so nothing was billed.' : '') +
+        (e && e.status ? ' (HTTP ' + e.status + ')' : ''));
+      const stop = new Error('stopped');
+      stop.stopped = true;
+      throw stop;
+    }).then(function (list) {
       add('Tools', !!(list && list.length), (list || []).length + ' offered');
       const rest = lsStr(K_REST);
       if (rest) {
