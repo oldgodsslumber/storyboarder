@@ -66,8 +66,23 @@ Sign-in needs the app served over `http://` — the redirect has to come back to
 address, and `file://` has none. Opened straight off the disk, use the API key.
 
 **Settings → Models & templates** gains one field per model: which ImagineArt model it
-means (`flux-dev`, `kling-1.0-pro`, …). A model with none is never pushed; its prompts are
-still written and copied as before.
+means (`flux-dev`, `kling-v1.6-pro-image-to-video`, …), offered as a list filtered to that
+model's kind and labelled readably. A model with none is never pushed; its prompts are still
+written and copied as before. A slug ImagineArt no longer lists is flagged in the field
+rather than at the push.
+
+**Where that list comes from.** Signed in, it is your account's own — read off its tool
+schemas, cached per account, refreshed on sign-in, when Settings opens on a day-old cache,
+when you press **Refresh models**, and whenever a push is refused for a slug the account
+does not know. Signed out, it is the list ImagineArt publishes, generated into
+`js/imaginemodels.js` by `node fetch-models.mjs` — 53 models, 6 image and 47 video.
+Settings → ImagineArt says which of the two you are looking at and how old it is.
+
+Two things worth knowing about that catalog: the API's list and the website's Workflows
+canvas are **not the same catalog** — Workflows advertises Wan, Sora, Veo 3 and Seedream,
+none of which the API exposes — and video models come in pairs, `…-text-to-video` and
+`…-image-to-video`. Pointing a board model at the wrong one of a pair is refused before the
+credits go, by name.
 
 ### Clips on a card
 

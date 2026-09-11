@@ -1337,6 +1337,45 @@
       t('settings modal', document.querySelectorAll('.modal').length === 1, '');
       t('settings is tabbed', document.querySelectorAll('.modal .tab').length === 6,
         document.querySelectorAll('.modal .tab').length);
+      /* the slug field offers the real catalog, filtered to the model's kind */
+      (function () {
+        const tab = Array.prototype.filter.call(document.querySelectorAll('.modal .tab'),
+          function (x) { return x.textContent === 'Models & templates'; })[0];
+        if (!tab) { t('models tab is there', false, 'missing'); return; }
+        tab.click();
+        const rows = document.querySelectorAll('.modal .model-row');
+        /* The API publishes 47 video models and only 6 image ones, so the
+           two kinds are checked against different floors — the point is that
+           each row is offered its own whole list, not four of them. */
+        const short = Array.prototype.filter.call(rows, function (r) {
+          const dl = r.querySelector('datalist');
+          const kind = r.querySelector('select').value;
+          return !dl || dl.options.length < (kind === 'video' ? 20 : 5);
+        });
+        t('every model row offers the published list for its kind',
+          short.length === 0, short.length + ' of ' + rows.length + ' rows came up short');
+        const video = Array.prototype.filter.call(rows, function (r) {
+          return r.querySelector('select') && r.querySelector('select').value === 'video';
+        })[0];
+        const opts = Array.prototype.map.call(video.querySelector('datalist').options,
+          function (o) { return o.value; });
+        t('a video model is offered video models only',
+          opts.length > 20 && opts.indexOf('flux-dev') < 0 &&
+          opts.indexOf('kling-v1.6-standard-image-to-video') >= 0, opts.slice(0, 3).join(' '));
+        t('and each one carries a readable name',
+          /Kling v1\.6 Standard/.test(video.querySelector('datalist').innerHTML), '');
+        const slug = video.querySelector('input.slug');
+        slug.value = 'no-such-model-9000';
+        slug.dispatchEvent(new Event('input', { bubbles: true }));
+        t('a slug ImagineArt does not list is flagged at the desk',
+          slug.classList.contains('unknown') &&
+          /does not list/.test(video.querySelector('.pp-note.warn').textContent), '');
+        slug.value = 'kling-v1.6-pro-image-to-video';
+        slug.dispatchEvent(new Event('input', { bubbles: true }));
+        t('and the flag goes when it is a real one', !slug.classList.contains('unknown'), '');
+        document.querySelector('.modal .tab[data-tab="general"]').click();
+      })();
+
       t('the first tab says what the board is carrying',
         !!document.querySelector('.modal .tab-panel.on .weigh'), 'no weight readout');
       t('and offers no folder to connect',

@@ -317,12 +317,33 @@
         slug.setAttribute('list', dlId);
         const dl = document.createElement('datalist');
         dl.id = dlId;
-        ((SB.Imagine && SB.Imagine.catalog(m.kind)) || []).forEach(function (v) {
+        /* Only this model's kind: a video model should never be offered
+           flux-dev. Each option carries the readable name, so the list can be
+           read as well as matched. */
+        ((SB.Imagine && SB.Imagine.catalogAll()) || []).forEach(function (mm) {
+          if (mm.kind !== m.kind) return;
           const o = document.createElement('option');
-          o.value = v;
+          o.value = mm.slug;
+          o.label = SB.Imagine.labelFor(mm.slug, mm.mode);
           dl.appendChild(o);
         });
-        slug.oninput = function () { m.imagineSlug = slug.value.trim(); };
+        /* A slug ImagineArt no longer offers is found here, at the desk,
+           rather than at the push — where it costs a refusal and a wait. */
+        const slugNote = SB.el('div', 'pp-note warn');
+        slugNote.style.display = 'none';
+        const checkSlug = function () {
+          const v = (m.imagineSlug || '').trim();
+          const known = !v || !SB.Imagine || !!SB.Imagine.modelInfo(v);
+          slug.classList.toggle('unknown', !known);
+          slugNote.style.display = known ? 'none' : '';
+          if (!known) {
+            slugNote.textContent = 'ImagineArt does not list “' + v + '” for ' + m.kind +
+              ' — it may have been retired, or it may be newer than this list. It will still ' +
+              'be sent if you leave it.';
+          }
+        };
+        slug.oninput = function () { m.imagineSlug = slug.value.trim(); checkSlug(); };
+        checkSlug();
         const tpl = SB.el('button', 'mini', m.__open ? 'hide templates' : 'templates');
         tpl.onclick = function () { m.__open = !m.__open; drawModels(); };
         const rst = SB.el('button', 'mini', 'reset');
@@ -337,6 +358,7 @@
         del.onclick = function () { working.splice(i, 1); drawModels(); };
         top.appendChild(name); top.appendChild(kind);
         top.appendChild(slug); top.appendChild(dl);
+        row.appendChild(slugNote);
         top.appendChild(tpl); top.appendChild(rst); top.appendChild(del);
         row.appendChild(top);
 
@@ -445,6 +467,66 @@
     const imTools = SB.el('div', 'pp-note dim', '');
     imBlocks.oauth.appendChild(imTools);
 
+    /* Which model list the slug field is offering, and how old it is. Without
+       this the field shows a number and no way to tell whose number it is. */
+    const imModels = SB.el('div', 'pp-note', '');
+    const imModelsRow = SB.el('div', 'pp-actions');
+    const imRefresh = SB.el('button', 'tb', 'Refresh models');
+    imModelsRow.appendChild(imRefresh);
+    panels.imagine.appendChild(imModels);
+    panels.imagine.appendChild(imModelsRow);
+
+    function ago(ms) {
+      if (ms == null) return '';
+      const m = Math.round(ms / 60000);
+      if (m < 1) return 'just now';
+      if (m < 60) return m + ' minute' + (m === 1 ? '' : 's') + ' ago';
+      const h = Math.round(m / 60);
+      if (h < 36) return h + ' hour' + (h === 1 ? '' : 's') + ' ago';
+      return Math.round(h / 24) + ' days ago';
+    }
+
+    function drawCatalogLine() {
+      if (!IM) return;
+      const all = IM.catalogAll();
+      const img = all.filter(function (x) { return x.kind === 'image'; }).length;
+      const vid = all.length - img;
+      const src = IM.catalogSource();
+      const counts = all.length + ' models — ' + img + ' image · ' + vid + ' video. ';
+      if (src === 'account') {
+        imModels.textContent = counts + 'From your account, checked ' + ago(IM.catalogAge()) + '.';
+        imModels.classList.remove('warn');
+      } else if (src === 'shipped') {
+        imModels.textContent = counts + 'The built-in list, published by ImagineArt on ' +
+          ((SB.ImagineModels && SB.ImagineModels.fetchedAt) || 'an unknown date') +
+          '. Sign in and this becomes whatever your account actually offers.';
+        imModels.classList.toggle('warn', !IM.isSignedIn() ? false : true);
+      } else {
+        imModels.textContent = counts + 'A last-resort handful — the generated list did not load.';
+        imModels.classList.add('warn');
+      }
+      imRefresh.disabled = !IM.isSignedIn();
+      imRefresh.title = IM.isSignedIn()
+        ? 'Ask the account what it offers now. Models come and go.'
+        : 'Sign in to read your account\u2019s own list.';
+    }
+
+    imRefresh.onclick = function () {
+      imRefresh.disabled = true;
+      imRefresh.textContent = 'asking…';
+      IM.refreshCatalog().then(function (r) {
+        const bits = [];
+        if (r.added.length) bits.push(r.added.length + ' new');
+        if (r.gone.length) bits.push(r.gone.length + ' gone: ' + r.gone.slice(0, 3).join(', '));
+        SB.toast(r.list.length + ' models' + (bits.length ? ' — ' + bits.join(', ') : ''));
+      }).catch(function (e) {
+        SB.toast(e.message || String(e), !e.soft);
+      }).then(function () {
+        imRefresh.textContent = 'Refresh models';
+        drawCatalogLine();
+      });
+    };
+
     imBlocks.oauth.appendChild(SB.el('div', 'pp-note',
       'The sign-in is ImagineArt’s own OAuth: a window opens, you approve, it closes. ' +
       'Nothing but the token is kept, and it is kept in this browser — never in the ' +
@@ -471,6 +553,7 @@
       }
       imNote.textContent = why || '';
       imNote.classList.toggle('err', !!why);
+      drawCatalogLine();
       const tools = IM.tools();
       if (inOk && tools.length) {
         imTools.textContent = tools.length + ' tools offered: ' +
@@ -553,6 +636,13 @@
 
     showImagine(chosenImagine);
     imDraw();
+    /* A day old is old enough: models come and go, and the only moment this
+       matters is the moment somebody opens the page where slugs are chosen.
+       Never blocking — the cached list is already on screen. */
+    const DAY = 24 * 60 * 60 * 1000;
+    if (IM && IM.isSignedIn() && (IM.catalogAge() == null || IM.catalogAge() > DAY)) {
+      IM.refreshCatalog().then(function () { drawCatalogLine(); }).catch(function () { });
+    }
 
     /* ---------------- API ----------------
      * Two backends, picked at the top: Google's Gemini, or any local

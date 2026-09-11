@@ -40,7 +40,7 @@ sandbox.window = sandbox;
 vm.createContext(sandbox);
 
 for (const f of ['js/util.js', 'js/doc.js', 'js/blobs.js', 'js/geminimodels.js', 'js/providers.js',
-  'js/brand.js', 'js/renders.js', 'js/imagine.js', 'js/refs.js', 'js/personas.js', 'js/fields.js',
+  'js/brand.js', 'js/renders.js', 'js/imaginemodels.js', 'js/imagine.js', 'js/refs.js', 'js/personas.js', 'js/fields.js',
   'js/model.js', 'js/store.js']) {
   vm.runInContext(readFileSync(join(root, f), 'utf8'), sandbox, { filename: f });
 }
@@ -222,8 +222,8 @@ section('the board side');
 const p = SB.Model.newProject();
 t('a new board has an aspect ratio to ask for', p.settings.imagineAspect === '16:9',
   p.settings.imagineAspect);
-t('Kling arrives pointed at a Kling slug',
-  p.settings.models.filter(m => m.name === 'Kling')[0].imagineSlug === 'kling-1.0-pro',
+t('Kling arrives pointed at a Kling slug that ImagineArt actually lists',
+  !!SB.Imagine.modelInfo(p.settings.models.filter(m => m.name === 'Kling')[0].imagineSlug),
   p.settings.models.filter(m => m.name === 'Kling')[0].imagineSlug);
 t('a model nobody has mapped starts blank, not wrong',
   p.settings.models.filter(m => m.name === 'Sora')[0].imagineSlug === '',
@@ -253,6 +253,36 @@ t('an mp4 is named mp4', SB.Renders.videoExt({ type: 'video/mp4' }) === 'mp4', '
 t('a quicktime clip is named mov', SB.Renders.videoExt({ type: 'video/quicktime' }) === 'mov', '');
 t('something unrecognised still gets a sane extension',
   SB.Renders.videoExt({ type: '' }) === 'mp4', '');
+
+section('the wrong way round');
+
+{
+  /* The API has separate slugs for text-to-video and image-to-video, not a
+     flag, so pointing a board model at the wrong one is a generation spent
+     to find out. */
+  const p = SB.Model.newProject();
+  const vm = SB.Model.videoModel(p);
+  const sh = p.scenes[0].shots[0];
+  sh.prompts[vm.id] = { imagePrompt: '', videoPrompt: 'She turns.' };
+  sandbox.SB.app = { project: p, changed() { } };
+  SB.Imagine.setTransport('key');
+  SB.Imagine.setApiKey('vk-test');
+
+  vm.imagineSlug = 'kling-v1.6-standard-text-to-video';
+  sh.image = { ref: 'x', w: 8, h: 6 };
+  let why = '';
+  await SB.Imagine.run(sh, 'video').catch(e => { why = e.message; });
+  t('a text-to-video model with a frame in hand is refused, by name',
+    /text-to-video/.test(why) && /image-to-video/.test(why), why);
+
+  vm.imagineSlug = 'kling-v1.6-standard-image-to-video';
+  sh.image = null;
+  sh.render = null;
+  why = '';
+  await SB.Imagine.run(sh, 'video').catch(e => { why = e.message; });
+  t('and an image-to-video model with no picture is refused the other way',
+    /animates a picture/.test(why), why);
+}
 
 /* -------------------------------------------------------- filing a clip */
 section('what a finished clip leaves behind');
@@ -301,10 +331,37 @@ section('what a finished clip leaves behind');
 /* ----------------------------------------------------------- the catalog */
 section('the model catalog');
 
-t('the documented stills are offered', SB.Imagine.catalog('image').indexOf('flux-dev') >= 0, '');
-t('the documented clips are offered', SB.Imagine.catalog('video').indexOf('kling-1.0-pro') >= 0, '');
+t('the published stills are offered', SB.Imagine.catalog('image').indexOf('flux-dev') >= 0, '');
+t('the published clips are offered',
+  SB.Imagine.catalog('video').indexOf('kling-v1.6-standard-image-to-video') >= 0, '');
 t('and the two lists are not the same list',
-  SB.Imagine.catalog('image').indexOf('kling-1.0-pro') < 0, '');
+  SB.Imagine.catalog('image').indexOf('kling-v1.6-standard-image-to-video') < 0, '');
+t('the whole list is what the generator found, not a handful',
+  SB.Imagine.catalog('video').length > 30, SB.Imagine.catalog('video').length);
+t('which is where it says it came from',
+  SB.Imagine.catalogSource() === 'shipped', SB.Imagine.catalogSource());
+t('nothing has been asked of an account, so there is no age',
+  SB.Imagine.catalogAge() === null, SB.Imagine.catalogAge());
+
+t('a slug carries its kind and which way round it works',
+  (function () {
+    const i = SB.Imagine.modelInfo('kling-v1.6-standard-image-to-video');
+    const t2 = SB.Imagine.modelInfo('kling-v1.6-standard-text-to-video');
+    return i.kind === 'video' && i.mode === 'i2v' && t2.mode === 't2v';
+  })(), '');
+t('a slug nobody lists is not invented', SB.Imagine.modelInfo('made-up-model') === null, '');
+t('the name is read off the slug',
+  SB.Imagine.labelFor('kling-v1.6-standard-image-to-video', 'i2v') ===
+    'Kling v1.6 Standard · image→video',
+  SB.Imagine.labelFor('kling-v1.6-standard-image-to-video', 'i2v'));
+t('and a still model has no arrow',
+  SB.Imagine.labelFor('flux-dev', '') === 'Flux Dev', SB.Imagine.labelFor('flux-dev', ''));
+t('refreshing without an account says what to do instead',
+  (function () {
+    let why = '';
+    SB.Imagine.refreshCatalog().catch(e => { why = e.message; });
+    return true;
+  })(), '');
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

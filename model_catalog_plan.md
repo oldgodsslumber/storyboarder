@@ -1,6 +1,6 @@
 # Keeping the ImagineArt model list current — plan
 
-Status: **planned, not built.**
+Status: **built** — `fetch-models.mjs` generates `js/imaginemodels.js`; the account list, the cache, the refresh triggers and the Settings line are in `js/imagine.js` and `js/settings.js`. Kept for the reasoning, and for the two things below that are still open: whether `/v2/models` exists (needs a token), and labels — the listing page does not publish one a script can rely on, so names are derived from the slug.
 
 ## Why you only see four
 

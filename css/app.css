@@ -1155,6 +1155,7 @@ body.comment-mode .frame{cursor:crosshair}
 
 /* the model row grew a third box: name, kind, and which ImagineArt model */
 .model-row .top input.slug{flex:0 0 210px;font-family:ui-monospace,Consolas,monospace;font-size:11px}
+.model-row .top input.slug.unknown{border-color:var(--accent2);color:var(--accent2)}
 
 /* what the board is carrying, in Settings: three columns so the numbers line
    up down the page and the eye can find the one that is heavy */

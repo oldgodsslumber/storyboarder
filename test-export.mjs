@@ -39,7 +39,7 @@ sandbox.window = sandbox;
 vm.createContext(sandbox);
 
 for (const f of ['js/util.js', 'js/doc.js', 'js/blobs.js', 'js/geminimodels.js', 'js/providers.js',
-  'js/brand.js', 'js/renders.js', 'js/imagine.js', 'js/refs.js', 'js/personas.js', 'js/fields.js',
+  'js/brand.js', 'js/renders.js', 'js/imaginemodels.js', 'js/imagine.js', 'js/refs.js', 'js/personas.js', 'js/fields.js',
   'js/model.js', 'js/store.js', 'js/exportpanel.js']) {
   vm.runInContext(readFileSync(join(root, f), 'utf8'), sandbox, { filename: f });
 }
