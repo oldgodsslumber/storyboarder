@@ -1223,7 +1223,7 @@ body.comment-mode .frame{cursor:crosshair}
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-09-11 15:42 · 45e91b7+";</script>
+<script>window.SB_BUILD = "2026-09-11 16:00 · dae6d44+";</script>
 
 <div id="app">
 
@@ -2721,6 +2721,68 @@ window.SB = window.SB || {};
     },
 
     /* GET /v1/models — the same call on every OpenAI-compatible server. */
+    /* ---- the connection, step by step ----
+     *
+     * A fetch that rejects tells a browser nothing about why: a server that
+     * is not running and a server that is running and refuses this origin
+     * are the same rejection. They are not the same problem and they do not
+     * have the same fix, so this separates them — a no-cors request gets an
+     * opaque response from anything that answers at all, and no response
+     * from something that is not there. Opaque-yes plus normal-no is CORS,
+     * and that is the sentence somebody actually needs. */
+    report: function (url) {
+      const steps = [];
+      const add = function (name, ok, detail) {
+        steps.push({ name: name, ok: ok, detail: detail || '' });
+      };
+      const base = baseUrl(url);
+      const origin = (typeof location !== 'undefined' && location.origin) || '';
+      const headers = {};
+      const k = SB.Store.getOoba().key;
+      if (k) headers['Authorization'] = 'Bearer ' + k;
+
+      add('Address', true, base + '/v1');
+      add('This page', true, origin + ' — the origin your server has to allow');
+
+      const mc = mixedContent(base);
+      if (mc) {
+        add('Scheme', false, mc);
+        return Promise.resolve(steps);
+      }
+      add('Scheme', true, /^https:/i.test(base) ? 'https'
+        : (isLoopback((function () { try { return new URL(base).hostname; } catch (e) { return ''; } })())
+          ? 'http on this machine, which a browser allows' : 'http'));
+
+      let answered = false;
+      return fetch(base + '/v1/models', { mode: 'no-cors' }).then(function () {
+        answered = true;
+        add('Something is listening', true, 'it answered — the port is open');
+      }, function () {
+        add('Something is listening', false,
+          'nothing answered on ' + base + '. Start the server, or check the port.');
+      }).then(function () {
+        if (!answered) return null;
+        return fetch(base + '/v1/models', { headers: headers }).then(function (res) {
+          add('It accepts this page', true, 'CORS is set up');
+          add('Answered', res.ok, 'HTTP ' + res.status +
+            (res.status === 401 ? ' — it wants an API key' : ''));
+          if (!res.ok) return null;
+          return res.json().then(function (j) {
+            const list = (j && j.data) || [];
+            add('Models', !!list.length, list.length
+              ? list.length + ': ' + list.slice(0, 4).map(function (m) { return m.id; }).join(', ')
+              : 'the server has none loaded');
+            return null;
+          }, function () { add('Models', false, 'the reply was not JSON'); });
+        }, function () {
+          add('It accepts this page', false,
+            'it is running and it refused the request from ' + origin + '. That is CORS, not ' +
+            'the server being down — start text-generation-webui with --api-enable-CORS, or ' +
+            'set OLLAMA_ORIGINS=' + origin + ', or open this app from the same host.');
+        });
+      }).then(function () { return steps; }).catch(function () { return steps; });
+    },
+
     listModels: function (url) {
       const base = baseUrl(url);
       /* Fail here rather than letting the browser refuse it and reporting that
@@ -2771,11 +2833,12 @@ window.SB = window.SB || {};
       blocked.localApi = true;
       return blocked;
     }
-    const err = new Error('Could not reach ' + (base || baseUrl()) + '. Check that the server ' +
-      'is running with its OpenAI-compatible API enabled (text-generation-webui: --api), that ' +
-      'the port matches, and that it allows requests from this page ' +
-      '(text-generation-webui: --api-enable-CORS; Ollama: set OLLAMA_ORIGINS to allow this ' +
-      'origin, or serve this app from the same host).');
+    const origin = (typeof location !== 'undefined' && location.origin) || 'this page';
+    const err = new Error('Nothing came back from ' + (base || baseUrl()) + ', and the request ' +
+      'never left the browser — which looks the same whether nothing is listening or ' +
+      'something is listening and will not accept this page. The address to allow is ' +
+      origin + ' (text-generation-webui: --api --api-enable-CORS; Ollama: OLLAMA_ORIGINS=' +
+      origin + '). Settings → API → Connection report tells the two apart.');
     err.localApi = true;      // so SB.apiBlocked leaves it alone
     return err;
   }
@@ -16001,8 +16064,47 @@ window.SB = window.SB || {};
         });
     };
 
+    /* One line in the note gets overwritten by the next thing that happens,
+       and "could not reach it" is three different problems wearing one coat.
+       This walks them. */
+    const oReport = SB.el('button', 'tb', 'Connection report');
+    oReport.onclick = function () {
+      liveOoba();
+      oReport.disabled = true;
+      oReport.textContent = 'checking…';
+      const box = SB.el('div', 'caps');
+      box.appendChild(SB.el('div', 'pp-note', 'checking ' + (oUrl.value || 'the default address') + '…'));
+      SB.modal({
+        title: 'Local model — connection', width: '620px', body: box,
+        buttons: [{ label: 'Close', primary: true }],
+        onClose: function () { oReport.disabled = false; oReport.textContent = 'Connection report'; }
+      });
+      SB.Providers.get('ooba').report(oUrl.value).then(function (steps) {
+        box.innerHTML = '';
+        const list = SB.el('div', 'caps-steps');
+        steps.forEach(function (st) {
+          const row = SB.el('div', 'caps-step' + (st.ok ? '' : ' bad'));
+          row.appendChild(SB.el('span', 'mark', st.ok ? '✓' : '✕'));
+          row.appendChild(SB.el('span', 'k', st.name));
+          row.appendChild(SB.el('span', 'v', st.detail));
+          list.appendChild(row);
+        });
+        box.appendChild(list);
+        const bad = steps.filter(function (s2) { return !s2.ok; })[0];
+        box.appendChild(SB.el('div', 'pp-note' + (bad ? ' warn' : ''), bad
+          ? 'It got as far as “' + bad.name + '”. That is the step to fix.'
+          : 'The address is reachable and answering. “Send a test prompt” is the last word — ' +
+            'a server can list models and still have none loaded.'));
+      }).catch(function (e) {
+        box.appendChild(SB.el('div', 'pp-note warn', e.message || String(e)));
+      }).then(function () {
+        oReport.textContent = 'Connection report';
+      });
+    };
+
     oActs.appendChild(oLoad);
     oActs.appendChild(oTest);
+    oActs.appendChild(oReport);
     oobaPanel.appendChild(oActs);
     oobaPanel.appendChild(oNote);
 

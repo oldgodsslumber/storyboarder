@@ -37,6 +37,22 @@ unaffected — it works normally as soon as a file is open.
 
 Serve the folder over http (any static server) and the reopen-last-project prompt returns.
 
+### When a request never leaves the browser
+
+Three different failures look identical from inside a page — a rejected `fetch` and the
+words "Failed to fetch" — and none of them is the server saying no:
+
+- **Google's API on the Pega network**: a proxy intercepts it. The app detects this and
+  offers the one fix (open AI Studio once, accept).
+- **Your local model server from the hosted app**: the server has to allow this page's
+  origin, and an `https` page cannot reach a plain `http` address at all unless it is on
+  this machine. **Settings → API → Connection report** walks it: whether anything is
+  listening, and — separately — whether what is listening will accept this page. Those are
+  different problems with different fixes and they are no longer reported as one.
+- **ImagineArt's MCP server**: it publishes a fixed list of headers a browser may send, and
+  the protocol header the transport normally carries is not on it. The app stopped sending
+  it; **Settings → ImagineArt → What my account can do** walks that connection the same way.
+
 ### Making the picture: ImagineArt
 
 The Prompts panel writes the prompt and now also sends it. Each prompt cell has a **▶

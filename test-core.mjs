@@ -2474,6 +2474,58 @@ console.log('\n— end to end against a stubbed local server —');
   delete sandbox.fetch;
 }
 
+console.log('\n— a local model that will not answer: which of the three is it —');
+{
+  const LP = SB.Providers.get('ooba');
+  const origin = 'https://oldgodsslumber.github.io';
+  sandbox.location = { protocol: 'https:', origin: origin, host: 'oldgodsslumber.github.io' };
+  const byName = function (steps) {
+    const o = {};
+    steps.forEach(function (x) { o[x.name] = x; });
+    return o;
+  };
+
+  /* nothing listening at all */
+  sandbox.fetch = function () { return Promise.reject(new TypeError('Failed to fetch')); };
+  let by = byName(await LP.report('http://127.0.0.1:5000'));
+  eq(by['Something is listening'].ok, false, 'nothing answering is reported as nothing answering');
+  eq(/Start the server/.test(by['Something is listening'].detail), true, 'and says what to do');
+  eq(by['It accepts this page'], undefined, 'with no verdict on a CORS it never got to test');
+
+  /* listening, but refusing this page: opaque probe resolves, the real one does not */
+  sandbox.fetch = function (u, init) {
+    if (init && init.mode === 'no-cors') return Promise.resolve({ type: 'opaque' });
+    return Promise.reject(new TypeError('Failed to fetch'));
+  };
+  by = byName(await LP.report('http://127.0.0.1:5000'));
+  eq(by['Something is listening'].ok, true, 'a server that answers at all is found');
+  eq(by['It accepts this page'].ok, false, 'and its refusal is named as CORS');
+  eq(by['It accepts this page'].detail.indexOf(origin) >= 0, true,
+    'with the exact origin the server has to allow');
+  eq(by['It accepts this page'].detail.indexOf('not the server being down') >= 0, true,
+    'and says plainly it is not the server being down');
+
+  /* listening and allowing */
+  sandbox.fetch = function (u, init) {
+    if (init && init.mode === 'no-cors') return Promise.resolve({ type: 'opaque' });
+    return Promise.resolve({
+      ok: true, status: 200,
+      json: function () { return Promise.resolve({ data: [{ id: 'qwen3' }, { id: 'gemma' }] }); }
+    });
+  };
+  by = byName(await LP.report('http://127.0.0.1:5000'));
+  eq(by['It accepts this page'].ok, true, 'a server that allows this page says so');
+  eq(by['Models'].detail.indexOf('qwen3') >= 0, true, 'and the models it has are listed');
+
+  /* an https page and an http server on another machine: refused before all that */
+  by = byName(await LP.report('http://192.168.1.50:5000'));
+  eq(by['Scheme'].ok, false, 'mixed content is caught before anything is attempted');
+  eq(by['Something is listening'], undefined, 'and nothing is attempted');
+
+  delete sandbox.fetch;
+  delete sandbox.location;
+}
+
 console.log('\n— an edit is counted, so "saved" can mean what it says —');
 {
   /* A write finishing while a newer edit waits on the debounce used to clear

@@ -1018,8 +1018,47 @@
         });
     };
 
+    /* One line in the note gets overwritten by the next thing that happens,
+       and "could not reach it" is three different problems wearing one coat.
+       This walks them. */
+    const oReport = SB.el('button', 'tb', 'Connection report');
+    oReport.onclick = function () {
+      liveOoba();
+      oReport.disabled = true;
+      oReport.textContent = 'checking…';
+      const box = SB.el('div', 'caps');
+      box.appendChild(SB.el('div', 'pp-note', 'checking ' + (oUrl.value || 'the default address') + '…'));
+      SB.modal({
+        title: 'Local model — connection', width: '620px', body: box,
+        buttons: [{ label: 'Close', primary: true }],
+        onClose: function () { oReport.disabled = false; oReport.textContent = 'Connection report'; }
+      });
+      SB.Providers.get('ooba').report(oUrl.value).then(function (steps) {
+        box.innerHTML = '';
+        const list = SB.el('div', 'caps-steps');
+        steps.forEach(function (st) {
+          const row = SB.el('div', 'caps-step' + (st.ok ? '' : ' bad'));
+          row.appendChild(SB.el('span', 'mark', st.ok ? '✓' : '✕'));
+          row.appendChild(SB.el('span', 'k', st.name));
+          row.appendChild(SB.el('span', 'v', st.detail));
+          list.appendChild(row);
+        });
+        box.appendChild(list);
+        const bad = steps.filter(function (s2) { return !s2.ok; })[0];
+        box.appendChild(SB.el('div', 'pp-note' + (bad ? ' warn' : ''), bad
+          ? 'It got as far as “' + bad.name + '”. That is the step to fix.'
+          : 'The address is reachable and answering. “Send a test prompt” is the last word — ' +
+            'a server can list models and still have none loaded.'));
+      }).catch(function (e) {
+        box.appendChild(SB.el('div', 'pp-note warn', e.message || String(e)));
+      }).then(function () {
+        oReport.textContent = 'Connection report';
+      });
+    };
+
     oActs.appendChild(oLoad);
     oActs.appendChild(oTest);
+    oActs.appendChild(oReport);
     oobaPanel.appendChild(oActs);
     oobaPanel.appendChild(oNote);
 

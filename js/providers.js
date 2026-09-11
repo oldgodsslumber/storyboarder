@@ -252,6 +252,68 @@
     },
 
     /* GET /v1/models — the same call on every OpenAI-compatible server. */
+    /* ---- the connection, step by step ----
+     *
+     * A fetch that rejects tells a browser nothing about why: a server that
+     * is not running and a server that is running and refuses this origin
+     * are the same rejection. They are not the same problem and they do not
+     * have the same fix, so this separates them — a no-cors request gets an
+     * opaque response from anything that answers at all, and no response
+     * from something that is not there. Opaque-yes plus normal-no is CORS,
+     * and that is the sentence somebody actually needs. */
+    report: function (url) {
+      const steps = [];
+      const add = function (name, ok, detail) {
+        steps.push({ name: name, ok: ok, detail: detail || '' });
+      };
+      const base = baseUrl(url);
+      const origin = (typeof location !== 'undefined' && location.origin) || '';
+      const headers = {};
+      const k = SB.Store.getOoba().key;
+      if (k) headers['Authorization'] = 'Bearer ' + k;
+
+      add('Address', true, base + '/v1');
+      add('This page', true, origin + ' — the origin your server has to allow');
+
+      const mc = mixedContent(base);
+      if (mc) {
+        add('Scheme', false, mc);
+        return Promise.resolve(steps);
+      }
+      add('Scheme', true, /^https:/i.test(base) ? 'https'
+        : (isLoopback((function () { try { return new URL(base).hostname; } catch (e) { return ''; } })())
+          ? 'http on this machine, which a browser allows' : 'http'));
+
+      let answered = false;
+      return fetch(base + '/v1/models', { mode: 'no-cors' }).then(function () {
+        answered = true;
+        add('Something is listening', true, 'it answered — the port is open');
+      }, function () {
+        add('Something is listening', false,
+          'nothing answered on ' + base + '. Start the server, or check the port.');
+      }).then(function () {
+        if (!answered) return null;
+        return fetch(base + '/v1/models', { headers: headers }).then(function (res) {
+          add('It accepts this page', true, 'CORS is set up');
+          add('Answered', res.ok, 'HTTP ' + res.status +
+            (res.status === 401 ? ' — it wants an API key' : ''));
+          if (!res.ok) return null;
+          return res.json().then(function (j) {
+            const list = (j && j.data) || [];
+            add('Models', !!list.length, list.length
+              ? list.length + ': ' + list.slice(0, 4).map(function (m) { return m.id; }).join(', ')
+              : 'the server has none loaded');
+            return null;
+          }, function () { add('Models', false, 'the reply was not JSON'); });
+        }, function () {
+          add('It accepts this page', false,
+            'it is running and it refused the request from ' + origin + '. That is CORS, not ' +
+            'the server being down — start text-generation-webui with --api-enable-CORS, or ' +
+            'set OLLAMA_ORIGINS=' + origin + ', or open this app from the same host.');
+        });
+      }).then(function () { return steps; }).catch(function () { return steps; });
+    },
+
     listModels: function (url) {
       const base = baseUrl(url);
       /* Fail here rather than letting the browser refuse it and reporting that
@@ -302,11 +364,12 @@
       blocked.localApi = true;
       return blocked;
     }
-    const err = new Error('Could not reach ' + (base || baseUrl()) + '. Check that the server ' +
-      'is running with its OpenAI-compatible API enabled (text-generation-webui: --api), that ' +
-      'the port matches, and that it allows requests from this page ' +
-      '(text-generation-webui: --api-enable-CORS; Ollama: set OLLAMA_ORIGINS to allow this ' +
-      'origin, or serve this app from the same host).');
+    const origin = (typeof location !== 'undefined' && location.origin) || 'this page';
+    const err = new Error('Nothing came back from ' + (base || baseUrl()) + ', and the request ' +
+      'never left the browser — which looks the same whether nothing is listening or ' +
+      'something is listening and will not accept this page. The address to allow is ' +
+      origin + ' (text-generation-webui: --api --api-enable-CORS; Ollama: OLLAMA_ORIGINS=' +
+      origin + '). Settings → API → Connection report tells the two apart.');
     err.localApi = true;      // so SB.apiBlocked leaves it alone
     return err;
   }
