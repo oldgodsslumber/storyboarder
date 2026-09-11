@@ -77,6 +77,79 @@
     return [id];
   }
 
+  /* ---------------- where a drop lands ----------------
+   *
+   * Only the cards and the scene rows themselves ever answered this. A drop
+   * anywhere else - the gap between two cards, a scene-break marker, the add
+   * button, the padding above the first scene, the empty space below the last
+   * one - meant "put it at the end", or nothing at all. Which is why the ends
+   * were the unreliable part: aiming just outside the first card is the
+   * natural way to say "put it first", and it sent the card to the far end.
+   *
+   * So the pointer is measured against every card (or every scene row) and the
+   * nearest edge wins, wherever in the container it lands. */
+  function nearest(els, x, y, horiz) {
+    let bi = 0, bd = Infinity, br = null;
+    els.forEach(function (el, i) {
+      const r = el.getBoundingClientRect();
+      let d;
+      if (horiz) {
+        /* the row under the pointer first, then the nearest card in it */
+        const dy = y < r.top ? r.top - y : (y > r.bottom ? y - r.bottom : 0);
+        d = dy * 10000 + Math.abs(x - (r.left + r.width / 2));
+      } else {
+        d = Math.abs(y - (r.top + r.height / 2));
+      }
+      if (d < bd) { bd = d; bi = i; br = r; }
+    });
+    if (!br) return { idx: 0, rect: null, after: false };
+    const after = horiz ? (x > br.left + br.width / 2) : (y > br.top + br.height / 2);
+    return { idx: bi + (after ? 1 : 0), rect: br, after: after };
+  }
+
+  function kids(host, cls) {
+    return Array.prototype.filter.call(host.children, function (k) {
+      return k.classList && k.classList.contains(cls);
+    });
+  }
+
+  /* the cards of one scene, in order, whatever else is in the container */
+  function shotHit(shots, ev) {
+    return nearest(kids(shots, 'card'), ev.clientX, ev.clientY, true);
+  }
+  function sceneHit(host, ev) {
+    return nearest(kids(host, 'scene-item'), ev.clientX, ev.clientY, false);
+  }
+
+  /* A line where the thing will land. Without it the only way to find out was
+   * to let go. */
+  function mark(hit, horiz) {
+    let m = document.getElementById('dropMark');
+    if (!m) {
+      m = SB.el('div');
+      m.id = 'dropMark';
+      document.body.appendChild(m);
+    }
+    if (!hit || !hit.rect) { m.style.display = 'none'; return; }
+    const r = hit.rect;
+    m.style.display = 'block';
+    if (horiz) {
+      m.style.left = ((hit.after ? r.right + 4 : r.left - 4) - 1) + 'px';
+      m.style.top = r.top + 'px';
+      m.style.width = '3px';
+      m.style.height = r.height + 'px';
+    } else {
+      m.style.left = r.left + 'px';
+      m.style.top = ((hit.after ? r.bottom + 2 : r.top - 2) - 1) + 'px';
+      m.style.width = r.width + 'px';
+      m.style.height = '3px';
+    }
+  }
+  function unmark() {
+    const m = document.getElementById('dropMark');
+    if (m) m.style.display = 'none';
+  }
+
   /* ---------------- scene navigator ---------------- */
 
   function renderSceneList() {
@@ -106,6 +179,7 @@
         });
       });
 
+      it.addEventListener('dragend', function () { unmark(); });
       it.addEventListener('dragstart', function (ev) {
         ev.dataTransfer.setData(DND_SCENE, sc.id);
         ev.dataTransfer.effectAllowed = 'move';
@@ -121,15 +195,22 @@
         }
         if (types.indexOf(DND_SCENE) < 0) return;
         ev.preventDefault();
-        it.classList.add('drag-over');
+        ev.stopPropagation();
+        const hit = sceneHit(host, ev);
+        mark(hit, false);
+        it.classList.toggle('drag-over', !hit.after);
+        it.classList.toggle('drag-under', !!hit.after);
       });
       it.addEventListener('dragleave', function () {
         it.classList.remove('drag-over');
+        it.classList.remove('drag-under');
         it.classList.remove('drop-shot');
       });
       it.addEventListener('drop', function (ev) {
         it.classList.remove('drag-over');
+        it.classList.remove('drag-under');
         it.classList.remove('drop-shot');
+        unmark();
         const shotId = ev.dataTransfer.getData(DND_SHOT);
         if (shotId) {
           ev.preventDefault();
@@ -143,14 +224,37 @@
         const id = ev.dataTransfer.getData(DND_SCENE);
         if (!id) return;
         ev.preventDefault();
-        const r = it.getBoundingClientRect();
-        const before = ev.clientY < r.top + r.height / 2;
-        SB.Model.moveScene(P(), id, before ? idx : idx + 1);
+        ev.stopPropagation();
+        SB.Model.moveScene(P(), id, sceneHit(host, ev).idx);
         SB.app.changed(true);
       });
 
       host.appendChild(it);
     });
+
+    /* The padding, the gaps between rows, and the empty space under the last
+     * scene. Dropping there is how you say "put it at the bottom", and it used
+     * to do nothing at all. */
+    if (!host.dataset.wired) {
+      host.dataset.wired = '1';
+      host.addEventListener('dragover', function (ev) {
+        if (ev.dataTransfer.types.indexOf(DND_SCENE) < 0) return;
+        ev.preventDefault();
+        mark(sceneHit(host, ev), false);
+      });
+      host.addEventListener('dragleave', function (ev) {
+        if (!host.contains(ev.relatedTarget)) unmark();
+      });
+      host.addEventListener('drop', function (ev) {
+        if (ev.dataTransfer.types.indexOf(DND_SCENE) < 0) return;
+        ev.preventDefault();
+        unmark();
+        const id = ev.dataTransfer.getData(DND_SCENE);
+        if (!id) return;
+        SB.Model.moveScene(P(), id, sceneHit(host, ev).idx);
+        SB.app.changed(true);
+      });
+    }
   }
 
   /* ---------------- board ---------------- */
@@ -606,18 +710,23 @@
       ev.preventDefault();
       ev.stopPropagation();
       shots.classList.add('drag-over');
+      if (!ev.altKey) mark(shotHit(shots, ev), true);
     });
     shots.addEventListener('dragleave', function (ev) {
-      if (!shots.contains(ev.relatedTarget)) shots.classList.remove('drag-over');
+      if (!shots.contains(ev.relatedTarget)) { shots.classList.remove('drag-over'); unmark(); }
     });
     shots.addEventListener('drop', function (ev) {
       if (ev.dataTransfer.types.indexOf(DND_SHOT) < 0) return;
       ev.preventDefault();
       ev.stopPropagation();
       shots.classList.remove('drag-over');
+      unmark();
       const id = ev.dataTransfer.getData(DND_SHOT);
       if (!id) return;
-      SB.Model.moveShots(P(), dragged(id), sc.id, sc.shots.length);
+      /* the gap left of the first card means "first", not "last" */
+      const hit = shotHit(shots, ev);
+      SB.Model.moveShots(P(), dragged(id), sc.id,
+        kids(shots, 'card').length ? hit.idx : sc.shots.length);
       SB.app.changed(true);
     });
 
@@ -637,6 +746,7 @@
       if (ev.dataTransfer.types.indexOf(DND_SHOT) < 0) return;
       ev.preventDefault();
       blk.classList.remove('drag-over');
+      unmark();
       const id = ev.dataTransfer.getData(DND_SHOT);
       if (!id) return;
       SB.Model.moveShots(P(), dragged(id), sc.id, sc.shots.length);
@@ -833,6 +943,7 @@
        * pictures over, leave both bits of dialogue where they are". */
       c.classList.toggle('swap-target', !!ev.altKey);
       c.classList.toggle('drag-over', !ev.altKey);
+      if (ev.altKey) unmark(); else mark(shotHit(c.parentNode, ev), true);
     });
     c.addEventListener('dragleave', function () {
       c.classList.remove('drag-over');
@@ -843,12 +954,13 @@
       ev.preventDefault(); ev.stopPropagation();
       c.classList.remove('drag-over');
       c.classList.remove('swap-target');
+      unmark();
       const id = ev.dataTransfer.getData(DND_SHOT);
       if (!id || id === sh.id) return;
       if (ev.altKey) { doSwap(id, sh.id); return; }
-      const r = c.getBoundingClientRect();
-      const before = ev.clientX < r.left + r.width / 2;
-      SB.Model.moveShots(P(), dragged(id), sc.id, sj + (before ? 0 : 1));
+      /* measured against every card in the scene, so a drop that lands a few
+       * pixels off this one still means the edge it looks like it means */
+      SB.Model.moveShots(P(), dragged(id), sc.id, shotHit(c.parentNode, ev).idx);
       SB.app.changed(true);
     });
 
@@ -878,6 +990,7 @@
     /* --- head --- */
     const head = SB.el('div', 'card-head');
     head.draggable = true;
+    head.addEventListener('dragend', function () { unmark(); });
     head.addEventListener('dragstart', function (ev) {
       ev.dataTransfer.setData(DND_SHOT, sh.id);
       ev.dataTransfer.effectAllowed = 'move';

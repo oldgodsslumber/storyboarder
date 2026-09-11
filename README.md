@@ -377,6 +377,12 @@ it will never make a card or scene reappear or vanish.
   reach a scene that is scrolled off the board. The board auto-scrolls while you drag near
   its top or bottom edge, and every valid target lights up. Drag scenes in the left list to
   reorder them. Everything renumbers automatically.
+- A **blue line** shows where the thing you are dragging will land, and it is measured
+  against every card in the row (or every row in the scene list), not only the one under
+  the pointer. The gap to the left of the first card means *first*; the space past the
+  last card, or below the last scene, means *last*. Both used to mean something else —
+  the gap sent a card to the far end of the scene, and dropping below the scene list did
+  nothing at all, which is why reordering at the two ends rarely stuck.
 - Images: drop, paste (with a card selected), or click the frame. Everything is downscaled
   to a ≤480p JPEG proxy and stored inline — no full-res copies anywhere.
 - Card colour washes the **whole card**, not a stripe down its edge. It's a fixed palette of

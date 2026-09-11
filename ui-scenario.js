@@ -1246,6 +1246,121 @@
         await nap(20);
       }
 
+      // moving cards and scenes, especially to the two ends
+      {
+        const nap = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+
+        /* a drag is a dragstart on the card's grip, then a drop where you
+         * let go; the index the app works out from the pointer is the thing
+         * under test */
+        const dropShot = function (dragId, target, x, y) {
+          const dt = new DataTransfer();
+          dt.setData('application/x-sb-shot', dragId);
+          target.dispatchEvent(new DragEvent('drop',
+            { dataTransfer: dt, bubbles: true, cancelable: true, clientX: x, clientY: y }));
+        };
+        const dropScene = function (dragId, target, x, y) {
+          const dt = new DataTransfer();
+          dt.setData('application/x-sb-scene', dragId);
+          target.dispatchEvent(new DragEvent('drop',
+            { dataTransfer: dt, bubbles: true, cancelable: true, clientX: x, clientY: y }));
+        };
+        const codes = function (sc) {
+          return sc.shots.map(function (x) { return x.id.slice(-4); }).join(',');
+        };
+
+        /* a scene of its own so nothing else in the run is disturbed */
+        const mv = SB.Model.addScene(P(), P().scenes.length - 1);
+        mv.heading = 'Move me';
+        ['a', 'b', 'c', 'd'].forEach(function (n) { SB.Model.addShot(P(), mv.id, { action: n }); });
+        SB.app.changed(true);
+        await nap(60);
+        const ids = mv.shots.map(function (x) { return x.id; });
+        const shotsEl = document.querySelector('.shots[data-scene="' + mv.id + '"]');
+        const cardEl = function (id) { return shotsEl.querySelector('.card[data-shot="' + id + '"]'); };
+
+        /* 1. the last card to the front, dropped on the first card's left half */
+        let r = cardEl(ids[0]).getBoundingClientRect();
+        dropShot(ids[3], cardEl(ids[0]), r.left + 6, r.top + r.height / 2);
+        await nap(60);
+        t('a card dropped on the first card\'s left edge becomes the first card',
+          mv.shots[0].id === ids[3], codes(mv));
+
+        /* put it back */
+        SB.Model.moveShots(P(), [ids[3]], mv.id, 4);
+        SB.app.changed(true);
+        await nap(60);
+
+        /* 2. the same gesture a few pixels further left — in the container's
+         * own space, which used to mean "send it to the far end" */
+        r = document.querySelector('.shots[data-scene="' + mv.id + '"] .card').getBoundingClientRect();
+        dropShot(ids[3], document.querySelector('.shots[data-scene="' + mv.id + '"]'),
+          r.left - 5, r.top + r.height / 2);
+        await nap(60);
+        t('a card dropped in the gap left of the first card goes first, not last',
+          mv.shots[0].id === ids[3], codes(mv));
+
+        /* 3. the first card to the end, dropped past the last one */
+        const shots2 = document.querySelector('.shots[data-scene="' + mv.id + '"]');
+        const last = shots2.querySelectorAll('.card')[3];
+        const lr = last.getBoundingClientRect();
+        const front = mv.shots[0].id;
+        dropShot(front, shots2, lr.right + 20, lr.top + lr.height / 2);
+        await nap(60);
+        t('a card dropped past the last card becomes the last card',
+          mv.shots[3].id === front, codes(mv));
+
+        /* 4. and dropped on the last card's right half */
+        const shots3 = document.querySelector('.shots[data-scene="' + mv.id + '"]');
+        const first3 = mv.shots[0].id;
+        const lastEl = shots3.querySelectorAll('.card')[3];
+        const lr3 = lastEl.getBoundingClientRect();
+        dropShot(first3, lastEl, lr3.right - 6, lr3.top + lr3.height / 2);
+        await nap(60);
+        t('a card dropped on the last card\'s right edge becomes the last card',
+          mv.shots[3].id === first3, codes(mv));
+
+        /* 5. scenes: the last one to the top */
+        const sIds = P().scenes.map(function (x) { return x.id; });
+        const host = document.getElementById('sceneList');
+        let items = host.querySelectorAll('.scene-item');
+        let ir = items[0].getBoundingClientRect();
+        dropScene(sIds[sIds.length - 1], items[0], ir.left + 10, ir.top + 3);
+        await nap(60);
+        t('a scene dropped on the top row\'s upper half becomes the first scene',
+          P().scenes[0].id === sIds[sIds.length - 1], P().scenes.length + ' scenes');
+
+        /* 6. a scene dropped in the empty space below the last row */
+        items = host.querySelectorAll('.scene-item');
+        const lastItem = items[items.length - 1];
+        const lir = lastItem.getBoundingClientRect();
+        const top = P().scenes[0].id;
+        dropScene(top, host, lir.left + 10, lir.bottom + 30);
+        await nap(60);
+        t('a scene dropped below the last row becomes the last scene',
+          P().scenes[P().scenes.length - 1].id === top,
+          P().scenes.map(function (x) { return x.id.slice(-3); }).join(','));
+
+        /* 7. the line that says where it will land */
+        const shots4 = document.querySelector('.shots[data-scene="' + mv.id + '"]');
+        const c0 = shots4.querySelector('.card');
+        const cr = c0.getBoundingClientRect();
+        const dt2 = new DataTransfer();
+        dt2.setData('application/x-sb-shot', mv.shots[2].id);
+        c0.dispatchEvent(new DragEvent('dragover', { dataTransfer: dt2, bubbles: true,
+          cancelable: true, clientX: cr.left + 6, clientY: cr.top + cr.height / 2 }));
+        await nap(30);
+        const mkEl = document.getElementById('dropMark');
+        t('a drop marker shows which edge the card will land on',
+          !!mkEl && mkEl.style.display === 'block' &&
+          Math.abs(parseFloat(mkEl.style.left) - (cr.left - 5)) < 2,
+          mkEl ? mkEl.style.display + ' at ' + mkEl.style.left + ' vs ' + (cr.left - 5) : 'no marker');
+
+        SB.Model.deleteScene(P(), mv.id);
+        SB.app.changed(true);
+        await nap(40);
+      }
+
       // the clip review: one control, one modal, both states
       {
         const rShot = P().scenes[0].shots[0];
