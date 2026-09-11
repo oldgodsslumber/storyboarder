@@ -1,7 +1,7 @@
 # Resolution, and what a push will cost — plan
 
-Status: **planned, not built.** Both are possible; the credit side is possible in a way I
-did not expect, because ImagineArt publishes its prices.
+Status: **built.** Resolution policy, the scraped price table, balance-delta measurement and
+the clip confirmation are all in. Kept for the reasoning and for the numbers.
 
 ## 1. Resolution
 

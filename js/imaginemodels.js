@@ -26,6 +26,304 @@
     source: "https://platform.imagine.art/api/models",
     /* names the product advertises, for saying so — not sendable slugs */
     products: ["Seedance 2.5","Runway Gen-4.5","Kling 3.0","Google Veo 3.1","Gemini Omni Flash","WAN 3.0","FLUX 3","Hailuo 3.0 & H3 Max"],
+    /* base credit cost per model, as ImagineArt publishes it: the price at
+       the model's minimum duration and default settings, before anything has
+       been measured against a real balance */
+    credits: {
+      "happy_horse": {
+        "base": 252,
+        "name": "Happy Horse"
+      },
+      "kling-3.0-4k": {
+        "base": 755,
+        "name": "Kling 3.0 4K"
+      },
+      "seedance-2.0-fast": {
+        "base": 515,
+        "name": "Seedance 2 Fast"
+      },
+      "seedance-2.0": {
+        "base": 645,
+        "name": "Seedance 2"
+      },
+      "kling-3.0-pro": {
+        "base": 300,
+        "name": "Kling 3.0 Pro"
+      },
+      "kling-o3": {
+        "base": 220,
+        "name": "Kling O3"
+      },
+      "runway-4.5": {
+        "base": 360,
+        "name": "Runway 4.5"
+      },
+      "seedance-1.5-pro": {
+        "base": 72,
+        "name": "Seedance 1.5 Pro"
+      },
+      "pika-2.2": {
+        "base": 120,
+        "name": "Pika 2.2"
+      },
+      "luma-ray-2": {
+        "base": 300,
+        "name": "Luma Ray 2"
+      },
+      "hailuo-02-sd": {
+        "base": 160,
+        "name": "Hailuo 02 SD"
+      },
+      "hailuo-02-pro": {
+        "base": 290,
+        "name": "Hailuo 02 Pro"
+      },
+      "hailuo-2.3-sd": {
+        "base": 170,
+        "name": "Hailuo 2.3 SD"
+      },
+      "hailuo-2.3-pro": {
+        "base": 300,
+        "name": "Hailuo 2.3 Pro"
+      },
+      "kling-2.1-pro": {
+        "base": 270,
+        "name": "Kling 2.1 Pro"
+      },
+      "kling-2.5-pro": {
+        "base": 210,
+        "name": "Kling 2.5 Pro"
+      },
+      "kling-2.6-pro": {
+        "base": 420,
+        "name": "Kling 2.6 Pro"
+      },
+      "kling-o1": {
+        "base": 210,
+        "name": "Kling O1"
+      },
+      "seedance-1.0-pro": {
+        "base": 370,
+        "name": "Seedance 1.0 Pro"
+      },
+      "seedance-pro-fast": {
+        "base": 150,
+        "name": "Seedance Pro Fast"
+      },
+      "wan-2.2": {
+        "base": 30,
+        "name": "Wan 2.2"
+      },
+      "wan-2.5": {
+        "base": 300,
+        "name": "Wan 2.5"
+      },
+      "wan-2.6": {
+        "base": 300,
+        "name": "Wan 2.6"
+      },
+      "pixverse-v5": {
+        "base": 240,
+        "name": "PixVerse v5"
+      },
+      "pixverse-v5.5": {
+        "base": 120,
+        "name": "PixVerse v5.5"
+      },
+      "pixverse-v6": {
+        "base": 135,
+        "name": "PixVerse v6"
+      },
+      "lucy": {
+        "base": 240,
+        "name": "Lucy"
+      },
+      "runway-gen-4-turbo": {
+        "base": 150,
+        "name": "Runway Gen 4 Turbo"
+      },
+      "sora-2": {
+        "base": 240,
+        "name": "Sora 2"
+      },
+      "sora-2-pro": {
+        "base": 720,
+        "name": "Sora 2 Pro"
+      },
+      "veo-3.1-lite": {
+        "base": 120,
+        "name": "Google Veo 3.1 Lite"
+      },
+      "veo-3.1-fast": {
+        "base": 350,
+        "name": "Google Veo 3.1 Fast"
+      },
+      "veo-3.1": {
+        "base": 900,
+        "name": "Google Veo 3.1"
+      },
+      "xai-grok-1.5": {
+        "base": 240,
+        "name": "xAI Grok 1.5"
+      },
+      "xai-grok-video": {
+        "base": 180,
+        "name": "xAI Grok Video"
+      },
+      "ltx-2.3": {
+        "base": 215,
+        "name": "LTX 2.3"
+      },
+      "reference-image-to-video": {
+        "base": 1,
+        "name": "Reference Image to Video"
+      },
+      "edit-video": {
+        "base": 1,
+        "name": "Edit Video"
+      },
+      "reference-video": {
+        "base": 1,
+        "name": "Reference Video"
+      },
+      "model-choice": {
+        "base": 2,
+        "name": "Model choice"
+      },
+      "resolution": {
+        "base": 1080,
+        "name": "Resolution"
+      },
+      "gpt-image-2": {
+        "base": 6,
+        "name": "ChatGPT Image 2"
+      },
+      "nano-banana-2": {
+        "base": 49,
+        "name": "Nano Banana 2",
+        "tiers": {
+          "1K": 49,
+          "2K": 73.5,
+          "4K": 98
+        }
+      },
+      "imagine-art-2.0": {
+        "base": 25,
+        "name": "ImagineArt 2.0"
+      },
+      "imagine-art-1.5": {
+        "base": 15,
+        "name": "ImagineArt 1.5"
+      },
+      "imagine-art-1.5-pro": {
+        "base": 25,
+        "name": "ImagineArt 1.5 Pro"
+      },
+      "recraft-v4.1": {
+        "base": 150,
+        "name": "Recraft v4.1"
+      },
+      "ideogram-v4": {
+        "base": 36,
+        "name": "Ideogram v4"
+      },
+      "krea-flux-1": {
+        "base": 10,
+        "name": "Krea flux 1"
+      },
+      "midjourney-v7": {
+        "base": 60,
+        "name": "Midjourney V7"
+      },
+      "nano-banana-pro": {
+        "base": 80,
+        "name": "Nano Banana Pro",
+        "tiers": {
+          "1K/2K": 80,
+          "4K": 160
+        }
+      },
+      "seedream-v5-lite": {
+        "base": 20,
+        "name": "Seedream v5 Lite"
+      },
+      "recraft-v4": {
+        "base": 24,
+        "name": "Recraft v4"
+      },
+      "recraft-v4-pro": {
+        "base": 150,
+        "name": "Recraft v4 Pro"
+      },
+      "chatgpt-1.5": {
+        "base": 35,
+        "name": "ChatGPT 1.5"
+      },
+      "xai-grok-imagine": {
+        "base": 12,
+        "name": "xAI Grok Imagine"
+      },
+      "flux-2-max": {
+        "base": 50,
+        "name": "Flux 2 Max"
+      },
+      "flux-2-pro": {
+        "base": 28,
+        "name": "Flux 2 Pro"
+      },
+      "z-image-turbo": {
+        "base": 5,
+        "name": "Z Image Turbo"
+      },
+      "seedream-v4.5": {
+        "base": 24,
+        "name": "Seedream v4.5"
+      },
+      "flux-1.1-ultra": {
+        "base": 36,
+        "name": "Flux 1.1 Ultra"
+      },
+      "chatgpt": {
+        "base": 45,
+        "name": "ChatGPT"
+      },
+      "nano-banana": {
+        "base": 24,
+        "name": "Nano Banana"
+      },
+      "dreamina-3.1": {
+        "base": 18,
+        "name": "Dreamina 3.1"
+      },
+      "ideogram-v3": {
+        "base": 25,
+        "name": "Ideogram v3"
+      },
+      "flux-dev": {
+        "base": 5,
+        "name": "Flux Dev"
+      },
+      "qwen-image": {
+        "base": 24,
+        "name": "Qwen Image"
+      },
+      "minimax-image": {
+        "base": 6,
+        "name": "Minimax Image"
+      },
+      "seedream-v4": {
+        "base": 18,
+        "name": "Seedream v4"
+      },
+      "topaz": {
+        "base": 2,
+        "name": "Topaz"
+      },
+      "magnific-precision-v2": {
+        "base": 2,
+        "name": "Magnific Precision v2"
+      }
+    },
     list: [
     { slug: "anime", kind: "image" },
     { slug: "cogvideox-5b-image-to-video", kind: "video", mode: "i2v" },

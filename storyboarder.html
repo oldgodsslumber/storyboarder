@@ -1233,7 +1233,7 @@ body.comment-mode .frame{cursor:crosshair}
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-09-11 16:40 · d8e1ae0+";</script>
+<script>window.SB_BUILD = "2026-09-11 16:53 · 5a1b67f+";</script>
 
 <div id="app">
 
@@ -3607,6 +3607,304 @@ window.SB = window.SB || {};
     source: "https://platform.imagine.art/api/models",
     /* names the product advertises, for saying so — not sendable slugs */
     products: ["Seedance 2.5","Runway Gen-4.5","Kling 3.0","Google Veo 3.1","Gemini Omni Flash","WAN 3.0","FLUX 3","Hailuo 3.0 & H3 Max"],
+    /* base credit cost per model, as ImagineArt publishes it: the price at
+       the model's minimum duration and default settings, before anything has
+       been measured against a real balance */
+    credits: {
+      "happy_horse": {
+        "base": 252,
+        "name": "Happy Horse"
+      },
+      "kling-3.0-4k": {
+        "base": 755,
+        "name": "Kling 3.0 4K"
+      },
+      "seedance-2.0-fast": {
+        "base": 515,
+        "name": "Seedance 2 Fast"
+      },
+      "seedance-2.0": {
+        "base": 645,
+        "name": "Seedance 2"
+      },
+      "kling-3.0-pro": {
+        "base": 300,
+        "name": "Kling 3.0 Pro"
+      },
+      "kling-o3": {
+        "base": 220,
+        "name": "Kling O3"
+      },
+      "runway-4.5": {
+        "base": 360,
+        "name": "Runway 4.5"
+      },
+      "seedance-1.5-pro": {
+        "base": 72,
+        "name": "Seedance 1.5 Pro"
+      },
+      "pika-2.2": {
+        "base": 120,
+        "name": "Pika 2.2"
+      },
+      "luma-ray-2": {
+        "base": 300,
+        "name": "Luma Ray 2"
+      },
+      "hailuo-02-sd": {
+        "base": 160,
+        "name": "Hailuo 02 SD"
+      },
+      "hailuo-02-pro": {
+        "base": 290,
+        "name": "Hailuo 02 Pro"
+      },
+      "hailuo-2.3-sd": {
+        "base": 170,
+        "name": "Hailuo 2.3 SD"
+      },
+      "hailuo-2.3-pro": {
+        "base": 300,
+        "name": "Hailuo 2.3 Pro"
+      },
+      "kling-2.1-pro": {
+        "base": 270,
+        "name": "Kling 2.1 Pro"
+      },
+      "kling-2.5-pro": {
+        "base": 210,
+        "name": "Kling 2.5 Pro"
+      },
+      "kling-2.6-pro": {
+        "base": 420,
+        "name": "Kling 2.6 Pro"
+      },
+      "kling-o1": {
+        "base": 210,
+        "name": "Kling O1"
+      },
+      "seedance-1.0-pro": {
+        "base": 370,
+        "name": "Seedance 1.0 Pro"
+      },
+      "seedance-pro-fast": {
+        "base": 150,
+        "name": "Seedance Pro Fast"
+      },
+      "wan-2.2": {
+        "base": 30,
+        "name": "Wan 2.2"
+      },
+      "wan-2.5": {
+        "base": 300,
+        "name": "Wan 2.5"
+      },
+      "wan-2.6": {
+        "base": 300,
+        "name": "Wan 2.6"
+      },
+      "pixverse-v5": {
+        "base": 240,
+        "name": "PixVerse v5"
+      },
+      "pixverse-v5.5": {
+        "base": 120,
+        "name": "PixVerse v5.5"
+      },
+      "pixverse-v6": {
+        "base": 135,
+        "name": "PixVerse v6"
+      },
+      "lucy": {
+        "base": 240,
+        "name": "Lucy"
+      },
+      "runway-gen-4-turbo": {
+        "base": 150,
+        "name": "Runway Gen 4 Turbo"
+      },
+      "sora-2": {
+        "base": 240,
+        "name": "Sora 2"
+      },
+      "sora-2-pro": {
+        "base": 720,
+        "name": "Sora 2 Pro"
+      },
+      "veo-3.1-lite": {
+        "base": 120,
+        "name": "Google Veo 3.1 Lite"
+      },
+      "veo-3.1-fast": {
+        "base": 350,
+        "name": "Google Veo 3.1 Fast"
+      },
+      "veo-3.1": {
+        "base": 900,
+        "name": "Google Veo 3.1"
+      },
+      "xai-grok-1.5": {
+        "base": 240,
+        "name": "xAI Grok 1.5"
+      },
+      "xai-grok-video": {
+        "base": 180,
+        "name": "xAI Grok Video"
+      },
+      "ltx-2.3": {
+        "base": 215,
+        "name": "LTX 2.3"
+      },
+      "reference-image-to-video": {
+        "base": 1,
+        "name": "Reference Image to Video"
+      },
+      "edit-video": {
+        "base": 1,
+        "name": "Edit Video"
+      },
+      "reference-video": {
+        "base": 1,
+        "name": "Reference Video"
+      },
+      "model-choice": {
+        "base": 2,
+        "name": "Model choice"
+      },
+      "resolution": {
+        "base": 1080,
+        "name": "Resolution"
+      },
+      "gpt-image-2": {
+        "base": 6,
+        "name": "ChatGPT Image 2"
+      },
+      "nano-banana-2": {
+        "base": 49,
+        "name": "Nano Banana 2",
+        "tiers": {
+          "1K": 49,
+          "2K": 73.5,
+          "4K": 98
+        }
+      },
+      "imagine-art-2.0": {
+        "base": 25,
+        "name": "ImagineArt 2.0"
+      },
+      "imagine-art-1.5": {
+        "base": 15,
+        "name": "ImagineArt 1.5"
+      },
+      "imagine-art-1.5-pro": {
+        "base": 25,
+        "name": "ImagineArt 1.5 Pro"
+      },
+      "recraft-v4.1": {
+        "base": 150,
+        "name": "Recraft v4.1"
+      },
+      "ideogram-v4": {
+        "base": 36,
+        "name": "Ideogram v4"
+      },
+      "krea-flux-1": {
+        "base": 10,
+        "name": "Krea flux 1"
+      },
+      "midjourney-v7": {
+        "base": 60,
+        "name": "Midjourney V7"
+      },
+      "nano-banana-pro": {
+        "base": 80,
+        "name": "Nano Banana Pro",
+        "tiers": {
+          "1K/2K": 80,
+          "4K": 160
+        }
+      },
+      "seedream-v5-lite": {
+        "base": 20,
+        "name": "Seedream v5 Lite"
+      },
+      "recraft-v4": {
+        "base": 24,
+        "name": "Recraft v4"
+      },
+      "recraft-v4-pro": {
+        "base": 150,
+        "name": "Recraft v4 Pro"
+      },
+      "chatgpt-1.5": {
+        "base": 35,
+        "name": "ChatGPT 1.5"
+      },
+      "xai-grok-imagine": {
+        "base": 12,
+        "name": "xAI Grok Imagine"
+      },
+      "flux-2-max": {
+        "base": 50,
+        "name": "Flux 2 Max"
+      },
+      "flux-2-pro": {
+        "base": 28,
+        "name": "Flux 2 Pro"
+      },
+      "z-image-turbo": {
+        "base": 5,
+        "name": "Z Image Turbo"
+      },
+      "seedream-v4.5": {
+        "base": 24,
+        "name": "Seedream v4.5"
+      },
+      "flux-1.1-ultra": {
+        "base": 36,
+        "name": "Flux 1.1 Ultra"
+      },
+      "chatgpt": {
+        "base": 45,
+        "name": "ChatGPT"
+      },
+      "nano-banana": {
+        "base": 24,
+        "name": "Nano Banana"
+      },
+      "dreamina-3.1": {
+        "base": 18,
+        "name": "Dreamina 3.1"
+      },
+      "ideogram-v3": {
+        "base": 25,
+        "name": "Ideogram v3"
+      },
+      "flux-dev": {
+        "base": 5,
+        "name": "Flux Dev"
+      },
+      "qwen-image": {
+        "base": 24,
+        "name": "Qwen Image"
+      },
+      "minimax-image": {
+        "base": 6,
+        "name": "Minimax Image"
+      },
+      "seedream-v4": {
+        "base": 18,
+        "name": "Seedream v4"
+      },
+      "topaz": {
+        "base": 2,
+        "name": "Topaz"
+      },
+      "magnific-precision-v2": {
+        "base": 2,
+        "name": "Magnific Precision v2"
+      }
+    },
     list: [
     { slug: "anime", kind: "image" },
     { slug: "cogvideox-5b-image-to-video", kind: "video", mode: "i2v" },
@@ -3748,6 +4046,7 @@ window.SB = window.SB || {};
   const K_DOOR = 'sb.imagine.lastDoor';    // 'mcp' | 'rest' — which one last worked
   const K_WORKED = 'sb.imagine.worked';    // slugs that have actually produced something
   const K_ORG = 'sb.imagine.org';          // every generation is billed to one
+  const K_COST = 'sb.imagine.cost';        // what a configuration actually cost, measured
 
   /* ---------------- the model catalog ----------------
    *
@@ -4419,15 +4718,150 @@ window.SB = window.SB || {};
   function allowFor(name, model, what) {
     const t = toolNamed(name);
     const d = (t && t.description) || '';
-    const sect = new RegExp(what + ' \\(optional\\)[\\s\\S]*?Per-model allow-lists:([\\s\\S]*?)(?:\n\\s*\u2022|$)')
+    const esc = model.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+    /* The tables read:
+     *   resolution (optional) - ...
+     *     Per-model allow-lists (first value is the default ...):
+     *       - ltx-2.3:  1080p, 1440p, 2160p
+     * and the parenthetical is not always there. */
+    const sect = new RegExp(what + ' \\(optional\\)[\\s\\S]*?allow-lists[^:\n]*:([\\s\\S]*?)(?:\n\\s*\u2022|$)')
       .exec(d);
-    if (!sect) return null;
-    const line = new RegExp('-\\s*' + model.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') +
-      ':\\s*([^\n]+)').exec(sect[1]);
-    if (!line) return null;
-    if (/\(none/.test(line[1])) return [];
-    return line[1].split(',').map(function (x) { return x.trim(); })
-      .filter(function (x) { return x && !/^\(/.test(x); });
+    if (sect) {
+      const line = new RegExp('-\\s*' + esc + ':\\s*([^\n]+)').exec(sect[1]);
+      if (line) {
+        if (/\(none/.test(line[1])) return [];
+        return line[1].split(',').map(function (x) { return x.trim(); })
+          .filter(function (x) { return x && !/^\(/.test(x); });
+      }
+      /* named on a shared line: "- kling-2.6-pro, kling-o3, wan-2.2: (none ...)" */
+      const shared = new RegExp('-\\s*[^\n]*\\b' + esc + '\\b[^\n]*:\\s*([^\n]+)').exec(sect[1]);
+      if (shared) {
+        if (/\(none/.test(shared[1])) return [];
+        return shared[1].split(',').map(function (x) { return x.trim(); })
+          .filter(function (x) { return x && !/^\(/.test(x) && !/^[a-z0-9_.-]+$/.test(x) === false ? true : false; });
+      }
+      return null;
+    }
+
+    /* quality is a sentence, not a table: 'only gpt-image-2 supports it:
+     * "low", "medium", "high"'. */
+    const one = new RegExp(what + ' \\(optional\\)[\\s\\S]{0,200}?' + esc +
+      ' supports it:([^\u2022]{0,120})').exec(d);
+    if (one) {
+      const vals = (one[1].match(/"([^"]+)"/g) || []).map(function (x) { return x.replace(/"/g, ''); });
+      if (vals.length) return vals;
+    }
+    return null;
+  }
+
+  /* ---------------- resolution ----------------
+   *
+   * Every generator takes one, every model publishes what it will accept,
+   * and the first value on that list is what you get when you send nothing —
+   * which is what this app always did. That is not a neutral default: it is
+   * the model's floor. Seedance has been making 480p, Veo 720p, the stills
+   * 1K, and gpt-image-2 at "low" quality, all silently.
+   *
+   * So a board says what it wants once and every model is asked for the
+   * nearest thing it has.
+   */
+  const RES_RANK = {
+    '360p': 360, '480p': 480, '540p': 540, '720p': 720, '768p': 768,
+    '1080p': 1080, '1440p': 1440, '2160p': 2160, '4k': 2160,
+    '1k': 1080, '2k': 1440, '3k': 2880
+  };
+
+  function rank(v) {
+    const k = String(v || '').trim().toLowerCase();
+    if (RES_RANK[k]) return RES_RANK[k];
+    const n = parseInt(k, 10);
+    return isFinite(n) ? n : 0;
+  }
+
+  function policy(p) {
+    const v = p && p.settings && p.settings.imagineResolution;
+    return (v === '1080p' || v === 'default') ? v : 'best';
+  }
+
+  /* The resolution to ask this model for, or '' to send nothing — which is
+   * the honest answer both for "leave it alone" and for a model that ignores
+   * the field. */
+  function resolutionFor(p, slug, kind) {
+    if (policy(p) === 'default') return '';
+    const list = allowFor(kind === 'image' ? TOOL.image : TOOL.video, slug, 'resolution');
+    if (!list || !list.length) return '';
+    const sorted = list.slice().sort(function (a, b) { return rank(a) - rank(b); });
+    if (policy(p) === 'best') return sorted[sorted.length - 1];
+    /* 1080p where it is offered, otherwise the best below it — and the
+     * smallest available if even that is above 1080p. */
+    const under = sorted.filter(function (v) { return rank(v) <= 1080; });
+    return under.length ? under[under.length - 1] : sorted[0];
+  }
+
+  /* Only gpt-image-2 takes one, and its floor is "low". */
+  function qualityFor(p, slug) {
+    if (policy(p) === 'default') return '';
+    const list = allowFor(TOOL.image, slug, 'quality');
+    if (!list || !list.length) return '';
+    const best = ['high', 'medium', 'low'].filter(function (q) { return list.indexOf(q) >= 0; })[0];
+    return best || '';
+  }
+
+  /* ---------------- what it costs ----------------
+   *
+   * Two figures, and they are told apart wherever they are shown. The
+   * published one is ImagineArt's base price: the model at its minimum
+   * duration and default settings, which is a floor for anything longer or
+   * larger. The measured one is the difference in the account balance either
+   * side of a real generation at exactly these settings, which is the truth
+   * and is worth more than any table.
+   */
+  function costKey(slug, duration, res) {
+    return [slug || '', duration || '', res || ''].join('|');
+  }
+
+  function measured() {
+    const all = lsGet(K_COST) || {};
+    return all[catKey()] || {};
+  }
+
+  function noteCost(slug, duration, res, credits) {
+    if (!(credits > 0)) return;
+    const all = lsGet(K_COST) || {};
+    const mine = all[catKey()] || {};
+    mine[costKey(slug, duration, res)] = { credits: credits, at: Date.now() };
+    all[catKey()] = mine;
+    lsSet(K_COST, all);
+  }
+
+  function published(slug) {
+    const table = (SB.ImagineModels && SB.ImagineModels.credits) || {};
+    return table[slug] || null;
+  }
+
+  /* {credits, from: 'measured'|'published', note} or null when nothing is
+   * known — in which case the UI says nothing rather than guessing. */
+  function costFor(slug, duration, res) {
+    const mine = measured()[costKey(slug, duration, res)];
+    if (mine) return { credits: mine.credits, from: 'measured' };
+    const pub = published(slug);
+    if (!pub) return null;
+    const tier = pub.tiers && res ? pub.tiers[String(res).toUpperCase()] : null;
+    return {
+      credits: tier || pub.base,
+      from: 'published',
+      note: 'base price — longer or larger costs more'
+    };
+  }
+
+  /* The balance, as a number, for measuring against. Best effort. */
+  function balanceNow() {
+    if (transport() === 'key' || !isSignedIn() || !orgId()) return Promise.resolve(null);
+    return callRaw(TOOL.balance, { org_id: orgId() }).then(function (got) {
+      const n = firstNumber(got.text || JSON.stringify((got.raw || {}).structuredContent || {}));
+      return n;
+    }).catch(function () { return null; });
   }
 
   /* ---- the organisation ---- */
@@ -4935,7 +5369,8 @@ window.SB = window.SB || {};
   function image(opts) {
     const canon = {
       prompt: opts.prompt, slug: opts.slug,
-      aspect: opts.aspect, onState: opts.onState
+      aspect: opts.aspect, resolution: opts.resolution || '', quality: opts.quality || '',
+      onState: opts.onState
     };
     const viaMcp = function () {
       const why = needOrg();
@@ -4950,6 +5385,8 @@ window.SB = window.SB || {};
         duration: null,
         image_url: opts.imageUrl || null
       };
+      if (canon.resolution) args.resolution = canon.resolution;
+      if (canon.quality) args.quality = canon.quality;
       return callRaw(TOOL.image, args).then(function (got) {
         const id = assetId(got);
         return (got.url && !id) ? got : waitForAsset(id || got.text, canon.onState);
@@ -5012,7 +5449,8 @@ window.SB = window.SB || {};
   function video(opts) {
     const canon = {
       prompt: opts.prompt, slug: opts.slug, aspect: opts.aspect,
-      duration: opts.duration, frame: opts.frame, frameName: opts.frameName,
+      duration: opts.duration, resolution: opts.resolution || '',
+      frame: opts.frame, frameName: opts.frameName,
       onState: opts.onState
     };
     const viaMcp = function () {
@@ -5031,6 +5469,7 @@ window.SB = window.SB || {};
             duration: canon.duration ? String(canon.duration) : null,
             image_url: url ? [url] : null
           };
+          if (canon.resolution) args.resolution = canon.resolution;
           return callRaw(TOOL.video, args);
         })
         .then(function (got) {
@@ -5218,12 +5657,24 @@ window.SB = window.SB || {};
      * that picture however the board is rearranged in the meantime. */
     const frameRef = (shot.image && shot.image.ref) || '';
 
+    const res = resolutionFor(p, slugOf(model), role);
+    const qual = role === 'image' ? qualityFor(p, slugOf(model)) : '';
+    made.resolution = res || '';
+
+    /* The balance before, so the balance after says what this cost. */
+    const before = balanceNow();
+
     const work = role === 'image'
-      ? image({ prompt: text, slug: slugOf(model), aspect: aspectOf(p), onState: function () { state('waiting'); } })
+      ? image({
+        prompt: text, slug: slugOf(model), aspect: aspectOf(p),
+        resolution: res, quality: qual,
+        onState: function () { state('waiting'); }
+      })
         .then(function (got) { return fileImage(p, shot, got, made); })
       : startFrame(p, shot).then(function (frame) {
         return video({
           prompt: text, slug: slugOf(model), aspect: aspectOf(p),
+          resolution: res,
           frame: frame && frame.blob, frameName: frame && frame.name,
           onState: function () { state('waiting'); }
         });
@@ -5236,6 +5687,17 @@ window.SB = window.SB || {};
       /* It produced something, so whatever any list says, this slug is real
        * for this account. */
       noteWorked(slugOf(model), role === 'image' ? 'image' : 'video');
+      /* What it actually cost, from the two balances. Nothing depends on
+       * this working — an account that will not report a balance simply
+       * keeps the published estimate. */
+      before.then(function (was) {
+        if (!(was > 0)) return null;
+        return balanceNow().then(function (now) {
+          if (!(now > 0)) return null;
+          noteCost(slugOf(model), '', res, Math.round((was - now) * 100) / 100);
+          return null;
+        });
+      }).catch(function () { });
       return out;
     }).catch(function (e) {
       endJob(shot.id, role, e);
@@ -5760,6 +6222,8 @@ window.SB = window.SB || {};
     worked: worked, noteWorked: noteWorked,
     org: org, orgId: orgId, setOrg: setOrg, listOrgs: listOrgs, needOrg: needOrg,
     allowFor: allowFor, modelsFromTool: modelsFromTool, TOOL: TOOL,
+    resolutionFor: resolutionFor, qualityFor: qualityFor,
+    costFor: costFor, noteCost: noteCost, balanceNow: balanceNow,
     _assetId: assetId,
     catalogAge: catalogAge, refreshCatalog: refreshCatalog,
     modelInfo: modelInfo, labelFor: labelFor,
@@ -7197,6 +7661,12 @@ window.SB = window.SB || {};
         /* What shape ImagineArt is asked for. A storyboard is nearly always
          * widescreen, and it belongs to the board rather than the browser. */
         imagineAspect: '16:9',
+        /* 'best'    — the largest each model offers
+         * '1080p'   — 1080p where it is offered, the best below it otherwise
+         * 'default' — whatever the model falls back to, which is its FLOOR:
+         *             480p on Seedance, 720p on Veo, 1K and "low" quality on
+         *             the stills. Sending nothing is not sending "normal". */
+        imagineResolution: 'best',
         /* 'webp'   — originals re-encoded at native size (16x smaller, and
          *            still far past what a reference needs)
          * 'source' — the bytes exactly as they arrived, and the file it makes */
@@ -7461,6 +7931,7 @@ window.SB = window.SB || {};
     s.aiProvider = SB.Providers.normalize(s.aiProvider);
     if (typeof s.imagineAspect !== 'string') s.imagineAspect = '16:9';
     if (s.originals !== 'webp' && s.originals !== 'source') s.originals = 'webp';
+    if (['best', '1080p', 'default'].indexOf(s.imagineResolution) < 0) s.imagineResolution = 'best';
     s.brand = (s.brand && typeof s.brand === 'object') ? s.brand : {};
     if (typeof s.brand.enabled !== 'boolean') s.brand.enabled = true;
     // only a hand-edited house style is stored; the rest follow the app's
@@ -13580,6 +14051,7 @@ window.SB = window.SB || {};
     b.dataset.push = sh.id + ':' + role;
     b.onclick = function () {
       if (IM.busy(sh.id, role)) return;
+      if (role === 'video' && !clipCostOk(sh, m)) return;
       IM.clear(sh.id, role);
       paintPushes();
       IM.run(sh, role).then(function (out) {
@@ -13661,6 +14133,72 @@ window.SB = window.SB || {};
     };
   }
 
+  /* What this press will spend, and how much that figure is worth. A
+     measured number came from the account's own balance either side of a
+     real generation; a published one is ImagineArt's base price, and a floor
+     for anything longer or larger. Kept apart, because they are not the same
+     claim. */
+  function priceOf(m, role) {
+    if (!SB.Imagine || !m) return null;
+    const slug = SB.Imagine.slugOf(m);
+    if (!slug) return null;
+    const res = SB.Imagine.resolutionFor(P(), slug, role);
+    const c = SB.Imagine.costFor(slug, '', res);
+    if (!c) return { res: res };
+    return { res: res, credits: c.credits, from: c.from, note: c.note };
+  }
+
+  function priceLine(m, role) {
+    const pr = priceOf(m, role);
+    if (!pr) return '';
+    const bits = [];
+    if (pr.res) bits.push('at ' + pr.res);
+    if (pr.credits) {
+      bits.push(pr.from === 'measured'
+        ? 'about ' + pr.credits + ' credits, which is what it cost last time'
+        : 'about ' + pr.credits + ' credits (' + (pr.note || 'published base price') + ')');
+    }
+    return bits.length ? '\n' + bits.join(' \u00b7 ') : '';
+  }
+
+  /* A clip is the expensive one, and the moment before it goes is the only
+     moment the number is any use. Asked once per session, not once a press. */
+  let costAsked = false;
+
+  function clipCostOk(sh, m) {
+    if (costAsked) return true;
+    const pr = priceOf(m, 'video');
+    if (!pr || !pr.credits) { costAsked = true; return true; }
+    const acct = SB.Imagine.account();
+    const bal = acct && typeof acct.credits === 'number' ? acct.credits : null;
+    const body = SB.el('div');
+    body.appendChild(SB.el('p', null,
+      m.name + ' at ' + (pr.res || 'its default resolution') + ' \u2014 about ' + pr.credits +
+      ' credits' + (pr.from === 'measured' ? ', which is what it cost last time.'
+        : '. That is the published base price; a longer or larger clip costs more.')));
+    if (bal !== null) {
+      body.appendChild(SB.el('p', 'pp-note' + (bal < pr.credits ? ' warn' : ''),
+        'You have ' + bal + ' credits' + (bal < pr.credits ? ' \u2014 this may not go through.' : '.')));
+    }
+    body.appendChild(SB.el('div', 'pp-note',
+      'Asked once per session; every clip after this goes straight through.'));
+    SB.modal({
+      title: 'Shoot this clip?', width: '420px', body: body,
+      buttons: [
+        { label: 'Cancel' },
+        {
+          label: 'Shoot it', primary: true, onClick: function (close) {
+            costAsked = true;
+            close();
+            const again = document.querySelector('[data-push="' + sh.id + ':video"]');
+            if (again) again.click();
+          }
+        }
+      ]
+    });
+    return false;
+  }
+
   function paintPush(b, sh, m, role) {
     const IM = SB.Imagine;
     const job = IM.job(sh.id, role);
@@ -13694,11 +14232,11 @@ window.SB = window.SB || {};
     } else if (block) {
       b.title = block.long;
     } else if (role === 'video') {
-      b.title = sh.render || sh.image
+      b.title = (sh.render || sh.image
         ? 'Animate this shot’s own frame with the prompt above.'
-        : 'No frame on this card yet, so this is text-to-video.';
+        : 'No frame on this card yet, so this is text-to-video.') + priceLine(m, role);
     } else {
-      b.title = 'Make this frame on ImagineArt and put it on the card.';
+      b.title = 'Make this frame on ImagineArt and put it on the card.' + priceLine(m, role);
     }
   }
 
@@ -16161,6 +16699,24 @@ window.SB = window.SB || {};
       if ((p.settings.imagineAspect || '16:9') === r) o.selected = true;
       imAspect.appendChild(o);
     });
+    const imRes = document.createElement('select');
+    [['best', 'The best each model offers'],
+     ['1080p', '1080p where it is offered'],
+     ['default', 'Whatever the model falls back to']].forEach(function (o) {
+      const el = document.createElement('option');
+      el.value = o[0]; el.textContent = o[1];
+      if ((p.settings.imagineResolution || 'best') === o[0]) el.selected = true;
+      imRes.appendChild(el);
+    });
+    const imResF = field('Resolution asked for', imRes);
+    imResF.style.marginTop = '14px';
+    panels.imagine.appendChild(imResF);
+    panels.imagine.appendChild(SB.el('div', 'pp-note',
+      'Sending nothing is not the same as sending “normal”: every model falls back to the ' +
+      'FIRST resolution on its own list, which is its floor. Seedance makes 480p that way, ' +
+      'Veo 720p, the stills 1K, and GPT Image at low quality. Asked for the best it has, ' +
+      'LTX gives 2160p.'));
+
     const imAspF = field('Aspect ratio asked for', imAspect);
     imAspF.style.marginTop = '14px';
     panels.imagine.appendChild(imAspF);
@@ -16549,6 +17105,7 @@ window.SB = window.SB || {};
             SB.Store.setApiKey(key.value.trim());
             SB.Store.setOoba({ url: oUrl.value, model: oobaModel, key: oKey.value });
             p.settings.imagineAspect = imAspect.value || '16:9';
+            p.settings.imagineResolution = imRes.value || 'best';
             if (IM) {
               IM.setTransport(chosenImagine);
               IM.setApiKey(imKey.value);

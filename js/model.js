@@ -287,6 +287,12 @@
         /* What shape ImagineArt is asked for. A storyboard is nearly always
          * widescreen, and it belongs to the board rather than the browser. */
         imagineAspect: '16:9',
+        /* 'best'    — the largest each model offers
+         * '1080p'   — 1080p where it is offered, the best below it otherwise
+         * 'default' — whatever the model falls back to, which is its FLOOR:
+         *             480p on Seedance, 720p on Veo, 1K and "low" quality on
+         *             the stills. Sending nothing is not sending "normal". */
+        imagineResolution: 'best',
         /* 'webp'   — originals re-encoded at native size (16x smaller, and
          *            still far past what a reference needs)
          * 'source' — the bytes exactly as they arrived, and the file it makes */
@@ -551,6 +557,7 @@
     s.aiProvider = SB.Providers.normalize(s.aiProvider);
     if (typeof s.imagineAspect !== 'string') s.imagineAspect = '16:9';
     if (s.originals !== 'webp' && s.originals !== 'source') s.originals = 'webp';
+    if (['best', '1080p', 'default'].indexOf(s.imagineResolution) < 0) s.imagineResolution = 'best';
     s.brand = (s.brand && typeof s.brand === 'object') ? s.brand : {};
     if (typeof s.brand.enabled !== 'boolean') s.brand.enabled = true;
     // only a hand-edited house style is stored; the rest follow the app's

@@ -77,6 +77,7 @@
   const K_DOOR = 'sb.imagine.lastDoor';    // 'mcp' | 'rest' — which one last worked
   const K_WORKED = 'sb.imagine.worked';    // slugs that have actually produced something
   const K_ORG = 'sb.imagine.org';          // every generation is billed to one
+  const K_COST = 'sb.imagine.cost';        // what a configuration actually cost, measured
 
   /* ---------------- the model catalog ----------------
    *
@@ -748,15 +749,150 @@
   function allowFor(name, model, what) {
     const t = toolNamed(name);
     const d = (t && t.description) || '';
-    const sect = new RegExp(what + ' \\(optional\\)[\\s\\S]*?Per-model allow-lists:([\\s\\S]*?)(?:\n\\s*\u2022|$)')
+    const esc = model.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+    /* The tables read:
+     *   resolution (optional) - ...
+     *     Per-model allow-lists (first value is the default ...):
+     *       - ltx-2.3:  1080p, 1440p, 2160p
+     * and the parenthetical is not always there. */
+    const sect = new RegExp(what + ' \\(optional\\)[\\s\\S]*?allow-lists[^:\n]*:([\\s\\S]*?)(?:\n\\s*\u2022|$)')
       .exec(d);
-    if (!sect) return null;
-    const line = new RegExp('-\\s*' + model.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') +
-      ':\\s*([^\n]+)').exec(sect[1]);
-    if (!line) return null;
-    if (/\(none/.test(line[1])) return [];
-    return line[1].split(',').map(function (x) { return x.trim(); })
-      .filter(function (x) { return x && !/^\(/.test(x); });
+    if (sect) {
+      const line = new RegExp('-\\s*' + esc + ':\\s*([^\n]+)').exec(sect[1]);
+      if (line) {
+        if (/\(none/.test(line[1])) return [];
+        return line[1].split(',').map(function (x) { return x.trim(); })
+          .filter(function (x) { return x && !/^\(/.test(x); });
+      }
+      /* named on a shared line: "- kling-2.6-pro, kling-o3, wan-2.2: (none ...)" */
+      const shared = new RegExp('-\\s*[^\n]*\\b' + esc + '\\b[^\n]*:\\s*([^\n]+)').exec(sect[1]);
+      if (shared) {
+        if (/\(none/.test(shared[1])) return [];
+        return shared[1].split(',').map(function (x) { return x.trim(); })
+          .filter(function (x) { return x && !/^\(/.test(x) && !/^[a-z0-9_.-]+$/.test(x) === false ? true : false; });
+      }
+      return null;
+    }
+
+    /* quality is a sentence, not a table: 'only gpt-image-2 supports it:
+     * "low", "medium", "high"'. */
+    const one = new RegExp(what + ' \\(optional\\)[\\s\\S]{0,200}?' + esc +
+      ' supports it:([^\u2022]{0,120})').exec(d);
+    if (one) {
+      const vals = (one[1].match(/"([^"]+)"/g) || []).map(function (x) { return x.replace(/"/g, ''); });
+      if (vals.length) return vals;
+    }
+    return null;
+  }
+
+  /* ---------------- resolution ----------------
+   *
+   * Every generator takes one, every model publishes what it will accept,
+   * and the first value on that list is what you get when you send nothing —
+   * which is what this app always did. That is not a neutral default: it is
+   * the model's floor. Seedance has been making 480p, Veo 720p, the stills
+   * 1K, and gpt-image-2 at "low" quality, all silently.
+   *
+   * So a board says what it wants once and every model is asked for the
+   * nearest thing it has.
+   */
+  const RES_RANK = {
+    '360p': 360, '480p': 480, '540p': 540, '720p': 720, '768p': 768,
+    '1080p': 1080, '1440p': 1440, '2160p': 2160, '4k': 2160,
+    '1k': 1080, '2k': 1440, '3k': 2880
+  };
+
+  function rank(v) {
+    const k = String(v || '').trim().toLowerCase();
+    if (RES_RANK[k]) return RES_RANK[k];
+    const n = parseInt(k, 10);
+    return isFinite(n) ? n : 0;
+  }
+
+  function policy(p) {
+    const v = p && p.settings && p.settings.imagineResolution;
+    return (v === '1080p' || v === 'default') ? v : 'best';
+  }
+
+  /* The resolution to ask this model for, or '' to send nothing — which is
+   * the honest answer both for "leave it alone" and for a model that ignores
+   * the field. */
+  function resolutionFor(p, slug, kind) {
+    if (policy(p) === 'default') return '';
+    const list = allowFor(kind === 'image' ? TOOL.image : TOOL.video, slug, 'resolution');
+    if (!list || !list.length) return '';
+    const sorted = list.slice().sort(function (a, b) { return rank(a) - rank(b); });
+    if (policy(p) === 'best') return sorted[sorted.length - 1];
+    /* 1080p where it is offered, otherwise the best below it — and the
+     * smallest available if even that is above 1080p. */
+    const under = sorted.filter(function (v) { return rank(v) <= 1080; });
+    return under.length ? under[under.length - 1] : sorted[0];
+  }
+
+  /* Only gpt-image-2 takes one, and its floor is "low". */
+  function qualityFor(p, slug) {
+    if (policy(p) === 'default') return '';
+    const list = allowFor(TOOL.image, slug, 'quality');
+    if (!list || !list.length) return '';
+    const best = ['high', 'medium', 'low'].filter(function (q) { return list.indexOf(q) >= 0; })[0];
+    return best || '';
+  }
+
+  /* ---------------- what it costs ----------------
+   *
+   * Two figures, and they are told apart wherever they are shown. The
+   * published one is ImagineArt's base price: the model at its minimum
+   * duration and default settings, which is a floor for anything longer or
+   * larger. The measured one is the difference in the account balance either
+   * side of a real generation at exactly these settings, which is the truth
+   * and is worth more than any table.
+   */
+  function costKey(slug, duration, res) {
+    return [slug || '', duration || '', res || ''].join('|');
+  }
+
+  function measured() {
+    const all = lsGet(K_COST) || {};
+    return all[catKey()] || {};
+  }
+
+  function noteCost(slug, duration, res, credits) {
+    if (!(credits > 0)) return;
+    const all = lsGet(K_COST) || {};
+    const mine = all[catKey()] || {};
+    mine[costKey(slug, duration, res)] = { credits: credits, at: Date.now() };
+    all[catKey()] = mine;
+    lsSet(K_COST, all);
+  }
+
+  function published(slug) {
+    const table = (SB.ImagineModels && SB.ImagineModels.credits) || {};
+    return table[slug] || null;
+  }
+
+  /* {credits, from: 'measured'|'published', note} or null when nothing is
+   * known — in which case the UI says nothing rather than guessing. */
+  function costFor(slug, duration, res) {
+    const mine = measured()[costKey(slug, duration, res)];
+    if (mine) return { credits: mine.credits, from: 'measured' };
+    const pub = published(slug);
+    if (!pub) return null;
+    const tier = pub.tiers && res ? pub.tiers[String(res).toUpperCase()] : null;
+    return {
+      credits: tier || pub.base,
+      from: 'published',
+      note: 'base price — longer or larger costs more'
+    };
+  }
+
+  /* The balance, as a number, for measuring against. Best effort. */
+  function balanceNow() {
+    if (transport() === 'key' || !isSignedIn() || !orgId()) return Promise.resolve(null);
+    return callRaw(TOOL.balance, { org_id: orgId() }).then(function (got) {
+      const n = firstNumber(got.text || JSON.stringify((got.raw || {}).structuredContent || {}));
+      return n;
+    }).catch(function () { return null; });
   }
 
   /* ---- the organisation ---- */
@@ -1264,7 +1400,8 @@
   function image(opts) {
     const canon = {
       prompt: opts.prompt, slug: opts.slug,
-      aspect: opts.aspect, onState: opts.onState
+      aspect: opts.aspect, resolution: opts.resolution || '', quality: opts.quality || '',
+      onState: opts.onState
     };
     const viaMcp = function () {
       const why = needOrg();
@@ -1279,6 +1416,8 @@
         duration: null,
         image_url: opts.imageUrl || null
       };
+      if (canon.resolution) args.resolution = canon.resolution;
+      if (canon.quality) args.quality = canon.quality;
       return callRaw(TOOL.image, args).then(function (got) {
         const id = assetId(got);
         return (got.url && !id) ? got : waitForAsset(id || got.text, canon.onState);
@@ -1341,7 +1480,8 @@
   function video(opts) {
     const canon = {
       prompt: opts.prompt, slug: opts.slug, aspect: opts.aspect,
-      duration: opts.duration, frame: opts.frame, frameName: opts.frameName,
+      duration: opts.duration, resolution: opts.resolution || '',
+      frame: opts.frame, frameName: opts.frameName,
       onState: opts.onState
     };
     const viaMcp = function () {
@@ -1360,6 +1500,7 @@
             duration: canon.duration ? String(canon.duration) : null,
             image_url: url ? [url] : null
           };
+          if (canon.resolution) args.resolution = canon.resolution;
           return callRaw(TOOL.video, args);
         })
         .then(function (got) {
@@ -1547,12 +1688,24 @@
      * that picture however the board is rearranged in the meantime. */
     const frameRef = (shot.image && shot.image.ref) || '';
 
+    const res = resolutionFor(p, slugOf(model), role);
+    const qual = role === 'image' ? qualityFor(p, slugOf(model)) : '';
+    made.resolution = res || '';
+
+    /* The balance before, so the balance after says what this cost. */
+    const before = balanceNow();
+
     const work = role === 'image'
-      ? image({ prompt: text, slug: slugOf(model), aspect: aspectOf(p), onState: function () { state('waiting'); } })
+      ? image({
+        prompt: text, slug: slugOf(model), aspect: aspectOf(p),
+        resolution: res, quality: qual,
+        onState: function () { state('waiting'); }
+      })
         .then(function (got) { return fileImage(p, shot, got, made); })
       : startFrame(p, shot).then(function (frame) {
         return video({
           prompt: text, slug: slugOf(model), aspect: aspectOf(p),
+          resolution: res,
           frame: frame && frame.blob, frameName: frame && frame.name,
           onState: function () { state('waiting'); }
         });
@@ -1565,6 +1718,17 @@
       /* It produced something, so whatever any list says, this slug is real
        * for this account. */
       noteWorked(slugOf(model), role === 'image' ? 'image' : 'video');
+      /* What it actually cost, from the two balances. Nothing depends on
+       * this working — an account that will not report a balance simply
+       * keeps the published estimate. */
+      before.then(function (was) {
+        if (!(was > 0)) return null;
+        return balanceNow().then(function (now) {
+          if (!(now > 0)) return null;
+          noteCost(slugOf(model), '', res, Math.round((was - now) * 100) / 100);
+          return null;
+        });
+      }).catch(function () { });
       return out;
     }).catch(function (e) {
       endJob(shot.id, role, e);
@@ -2089,6 +2253,8 @@
     worked: worked, noteWorked: noteWorked,
     org: org, orgId: orgId, setOrg: setOrg, listOrgs: listOrgs, needOrg: needOrg,
     allowFor: allowFor, modelsFromTool: modelsFromTool, TOOL: TOOL,
+    resolutionFor: resolutionFor, qualityFor: qualityFor,
+    costFor: costFor, noteCost: noteCost, balanceNow: balanceNow,
     _assetId: assetId,
     catalogAge: catalogAge, refreshCatalog: refreshCatalog,
     modelInfo: modelInfo, labelFor: labelFor,

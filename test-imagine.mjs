@@ -447,6 +447,81 @@ section('a slug that worked outranks every published list');
     JSON.stringify((sandbox.SB.ImagineModels.products || []).slice(0, 3)));
 }
 
+/* --------------------------------- resolution, and what it will cost */
+section('asking for a resolution instead of taking the floor');
+
+{
+  const p4 = SB.Model.newProject();
+  sandbox.SB.app = { project: p4, changed() { } };
+  /* the allow-lists live in the tool descriptions, so the real ones have to
+     be loaded into the module the way a session would load them */
+  sandbox.fetch = function (url, init) {
+    const msg = JSON.parse(init.body);
+    const result = msg.method === 'initialize'
+      ? { serverInfo: { name: 'imagine', version: '1' } }
+      : (msg.method === 'tools/list' ? { tools: REAL_TOOLS } : {});
+    return Promise.resolve({
+      ok: true, status: 200, headers: { get: () => null },
+      text: () => Promise.resolve(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: result }))
+    });
+  };
+  SB.Imagine.setTransport('oauth');
+  store.set('sb.imagine.tokens', JSON.stringify({
+    access_token: 'tok', refresh_token: 'r', expires_at: Date.now() + 3600000, email: 'res@test'
+  }));
+  await SB.Imagine.toolList(true);
+
+  t('a board asks for the best by default', p4.settings.imagineResolution === 'best',
+    p4.settings.imagineResolution);
+
+  const R = (slug, kind) => SB.Imagine.resolutionFor(p4, slug, kind);
+  t('LTX is asked for everything it has, not the 1080p it falls back to',
+    R('ltx-2.3', 'video') === '2160p', R('ltx-2.3', 'video'));
+  t('Seedance stops making 480p', R('seedance-2.5', 'video') === '720p',
+    R('seedance-2.5', 'video'));
+  t('Veo goes to 4k', R('veo-3.1', 'video') === '4k', R('veo-3.1', 'video'));
+  t('a model that ignores resolution is sent none',
+    R('kling-3.0-pro', 'video') === '', JSON.stringify(R('kling-3.0-pro', 'video')));
+  t('stills too — 4K rather than the 1K floor',
+    R('nano-banana-pro', 'image') === '4K', R('nano-banana-pro', 'image'));
+  t('and the one model with a quality dial is asked for high, not low',
+    SB.Imagine.qualityFor(p4, 'gpt-image-2') === 'high',
+    SB.Imagine.qualityFor(p4, 'gpt-image-2'));
+
+  p4.settings.imagineResolution = '1080p';
+  t('the 1080p policy takes 1080p where it exists',
+    R('ltx-2.3', 'video') === '1080p', R('ltx-2.3', 'video'));
+  t('and the best below it where it does not',
+    R('seedance-2.5', 'video') === '720p', R('seedance-2.5', 'video'));
+
+  p4.settings.imagineResolution = 'default';
+  t('and leaving it alone sends nothing at all',
+    R('ltx-2.3', 'video') === '' && R('nano-banana-pro', 'image') === '', '');
+  p4.settings.imagineResolution = 'best';
+
+  /* what it costs */
+  t('a published price is known for a model ImagineArt prices',
+    SB.Imagine.costFor('kling-3.0-pro', '', '').credits === 300,
+    JSON.stringify(SB.Imagine.costFor('kling-3.0-pro', '', '')));
+  t('and it says it is the published base, not a promise',
+    SB.Imagine.costFor('ltx-2.3', '', '').from === 'published', '');
+  t('LTX is 215 of them', SB.Imagine.costFor('ltx-2.3', '', '').credits === 215, '');
+  t('a model nobody prices says nothing rather than guessing',
+    SB.Imagine.costFor('no-such-model', '', '') === null, '');
+
+  SB.Imagine.noteCost('kling-3.0-pro', '', '1080p', 421);
+  const m4 = SB.Imagine.costFor('kling-3.0-pro', '', '1080p');
+  t('a measured price outranks the published one', m4.credits === 421 && m4.from === 'measured',
+    JSON.stringify(m4));
+  t('and only for the configuration it was measured at',
+    SB.Imagine.costFor('kling-3.0-pro', '', '720p').from === 'published', '');
+
+  SB.Imagine.signOut();
+  SB.Imagine.setTransport('key');
+  store.delete('sb.imagine.cost');
+  sandbox.fetch = () => Promise.reject(new Error('no network in tests'));
+}
+
 /* ------------------------------------- against the account's real tools */
 section('the tools ImagineArt actually publishes');
 

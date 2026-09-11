@@ -785,6 +785,24 @@
       if ((p.settings.imagineAspect || '16:9') === r) o.selected = true;
       imAspect.appendChild(o);
     });
+    const imRes = document.createElement('select');
+    [['best', 'The best each model offers'],
+     ['1080p', '1080p where it is offered'],
+     ['default', 'Whatever the model falls back to']].forEach(function (o) {
+      const el = document.createElement('option');
+      el.value = o[0]; el.textContent = o[1];
+      if ((p.settings.imagineResolution || 'best') === o[0]) el.selected = true;
+      imRes.appendChild(el);
+    });
+    const imResF = field('Resolution asked for', imRes);
+    imResF.style.marginTop = '14px';
+    panels.imagine.appendChild(imResF);
+    panels.imagine.appendChild(SB.el('div', 'pp-note',
+      'Sending nothing is not the same as sending “normal”: every model falls back to the ' +
+      'FIRST resolution on its own list, which is its floor. Seedance makes 480p that way, ' +
+      'Veo 720p, the stills 1K, and GPT Image at low quality. Asked for the best it has, ' +
+      'LTX gives 2160p.'));
+
     const imAspF = field('Aspect ratio asked for', imAspect);
     imAspF.style.marginTop = '14px';
     panels.imagine.appendChild(imAspF);
@@ -1173,6 +1191,7 @@
             SB.Store.setApiKey(key.value.trim());
             SB.Store.setOoba({ url: oUrl.value, model: oobaModel, key: oKey.value });
             p.settings.imagineAspect = imAspect.value || '16:9';
+            p.settings.imagineResolution = imRes.value || 'best';
             if (IM) {
               IM.setTransport(chosenImagine);
               IM.setApiKey(imKey.value);

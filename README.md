@@ -97,6 +97,21 @@ one generation — nothing is batched, nothing fires on its own.
     reference-to-video). Our frames are local, so `▶ shoot` uploads the frame through
     `user_upload` first and hands over the URL that comes back.
 
+  **Resolution is asked for, never left to the model.** Every generator takes one and every
+  model publishes what it accepts — and the *first* value on that list is what you get when
+  you send nothing, which is the model's floor. Sending nothing meant Seedance made 480p, Veo
+  720p, stills 1K and GPT Image at "low" quality. A board now says what it wants once
+  (Settings → ImagineArt, default **the best each model offers**) and every model is asked
+  for the nearest thing it has — 2160p from LTX, 4k from Veo, nothing at all from the Klings,
+  which ignore the field.
+
+  **What a push will cost** is on the button. ImagineArt publishes base credit prices per
+  model and `fetch-models.mjs` scrapes them (71 of them) — but a base is the price at the
+  model's minimum duration and default settings, so the app also measures: it reads the
+  account balance either side of a real generation and records what that exact
+  configuration cost. A measured figure outranks a published one and says so, and a clip
+  asks once per session before it spends — with the number and your balance.
+
   The model lists live in the tool *descriptions* rather than in a JSON enum, so the app
   parses them from there — 10 image models and 15 video ones on this account, with each
   model's allowed aspect ratios and durations read from the same place. The older v2 REST API

@@ -523,6 +523,7 @@
     b.dataset.push = sh.id + ':' + role;
     b.onclick = function () {
       if (IM.busy(sh.id, role)) return;
+      if (role === 'video' && !clipCostOk(sh, m)) return;
       IM.clear(sh.id, role);
       paintPushes();
       IM.run(sh, role).then(function (out) {
@@ -604,6 +605,72 @@
     };
   }
 
+  /* What this press will spend, and how much that figure is worth. A
+     measured number came from the account's own balance either side of a
+     real generation; a published one is ImagineArt's base price, and a floor
+     for anything longer or larger. Kept apart, because they are not the same
+     claim. */
+  function priceOf(m, role) {
+    if (!SB.Imagine || !m) return null;
+    const slug = SB.Imagine.slugOf(m);
+    if (!slug) return null;
+    const res = SB.Imagine.resolutionFor(P(), slug, role);
+    const c = SB.Imagine.costFor(slug, '', res);
+    if (!c) return { res: res };
+    return { res: res, credits: c.credits, from: c.from, note: c.note };
+  }
+
+  function priceLine(m, role) {
+    const pr = priceOf(m, role);
+    if (!pr) return '';
+    const bits = [];
+    if (pr.res) bits.push('at ' + pr.res);
+    if (pr.credits) {
+      bits.push(pr.from === 'measured'
+        ? 'about ' + pr.credits + ' credits, which is what it cost last time'
+        : 'about ' + pr.credits + ' credits (' + (pr.note || 'published base price') + ')');
+    }
+    return bits.length ? '\n' + bits.join(' \u00b7 ') : '';
+  }
+
+  /* A clip is the expensive one, and the moment before it goes is the only
+     moment the number is any use. Asked once per session, not once a press. */
+  let costAsked = false;
+
+  function clipCostOk(sh, m) {
+    if (costAsked) return true;
+    const pr = priceOf(m, 'video');
+    if (!pr || !pr.credits) { costAsked = true; return true; }
+    const acct = SB.Imagine.account();
+    const bal = acct && typeof acct.credits === 'number' ? acct.credits : null;
+    const body = SB.el('div');
+    body.appendChild(SB.el('p', null,
+      m.name + ' at ' + (pr.res || 'its default resolution') + ' \u2014 about ' + pr.credits +
+      ' credits' + (pr.from === 'measured' ? ', which is what it cost last time.'
+        : '. That is the published base price; a longer or larger clip costs more.')));
+    if (bal !== null) {
+      body.appendChild(SB.el('p', 'pp-note' + (bal < pr.credits ? ' warn' : ''),
+        'You have ' + bal + ' credits' + (bal < pr.credits ? ' \u2014 this may not go through.' : '.')));
+    }
+    body.appendChild(SB.el('div', 'pp-note',
+      'Asked once per session; every clip after this goes straight through.'));
+    SB.modal({
+      title: 'Shoot this clip?', width: '420px', body: body,
+      buttons: [
+        { label: 'Cancel' },
+        {
+          label: 'Shoot it', primary: true, onClick: function (close) {
+            costAsked = true;
+            close();
+            const again = document.querySelector('[data-push="' + sh.id + ':video"]');
+            if (again) again.click();
+          }
+        }
+      ]
+    });
+    return false;
+  }
+
   function paintPush(b, sh, m, role) {
     const IM = SB.Imagine;
     const job = IM.job(sh.id, role);
@@ -637,11 +704,11 @@
     } else if (block) {
       b.title = block.long;
     } else if (role === 'video') {
-      b.title = sh.render || sh.image
+      b.title = (sh.render || sh.image
         ? 'Animate this shot’s own frame with the prompt above.'
-        : 'No frame on this card yet, so this is text-to-video.';
+        : 'No frame on this card yet, so this is text-to-video.') + priceLine(m, role);
     } else {
-      b.title = 'Make this frame on ImagineArt and put it on the card.';
+      b.title = 'Make this frame on ImagineArt and put it on the card.' + priceLine(m, role);
     }
   }
 
