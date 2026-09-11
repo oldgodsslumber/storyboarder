@@ -614,17 +614,60 @@
     imWhat.onclick = function () {
       imWhat.disabled = true;
       imWhat.textContent = 'asking…';
-      IM.capabilities().then(function (tools) {
-        const box = SB.el('div', 'caps');
+      const box = SB.el('div', 'caps');
+      /* The button stays out of action until this one is closed: pressing it
+         again used to stack a second report on top of the first. */
+      const m = SB.modal({
+        title: 'What this account exposes', width: '680px', body: box,
+        buttons: [{ label: 'Close', primary: true }],
+        onClose: function () {
+          imWhat.disabled = false;
+          imWhat.textContent = 'What my account can do';
+        }
+      });
+      box.appendChild(SB.el('div', 'pp-note', 'asking ImagineArt…'));
+
+      /* The report comes first and always: when this does not work, the
+         reason is the thing you came here for, and it used to be a toast
+         that said "Not signed in" and then vanished. */
+      IM.report().then(function (steps) {
+        box.innerHTML = '';
+        const list = SB.el('div', 'caps-steps');
+        steps.forEach(function (st) {
+          const row = SB.el('div', 'caps-step' + (st.ok ? '' : ' bad'));
+          row.appendChild(SB.el('span', 'mark', st.ok ? '✓' : '✕'));
+          row.appendChild(SB.el('span', 'k', st.name));
+          row.appendChild(SB.el('span', 'v', st.detail));
+          list.appendChild(row);
+        });
+        box.appendChild(list);
+        const stopped = steps.filter(function (s2) { return !s2.ok; })[0];
+        if (stopped) {
+          box.appendChild(SB.el('div', 'pp-note warn',
+            'It got as far as “' + stopped.name + '”. ' +
+            (stopped.name === 'Signed in'
+              ? 'Press Sign in on this tab first — everything below needs an account.'
+              : 'That is the step to fix; the message beside it is ImagineArt’s own.')));
+          return null;
+        }
+        return IM.capabilities();
+      }).then(function (tools) {
+        if (!tools) return;
         if (!tools.length) {
           box.appendChild(SB.el('div', 'pp-note warn',
             'Your account exposes no tools at all through MCP.'));
+          return;
         }
+        const named = tools.filter(function (t) {
+          return t.params.some(function (pr) { return pr.isModel; });
+        });
         box.appendChild(SB.el('div', 'pp-note',
-          tools.length + ' tool' + (tools.length === 1 ? '' : 's') +
-          '. A model can only be chosen where a parameter below offers one — if none do, ' +
-          'ImagineArt picks, and the slug column in Models & templates only applies to the ' +
-          'API-key transport.'));
+          tools.length + ' tool' + (tools.length === 1 ? '' : 's') + '. ' +
+          (named.length
+            ? named.length + ' of them let a model be named, so the slug column in Models & ' +
+              'templates applies here and the list below is what your account accepts.'
+            : 'None of them takes a model, so ImagineArt chooses for itself on this ' +
+              'transport and the slug column only applies to the API-key one.')));
         tools.forEach(function (t) {
           const card = SB.el('div', 'cap');
           card.appendChild(SB.el('div', 'cap-name', t.name +
@@ -652,26 +695,10 @@
         const acts = SB.el('div', 'pp-actions');
         acts.appendChild(copy);
         box.appendChild(acts);
-        SB.modal({ title: 'What this account exposes', width: '680px', body: box,
-          buttons: [{ label: 'Close', primary: true }] });
       }).catch(function (e) {
-        SB.toast(e.message || String(e), true);
+        box.appendChild(SB.el('div', 'pp-note warn', e.message || String(e)));
       }).then(function () {
-        imWhat.disabled = false;
         imWhat.textContent = 'What my account can do';
-      });
-    };
-
-    imCheck.onclick = function () {
-      imCheck.disabled = true;
-      imStatus.textContent = 'asking ImagineArt…';
-      IM.whoAmI().catch(function () { return null; }).then(function () {
-        return IM.toolList(true).catch(function () { return null; });
-      }).then(function () {
-        return IM.balance().catch(function () { return null; });
-      }).then(function () {
-        imCheck.disabled = false;
-        imDraw();
       });
     };
 

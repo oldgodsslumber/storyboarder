@@ -1668,6 +1668,67 @@
     return bits.join(' · ');
   }
 
+  /* ---------------- the connection, step by step ----------------
+   *
+   * "It didn't work" is the least useful sentence in software, and a toast
+   * that says why and then vanishes after two seconds is how you get it. This
+   * walks the whole path — signed in, discovery, token, handshake, tools —
+   * and reports each step as it goes, so a failure names the step, the
+   * status and the message instead of disappearing.
+   *
+   * Never rejects: a broken connection is the thing being described. */
+  function report() {
+    const steps = [];
+    const add = function (name, ok, detail) { steps.push({ name: name, ok: ok, detail: detail || '' }); };
+    const bail = function (name) {
+      return function (e) {
+        add(name, false, (e && e.message) || String(e));
+        const stop = new Error('stopped');
+        stop.stopped = true;
+        throw stop;
+      };
+    };
+
+    if (transport() === 'key') {
+      add('Transport', true, 'API key — MCP is not used, so there are no tools to list. ' +
+        'Switch to “Sign in with ImagineArt” above to see an account’s own tools.');
+      add('API key', !!apiKey(), apiKey() ? 'set in this browser' : 'none set');
+      return Promise.resolve(steps);
+    }
+
+    add('Signed in', isSignedIn(),
+      isSignedIn() ? ((tokens() || {}).email || 'yes') : 'no — press Sign in first');
+    if (!isSignedIn()) return Promise.resolve(steps);
+
+    return discover().then(function (meta) {
+      add('Discovery', !!(meta && meta.token_endpoint), (meta && meta.issuer) || 'no metadata');
+      return accessToken();
+    }, bail('Discovery')).then(function () {
+      const t = tokens() || {};
+      const left = Math.round(((t.expires_at || 0) - Date.now()) / 60000);
+      add('Access token', true, left > 0 ? 'good for ' + left + ' more minutes' : 'refreshed');
+      return mcpReady();
+    }, bail('Access token')).then(function (r) {
+      const si = r && r.serverInfo;
+      add('MCP handshake', true, si ? ((si.name || 'server') + ' ' + (si.version || '')).trim()
+        : 'accepted');
+      return toolList(true);
+    }, bail('MCP handshake')).then(function (list) {
+      add('Tools', !!(list && list.length), (list || []).length + ' offered');
+      const rest = lsStr(K_REST);
+      if (rest) {
+        add('v2 REST fallback', rest === 'yes',
+          rest === 'yes' ? 'your token is accepted there too' : 'your token is not accepted there');
+      }
+      const d = door();
+      if (d) add('Last generation', true, 'went through ' + (d === 'mcp' ? 'these tools' : 'the v2 REST API'));
+      return steps;
+    }, function (e) {
+      if (!e || !e.stopped) add('Tools', false, (e && e.message) || String(e));
+      return steps;
+    }).catch(function () { return steps; });
+  }
+
   /* Everything the account's tools say about themselves, flattened for
    * reading. The whole question of which models an OAuth session can reach —
    * and whether it can even be asked for one — is answered by this and
@@ -1712,7 +1773,7 @@
     account: account, whoAmI: whoAmI, balance: balance,
     /* discovery, for the Settings readout */
     discover: discover, toolList: toolList, tools: function () { return mcp.tools || []; },
-    capabilities: capabilities, door: door,
+    capabilities: capabilities, report: report, door: door,
     restVerdict: function () { return lsStr(K_REST); },
     catalog: catalog, catalogAll: catalogAll, catalogSource: catalogSource,
     catalogAge: catalogAge, refreshCatalog: refreshCatalog,

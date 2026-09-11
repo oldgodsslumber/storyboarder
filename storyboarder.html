@@ -1190,6 +1190,15 @@ body.comment-mode .frame{cursor:crosshair}
 .ex-status{font-size:11px;color:var(--fg-dim);min-height:14px;font-variant-numeric:tabular-nums}
 .ex-acts{display:flex;gap:8px;justify-content:flex-end}
 
+/* the connection, step by step — a failure has to be readable, not a toast */
+.caps-steps{margin-bottom:10px}
+.caps-step{display:flex;gap:8px;align-items:baseline;font-size:12px;padding:2px 0}
+.caps-step .mark{flex:0 0 14px;color:var(--ok,#3fb950)}
+.caps-step.bad .mark{color:var(--danger)}
+.caps-step .k{flex:0 0 130px}
+.caps-step .v{color:var(--fg-dim);min-width:0;overflow-wrap:anywhere}
+.caps-step.bad .v{color:var(--danger)}
+
 /* what an account exposes — printed, not summarised */
 .caps{max-height:60vh;overflow:auto}
 .cap{border:1px solid var(--line);border-radius:6px;padding:8px;margin:8px 0;background:var(--bg3)}
@@ -1214,7 +1223,7 @@ body.comment-mode .frame{cursor:crosshair}
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-09-11 15:06 · 04026d8+";</script>
+<script>window.SB_BUILD = "2026-09-11 15:17 · a50a391+";</script>
 
 <div id="app">
 
@@ -5251,6 +5260,67 @@ window.SB = window.SB || {};
     return bits.join(' · ');
   }
 
+  /* ---------------- the connection, step by step ----------------
+   *
+   * "It didn't work" is the least useful sentence in software, and a toast
+   * that says why and then vanishes after two seconds is how you get it. This
+   * walks the whole path — signed in, discovery, token, handshake, tools —
+   * and reports each step as it goes, so a failure names the step, the
+   * status and the message instead of disappearing.
+   *
+   * Never rejects: a broken connection is the thing being described. */
+  function report() {
+    const steps = [];
+    const add = function (name, ok, detail) { steps.push({ name: name, ok: ok, detail: detail || '' }); };
+    const bail = function (name) {
+      return function (e) {
+        add(name, false, (e && e.message) || String(e));
+        const stop = new Error('stopped');
+        stop.stopped = true;
+        throw stop;
+      };
+    };
+
+    if (transport() === 'key') {
+      add('Transport', true, 'API key — MCP is not used, so there are no tools to list. ' +
+        'Switch to “Sign in with ImagineArt” above to see an account’s own tools.');
+      add('API key', !!apiKey(), apiKey() ? 'set in this browser' : 'none set');
+      return Promise.resolve(steps);
+    }
+
+    add('Signed in', isSignedIn(),
+      isSignedIn() ? ((tokens() || {}).email || 'yes') : 'no — press Sign in first');
+    if (!isSignedIn()) return Promise.resolve(steps);
+
+    return discover().then(function (meta) {
+      add('Discovery', !!(meta && meta.token_endpoint), (meta && meta.issuer) || 'no metadata');
+      return accessToken();
+    }, bail('Discovery')).then(function () {
+      const t = tokens() || {};
+      const left = Math.round(((t.expires_at || 0) - Date.now()) / 60000);
+      add('Access token', true, left > 0 ? 'good for ' + left + ' more minutes' : 'refreshed');
+      return mcpReady();
+    }, bail('Access token')).then(function (r) {
+      const si = r && r.serverInfo;
+      add('MCP handshake', true, si ? ((si.name || 'server') + ' ' + (si.version || '')).trim()
+        : 'accepted');
+      return toolList(true);
+    }, bail('MCP handshake')).then(function (list) {
+      add('Tools', !!(list && list.length), (list || []).length + ' offered');
+      const rest = lsStr(K_REST);
+      if (rest) {
+        add('v2 REST fallback', rest === 'yes',
+          rest === 'yes' ? 'your token is accepted there too' : 'your token is not accepted there');
+      }
+      const d = door();
+      if (d) add('Last generation', true, 'went through ' + (d === 'mcp' ? 'these tools' : 'the v2 REST API'));
+      return steps;
+    }, function (e) {
+      if (!e || !e.stopped) add('Tools', false, (e && e.message) || String(e));
+      return steps;
+    }).catch(function () { return steps; });
+  }
+
   /* Everything the account's tools say about themselves, flattened for
    * reading. The whole question of which models an OAuth session can reach —
    * and whether it can even be asked for one — is answered by this and
@@ -5295,7 +5365,7 @@ window.SB = window.SB || {};
     account: account, whoAmI: whoAmI, balance: balance,
     /* discovery, for the Settings readout */
     discover: discover, toolList: toolList, tools: function () { return mcp.tools || []; },
-    capabilities: capabilities, door: door,
+    capabilities: capabilities, report: report, door: door,
     restVerdict: function () { return lsStr(K_REST); },
     catalog: catalog, catalogAll: catalogAll, catalogSource: catalogSource,
     catalogAge: catalogAge, refreshCatalog: refreshCatalog,
@@ -15450,17 +15520,60 @@ window.SB = window.SB || {};
     imWhat.onclick = function () {
       imWhat.disabled = true;
       imWhat.textContent = 'asking…';
-      IM.capabilities().then(function (tools) {
-        const box = SB.el('div', 'caps');
+      const box = SB.el('div', 'caps');
+      /* The button stays out of action until this one is closed: pressing it
+         again used to stack a second report on top of the first. */
+      const m = SB.modal({
+        title: 'What this account exposes', width: '680px', body: box,
+        buttons: [{ label: 'Close', primary: true }],
+        onClose: function () {
+          imWhat.disabled = false;
+          imWhat.textContent = 'What my account can do';
+        }
+      });
+      box.appendChild(SB.el('div', 'pp-note', 'asking ImagineArt…'));
+
+      /* The report comes first and always: when this does not work, the
+         reason is the thing you came here for, and it used to be a toast
+         that said "Not signed in" and then vanished. */
+      IM.report().then(function (steps) {
+        box.innerHTML = '';
+        const list = SB.el('div', 'caps-steps');
+        steps.forEach(function (st) {
+          const row = SB.el('div', 'caps-step' + (st.ok ? '' : ' bad'));
+          row.appendChild(SB.el('span', 'mark', st.ok ? '✓' : '✕'));
+          row.appendChild(SB.el('span', 'k', st.name));
+          row.appendChild(SB.el('span', 'v', st.detail));
+          list.appendChild(row);
+        });
+        box.appendChild(list);
+        const stopped = steps.filter(function (s2) { return !s2.ok; })[0];
+        if (stopped) {
+          box.appendChild(SB.el('div', 'pp-note warn',
+            'It got as far as “' + stopped.name + '”. ' +
+            (stopped.name === 'Signed in'
+              ? 'Press Sign in on this tab first — everything below needs an account.'
+              : 'That is the step to fix; the message beside it is ImagineArt’s own.')));
+          return null;
+        }
+        return IM.capabilities();
+      }).then(function (tools) {
+        if (!tools) return;
         if (!tools.length) {
           box.appendChild(SB.el('div', 'pp-note warn',
             'Your account exposes no tools at all through MCP.'));
+          return;
         }
+        const named = tools.filter(function (t) {
+          return t.params.some(function (pr) { return pr.isModel; });
+        });
         box.appendChild(SB.el('div', 'pp-note',
-          tools.length + ' tool' + (tools.length === 1 ? '' : 's') +
-          '. A model can only be chosen where a parameter below offers one — if none do, ' +
-          'ImagineArt picks, and the slug column in Models & templates only applies to the ' +
-          'API-key transport.'));
+          tools.length + ' tool' + (tools.length === 1 ? '' : 's') + '. ' +
+          (named.length
+            ? named.length + ' of them let a model be named, so the slug column in Models & ' +
+              'templates applies here and the list below is what your account accepts.'
+            : 'None of them takes a model, so ImagineArt chooses for itself on this ' +
+              'transport and the slug column only applies to the API-key one.')));
         tools.forEach(function (t) {
           const card = SB.el('div', 'cap');
           card.appendChild(SB.el('div', 'cap-name', t.name +
@@ -15488,26 +15601,10 @@ window.SB = window.SB || {};
         const acts = SB.el('div', 'pp-actions');
         acts.appendChild(copy);
         box.appendChild(acts);
-        SB.modal({ title: 'What this account exposes', width: '680px', body: box,
-          buttons: [{ label: 'Close', primary: true }] });
       }).catch(function (e) {
-        SB.toast(e.message || String(e), true);
+        box.appendChild(SB.el('div', 'pp-note warn', e.message || String(e)));
       }).then(function () {
-        imWhat.disabled = false;
         imWhat.textContent = 'What my account can do';
-      });
-    };
-
-    imCheck.onclick = function () {
-      imCheck.disabled = true;
-      imStatus.textContent = 'asking ImagineArt…';
-      IM.whoAmI().catch(function () { return null; }).then(function () {
-        return IM.toolList(true).catch(function () { return null; });
-      }).then(function () {
-        return IM.balance().catch(function () { return null; });
-      }).then(function () {
-        imCheck.disabled = false;
-        imDraw();
       });
     };
 

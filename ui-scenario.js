@@ -1486,6 +1486,36 @@
         document.querySelector('.modal .tab[data-tab="general"]').click();
       })();
 
+      /* "It didn't work" has to be answerable. Signed out, this used to be a
+         toast that said "Not signed in" and vanished in two seconds. */
+      {
+        const nap = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+        const imTab = Array.prototype.filter.call(document.querySelectorAll('.modal .tab'),
+          function (x) { return x.textContent === 'ImagineArt'; })[0];
+        imTab.click();
+        const what = Array.prototype.filter.call(
+          document.querySelectorAll('.modal .tab-panel.on button'),
+          function (b) { return /What my account/.test(b.textContent); })[0];
+        t('the account readout is offered', !!what, 'no button');
+        what.click();
+        await nap(300);
+        const caps = document.querySelector('.caps');
+        t('pressing it opens a report rather than a toast', !!caps, 'no modal');
+        const steps = document.querySelectorAll('.caps .caps-step');
+        t('which walks the connection step by step', steps.length >= 1, steps.length);
+        t('and names the step it stopped at',
+          /Signed in/.test(steps[0].textContent) &&
+          /Press Sign in/.test((document.querySelector('.caps .pp-note.warn') || {}).textContent || ''),
+          steps[0].textContent);
+        t('the button will not stack a second one on top', what.disabled, 'still enabled');
+        const close = Array.prototype.filter.call(document.querySelectorAll('.modal button'),
+          function (b) { return b.textContent === 'Close'; }).pop();
+        close.click();
+        await nap(80);
+        t('and comes back when the report is closed', !what.disabled, 'still disabled');
+        document.querySelector('.modal .tab[data-tab="general"]').click();
+      }
+
       t('the first tab says what the board is carrying',
         !!document.querySelector('.modal .tab-panel.on .weigh'), 'no weight readout');
       t('and offers no folder to connect',

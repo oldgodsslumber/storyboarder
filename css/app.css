@@ -1184,6 +1184,15 @@ body.comment-mode .frame{cursor:crosshair}
 .ex-status{font-size:11px;color:var(--fg-dim);min-height:14px;font-variant-numeric:tabular-nums}
 .ex-acts{display:flex;gap:8px;justify-content:flex-end}
 
+/* the connection, step by step — a failure has to be readable, not a toast */
+.caps-steps{margin-bottom:10px}
+.caps-step{display:flex;gap:8px;align-items:baseline;font-size:12px;padding:2px 0}
+.caps-step .mark{flex:0 0 14px;color:var(--ok,#3fb950)}
+.caps-step.bad .mark{color:var(--danger)}
+.caps-step .k{flex:0 0 130px}
+.caps-step .v{color:var(--fg-dim);min-width:0;overflow-wrap:anywhere}
+.caps-step.bad .v{color:var(--danger)}
+
 /* what an account exposes — printed, not summarised */
 .caps{max-height:60vh;overflow:auto}
 .cap{border:1px solid var(--line);border-radius:6px;padding:8px;margin:8px 0;background:var(--bg3)}
