@@ -283,6 +283,59 @@
    * because the number is a promise about the order the images are handed to
    * the model — and that order does not restart per kind.
    */
+  /* The cast block for a frame-only video job.
+   *
+   * This block exists to say how subjects LOOK, and on this one job that is
+   * the one thing already settled: the first frame is supplied as a picture
+   * and everybody in it is in it. Sent in full anyway — descriptions, wardrobe,
+   * a numbered mapping for images this call never receives, and a paragraph
+   * declaring all of it the authoritative record of their appearance — it read
+   * as an instruction to write the appearance down, and the motion got a clause
+   * at the end.
+   *
+   * What the writer still needs is the names to use, and the one group genuinely
+   * missing from the picture: whoever arrives after it.
+   */
+  function videoCastBlock(p, shot, cast) {
+    const late = arriving(p, shot);
+    const isLate = {};
+    late.forEach(function (x) { isLate[x.id] = 1; });
+    const present = cast.filter(function (x) { return !isLate[x.id]; });
+    const lines = [];
+
+    if (present.length) {
+      lines.push('WHO AND WHAT IS IN THE SUPPLIED FRAME — use these names.');
+      present.forEach(function (per) {
+        lines.push('  ' + (per.name || 'unnamed') + ' (' + kindOf(per).one + ')');
+      });
+      lines.push('Use the names. Write what they DO, not how they look.');
+    }
+
+    /* The exception, and the reason this block is not simply dropped: somebody
+     * who walks in after the first frame is not in the picture, so the words
+     * are the only record of what they look like there will ever be.
+     *
+     * What is NOT missing is the entrance. "Bob enters through the far doors
+     * behind her" is in the shot description, and this block used to end by
+     * asking the writer to say where each one comes from and when — inviting it
+     * to invent staging the board had already written down, and to overrule it
+     * when the two disagreed. Appearance is the gap here; the entrance never
+     * was. */
+    if (late.length) {
+      lines.push('');
+      lines.push('NOT IN THE SUPPLIED FRAME — these arrive during the shot, so the words are the ' +
+        'only record of what they look like:');
+      late.forEach(function (per) {
+        const d = (per.description || '').replace(/\s+/g, ' ').trim();
+        lines.push('  ' + (per.name || 'unnamed') + ': ' + (d || '(no description yet)'));
+      });
+      lines.push('How and when each one enters is in the shot description. Follow it exactly — ' +
+        'do not invent a door, a direction or a moment it does not give.');
+    }
+
+    return lines.join('\n');
+  }
+
   function block(p, shot, model, role) {
     /* image N -> which subject, assigned before anything is written so the
      * per-kind sections can cite numbers the mapping will agree with */
@@ -300,6 +353,13 @@
      * empty cast then sent the files with no mapping at all, so the prompt said
      * nothing about images the person was about to hand over. */
     if (!cast.length && !numbered.length) return '';
+    /* Frame-only video takes the short block above: no mapping, because this
+     * call is shown no reference images, and no appearance, because the frame
+     * carries it. A full-reference model keeps the long one — there the
+     * appearance lines are the format, binding each label to a picture. */
+    if (role === 'video' && SB.Model.videoInherits(model)) {
+      return videoCastBlock(p, shot, cast);
+    }
     const rangeFor = function (per) {
       const mine = numbered.filter(function (e) { return e.id === per.id; })
         .map(function (e) { return e.n; });
@@ -386,10 +446,18 @@
           'look off-screen. The frame is what the camera sees before they arrive.');
       }
     }
-    if (numbered.length && (role === 'video' || role === 'both')) {
+    /* Only true of a frame-only model. Sent unconditionally, it reached the H3
+     * job and told it not to use the <Picture N> labels that job's own template
+     * demands and its self-check spends a corrective call enforcing — the two
+     * halves of one request arguing with each other. With role 'video' now
+     * taking the short block above, what is left here is the combined job. */
+    if (numbered.length && role === 'both' && SB.Model.videoInherits(model)) {
       lines.push('The image-to-video call is given ONE picture — the first frame — so the video ' +
-        'prompt must not refer to image numbers. Name people and things by name there.');
+        'prompt must not refer to image numbers. Name people and things by name there, and do ' +
+        'not describe how they look: the frame already shows it.');
     }
+    /* role 'video' now says this in videoCastBlock, with the descriptions the
+     * arrivals need; what reaches here is 'both' and full-reference. */
     if (late.length && (role === 'video' || role === 'both')) {
       lines.push('ARRIVING DURING THE SHOT: ' +
         late.map(function (x) { return x.name || 'unnamed'; }).join(', ') +

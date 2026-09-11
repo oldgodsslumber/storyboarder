@@ -468,6 +468,78 @@
         shots.a.image = null;
       }
 
+      /* ---------- the frame is supplied, so the video prompt is motion ----------
+       *
+       * The complaint this answers: video prompts came back re-describing the
+       * set, the wardrobe and the grade — all of it already in the picture the
+       * call is handed — with the action reduced to a clause. Four instructions
+       * asked for the look (the house style, the fold-in line, the rider, the
+       * cast block) and one asked for motion.
+       */
+      {
+        const wan = P().settings.models.filter(function (m) { return m.name === 'Wan'; })[0];
+        P().settings.videoModelId = wan.id;
+        const per = SB.Personas.add(P(), { name: 'Ana', description: 'Navy suit, tan boots.' });
+        shots.a.personaIds = [per.id];
+        shots.a.image = { ref: 'frame1', w: 8, h: 8 };
+
+        const sys = [SB.Brand.systemFor(P(), shots.a, 'video'),
+          SB.Personas.block(P(), shots.a, wan, 'video')].join('  ');
+
+        t('the house style is not sent to a frame-only video job',
+          sys.indexOf('muted professional grade') < 0 && sys.indexOf('HOUSE STYLE —') < 0,
+          sys.slice(0, 120));
+        t('and is told nothing about it either — not even that it is missing',
+          sys.indexOf('HOUSE STYLE') < 0, '');
+        t('the frame is declared already supplied',
+          /THE FIRST FRAME IS SUPPLIED TO THE MODEL AS A PICTURE/.test(sys), '');
+        t('the closing instruction asks for movement, not description',
+          /concrete MOVEMENT/.test(sys) && !/as concrete description/.test(sys), '');
+        t('a subject in the frame is named but not described',
+          sys.indexOf('Ana') >= 0 && sys.indexOf('Navy suit') < 0, '');
+        t('and the old look-restating rider line is gone',
+          sys.indexOf('Hold the natural-light look') < 0, '');
+
+        /* the half that must NOT change: a full-reference model still gets the
+           appearance, because binding a label to a picture is its format */
+        const h3b = P().settings.models.filter(function (m) {
+          return m.name === 'MiniMax H3 (Hailuo)'; })[0];
+        P().settings.videoModelId = h3b.id;
+        const h3sys = [SB.Brand.systemFor(P(), shots.a, 'video'),
+          SB.Personas.block(P(), shots.a, h3b, 'video')].join('  ');
+        t('a full-reference model still gets the house style and the descriptions',
+          h3sys.indexOf('Navy suit') > 0 && h3sys.indexOf('muted professional grade') > 0, '');
+        t('and is no longer told not to use image numbers',
+          h3sys.indexOf('must not refer to image numbers') < 0, '');
+
+        /* the migration that brings an existing board onto the new wording */
+        const proj = { name: 'old', master: SB.Doc.make(''), scenes: [],
+          settings: { models: [
+            { id: 'm_v1', name: 'Wan', kind: 'video',
+              imageTemplate: SB.Model.IMG_TPL, videoTemplate: SB.Model.VID_TPL_V1 },
+            { id: 'm_v2', name: 'Kling', kind: 'video',
+              imageTemplate: SB.Model.IMG_TPL, videoTemplate: 'my own wording' }
+          ], modelSeeds: [] } };
+        SB.Model.migrate(proj);
+        const m1 = proj.settings.models.filter(function (m) { return m.id === 'm_v1'; })[0];
+        const m2 = proj.settings.models.filter(function (m) { return m.id === 'm_v2'; })[0];
+        t('an untouched video template is brought up to date',
+          m1.videoTemplate === SB.Model.VID_TPL, m1.videoTemplate.slice(0, 40));
+        t('an edited one is left alone', m2.videoTemplate === 'my own wording', m2.videoTemplate);
+        t('and every model gets a videoRefs kind',
+          m1.videoRefs === SB.Model.FRAME_ONLY && m2.videoRefs === SB.Model.FRAME_ONLY,
+          m1.videoRefs + '/' + m2.videoRefs);
+        t('with H3 the only full-reference one',
+          proj.settings.models.filter(function (m) {
+            return m.videoRefs === SB.Model.FULL_REFERENCE;
+          }).map(function (m) { return m.name; }).join() === 'MiniMax H3 (Hailuo)', '');
+
+        P().settings.videoModelId = null;
+        shots.a.personaIds = [];
+        shots.a.image = null;
+        SB.Personas.remove(P(), per.id);
+      }
+
       /* ---------- and an existing board is carried over to it ---------- */
       {
         const old1 = { id: 'm_old1', name: 'Hailuo (MiniMax)', kind: 'video',

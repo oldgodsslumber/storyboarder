@@ -28,10 +28,27 @@
     'No camera motion, no narration, no preamble.\n\n' +
     'SHOT DESCRIPTION:\n{{DESCRIPTION}}';
 
-  const VID_TPL =
+  const VID_TPL_V1 =
     'Write a single image-to-video prompt for {{MODEL}}, starting from the first frame described below.\n' +
     'Shot type: {{SHOT_TYPE}}. Scene: {{SCENE}}.\n' +
     'Describe only what MOVES: subject action, camera move, pacing, and how the shot ends. ' +
+    'Keep it one paragraph, no preamble.\n\n' +
+    'SHOT DESCRIPTION:\n{{DESCRIPTION}}';
+
+  /* "Describe only what MOVES" was one line arguing with the house style, the
+   * cast block and a rider that all asked for the look — and the look won. The
+   * frame is SUPPLIED to an image-to-video call, so none of it needs writing
+   * down; saying that outright, and saying what to write instead, is the
+   * difference between a motion prompt and a second description of the shot. */
+  const VID_TPL =
+    'Write a single image-to-video prompt for {{MODEL}}. The first frame is supplied with the ' +
+    'call as a picture — the model can already see the set, the wardrobe, the faces, the light ' +
+    'and the grade, so none of that is yours to write.\n' +
+    'Shot type: {{SHOT_TYPE}}. Scene: {{SCENE}}.\n' +
+    'Write the MOTION out of that frame, in order: what moves first, what follows, at what pace, ' +
+    'and where the shot ends. Be specific about the action — which hand, which direction, how ' +
+    'far, how fast, what the body and the face are doing. Name the camera move and its speed.\n' +
+    'Open on the action, not on the scene. Do not re-describe anything already in the frame.\n' +
     'Keep it one paragraph, no preamble.\n\n' +
     'SHOT DESCRIPTION:\n{{DESCRIPTION}}';
 
@@ -73,10 +90,29 @@
     'LABELS table — use those labels exactly, and keep face, hair and wardrobe as the image and ' +
     'the description above have them. Named subjects: {{NAME}}.';
 
+  /* What an image-to-video call is actually shown.
+   *
+   *   'frame-only'     — one picture, the first frame. Everything in it is
+   *                      inherited: set, wardrobe, faces, light, lens, grade.
+   *                      The prompt is motion and nothing else.
+   *   'full-reference' — the frame AND the subject reference images, under a
+   *                      label vocabulary. Appearance is part of the format
+   *                      here, not a repetition, because the model is being
+   *                      asked to bind each label to a picture.
+   *
+   * This is the one fact about a target model that changes what the prompt
+   * should CONTAIN rather than how it is worded, which is why it is a field
+   * and not a sentence inside referenceTemplate. Everything ships frame-only;
+   * H3 is the only full-reference model the app knows about. */
+  const FRAME_ONLY = 'frame-only';
+  const FULL_REFERENCE = 'full-reference';
+
   /* Templates a specific model needs instead of the generic pair, keyed by the
    * name it ships under in defaultModels(). */
   const MODEL_TPLS = {
-    'MiniMax H3 (Hailuo)': { video: H3_VID_TPL, reference: H3_REF_TPL }
+    'MiniMax H3 (Hailuo)': {
+      video: H3_VID_TPL, reference: H3_REF_TPL, videoRefs: FULL_REFERENCE
+    }
   };
 
   function tplsFor(name) {
@@ -84,16 +120,24 @@
     return {
       image: o.image || IMG_TPL,
       video: o.video || VID_TPL,
-      reference: typeof o.reference === 'string' ? o.reference : SB.Personas.DEFAULT_REF_TEMPLATE
+      reference: typeof o.reference === 'string' ? o.reference : SB.Personas.DEFAULT_REF_TEMPLATE,
+      videoRefs: o.videoRefs || FRAME_ONLY
     };
   }
+
+  /* Does this model's video prompt inherit the look from the supplied frame?
+   * True for everything except a full-reference model. Called on a null model
+   * — no video target picked yet — it answers true, which is the safe way
+   * round: the worst case is a prompt that leaves out a description nobody
+   * needed. */
+  function videoInherits(m) { return !m || m.videoRefs !== FULL_REFERENCE; }
 
   function model(name, kind) {
     const t = tplsFor(name);
     return {
       id: SB.uid('m'), name: name, kind: kind,
       imageTemplate: t.image, videoTemplate: t.video,
-      referenceTemplate: t.reference
+      referenceTemplate: t.reference, videoRefs: t.videoRefs
     };
   }
 
@@ -416,6 +460,15 @@
       if (m.imageTemplate === IMG_TPL_V1) m.imageTemplate = IMG_TPL;
     });
 
+    /* The old video template asked for motion in one line while the house
+     * style, the cast block and the rider all asked for the look — so the
+     * prompts came back re-describing the frame that was sitting right there.
+     * Same rule as the still above: an untouched copy is brought up to date,
+     * an edited one is the user's and is left exactly alone. */
+    s.models.forEach(function (m) {
+      if (m.videoTemplate === VID_TPL_V1) m.videoTemplate = VID_TPL;
+    });
+
     s.models.forEach(function (m) {
       m.id = m.id || SB.uid('m');
       m.kind = m.kind || 'video';
@@ -424,6 +477,11 @@
       m.videoTemplate = m.videoTemplate || t.video;
       if (typeof m.referenceTemplate !== 'string') {
         m.referenceTemplate = t.reference;
+      }
+      /* Keyed off the name, not the template: a full-reference model whose
+       * wording somebody has edited is still full-reference. */
+      if (m.videoRefs !== FRAME_ONLY && m.videoRefs !== FULL_REFERENCE) {
+        m.videoRefs = t.videoRefs;
       }
     });
     /* A board keeps its own model list, so a model added to the app later
@@ -948,7 +1006,10 @@
     FILE_VERSION: FILE_VERSION,
     CARD_COLORS: CARD_COLORS,
     DEFAULT_SHOT_TYPES: DEFAULT_SHOT_TYPES,
-    IMG_TPL: IMG_TPL, IMG_TPL_V1: IMG_TPL_V1, VID_TPL: VID_TPL, tplsFor: tplsFor,
+    IMG_TPL: IMG_TPL, IMG_TPL_V1: IMG_TPL_V1,
+    VID_TPL: VID_TPL, VID_TPL_V1: VID_TPL_V1, tplsFor: tplsFor,
+    FRAME_ONLY: FRAME_ONLY, FULL_REFERENCE: FULL_REFERENCE,
+    videoInherits: videoInherits,
     newProject: newProject, migrate: migrate, foldLineEndings: foldLineEndings,
     newShot: newShot, newScene: newScene,
     defaultModels: defaultModels, defaultExport: defaultExport,

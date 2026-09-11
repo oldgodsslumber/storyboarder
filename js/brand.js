@@ -116,12 +116,59 @@
     '- Composition, palette and the sense of the world still follow the house style.'
   ].join('\n');
 
+  /* The craft rules for movement. True of every video job, full-reference or
+   * not, and independent of the house style — so a board with the brand
+   * switched off still gets them.
+   *
+   * "Hold the natural-light look and the clean exposure through the whole move"
+   * used to be the last line here. It reads as a note about continuity and
+   * lands as an instruction to describe the lighting, which on a call that is
+   * handed the lit frame is the one thing not worth a word. What it was really
+   * protecting — the look not drifting mid-shot — is now stated as a thing that
+   * does not change rather than a thing to write down. */
   const VIDEO_RIDER = [
     'MOTION',
-    '- Wardrobe and location must not change during the shot.',
     '- Camera moves are restrained and motivated — no flourishes the scene has not earned.',
+    '- Name the move and its speed: a slow push, a short handheld drift, a settle. Not "cinematic".',
     '- Movement is documentary-real: the pace of an actual moment, not choreography.',
-    '- Hold the natural-light look and the clean exposure through the whole move.'
+    '- End the shot somewhere: say where the camera settles and what the last beat is.'
+  ].join('\n');
+
+  /* THE fix for a video prompt that comes back as a second description of the
+   * shot. An image-to-video call is handed the first frame as a picture — the
+   * same situation DERIVED_RIDER covers for a still derived from another
+   * shot's frame, and it was already the proven wording there. Nothing said it
+   * for video, so the writer restated the set, the wardrobe and the grade every
+   * time and the action got a clause at the end.
+   *
+   * Not sent to a full-reference model: there the appearance lines are the
+   * format, binding a label to a picture, not a repetition. */
+  const VIDEO_INHERIT_RIDER = [
+    'THE FIRST FRAME IS SUPPLIED TO THE MODEL AS A PICTURE',
+    '- Write nothing that is already visible in it: set, architecture, surfaces, furniture, ' +
+    'wardrobe, hair, faces, colour, lighting, focal length, aperture, depth of field, grade or ' +
+    'grain. Restating any of it re-renders the shot instead of moving it.',
+    '- Open on the action. Spend the paragraph on movement: what moves, in what order, how far, ' +
+    'how fast, what the face and the body do, what the camera does and at what speed, and where ' +
+    'the shot ends.',
+    '- Describe appearance ONLY where it CHANGES during the shot — a coat coming off, a lamp ' +
+    'switched on, a screen changing state.',
+    '- Whoever arrives after the first frame is not in the picture, so what they LOOK like is ' +
+    'yours to write. How and when they enter is not: the shot description gives it, and it is ' +
+    'the authority. Follow it, and do not invent an entrance it does not describe.'
+  ].join('\n');
+
+  /* Phrased as an exemption and placed after the brand, which is the shape
+   * REFERENCE_RIDER had to settle on before the house style stopped winning. */
+  const VIDEO_STYLE_EXEMPTION = [
+    'THE HOUSE STYLE IS NOT WRITTEN INTO A VIDEO PROMPT',
+    '- It describes how a finished frame LOOKS. The frame is already made, under that style, ' +
+    'and it is supplied with this call.',
+    '- The Finishing, grade, grain, contrast, colour, lens, aperture and depth-of-field rules ' +
+    'above must not appear in what you write. No "capture RAW", no "muted professional grade", ' +
+    'no "subtle cinematic grain", no focal length, no f-number, no shallow focus.',
+    '- What the house style still governs here is the MOVEMENT: restrained, motivated, ' +
+    'documentary-real, the pace of an actual moment.'
   ].join('\n');
 
   /* There was a no-gendered-language rule here, enforced with a word list and
@@ -146,7 +193,7 @@
   /* Where this frame sits in its scene, so the writer isn't composing in a
    * vacuum. Who is in it — and what they look like and wear — is the personas
    * layer's job, not this one's. */
-  function sequenceBlock(p, shot) {
+  function sequenceBlock(p, shot, role) {
     const f = SB.Model.findShot(p, shot.id);
     if (!f) return '';
     const scene = f.scene;
@@ -168,7 +215,12 @@
           (d ? (d.length > 160 ? d.slice(0, 157) + '…' : d) : '(no description yet)') +
           (s.id === shot.id ? '   <-- the frame you are writing' : ''));
       });
-      lines.push('Keep the location, the lighting mood and the grade coherent across these beats.');
+      /* Coherence is something to WRITE INTO a still. On a video job the frame
+       * already carries it, so the same sentence reads as one more instruction
+       * to describe the light — which is what this job must not do. */
+      lines.push(role === 'video'
+        ? 'Keep the movement coherent with the beats around it.'
+        : 'Keep the location, the lighting mood and the grade coherent across these beats.');
     }
     return lines.join('\n');
   }
@@ -197,10 +249,20 @@
      * re-render of the scene rather than a change to the picture. The frame is
      * the style reference now. (A combined image+video job still gets it: the
      * video half is not derived from anything.) */
-    const styleInherited = derived && role === 'image';
+    /* A frame-only video job is in exactly the position a derived still is in:
+     * the picture it starts from is supplied, so the look is inherited and the
+     * house style is a list of things to NOT say. A full-reference model is
+     * not — its format asks for appearance on purpose. */
+    const inherits = SB.Model.videoInherits(SB.Model.videoModel(p));
+    const videoInherits = role === 'video' && inherits;
+    const styleInherited = (derived && role === 'image') || videoInherits;
+    /* A video job is told nothing about the house style, not even that it is
+     * missing. Announcing the absence was a paragraph explaining one of the
+     * app's own decisions to a model that has no use for it, and the rider
+     * below already carries the only instruction that came out of it. */
     if (b.enabled && !styleInherited) {
       parts.push('HOUSE STYLE — every prompt you write must obey this.', '', b.text);
-    } else if (b.enabled) {
+    } else if (b.enabled && derived) {
       parts.push('THE HOUSE STYLE IS NOT REPEATED HERE.', '',
         'The supplied source frame was made under it and already carries the look — the grade, ' +
         'the grain, the lighting and the lens. Putting any of it back into words is what turns ' +
@@ -214,8 +276,15 @@
     if (role === 'video' || role === 'both') {
       if (parts.length) parts.push('');
       parts.push(VIDEO_RIDER);
+      /* A combined job writes both prompts in one call, so the style has to be
+       * sent for the still — and then scoped, or the video half inherits the
+       * instruction to write the look down. */
+      if (inherits) {
+        parts.push('', VIDEO_INHERIT_RIDER);
+        if (b.enabled && role === 'both') parts.push('', VIDEO_STYLE_EXEMPTION);
+      }
     }
-    const seq = sequenceBlock(p, shot);
+    const seq = sequenceBlock(p, shot, role);
     if (seq) {
       if (parts.length) parts.push('');
       parts.push(seq);
@@ -226,7 +295,14 @@
      * fold in the grade and the lighting, the writer restated the lens, the
      * practicals and the grain — rebuilding in words what the source frame
      * already carries. So there, the fold-in is scoped to what changes. */
-    parts.push('', derived
+    parts.push('', videoInherits
+      /* "as concrete description" is the right noun for a still and the wrong
+       * one here — it is the last thing the writer reads before it starts, and
+       * it was asking for description on the one job that must not describe. */
+      ? 'Fold these requirements into the prompt itself as concrete MOVEMENT — what happens, in ' +
+        'what order, at what pace. Nothing that is already visible in the supplied frame. Do not ' +
+        'quote the rules back, and do not add headings or commentary.'
+      : derived
       ? 'Fold these requirements into the prompt itself as concrete description, but ONLY where ' +
         'they describe what this frame CHANGES. Everything inherited from the supplied source ' +
         'frame — the place, the lighting, the lens, the grade, the wardrobe — is already in that ' +

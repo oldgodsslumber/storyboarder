@@ -484,10 +484,17 @@ console.log('\n— a first frame is one instant —');
   eq(/Rust-orange/.test(img2), true,
     'their description still travels — the still does not show them, the video will');
 
+  /* A frame-only video call is handed the first frame as a picture, so the look
+     of everybody standing in it is inherited and must not be written down again.
+     The one exception is whoever is NOT in that picture yet. */
   const vid = Per.block(p, sh, null, 'video');
-  eq(/ARRIVING DURING THE SHOT: Colleague/.test(vid), true,
+  eq(/NOT IN THE SUPPLIED FRAME[\s\S]*Colleague/.test(vid), true,
     'the video job is told the arrival is movement it owns');
-  eq(/NOT IN THE FIRST FRAME/.test(vid), true, 'and can still see the mark on the list');
+  eq(/Rust-orange/.test(vid), true,
+    'and gets their description — an arrival is the one thing the frame cannot show');
+  eq(/Writer/.test(vid), true, 'somebody already in frame is still named, so the action can use it');
+  eq(/Charcoal knit/.test(vid), false,
+    'but not described: that is in the supplied frame, and restating it re-renders the shot');
 
   /* the numbering has to mean the same thing in both prompts — it is the order
      the person feeding the model puts their files in */
@@ -496,8 +503,16 @@ console.log('\n— a first frame is one instant —');
   Per.addImage(her, im('B'));
   const a = Per.block(p, sh, null, 'image'), b = Per.block(p, sh, null, 'video');
   eq(/image 1 = Writer/.test(a) && /image 2 = Colleague/.test(a), true, 'the image job numbers both');
-  eq(/image 1 = Writer/.test(b) && /image 2 = Colleague/.test(b), true,
-    'and the video job numbers them identically');
+  /* ...and the frame-only video job numbers nothing, because it is handed no
+     reference images. A mapping there was a promise about files that are never
+     passed over — the numbering only has to agree where images are actually
+     fed, which is the still and a full-reference video model. */
+  eq(/image \d+ = /.test(b), false,
+    'the frame-only video job carries no mapping — it is shown no reference images');
+  const h3m = { name: 'MiniMax H3 (Hailuo)', videoRefs: SB.Model.FULL_REFERENCE };
+  const c = Per.block(p, sh, h3m, 'video');
+  eq(/image 1 = Writer/.test(c) && /image 2 = Colleague/.test(c), true,
+    'a full-reference video job numbers them identically to the still');
 
   /* the mark is a subset of the cast, and nothing else */
   Per.toggleOnShot(p, sh, her.id);
