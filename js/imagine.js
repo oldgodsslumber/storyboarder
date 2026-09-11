@@ -1216,6 +1216,11 @@
       if (!apiKey()) return 'No ImagineArt API key — Settings → ImagineArt.';
     } else if (!isSignedIn()) {
       return 'Not signed in to ImagineArt — Settings → ImagineArt.';
+    } else if (!org()) {
+      /* Caught here rather than at the press: every generation is billed to
+       * an organization, so without one the button cannot work and should
+       * not look as though it can. */
+      return 'No ImagineArt organization chosen — Settings → ImagineArt.';
     }
     if (!slugOf(model)) {
       return 'This model has no ImagineArt model set — Settings → Models & templates.';

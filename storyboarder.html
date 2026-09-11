@@ -1144,6 +1144,16 @@ body.comment-mode .frame{cursor:crosshair}
 }
 .mini.push.failed{border-color:var(--danger);color:var(--danger)}
 .pt-acct{flex:0 0 auto;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* why this row's push is dark, said on the row */
+.push-why{
+  font-size:10px;color:var(--fg-dim);font-style:italic;max-width:15ch;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:help;
+}
+.pt-ready{
+  flex:0 0 auto;font-size:11px;color:var(--fg-dim);font-variant-numeric:tabular-nums;
+  padding:0 4px;cursor:help;
+}
+.pt-ready.none{color:var(--accent2)}
 .pt-acct.warn{border-color:var(--accent2);color:var(--accent2)}
 
 /* A card with a clip says so in the corner, and unlike the frame tools it is
@@ -1223,7 +1233,7 @@ body.comment-mode .frame{cursor:crosshair}
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-09-11 16:27 · f642391+";</script>
+<script>window.SB_BUILD = "2026-09-11 16:38 · 2c25ed9+";</script>
 
 <div id="app">
 
@@ -4877,6 +4887,11 @@ window.SB = window.SB || {};
       if (!apiKey()) return 'No ImagineArt API key — Settings → ImagineArt.';
     } else if (!isSignedIn()) {
       return 'Not signed in to ImagineArt — Settings → ImagineArt.';
+    } else if (!org()) {
+      /* Caught here rather than at the press: every generation is billed to
+       * an organization, so without one the button cannot work and should
+       * not look as though it can. */
+      return 'No ImagineArt organization chosen — Settings → ImagineArt.';
     }
     if (!slugOf(model)) {
       return 'This model has no ImagineArt model set — Settings → Models & templates.';
@@ -13304,6 +13319,7 @@ window.SB = window.SB || {};
 
     r2.appendChild(SB.el('span', 'spacer'));
 
+    r2.appendChild(readyChip(rows, im, vm));
     r2.appendChild(accountChip());
 
     const acts = SB.el('div', 'pt-acts');
@@ -13315,6 +13331,23 @@ window.SB = window.SB || {};
   /* Who the pushes are billed to, in the one place they are pressed. Also the
      way in to fix it, because "not signed in" with nowhere to click is just a
      complaint. */
+  /* How much of the board could actually be pushed right now. Without this
+     the answer is "hover thirty buttons". */
+  function readyChip(rows, im, vm) {
+    const el = SB.el('span', 'pt-ready');
+    if (!SB.Imagine) return el;
+    let ri = 0, rv = 0, ni = 0, nv = 0;
+    rows.forEach(function (r) {
+      if (im) { ni++; if (!pushBlock(r.shot, im, 'image')) ri++; }
+      if (vm) { nv++; if (!pushBlock(r.shot, vm, 'video')) rv++; }
+    });
+    el.textContent = '▶ ' + ri + '/' + ni + ' frames · ' + rv + '/' + nv + ' clips';
+    el.title = 'How many of these rows can be pushed as they stand. A row needs a prompt ' +
+      'written for the model named above its column — prompts are kept per model.';
+    el.classList.toggle('none', !ri && !rv);
+    return el;
+  }
+
   let acctEl = null;
 
   function accountChip() {
@@ -13536,11 +13569,14 @@ window.SB = window.SB || {};
    */
   function roleOf(field) { return field === 'imagePrompt' ? 'image' : 'video'; }
 
-  function pushBtn(sh, m, field) {
+  function pushBtn(sh, m, field, note) {
     const IM = SB.Imagine;
     if (!IM) return null;
     const role = roleOf(field);
     const b = SB.el('button', 'mini push');
+    /* held on the button: paintPush runs once before either is in the
+       document, and a parentNode lookup would find nothing */
+    b.__why = note || null;
     b.dataset.push = sh.id + ':' + role;
     b.onclick = function () {
       if (IM.busy(sh.id, role)) return;
@@ -13578,6 +13614,53 @@ window.SB = window.SB || {};
     return b;
   }
 
+  /* Why this row cannot be pushed, in the fewest words that are still an
+   * instruction — and the long version for the tooltip.
+   *
+   * The one that reads as a bug is the third: prompts are stored per model,
+   * because each model gets its own wording, so a row with a prompt written
+   * for Wan has nothing to send while the header says Nano Banana. That is
+   * correct and it is invisible, which is why it now names the model the
+   * prompt WAS written for. */
+  function pushBlock(sh, m, role) {
+    const IM = SB.Imagine;
+    const field = role === 'image' ? 'imagePrompt' : 'videoPrompt';
+    if (sh.noShot) return { short: 'no shot', long: 'A “no shot” card is never generated.' };
+    /* Row reasons before account reasons: the account one is the same on
+       every row and the chip in the header already says it, while the row
+       one is the whole reason this column differs from its neighbour. */
+    const gate = IM.blocker(m);
+    const gateNote = gate ? {
+      short: /signed in/.test(gate) ? 'sign in'
+        : /organization/.test(gate) ? 'pick an org'
+          : /API key/.test(gate) ? 'no key' : 'no model set',
+      long: gate
+    } : null;
+    const pr = sh.prompts[m.id] || null;
+    if ((pr && (pr[field] || '').trim())) return gateNote;
+    /* written for somebody else? */
+    const others = Object.keys(sh.prompts || {}).filter(function (id) {
+      return id !== m.id && ((sh.prompts[id] || {})[field] || '').trim();
+    }).map(function (id) {
+      const other = SB.Model.modelById(P(), id);
+      return (other && other.name) || (sh.prompts[id] || {}).modelName || 'another model';
+    });
+    if (others.length) {
+      return {
+        short: 'written for ' + others[0],
+        long: 'This row has a ' + (role === 'image' ? 'first-frame' : 'video') + ' prompt, but ' +
+          'it was written for ' + others.join(' and ') + ' — and the column above is set to ' +
+          m.name + '. Prompts are kept per model because each one wants different wording. ' +
+          'Switch the model at the top, or press ✦ generate to write one for ' + m.name + '.'
+      };
+    }
+    return {
+      short: 'no prompt yet',
+      long: 'Nothing to send: press ✦ generate to write the ' +
+        (role === 'image' ? 'first-frame' : 'video') + ' prompt for ' + m.name + ' first.'
+    };
+  }
+
   function paintPush(b, sh, m, role) {
     const IM = SB.Imagine;
     const job = IM.job(sh.id, role);
@@ -13595,16 +13678,21 @@ window.SB = window.SB || {};
     b.classList.remove('running');
     b.classList.toggle('failed', !!(job && job.state === 'error'));
     b.textContent = (job && job.state === 'error' ? '\u21ba retry' : '\u25b6 ' + noun);
-    const pr = sh.prompts[m.id] || null;
-    const text = pr && pr[role === 'image' ? 'imagePrompt' : 'videoPrompt'];
-    const why = IM.blocker(m) ||
-      (!(text || '').trim() ? 'Write the prompt first — there is nothing to send.' : '') ||
-      (sh.noShot ? 'A “no shot” card is never generated.' : '');
-    b.disabled = !!why;
+    const block = pushBlock(sh, m, role);
+    b.disabled = !!block;
+    /* The reason sits beside the button, not only in a tooltip — a button
+       that is dark in half the rows and says nothing about it reads as
+       broken. */
+    const note = b.__why || (b.parentNode && b.parentNode.querySelector('.push-why'));
+    if (note) {
+      note.textContent = block ? block.short : '';
+      note.title = block ? block.long : '';
+      note.style.display = block ? '' : 'none';
+    }
     if (job && job.state === 'error') {
       b.title = job.error + ' — press to try again.';
-    } else if (why) {
-      b.title = why;
+    } else if (block) {
+      b.title = block.long;
     } else if (role === 'video') {
       b.title = sh.render || sh.image
         ? 'Animate this shot’s own frame with the prompt above.'
@@ -13687,7 +13775,11 @@ window.SB = window.SB || {};
 
     foot.appendChild(SB.el('span', 'spacer'));
 
-    const push = pushBtn(sh, m, field);
+    const why = SB.el('span', 'push-why');
+    why.style.display = 'none';
+    foot.appendChild(why);
+
+    const push = pushBtn(sh, m, field, why);
     if (push) foot.appendChild(push);
 
     const gen = SB.el('button', 'mini primary', '\u2726 generate');

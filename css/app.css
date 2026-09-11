@@ -1138,6 +1138,16 @@ body.comment-mode .frame{cursor:crosshair}
 }
 .mini.push.failed{border-color:var(--danger);color:var(--danger)}
 .pt-acct{flex:0 0 auto;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* why this row's push is dark, said on the row */
+.push-why{
+  font-size:10px;color:var(--fg-dim);font-style:italic;max-width:15ch;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:help;
+}
+.pt-ready{
+  flex:0 0 auto;font-size:11px;color:var(--fg-dim);font-variant-numeric:tabular-nums;
+  padding:0 4px;cursor:help;
+}
+.pt-ready.none{color:var(--accent2)}
 .pt-acct.warn{border-color:var(--accent2);color:var(--accent2)}
 
 /* A card with a clip says so in the corner, and unlike the frame tools it is

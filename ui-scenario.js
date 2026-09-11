@@ -496,11 +496,50 @@
       gmSel.value = SB.GeminiModels.DEFAULT;
       gmSel.dispatchEvent(new Event('change', { bubbles: true }));
 
+      /* ---- why a push is dark, said on the row ---- */
+      {
+        const im2 = SB.Model.imageModel(P());
+        const other = P().settings.models.filter(function (m) {
+          return m.kind === 'image' && m.id !== im2.id;
+        })[0];
+        /* a prompt written for a different model is the case that reads as a
+           bug: there IS a prompt, and the button is still dark */
+        ptShot.prompts = {};
+        ptShot.prompts[other.id] = { imagePrompt: 'Written for the other one.', videoPrompt: '' };
+        SB.PromptPanel.refresh();
+        const row2 = document.querySelector('.pt-row[data-shot="' + ptShot.id + '"]');
+        const why2 = row2.querySelector('.push-why');
+        t('a prompt written for another model says so, by name',
+          !!why2 && why2.textContent.indexOf(other.name) >= 0, why2 ? why2.textContent : 'no note');
+        t('and the long version tells you how to fix it',
+          /Switch the model at the top|✦ generate/.test(why2.title), why2.title.slice(0, 60));
+
+        ptShot.prompts = {};
+        SB.PromptPanel.refresh();
+        const why3 = document.querySelector('.pt-row[data-shot="' + ptShot.id + '"] .push-why');
+        t('no prompt at all says that instead',
+          why3.textContent === 'no prompt yet', why3.textContent);
+
+        const ready = document.querySelector('.lib-head .pt-ready');
+        t('and the header counts what the whole board could push',
+          !!ready && /frames/.test(ready.textContent) && /clips/.test(ready.textContent),
+          ready ? ready.textContent : 'missing');
+
+        ptShot.prompts = {};
+        ptShot.prompts[im2.id] = { imagePrompt: 'A wide of the floor, one lamp on.', videoPrompt: '' };
+        SB.PromptPanel.refresh();
+        const why4 = document.querySelector('.pt-row[data-shot="' + ptShot.id + '"] .push-why');
+        t('and a row that only lacks sign-in says THAT, not "no prompt"',
+          why4.textContent === 'sign in', why4.textContent);
+      }
+
       /* ---- the push, which is the other half of this table ---- */
       const pushes = firstRow.querySelectorAll('.mini.push');
       t('both prompt columns offer a push', pushes.length === 2, pushes.length);
-      t('a push with nothing set up is refused, and says why on the button',
-        pushes[0].disabled && /ImagineArt/.test(pushes[0].title), pushes[0].title);
+      /* whatever blocks it, the button carries the reason — the row's own
+         reason first, since the account one is the same on every row */
+      t('a push that cannot run is refused, and says why on the button',
+        pushes[0].disabled && /\S/.test(pushes[0].title), pushes[0].title);
       t('nothing is running', !SB.Imagine.busy(ptShot.id, 'image'), '');
       const acctChip = document.querySelector('.lib-head .pt-acct');
       t('the table says who a push would be billed to',
