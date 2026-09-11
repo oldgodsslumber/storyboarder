@@ -77,18 +77,29 @@ model's kind and labelled readably. A model with none is never pushed; its promp
 written and copied as before. A slug ImagineArt no longer lists is flagged in the field
 rather than at the push.
 
-**Where that list comes from.** Signed in, it is your account's own — read off its tool
-schemas, cached per account, refreshed on sign-in, when Settings opens on a day-old cache,
-when you press **Refresh models**, and whenever a push is refused for a slug the account
-does not know. Signed out, it is the list ImagineArt publishes, generated into
-`js/imaginemodels.js` by `node fetch-models.mjs` — 53 models, 6 image and 47 video.
-Settings → ImagineArt says which of the two you are looking at and how old it is.
+**Where that list comes from — and why no list is the truth.** imagine.art is an
+aggregator: it carries whatever its third parties ship, so its catalog moves faster than
+anything published about it. FLUX 3 and the Google models are on the platform and appear in
+*neither* published list. Three sources, in order:
 
-Two things worth knowing about that catalog: the API's list and the website's Workflows
-canvas are **not the same catalog** — Workflows advertises Wan, Sora, Veo 3 and Seedream,
-none of which the API exposes — and video models come in pairs, `…-text-to-video` and
-`…-image-to-video`. Pointing a board model at the wrong one of a pair is refused before the
-credits go, by name.
+1. **What has actually worked.** A slug that produced something is remembered against that
+   account and offered from then on, whatever any list says. This is the only source that
+   cannot be stale, and it is why the field takes free text: type the name you use, and the
+   first successful push makes it permanent.
+2. **Your account's own tools**, read off their MCP schemas when signed in — cached per
+   account and refreshed on sign-in, on opening Settings with a day-old cache, on **Refresh
+   models**, and whenever a push is refused for a slug the account does not know.
+3. **The generated floor**, `js/imaginemodels.js` from `node fetch-models.mjs`: the v2 REST
+   API's own listing, 53 slugs. It is the oldest of the three — Kling 1.6 where the platform
+   offers Kling 3.0 — and the generator also records what the product pages advertise today
+   so the app can say so rather than implying the API list is everything.
+
+Settings → ImagineArt says which source you are looking at and how old it is. A slug no list
+mentions is flagged as *weak evidence*, never refused — it is sent as typed.
+
+One real constraint on the REST transport: video models come in pairs, `…-text-to-video` and
+`…-image-to-video`. Pointing a board model at the wrong one is refused before the credits go,
+by name.
 
 ### Clips on a card
 

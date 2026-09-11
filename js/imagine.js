@@ -75,6 +75,7 @@
   const K_REST = 'sb.imagine.oauthRest';   // '' unknown | 'yes' | 'no'
   const K_CAT = 'sb.imagine.catalog';      // what the account offers, per account
   const K_DOOR = 'sb.imagine.lastDoor';    // 'mcp' | 'rest' — which one last worked
+  const K_WORKED = 'sb.imagine.worked';    // slugs that have actually produced something
 
   /* ---------------- the model catalog ----------------
    *
@@ -1317,6 +1318,9 @@
 
     return work.then(function (out) {
       endJob(shot.id, role);
+      /* It produced something, so whatever any list says, this slug is real
+       * for this account. */
+      noteWorked(slugOf(model), role === 'image' ? 'image' : 'video');
       return out;
     }).catch(function (e) {
       endJob(shot.id, role, e);
@@ -1500,8 +1504,13 @@
 
   function catalogAll() {
     const c = cachedCatalog();
-    if (c && c.list && c.list.length) return c.list;
-    return shipped();
+    const base = (c && c.list && c.list.length) ? c.list : shipped();
+    /* Proven slugs first, and never dropped for being absent from a list. */
+    const proven = worked();
+    if (!proven.length) return base;
+    const have = {};
+    proven.forEach(function (x) { have[x.slug] = 1; });
+    return proven.concat(base.filter(function (m) { return !have[m.slug]; }));
   }
 
   /* Every model of a kind, most useful first — the account's own, then the
@@ -1510,6 +1519,34 @@
     return catalogAll()
       .filter(function (m) { return !kind || m.kind === kind; })
       .map(function (m) { return m.slug; });
+  }
+
+  /* ---------------- what has actually worked ----------------
+   *
+   * Every published list is behind the product — the v2 API's by a year, the
+   * documentation's by months — and imagine.art is an aggregator, so the set
+   * of models it carries moves whenever a third party ships one. FLUX 3 and
+   * Veo are on the platform and in neither list.
+   *
+   * The one source that cannot be stale is a generation that worked. A slug
+   * that produced something is recorded against the account and offered from
+   * then on, whatever any catalog says — so the app converges on what is
+   * true for the person using it rather than on what somebody published. */
+  function worked() {
+    const all = lsGet(K_WORKED) || {};
+    return all[catKey()] || [];
+  }
+
+  function noteWorked(slug, kind) {
+    const s = String(slug || '').trim();
+    if (!s) return;
+    const all = lsGet(K_WORKED) || {};
+    const mine = all[catKey()] || [];
+    const at = mine.filter(function (x) { return x.slug === s; })[0];
+    if (at) { at.at = Date.now(); at.n = (at.n | 0) + 1; }
+    else mine.push({ slug: s, kind: kind, at: Date.now(), n: 1, from: 'worked' });
+    all[catKey()] = mine;
+    lsSet(K_WORKED, all);
   }
 
   function modelInfo(slug) {
@@ -1776,6 +1813,7 @@
     capabilities: capabilities, report: report, door: door,
     restVerdict: function () { return lsStr(K_REST); },
     catalog: catalog, catalogAll: catalogAll, catalogSource: catalogSource,
+    worked: worked, noteWorked: noteWorked,
     catalogAge: catalogAge, refreshCatalog: refreshCatalog,
     modelInfo: modelInfo, labelFor: labelFor,
     guessSlug: function (name) { return GUESS[name] || ''; },

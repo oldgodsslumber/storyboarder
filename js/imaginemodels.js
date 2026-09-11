@@ -10,9 +10,13 @@
  * call; this is what is shown before anyone signs in, and what the API-key
  * transport has instead. Re-run the script when the list moves.
  *
- * Note the two catalogues do not match: the Workflows canvas on the website
- * offers Wan, Sora, Veo 3, Seedream and others that the API does not expose
- * at all. A model on the website is not necessarily a model you can push to.
+ * These are NOT all the models imagine.art has. The product is an
+ * aggregator and its own pages currently advertise
+ * Seedance 2.5, Runway Gen-4.5, Kling 3.0, Google Veo 3.1, Gemini Omni Flash, WAN 3.0, FLUX 3, Hailuo 3.0 & H3 Max — none of which appear in
+ * the v2 API list below. The account's own tools are the only authority;
+ * this is the floor beneath them, and the products list is here so the app can say
+ * out loud that the API list is behind the product rather than implying it
+ * is everything.
  */
 (function (SB) {
   'use strict';
@@ -20,6 +24,8 @@
   SB.ImagineModels = {
     fetchedAt: "2026-09-11",
     source: "https://platform.imagine.art/api/models",
+    /* names the product advertises, for saying so — not sendable slugs */
+    products: ["Seedance 2.5","Runway Gen-4.5","Kling 3.0","Google Veo 3.1","Gemini Omni Flash","WAN 3.0","FLUX 3","Hailuo 3.0 & H3 Max"],
     list: [
     { slug: "anime", kind: "image" },
     { slug: "cogvideox-5b-image-to-video", kind: "video", mode: "i2v" },

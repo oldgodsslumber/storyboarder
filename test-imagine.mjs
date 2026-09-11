@@ -328,6 +328,35 @@ section('what a finished clip leaves behind');
   sandbox.SB.Renders = realRenders;
 }
 
+/* ------------------------------------------------ what actually worked */
+section('a slug that worked outranks every published list');
+
+{
+  /* The published lists run behind the platform — imagine.art is an
+     aggregator, and FLUX 3 and the Google models are on it while appearing in
+     neither the v2 API list nor the documentation. A generation that worked
+     is the one fact that cannot be stale. */
+  SB.Imagine.setTransport('key');
+  t('a model nobody publishes is unknown at first',
+    SB.Imagine.modelInfo('flux-3') === null, '');
+  SB.Imagine.noteWorked('flux-3', 'video');
+  t('and known once it has produced something',
+    !!SB.Imagine.modelInfo('flux-3'), '');
+  t('offered for its own kind',
+    SB.Imagine.catalog('video').indexOf('flux-3') === 0,
+    SB.Imagine.catalog('video').slice(0, 2).join(','));
+  t('and not for the other',
+    SB.Imagine.catalog('image').indexOf('flux-3') < 0, '');
+  t('the published list is still there underneath',
+    SB.Imagine.catalog('video').indexOf('kling-v1.6-standard-image-to-video') > 0, '');
+  SB.Imagine.noteWorked('flux-3', 'video');
+  t('using it again does not duplicate it',
+    SB.Imagine.catalog('video').filter(x => x === 'flux-3').length === 1, '');
+  t('what the product advertises is carried too, for saying so',
+    (sandbox.SB.ImagineModels.products || []).some(n => /FLUX 3/i.test(n)),
+    JSON.stringify((sandbox.SB.ImagineModels.products || []).slice(0, 3)));
+}
+
 /* ----------------------------------------------------------- the catalog */
 section('the model catalog');
 

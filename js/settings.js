@@ -337,9 +337,10 @@
           slug.classList.toggle('unknown', !known);
           slugNote.style.display = known ? 'none' : '';
           if (!known) {
-            slugNote.textContent = 'ImagineArt does not list “' + v + '” for ' + m.kind +
-              ' — it may have been retired, or it may be newer than this list. It will still ' +
-              'be sent if you leave it.';
+            slugNote.textContent = 'No list here mentions “' + v + '”. That is weak ' +
+              'evidence: the published lists run behind the platform, which carries whatever ' +
+              'its third parties ship. It is sent as typed, and remembered as real the first ' +
+              'time it produces something.';
           }
         };
         slug.oninput = function () { m.imagineSlug = slug.value.trim(); checkSlug(); };

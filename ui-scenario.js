@@ -1477,9 +1477,12 @@
         const slug = video.querySelector('input.slug');
         slug.value = 'no-such-model-9000';
         slug.dispatchEvent(new Event('input', { bubbles: true }));
-        t('a slug ImagineArt does not list is flagged at the desk',
+        /* Flagged, but as weak evidence: the published lists run behind the
+           platform, so "not on the list" is a hint and never a refusal. */
+        t('a slug no list mentions is flagged at the desk, without calling it wrong',
           slug.classList.contains('unknown') &&
-          /does not list/.test(video.querySelector('.pp-note.warn').textContent), '');
+          /No list here mentions/.test(video.querySelector('.pp-note.warn').textContent) &&
+          /sent as typed/.test(video.querySelector('.pp-note.warn').textContent), '');
         slug.value = 'kling-v1.6-pro-image-to-video';
         slug.dispatchEvent(new Event('input', { bubbles: true }));
         t('and the flag goes when it is a real one', !slug.classList.contains('unknown'), '');
