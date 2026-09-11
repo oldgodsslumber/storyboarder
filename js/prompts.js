@@ -85,7 +85,10 @@
       targets: [{ model: vm, field: 'videoPrompt' }],
       /* what actually gets stored is the assembled six-section prompt */
       map: function (res) { return { videoPrompt: SB.H3.assemble(sc, res) }; },
-      check: function (res) { return SB.H3.problems(sc, res); }
+      check: function (res) {
+        return SB.H3.problems(sc, res)
+          .concat(SB.Brand.moveProblems(P(), shot, res.detailed_description));
+      }
     };
   }
 
@@ -110,7 +113,8 @@
           imageBlock(shot, im) + '\n' + videoBlock(shot, vm),
         keys: ['imagePrompt', 'videoPrompt'],
         system: sys('both', im),
-        targets: [{ model: im, field: 'imagePrompt' }, { model: vm, field: 'videoPrompt' }]
+        targets: [{ model: im, field: 'imagePrompt' }, { model: vm, field: 'videoPrompt' }],
+        check: function (res) { return SB.Brand.moveProblems(P(), shot, res.videoPrompt); }
       });
       return jobs;
     }
@@ -127,7 +131,8 @@
         text: PREAMBLE + 'Return JSON with the key "videoPrompt".\n\n' + videoBlock(shot, vm),
         keys: ['videoPrompt'],
         system: sys('video', vm),
-        targets: [{ model: vm, field: 'videoPrompt' }]
+        targets: [{ model: vm, field: 'videoPrompt' }],
+        check: function (res) { return SB.Brand.moveProblems(P(), shot, res.videoPrompt); }
       });
     }
     return jobs;
@@ -322,6 +327,15 @@
         j.targets.forEach(function (t) {
           store(shot, t.model, t.field, vals[t.field]);
           written.push(t.field);
+          /* One rewrite is all it gets. A move that survives it is not thrown
+             away — the rest of the paragraph is usually right — but it is
+             marked, so nobody ships a push in they never asked for. */
+          if (t.field === 'videoPrompt') {
+            const pr = shot.prompts[t.model.id];
+            const left = SB.Brand.moveProblems(P(), shot, vals[t.field]).length
+              ? SB.Brand.movesIn(vals[t.field]) : [];
+            if (left.length) pr.moved = left; else delete pr.moved;
+          }
         });
       }).catch(function (e) {
         lastError = e;

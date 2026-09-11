@@ -624,10 +624,16 @@ Two things the app adds that a style guide can't know on its own:
   in order, and which beat this frame is — so the writer isn't composing in a vacuum, and
   the location, lighting mood and grade stay coherent across a scene. "No shot" fragments
   are left out. *Who* and *what* is in the frame is the reference library's job, below.
-- **The no-gendered-language rule is verified, not just requested.** Returned prompts are
-  scanned for gendered nouns, titles and pronouns; if any appear the app asks for one
-  rewrite naming the offending words, and if they survive that, the prompt box gets a
-  **gendered** badge listing them. (`human`, `manager` and the like are not false positives.)
+- **The locked-off camera is verified, not just requested.** A returned video prompt is read
+  back for camera language — pushes, pulls, dollies, pans, tilts, zooms, cranes, orbits,
+  rack focus, handheld, reframes, and anything the camera itself is *said* to do. A sentence
+  saying the camera holds is the answer, not a breach, so negations clear a hit. If a move
+  is there and the shot description did not ask for one, the app asks for one rewrite
+  **naming the words it found**; if the move survives that, the prompt is kept — the rest of
+  the paragraph is usually right — and the box gets a **camera move** badge listing them.
+  Editing the prompt by hand clears the badge. Describing a detail is not asking for a move
+  on it, which is exactly the failure this catches: "her hands shake around the mug" came
+  back as a slow push in on her hands.
 
 Video prompts get the same house style plus motion rules — wardrobe and location must not
 change mid-shot, and **the camera is locked off**. No push, pan, tilt, dolly, zoom, orbit or

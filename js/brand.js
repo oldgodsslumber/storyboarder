@@ -180,8 +180,8 @@
     '- The Finishing, grade, grain, contrast, colour, lens, aperture and depth-of-field rules ' +
     'above must not appear in what you write. No "capture RAW", no "muted professional grade", ' +
     'no "subtle cinematic grain", no focal length, no f-number, no shallow focus.',
-    '- What the house style still governs here is the MOVEMENT: restrained, motivated, ' +
-    'documentary-real, the pace of an actual moment.'
+    '- What the house style still governs here is the MOVEMENT: documentary-real, the pace of ' +
+    'an actual moment, and a camera that holds unless the shot description asks for a move.'
   ].join('\n');
 
   /* There was a no-gendered-language rule here, enforced with a word list and
@@ -190,6 +190,109 @@
    * image model guess, and it guesses male. A reference frame has to be
    * allowed to say what the person it is a reference FOR actually looks like.
    */
+
+  /* ---------------- the camera, checked rather than asked ----------------
+   *
+   * Telling the writer not to move the camera is not enough on its own. Given
+   * a description whose point is a detail — the chipped mug, the shaking hands
+   * — it reaches for the camera to point at it, and writes a slow push in or a
+   * dolly toward the thing. The detail is the subject; moving the camera is
+   * its own idea.
+   *
+   * So the answer is read back. Anything here that the description did not ask
+   * for buys one corrective rewrite naming the words, and if it survives that,
+   * the prompt is badged rather than silently shipped.
+   *
+   * Two lists, because the risk is a false accusation: STRONG is vocabulary
+   * that is only ever a camera ("dolly in", "whip pan", "rack focus"), and the
+   * second pass catches anything the camera itself is SAID to do. A sentence
+   * saying the camera holds is the thing we asked for, so a negation anywhere
+   * near a hit clears it. */
+  const STRONG = [
+    /\b(?:slow|quick|gentle|subtle|smooth|steady)?\s*(?:push|pull)\s+(?:in|out|back)\b(?:\s+(?:on|to|toward|towards)\b)?/gi,
+    /\bdoll(?:y|ies|ying)\s+(?:in|out|forward|back|backward|backwards|left|right|toward|towards|along|past)\b/gi,
+    /\b(?:track(?:s|ing)?|truck(?:s|ing)?)\s+(?:in|out|left|right|forward|back|with|alongside|past)\b/gi,
+    /\bcrane\s+(?:up|down|over)\b|\bjib\s+(?:up|down)\b/gi,
+    /\b(?:whip\s+)?pan(?:s|ning)?\s+(?:left|right|across|away|over|up|down|to|toward|towards)\b/gi,
+    /\btilt(?:s|ing)?\s+(?:up|down)\b/gi,
+    /\bzoom(?:s|ing)?\s+(?:in|out)\b|\b(?:slow|gentle|subtle)\s+zoom\b/gi,
+    /\borbit(?:s|ing)?\b|\barc(?:s|ing)?\s+(?:around|past)\b|\bcircl(?:es|ing)\s+(?:around|the subject)\b/gi,
+    /\brack(?:s|ing)?\s+focus\b|\bfocus\s+rack\b/gi,
+    /\bhandheld\b|\bsteadicam\b|\bgimbal\b|\bdolly\s+shot\b|\btracking\s+shot\b/gi,
+    /\bre-?frames?\b|\bre-?framing\b/gi,
+    /\bcamera\s+(?:shake|sway|drift|float|movement|move)\b/gi
+  ];
+
+  /* "the camera <does something>" — anything at all, within the same clause */
+  const CAMERA_DOES = new RegExp(
+    '\\b(?:the |a )?(?:camera|lens|frame|viewpoint|point of view)\\b[^.;!?]{0,70}?' +
+    '\\b(?:moves?|moving|moved|drifts?|drifting|glides?|gliding|floats?|floating|creeps?|' +
+    'creeping|eases?|easing|pushes?|pushing|pulls?|pulling|tracks?|tracking|doll(?:y|ies|ying)|' +
+    'pans?|panning|tilts?|tilting|zooms?|zooming|rises?|rising|descends?|descending|lowers?|' +
+    'circles?|circling|orbits?|orbiting|sways?|swaying|shakes?|shaking|slides?|sliding|' +
+    'follows?|following|swings?|swinging|arcs?|arcing|cranes?|craning|closes? in|travels?|' +
+    'settles?|settling|comes? to rest)\\b',
+    'gi');
+
+  /* A hit inside a sentence that says the camera does NOT do it is the answer
+   * we asked for, not a breach. */
+  const NEGATED = /\b(?:not|never|no|without|holds?|held|holding|static|locked|lock-?off|fixed|unmoving|motionless|remains?|stays?|still)\b/i;
+
+  function context(text, at, len) {
+    return text.slice(Math.max(0, at - 60), at + len + 20);
+  }
+
+  function movesIn(text) {
+    const s = String(text || '');
+    const out = [];
+    const seen = {};
+    const take = function (re) {
+      re.lastIndex = 0;
+      let m;
+      while ((m = re.exec(s))) {
+        const hit = m[0].trim();
+        if (!hit) { re.lastIndex++; continue; }
+        if (!NEGATED.test(context(s, m.index, hit.length))) {
+          const k = hit.toLowerCase();
+          if (!seen[k]) { seen[k] = 1; out.push(hit); }
+        }
+        if (re.lastIndex === m.index) re.lastIndex++;
+      }
+      re.lastIndex = 0;
+    };
+    STRONG.forEach(take);
+    take(CAMERA_DOES);
+    return out;
+  }
+
+  /* What the person storyboarding wrote is the authority: if the description
+   * asks for a move, the prompt is allowed to have one, and nothing here
+   * second-guesses which one. */
+  function moveAsked(p, shot) {
+    if (!shot) return false;
+    /* Everything the person storyboarding wrote about this shot counts: the
+     * description, the shot type (somebody who picks "Tracking shot" has
+     * asked), and any extra field they added to say it in. */
+    const extra = shot.fields ? Object.keys(shot.fields).map(function (k) {
+      return shot.fields[k];
+    }) : [];
+    const src = [shot.description, shot.type].concat(extra)
+      .filter(function (x) { return typeof x === 'string' && x; }).join('. ');
+    return movesIn(p && SB.Refs ? SB.Refs.plain(p, src) : src).length > 0;
+  }
+
+  /* [] when the prompt is clean or the move was asked for; otherwise one
+   * sentence naming the words, in the shape verify() wants. */
+  function moveProblems(p, shot, prompt) {
+    if (moveAsked(p, shot)) return [];
+    const found = movesIn(prompt);
+    if (!found.length) return [];
+    return ['You moved the camera: "' + found.join('", "') +
+      '". Nothing in the shot description asks for a camera move, so there is none — ' +
+      'the frame is locked off. Rewrite it with the camera held still, keeping every other ' +
+      'detail, and give the same beats as movement WITHIN the frame (the subject, the hands, ' +
+      'the face, the light). Do not mention the camera at all.'];
+  }
 
   /* A board only stores the house style once someone has edited it. Boards on
    * the stock text follow the app, so a correction here reaches them. */
@@ -328,6 +431,7 @@
 
   SB.Brand = {
     DEFAULT: DEFAULT_BRAND,
+    movesIn: movesIn, moveAsked: moveAsked, moveProblems: moveProblems,
     VIDEO_RIDER: VIDEO_RIDER,
     FIRST_FRAME_RIDER: FIRST_FRAME_RIDER,
     DERIVED_RIDER: DERIVED_RIDER,

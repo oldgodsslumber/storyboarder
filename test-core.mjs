@@ -262,6 +262,70 @@ console.log('\n— the camera holds —');
     'and a hand-edited one is left exactly alone');
 }
 
+console.log('\n— the camera move is read back, not just forbidden —');
+{
+  const M = SB.Model, B = SB.Brand;
+  const p = M.newProject();
+  const sc = p.scenes[0] || M.addScene(p, 0);
+
+  /* what a writer reaching for the camera actually produces */
+  const moves = [
+    'The camera pushes in slowly on her hands.',
+    'A slow push in on the chipped mug.',
+    'The camera dollies toward the open ledger.',
+    'Slight handheld drift as she turns.',
+    'The frame tilts up to follow him.',
+    'The camera settles as she sits.',
+    'A gentle zoom in on the screen.',
+    'Whip pan to the doorway.',
+    'The lens racks focus from the mug to her face.',
+    'The camera slowly creeps in.',
+    'Tracking shot alongside the trolley.',
+    'The camera reframes slightly as she stands.',
+    'A slow pull back to reveal the whole room.'
+  ];
+  eq(moves.every(function (x) { return B.movesIn(x).length > 0; }), true,
+    'every way a camera move gets written is caught',
+    moves.filter(function (x) { return !B.movesIn(x).length; }).join(' | '));
+
+  /* and the far more important half: what must NOT be accused */
+  const still = [
+    'She turns the mug in her hands and sets it down, the steam bending toward the window.',
+    'The camera holds. She reads the page, then folds it in half.',
+    'The camera does not move; the light on the wall shifts as a car passes.',
+    'A locked-off frame: the fan turns, the paper lifts at one corner.',
+    'He pushes the drawer shut with his hip and walks out of frame.',
+    'She pulls back the curtain, letting the light in.',
+    'She pulls back her sleeve to check the time.',
+    'He pushes in his chair and leaves.',
+    'The kettle settles and the steam thins.',
+    'She zooms through the last of the paperwork.',
+    'She tracks the line of figures with one finger, left to right.',
+    'He leans in toward the microphone and starts to speak.'
+  ];
+  eq(still.every(function (x) { return B.movesIn(x).length === 0; }), true,
+    'and a still frame, or a subject doing the moving, is never accused of one',
+    still.filter(function (x) { return B.movesIn(x).length; })
+      .map(function (x) { return JSON.stringify(B.movesIn(x)) + ' in ' + x; }).join(' | '));
+
+  /* the description is the authority */
+  const plain = M.addShot(p, sc.id, {});
+  plain.description = 'Her hands shake around the mug.';
+  eq(B.moveAsked(p, plain), false, 'a description about a detail is not asking for a move');
+  eq(B.moveProblems(p, plain, 'The camera pushes in on her hands.').length, 1,
+    'so a push in on that detail is a problem worth one rewrite');
+  eq(/camera pushes/i.test(B.moveProblems(p, plain, 'The camera pushes in on her hands.')[0]), true,
+    'and the rewrite request names the words it found');
+  eq(B.moveProblems(p, plain, 'Her hands tighten around the mug; the steam bends.').length, 0,
+    'while movement inside the frame passes');
+
+  const asked = M.addShot(p, sc.id, {});
+  asked.description = 'Slow push in on the mug as she lets go.';
+  eq(B.moveAsked(p, asked), true, 'a description that asks for a push in IS asking');
+  eq(B.moveProblems(p, asked, 'The camera pushes in slowly on the mug.').length, 0,
+    'and then the move is left alone — the board asked for it');
+}
+
 console.log('\n— brand style —');
 {
   const B = SB.Brand;

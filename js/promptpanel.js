@@ -679,6 +679,10 @@
       /* Editing by hand is the user restating the prompt as it should read now,
          so it stops being behind the cast. */
       sh.prompts[m.id].at = Date.now();
+      /* Editing by hand answers the camera-move flag, whatever it now says */
+      delete sh.prompts[m.id].moved;
+      const mvb = cell.querySelector('.moved');
+      if (mvb) mvb.remove();
       SB.Store.touch();
       SB.Board.refreshPromptStale();
     });
@@ -689,6 +693,15 @@
     if (pr && pr[field] && SB.Personas.staleFor(P(), sh, pr.at)) {
       const b = SB.el('span', 'badge warn stale', 'cast changed');
       b.title = 'Something on this card was edited after this prompt was written.';
+      foot.appendChild(b);
+    }
+
+    /* A move the writer put in and then kept through its one rewrite. */
+    if (field === 'videoPrompt' && pr && Array.isArray(pr.moved) && pr.moved.length) {
+      const b = SB.el('span', 'badge warn moved', 'camera move');
+      b.title = 'This prompt moves the camera — "' + pr.moved.join('", "') + '" — and nothing ' +
+        'in the description asked for one. Edit it out, or write the move you want into the ' +
+        'description and generate again.';
       foot.appendChild(b);
     }
 

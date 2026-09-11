@@ -1568,6 +1568,21 @@
   /* A stored prompt froze its cast's wardrobe at the moment it was written. If
    * the persona has been edited since, the text in the box is describing
    * somebody who no longer exists — say so rather than letting it look current. */
+  /* A camera move that survived its corrective rewrite. The prompt is kept —
+   * the rest of the paragraph is usually right — but nobody should ship a push
+   * in they never asked for without knowing it is there. */
+  function moveBadge(sh, m, field) {
+    if (field !== 'videoPrompt') return null;
+    const pr = sh.prompts[m.id] || null;
+    const moved = pr && Array.isArray(pr.moved) ? pr.moved : [];
+    if (!moved.length) return null;
+    const b = SB.el('span', 'badge warn moved', 'camera move');
+    b.title = 'This prompt moves the camera — "' + moved.join('", "') + '" — and the shot ' +
+      'description did not ask for one. It was asked to rewrite it once and kept the move. ' +
+      'Edit it out, or write the move you do want into the description and generate again.';
+    return b;
+  }
+
   function staleBadge(sh, m, field) {
     const pr = sh.prompts[m.id] || null;
     if (!pr || !(pr[field] || '').trim()) return null;
@@ -1606,6 +1621,8 @@
 
     const st = staleBadge(sh, m, field);
     if (st) t.appendChild(st);
+    const mv = moveBadge(sh, m, field);
+    if (mv) t.appendChild(mv);
     const gen = SB.el('button', 'mini', 'generate');
     gen.style.marginLeft = 'auto';
     gen.onclick = function () {
@@ -1632,6 +1649,10 @@
       sh.prompts[m.id].at = Date.now();
       const badge = wrap.querySelector('.stale');
       if (badge) badge.remove();
+      /* Editing by hand is the answer to the move, whatever the words now say */
+      delete sh.prompts[m.id].moved;
+      const mvb = wrap.querySelector('.moved');
+      if (mvb) mvb.remove();
       SB.app.changed(false);
     });
     wrap.appendChild(ta);

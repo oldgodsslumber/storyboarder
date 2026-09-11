@@ -85,6 +85,60 @@
       t('the cast reaches the request', /CAST/.test(sys2) && /Ops lead/.test(sys2), '');
       t('with the reference-image numbering', /image 1 = Ops lead/.test(sys2), '');
 
+      /* ---------- a camera move nobody asked for ---------- */
+      {
+        const moved = 'The camera pushes in slowly on her hands as she lets go of the cup.';
+        const clean = 'Her hands loosen around the cup and settle flat on the table.';
+
+        /* first answer moves the camera, second one does not */
+        window.__calls = [];
+        window.__reply = function (n) {
+          return { ok: true, status: 200, text: JSON.stringify({ candidates: [{ content: {
+            parts: [{ text: JSON.stringify({ videoPrompt: n === 1 ? moved : clean }) }] } }] }) };
+        };
+        shots.a.description = 'Her hands shake around the cup.';
+        P().settings.videoModelId = P().settings.models.filter(function (m) {
+          return m.kind === 'video';
+        })[0].id;
+        await SB.Prompts.generateFor(shots.a, { video: true });
+        t('a camera move nobody asked for buys one corrective call',
+          window.__calls.length === 2, window.__calls.length);
+        const ask = window.__calls[1].body.contents[0].parts[0].text;
+        t('and the correction names the words it found',
+          /You moved the camera/.test(ask) && /camera pushes/i.test(ask), ask.slice(-220));
+        const vmId = P().settings.videoModelId;
+        t('the rewritten prompt is what gets stored',
+          shots.a.prompts[vmId].videoPrompt === clean, shots.a.prompts[vmId].videoPrompt);
+        t('and nothing is flagged, because nothing survived',
+          !shots.a.prompts[vmId].moved, JSON.stringify(shots.a.prompts[vmId].moved));
+
+        /* a writer that will not let go of it */
+        window.__calls = [];
+        window.__reply = function () {
+          return { ok: true, status: 200, text: JSON.stringify({ candidates: [{ content: {
+            parts: [{ text: JSON.stringify({ videoPrompt: moved }) }] } }] }) };
+        };
+        await SB.Prompts.generateFor(shots.a, { video: true });
+        t('a move that survives the rewrite is kept, not thrown away',
+          shots.a.prompts[vmId].videoPrompt === moved, shots.a.prompts[vmId].videoPrompt);
+        t('and the prompt is flagged with the words that did it',
+          Array.isArray(shots.a.prompts[vmId].moved) &&
+          /camera pushes/i.test(shots.a.prompts[vmId].moved.join(' ')),
+          JSON.stringify(shots.a.prompts[vmId].moved));
+
+        /* asked for in the description: no correction, no flag */
+        window.__calls = [];
+        shots.a.description = 'Slow push in on her hands as she lets go of the cup.';
+        await SB.Prompts.generateFor(shots.a, { video: true });
+        t('a move the description asked for costs no second call',
+          window.__calls.length === 1, window.__calls.length);
+        t('and is not flagged',
+          !shots.a.prompts[vmId].moved, JSON.stringify(shots.a.prompts[vmId].moved));
+
+        window.__reply = null;
+        shots.a.description = 'She sets the cup down.';
+      }
+
       /* ---------- both prompts, one model, one call ---------- */
       P().settings.videoModelId = P().settings.imageModelId;
       window.__calls = [];
