@@ -2166,6 +2166,11 @@
   }
 
   function fileVideo(p, shot, got, made) {
+    /* Shooting again is what you do when the clip is mostly right, so the one
+     * on the card is kept rather than overwritten. The new one becomes the
+     * chosen take -- trying again is an attempt to do better -- and the old
+     * one is a click away in the clip window. */
+    SB.Model.keepTake(shot);
     /* unseen: nobody has watched this one yet. Shooting a dozen clips means
      * going away and coming back to a board where every row looks the same,
      * with no way to tell the one that just landed from the one watched ten
@@ -2642,7 +2647,9 @@
       return Promise.reject(new Error('That is not a video file.'));
     }
     return clipMeta(file).then(function (meta) {
-      return SB.Renders.keepVideo(p, file, shot.video).then(function (saved) {
+      /* Same rule as a generated one: a card holds its takes. */
+      SB.Model.keepTake(shot);
+      return SB.Renders.keepVideo(p, file, null).then(function (saved) {
         if (!saved) throw new Error('the clip could not be stored');
         if (meta.dur) saved.dur = meta.dur;
         if (meta.w) { saved.w = meta.w; saved.h = meta.h; }
@@ -2654,9 +2661,12 @@
     });
   }
 
-  function dropClip(p, shot) {
+  /* One take, or the lot. Removing the chosen one promotes the newest of what
+   * is left rather than leaving a card holding none while still carrying two. */
+  function dropClip(p, shot, rec) {
     if (!shot || !shot.video) return;
-    shot.video = null;
+    if (rec) SB.Model.dropTake(shot, rec);
+    else { shot.video = null; shot.videoAlts = []; }
     SB.app.changed(true);
   }
 
@@ -2767,6 +2777,52 @@
           'This board has no copy of that clip and its link has gone.'));
       }
 
+      /* Every take this card holds, with the chosen one marked. This is the
+         whole feature from the user's side: the one that was mostly right is
+         still here, and one click makes it the keeper again. */
+      const all = SB.Model.takes(shot);
+      if (all.length > 1) {
+        const strip = SB.el('div', 'clip-takes');
+        strip.appendChild(SB.el('div', 'pp-note',
+          all.length + ' takes on this card. The chosen one is what the board shows, ' +
+          'what a push replaces, and what an export calls the pick.'));
+        all.forEach(function (tk) {
+          const row = SB.el('div', 'clip-take' + (tk.chosen ? ' on' : ''));
+          row.appendChild(SB.el('span', 'tk-n', 'take ' + tk.n));
+          row.appendChild(SB.el('span', 'tk-what',
+            (clipLabel(tk.rec) || 'a clip') +
+            (tk.rec.made ? ' \u00b7 ' + (tk.rec.made.model || tk.rec.made.slug || 'made here')
+                         : ' \u00b7 added from a file')));
+          row.appendChild(SB.el('span', 'spacer'));
+          if (tk.chosen) {
+            row.appendChild(SB.el('span', 'badge done', 'chosen'));
+          } else {
+            const use = SB.el('button', 'mini primary', 'use this one');
+            use.title = 'Make this the take the board shows and the export picks.';
+            use.onclick = function () {
+              SB.Model.useTake(shot, tk.rec);
+              SB.Store.touch();
+              close();
+              SB.app.changed(true);
+              SB.toast('Take ' + tk.n + ' is the one on ' + (codeOf(p, shot) || 'the card'));
+            };
+            row.appendChild(use);
+          }
+          const rm = SB.el('button', 'mini danger', 'remove');
+          rm.title = 'Delete this take. The bytes go with it.';
+          SB.armButton(rm, 'delete take ' + tk.n, function () {
+            const wasChosen = tk.chosen;
+            dropClip(p, shot, tk.rec);
+            close();
+            SB.toast('Take ' + tk.n + ' removed' +
+              (wasChosen ? ' \u2014 the newest of the rest is chosen now' : ''));
+          });
+          row.appendChild(rm);
+          strip.appendChild(row);
+        });
+        box.appendChild(strip);
+      }
+
       if (rec) {
         const line = clipLabel(rec);
         if (line) {
@@ -2786,10 +2842,12 @@
       const acts = SB.el('div', 'pp-actions');
       const why = whyNot(p, shot, model, 'video');
 
-      const shoot = SB.el('button', 'tb' + (rec ? '' : ' on'), rec ? 'Shoot it again' : 'Shoot it');
+      const shoot = SB.el('button', 'tb' + (rec ? '' : ' on'),
+        rec ? 'Shoot another take' : 'Shoot it');
       shoot.disabled = !!why;
       shoot.title = why ? why.long
-        : 'Send the video prompt to ' + (model && model.name) + ' and replace what is here.';
+        : 'Send the video prompt to ' + (model && model.name) + '.' +
+          (rec ? ' What is here is kept as another take.' : '');
       shoot.onclick = function () {
         close();
         confirmCost(p, shot, model, function () {
@@ -2801,14 +2859,15 @@
       };
       acts.appendChild(shoot);
 
-      const add = SB.el('button', 'tb', rec ? 'Replace…' : 'Add from a file…');
-      add.title = 'Put a file you already have on this card.';
+      const add = SB.el('button', 'tb', rec ? 'Add another take…' : 'Add from a file…');
+      add.title = 'Put a file you already have on this card.' +
+        (rec ? ' What is here is kept as another take.' : '');
       add.onclick = function () {
         SB.pickVideoFile().then(function (file) {
           if (!file) return;
           close();
           return attachClip(p, shot, file).then(function (saved) {
-            SB.toast((rec ? 'Clip replaced' : 'Clip added') +
+            SB.toast((rec ? 'Another take added' : 'Clip added') +
               (clipLabel(saved) ? ' · ' + clipLabel(saved) : ''));
           });
         }).catch(function (e) { SB.toast(e.message || String(e), true); });
@@ -2816,11 +2875,14 @@
       acts.appendChild(add);
 
       if (rec) {
-        const rm = SB.el('button', 'tb danger', 'Remove');
-        rm.title = 'Take the clip off this card. The bytes go with it.';
-        SB.armButton(rm, 'remove for good', function () {
+        const many = SB.Model.takeCount(shot) > 1;
+        const rm = SB.el('button', 'tb danger', many ? 'Remove all takes' : 'Remove');
+        rm.title = many
+          ? 'Take every one of them off this card. The bytes go with them.'
+          : 'Take the clip off this card. The bytes go with it.';
+        SB.armButton(rm, many ? 'remove all for good' : 'remove for good', function () {
           dropClip(p, shot);
-          SB.toast('Clip removed');
+          SB.toast(many ? 'All takes removed' : 'Clip removed');
           close();
         });
         acts.appendChild(rm);

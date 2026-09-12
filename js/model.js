@@ -303,6 +303,78 @@
     '#7c3aed'  // violet
   ];
 
+  /* ---- takes ----
+   *
+   * A clip that is MOSTLY right is the ordinary case, not the exception: you
+   * shoot it again, and until now the second one overwrote the first, so the
+   * only way to keep both was to save one out of the app by hand and remember
+   * what it was. A card holds its takes now.
+   *
+   * `shot.video` is still the CHOSEN take and still the only thing every
+   * reader in the app looks at -- the card badge, the export, the PDF, the
+   * prompt table, the push. `videoAlts` is the rest of them, and it is purely
+   * additive: a board that has never kept one behaves exactly as it did.
+   *
+   * Numbered by when they were made rather than by where they sit, because a
+   * take number is a fact about the shoot and the chosen one moves. */
+  function takes(shot) {
+    const out = [];
+    if (shot && shot.video) out.push({ rec: shot.video, chosen: true });
+    ((shot && shot.videoAlts) || []).forEach(function (r) {
+      if (r) out.push({ rec: r, chosen: false });
+    });
+    out.sort(function (x, y) { return (x.rec.at || 0) - (y.rec.at || 0); });
+    out.forEach(function (x, i) { x.n = i + 1; });
+    return out;
+  }
+
+  function takeCount(shot) {
+    return (shot && shot.video ? 1 : 0) + (((shot && shot.videoAlts) || []).length);
+  }
+
+  /* Keep what is on the card and make room for a new one. The new take
+   * becomes the chosen one, because trying again is what you do when the
+   * current one is not the one. */
+  function keepTake(shot) {
+    if (!shot || !shot.video) return;
+    shot.videoAlts = (shot.videoAlts || []).concat([shot.video]);
+    shot.video = null;
+  }
+
+  /* Swap a take into the chosen slot. The one that was chosen joins the rest
+   * rather than being thrown away -- this is a choice, not a deletion. */
+  function useTake(shot, rec) {
+    if (!shot || !rec || rec === shot.video) return false;
+    const alts = (shot.videoAlts || []).slice();
+    const i = alts.indexOf(rec);
+    if (i < 0) return false;
+    alts.splice(i, 1);
+    if (shot.video) alts.push(shot.video);
+    shot.videoAlts = alts;
+    shot.video = rec;
+    return true;
+  }
+
+  /* One take, gone. Removing the chosen one promotes the most recent of what
+   * is left, so a card with takes never ends up holding none while still
+   * carrying three. */
+  function dropTake(shot, rec) {
+    if (!shot || !rec) return false;
+    if (rec === shot.video) {
+      const rest = (shot.videoAlts || []).slice()
+        .sort(function (x, y) { return (y.at || 0) - (x.at || 0); });
+      shot.video = rest.shift() || null;
+      shot.videoAlts = rest;
+      return true;
+    }
+    const alts = (shot.videoAlts || []).slice();
+    const i = alts.indexOf(rec);
+    if (i < 0) return false;
+    alts.splice(i, 1);
+    shot.videoAlts = alts;
+    return true;
+  }
+
   function newShot(opts) {
     opts = opts || {};
     return {
@@ -321,6 +393,9 @@
       description: '',
       fields: {},                       // extra text boxes, keyed by field id
       image: null,                      // {ref,w,h} into project.blobs
+      /* Every other take of this shot, oldest kept first. `video` above is
+       * the chosen one and stays the only thing the rest of the app reads. */
+      videoAlts: [],
       annotation: null,                 // {ref} — transparent PNG overlay
       /* {ref,serial,ext,w,h,bytes} — the full-size original, in this file.
        * The board draws the proxy above; this is the copy a model is fed, and
@@ -624,6 +699,15 @@
     });
     const s = p.settings = p.settings || {};
     s.shotTypes = (s.shotTypes && s.shotTypes.length) ? s.shotTypes : DEFAULT_SHOT_TYPES.slice();
+    /* Absent is empty is exactly how every board behaved before takes. Walked
+       by hand rather than through eachShot, because migrate runs over shapes
+       that have not been normalised yet -- a scene with no shots array at all
+       is a fixture, a hand-built snapshot, and it must not throw here. */
+    (p.scenes || []).forEach(function (sc) {
+      (sc.shots || []).forEach(function (sh) {
+        if (!Array.isArray(sh.videoAlts)) sh.videoAlts = [];
+      });
+    });
     /* Only what is missing: a line somebody has deliberately emptied stays
        empty, and one they have rewritten stays theirs. */
     s.shotFraming = s.shotFraming || {};
@@ -1266,6 +1350,7 @@
     CARD_COLORS: CARD_COLORS,
     DEFAULT_SHOT_TYPES: DEFAULT_SHOT_TYPES,
     DEFAULT_FRAMING: DEFAULT_FRAMING, framingFor: framingFor, guessFraming: guessFraming,
+    takes: takes, takeCount: takeCount, keepTake: keepTake, useTake: useTake, dropTake: dropTake,
     IMG_TPL: IMG_TPL, IMG_TPL_V1: IMG_TPL_V1,
     VID_TPL: VID_TPL, VID_TPL_V1: VID_TPL_V1, VID_TPL_V2: VID_TPL_V2,
     H3_VID_TPL: H3_VID_TPL, H3_VID_TPL_V2: H3_VID_TPL_V2, tplsFor: tplsFor,

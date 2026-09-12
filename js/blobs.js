@@ -101,6 +101,10 @@
            * would look wrong until somebody tried to feed one to a model. */
           mark(sh.render);
           mark(sh.video);
+          /* Every other take. Leaving these out of the sweep would have the
+           * next structural change delete the clips somebody deliberately
+           * kept -- the exact failure the originals had before them. */
+          (sh.videoAlts || []).forEach(mark);
         });
       });
     };

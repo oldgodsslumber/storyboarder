@@ -1490,7 +1490,8 @@
         t('and shows the prompt it was made from',
           /She turns from the window/.test(box2.textContent), 'no prompt');
         t('with all three things you might do to it',
-          /Shoot it again/.test(box2.textContent) && /Replace/.test(box2.textContent) &&
+          /Shoot another take/.test(box2.textContent) &&
+          /Add another take/.test(box2.textContent) &&
           /Remove/.test(box2.textContent), box2.textContent.slice(-80));
         Array.prototype.filter.call(document.querySelectorAll('.modal button'),
           function (b) { return b.textContent === 'Close'; })[0].click();
@@ -1560,11 +1561,59 @@
         t('and Settings counts it', SB.Renders.weigh(P()).clips.n === 1,
           SB.Renders.weigh(P()).clips.n);
 
-        /* replacing is the same door, and the serial does not move */
+        /* Adding another goes through the same door, and the one that was
+           there is KEPT rather than thrown away: a clip that is mostly right
+           is the ordinary case, and the only way to hold on to it used to be
+           saving it out of the app by hand. */
+        const wasChosen = cShot.video;
+        const wasAlts = (cShot.videoAlts || []).length;
         const serial = rec.serial;
         const again = await SB.Clip.attach(P(), cShot, file);
-        t('replacing keeps the serial the card is known by', again.serial === serial,
-          again.serial + ' vs ' + serial);
+        t('a second clip becomes the chosen take', cShot.video === again, '');
+        t('and the one it displaced is kept, not overwritten',
+          (cShot.videoAlts || []).length === wasAlts + 1 &&
+          cShot.videoAlts.indexOf(wasChosen) >= 0,
+          (cShot.videoAlts || []).length + ' alts, was ' + wasAlts);
+        t('each take has its own serial, because each is its own file',
+          again.serial !== serial, again.serial + ' vs ' + serial);
+        t('and a structural change sweeps away neither',
+          (function () {
+            SB.app.changed(true);
+            return SB.Renders.has(P(), cShot.video) &&
+              cShot.videoAlts.every(function (x) { return SB.Renders.has(P(), x); });
+          })(), 'the gc ate a take');
+        t('the card says how many it is holding',
+          document.querySelector('.card[data-shot="' + cShot.id + '"] .clip-badge')
+            .textContent.indexOf('\u00d7' + SB.Model.takeCount(cShot)) >= 0,
+          document.querySelector('.card[data-shot="' + cShot.id + '"] .clip-badge').textContent);
+
+        /* choosing an older one back is one call, and nothing is lost */
+        const older = cShot.videoAlts[0];
+        const n0 = SB.Model.takeCount(cShot);
+        SB.Model.useTake(cShot, older);
+        t('an older take can be made the chosen one', cShot.video === older, '');
+        t('the one it displaced joins the rest rather than going',
+          cShot.videoAlts.indexOf(again) >= 0 && SB.Model.takeCount(cShot) === n0,
+          SB.Model.takeCount(cShot) + ' of ' + n0);
+
+        /* numbered by when they were made, not by where they sit */
+        const order = SB.Model.takes(cShot);
+        t('takes are numbered by when they were shot',
+          order.length === n0 &&
+          order.every(function (x, i) { return x.n === i + 1; }) &&
+          order.every(function (x, i) { return !i || (x.rec.at || 0) >= (order[i - 1].rec.at || 0); }),
+          order.map(function (x) { return x.n + (x.chosen ? '*' : ''); }).join(','));
+        t('and exactly one of them is the chosen one',
+          order.filter(function (x) { return x.chosen; }).length === 1, '');
+
+        /* removing the chosen one promotes the newest of the rest rather than
+           leaving a card holding none while still carrying two */
+        SB.Clip.drop(P(), cShot, cShot.video);
+        t('removing the chosen take promotes what is left',
+          !!cShot.video && SB.Model.takeCount(cShot) === n0 - 1,
+          (cShot.video ? 'has one' : 'EMPTY') + ', ' + SB.Model.takeCount(cShot) + ' left');
+        t('and the one removed is gone from the card',
+          SB.Model.takes(cShot).every(function (x) { return x.rec !== older; }), '');
 
         SB.Clip.drop(P(), cShot);
         SB.app.changed(true);

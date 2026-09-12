@@ -43,6 +43,7 @@
     manifest: true,
     scope: 'board',        // 'board' | 'scene' | 'selected'
     madeOnly: false,
+    picksOnly: false,      // a card can hold several takes; write all of them
     naming: 'code'         // 'code' | 'code-serial' | 'serial'
   };
 
@@ -116,7 +117,11 @@
     return c.replace(/^\d+/, function (n) { return n.padStart(width || 1, '0'); });
   }
 
-  function nameFor(code, rec, naming, fallbackExt, width) {
+  /* A card can hold more than one take of the same shot, and an editor wants
+   * to see that in the folder rather than in a sidecar: 1A1, 1A2. A card with
+   * one take is named exactly as it always was — 1A — because a take number
+   * on a shot that was only ever shot once is noise. */
+  function nameFor(code, rec, naming, fallbackExt, width, take) {
     const serial = rec && rec.serial ? SB.Renders.fileName(rec.serial, rec.ext) : '';
     const ext = (rec && rec.ext) || fallbackExt || 'jpg';
     /* No serial means the board copy, which is a second image for the same
@@ -125,8 +130,10 @@
     const board = padCode(code, width) + '_board.' + ext;
     if (naming === 'serial') return serial || board;
     if (!serial) return board;
-    if (naming === 'code-serial') return padCode(code, width) + '_' + serial;
-    return padCode(code, width) + '.' + (rec.ext || ext);
+    /* the serial is already unique per take, so serial naming needs no digit */
+    const c = padCode(code, width) + (take ? String(take) : '');
+    if (naming === 'code-serial') return c + '_' + serial;
+    return c + '.' + (rec.ext || ext);
   }
 
   function extOfUrl(u) {
@@ -175,15 +182,27 @@
       }
 
       if (o.clips && sh.video) {
-        if (sh.video.ref && SB.Renders.has(p, sh.video)) {
-          if (!o.madeOnly || sh.video.made) {
-            const data = SB.Renders.dataUrl(p, sh.video);
+        /* Every take, unless only the pick was asked for. A take number is
+           only put in the name when there is more than one, so a card that was
+           shot once exports exactly as it did before takes existed. */
+        const all = SB.Model.takes(sh);
+        const many = all.length > 1;
+        (o.picksOnly ? all.filter(function (x) { return x.chosen; }) : all)
+          .forEach(function (tk) {
+            const v = tk.rec;
+            if (!v.ref || !SB.Renders.has(p, v)) return;
+            if (o.madeOnly && !v.made) return;
+            const data = SB.Renders.dataUrl(p, v);
             items.push({
-              name: nameFor(r.code, sh.video, o.naming, 'mp4', w), kind: 'clip', data: data,
+              name: nameFor(r.code, v, o.naming, 'mp4', w, many ? tk.n : 0),
+              kind: 'clip', data: data,
               bytes: bytesOf(data), code: r.code, scene: r.sceneName,
-              shot: sh, rec: sh.video, made: sh.video.made || null
+              shot: sh, rec: v, made: v.made || null,
+              take: many ? tk.n : 0, chosen: tk.chosen
             });
-          }
+          });
+        if (sh.video.ref && SB.Renders.has(p, sh.video)) {
+          /* counted above */
         } else if (sh.video.url) {
           /* Held as a link, not a file — and links expire. Worth saying
            * before the export runs rather than after. */
@@ -306,7 +325,11 @@
       if (!it.shot || it.sub) return;
       const e = out[it.shot.id] || (out[it.shot.id] = {});
       if (it.kind === 'original') e.original = it.name;
-      else if (it.kind === 'clip') e.clip = it.name;
+      else if (it.kind === 'clip') {
+        e.takes = (e.takes || 0) + 1;
+        /* the chosen take is what the Clip column names; the rest are counted */
+        if (it.chosen || !e.clip) e.clip = it.name;
+      }
       else if (it.kind === 'board copy' && !e.original) e.boardCopy = it.name;
     });
     return out;
@@ -318,7 +341,7 @@
     const head = ['Scene', 'Code', 'Type', 'Description',
       'First-frame prompt (' + ((im && im.name) || '—') + ')',
       'Video prompt (' + ((vm && vm.name) || '—') + ')',
-      'Original', 'Clip', 'Original serial', 'Clip serial'];
+      'Original', 'Clip', 'Takes', 'Original serial', 'Clip serial'];
     const lines = [head.map(cell).join(',')];
     list.forEach(function (r) {
       const sh = r.shot;
@@ -333,6 +356,8 @@
            no shot list */
         (names[sh.id] && (names[sh.id].original || names[sh.id].boardCopy)) || '',
         (names[sh.id] && names[sh.id].clip) || '',
+        /* how many of this shot are in the folder, so nobody has to count */
+        SB.Model.takeCount(sh) > 1 ? SB.Model.takeCount(sh) : '',
         /* and the serial beside it, because a code is positional and the way
            back to the file inside the board is the number */
         sh.render && sh.render.serial ? SB.Renders.pad(sh.render.serial) : '',
@@ -355,6 +380,8 @@
           file: (it.sub ? it.sub + '/' : '') + it.name,
           kind: it.kind,
           shot: it.code,
+          take: it.take || null,
+          chosen: it.kind === 'clip' ? !!it.chosen : null,
           scene: it.scene,
           serial: (it.rec && it.rec.serial) || null,
           bytes: it.bytes || 0,
@@ -549,7 +576,9 @@
       radio('scope', 'selected', 'the shots I have selected'),
       SB.el('div', 'ex-rule'),
       check('madeOnly', 'only what was made in here',
-        'skips anything dropped in from elsewhere')
+        'skips anything dropped in from elsewhere'),
+      check('picksOnly', 'only the chosen take',
+        'a card can hold several \u2014 this writes just the one it is showing')
     ]));
 
     const w = sceneWidth(P());

@@ -1772,10 +1772,15 @@
        either way, so this badge is the only sign a clip exists. */
     {
       const has = !!sh.video;
-      const play = SB.el('button', 'clip-badge' + (has ? '' : ' none'),
-        '\u25b7' + (has && sh.video.dur ? ' ' + sh.video.dur + 's' : ''));
+      /* A card holds its takes now, so the badge says how many rather than
+         letting three clips hide behind one triangle. */
+      const n = SB.Model.takeCount(sh);
+      const play = SB.el('button', 'clip-badge' + (has ? '' : ' none') + (n > 1 ? ' many' : ''),
+        '\u25b7' + (has && sh.video.dur ? ' ' + sh.video.dur + 's' : '') +
+        (n > 1 ? ' \u00d7' + n : ''));
       play.title = has
-        ? 'Play, replace or remove the clip on this card' +
+        ? (n > 1 ? n + ' takes on this card — play them, choose one, or remove one'
+                 : 'Play, replace or remove the clip on this card') +
           (SB.Clip.label(sh.video) ? ' — ' + SB.Clip.label(sh.video) : '')
         : 'No clip on this card yet — shoot one, or add a file you already have';
       play.onclick = function (ev) { ev.stopPropagation(); SB.Clip.open(P(), sh); };

@@ -952,6 +952,18 @@ button.linkish{
 /* kept on screen because it was on screen when it stopped matching the filter */
 .pt-row.settled .pt-code-line .code{opacity:.65}
 .badge.done{border-color:var(--ok);color:var(--ok);cursor:help;margin-left:6px}
+/* the takes on one card, in the clip window */
+.clip-takes{display:flex;flex-direction:column;gap:4px;margin:10px 0 4px}
+.clip-take{
+  display:flex;align-items:center;gap:8px;padding:6px 8px;
+  border:1px solid var(--line);border-radius:6px;background:var(--bg2);
+}
+.clip-take.on{border-color:var(--ok);background:color-mix(in srgb,var(--ok) 10%,transparent)}
+.clip-take .tk-n{font-size:11px;font-weight:700;min-width:52px;color:var(--fg-dim)}
+.clip-take.on .tk-n{color:var(--ok)}
+.clip-take .tk-what{font-size:11px;color:var(--fg-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* a card carrying several says so rather than hiding them behind one triangle */
+.clip-badge.many{border-color:var(--ok);color:var(--ok)}
 .pt-cell{min-width:0}
 .pt-scene{
   position:sticky;top:26px;z-index:1;

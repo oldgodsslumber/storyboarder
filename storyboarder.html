@@ -958,6 +958,18 @@ button.linkish{
 /* kept on screen because it was on screen when it stopped matching the filter */
 .pt-row.settled .pt-code-line .code{opacity:.65}
 .badge.done{border-color:var(--ok);color:var(--ok);cursor:help;margin-left:6px}
+/* the takes on one card, in the clip window */
+.clip-takes{display:flex;flex-direction:column;gap:4px;margin:10px 0 4px}
+.clip-take{
+  display:flex;align-items:center;gap:8px;padding:6px 8px;
+  border:1px solid var(--line);border-radius:6px;background:var(--bg2);
+}
+.clip-take.on{border-color:var(--ok);background:color-mix(in srgb,var(--ok) 10%,transparent)}
+.clip-take .tk-n{font-size:11px;font-weight:700;min-width:52px;color:var(--fg-dim)}
+.clip-take.on .tk-n{color:var(--ok)}
+.clip-take .tk-what{font-size:11px;color:var(--fg-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* a card carrying several says so rather than hiding them behind one triangle */
+.clip-badge.many{border-color:var(--ok);color:var(--ok)}
 .pt-cell{min-width:0}
 .pt-scene{
   position:sticky;top:26px;z-index:1;
@@ -1269,7 +1281,7 @@ body.comment-mode .frame{cursor:crosshair}
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-09-12 13:33 · 9387cb7+";</script>
+<script>window.SB_BUILD = "2026-09-12 14:09 · 55d0e44+";</script>
 
 <div id="app">
 
@@ -2417,6 +2429,10 @@ window.SB = window.SB || {};
            * would look wrong until somebody tried to feed one to a model. */
           mark(sh.render);
           mark(sh.video);
+          /* Every other take. Leaving these out of the sweep would have the
+           * next structural change delete the clips somebody deliberately
+           * kept -- the exact failure the originals had before them. */
+          (sh.videoAlts || []).forEach(mark);
         });
       });
     };
@@ -4113,9 +4129,11 @@ window.SB = window.SB || {};
           add('ink', refOf(sh.annotation));
           add('originals', sh.render && sh.render.ref);
           add('clips', sh.video && sh.video.ref);
+          (sh.videoAlts || []).forEach(function (r) { add('clips', r && r.ref); });
           if (isLegacy(sh.render)) out.legacy++;
           if (isDangling(p, sh.render)) out.dangling++;
           if (isDangling(p, sh.video)) out.dangling++;
+          (sh.videoAlts || []).forEach(function (r) { if (isDangling(p, r)) out.dangling++; });
         });
       });
     };
@@ -6723,6 +6741,11 @@ window.SB = window.SB || {};
   }
 
   function fileVideo(p, shot, got, made) {
+    /* Shooting again is what you do when the clip is mostly right, so the one
+     * on the card is kept rather than overwritten. The new one becomes the
+     * chosen take -- trying again is an attempt to do better -- and the old
+     * one is a click away in the clip window. */
+    SB.Model.keepTake(shot);
     /* unseen: nobody has watched this one yet. Shooting a dozen clips means
      * going away and coming back to a board where every row looks the same,
      * with no way to tell the one that just landed from the one watched ten
@@ -7199,7 +7222,9 @@ window.SB = window.SB || {};
       return Promise.reject(new Error('That is not a video file.'));
     }
     return clipMeta(file).then(function (meta) {
-      return SB.Renders.keepVideo(p, file, shot.video).then(function (saved) {
+      /* Same rule as a generated one: a card holds its takes. */
+      SB.Model.keepTake(shot);
+      return SB.Renders.keepVideo(p, file, null).then(function (saved) {
         if (!saved) throw new Error('the clip could not be stored');
         if (meta.dur) saved.dur = meta.dur;
         if (meta.w) { saved.w = meta.w; saved.h = meta.h; }
@@ -7211,9 +7236,12 @@ window.SB = window.SB || {};
     });
   }
 
-  function dropClip(p, shot) {
+  /* One take, or the lot. Removing the chosen one promotes the newest of what
+   * is left rather than leaving a card holding none while still carrying two. */
+  function dropClip(p, shot, rec) {
     if (!shot || !shot.video) return;
-    shot.video = null;
+    if (rec) SB.Model.dropTake(shot, rec);
+    else { shot.video = null; shot.videoAlts = []; }
     SB.app.changed(true);
   }
 
@@ -7324,6 +7352,52 @@ window.SB = window.SB || {};
           'This board has no copy of that clip and its link has gone.'));
       }
 
+      /* Every take this card holds, with the chosen one marked. This is the
+         whole feature from the user's side: the one that was mostly right is
+         still here, and one click makes it the keeper again. */
+      const all = SB.Model.takes(shot);
+      if (all.length > 1) {
+        const strip = SB.el('div', 'clip-takes');
+        strip.appendChild(SB.el('div', 'pp-note',
+          all.length + ' takes on this card. The chosen one is what the board shows, ' +
+          'what a push replaces, and what an export calls the pick.'));
+        all.forEach(function (tk) {
+          const row = SB.el('div', 'clip-take' + (tk.chosen ? ' on' : ''));
+          row.appendChild(SB.el('span', 'tk-n', 'take ' + tk.n));
+          row.appendChild(SB.el('span', 'tk-what',
+            (clipLabel(tk.rec) || 'a clip') +
+            (tk.rec.made ? ' \u00b7 ' + (tk.rec.made.model || tk.rec.made.slug || 'made here')
+                         : ' \u00b7 added from a file')));
+          row.appendChild(SB.el('span', 'spacer'));
+          if (tk.chosen) {
+            row.appendChild(SB.el('span', 'badge done', 'chosen'));
+          } else {
+            const use = SB.el('button', 'mini primary', 'use this one');
+            use.title = 'Make this the take the board shows and the export picks.';
+            use.onclick = function () {
+              SB.Model.useTake(shot, tk.rec);
+              SB.Store.touch();
+              close();
+              SB.app.changed(true);
+              SB.toast('Take ' + tk.n + ' is the one on ' + (codeOf(p, shot) || 'the card'));
+            };
+            row.appendChild(use);
+          }
+          const rm = SB.el('button', 'mini danger', 'remove');
+          rm.title = 'Delete this take. The bytes go with it.';
+          SB.armButton(rm, 'delete take ' + tk.n, function () {
+            const wasChosen = tk.chosen;
+            dropClip(p, shot, tk.rec);
+            close();
+            SB.toast('Take ' + tk.n + ' removed' +
+              (wasChosen ? ' \u2014 the newest of the rest is chosen now' : ''));
+          });
+          row.appendChild(rm);
+          strip.appendChild(row);
+        });
+        box.appendChild(strip);
+      }
+
       if (rec) {
         const line = clipLabel(rec);
         if (line) {
@@ -7343,10 +7417,12 @@ window.SB = window.SB || {};
       const acts = SB.el('div', 'pp-actions');
       const why = whyNot(p, shot, model, 'video');
 
-      const shoot = SB.el('button', 'tb' + (rec ? '' : ' on'), rec ? 'Shoot it again' : 'Shoot it');
+      const shoot = SB.el('button', 'tb' + (rec ? '' : ' on'),
+        rec ? 'Shoot another take' : 'Shoot it');
       shoot.disabled = !!why;
       shoot.title = why ? why.long
-        : 'Send the video prompt to ' + (model && model.name) + ' and replace what is here.';
+        : 'Send the video prompt to ' + (model && model.name) + '.' +
+          (rec ? ' What is here is kept as another take.' : '');
       shoot.onclick = function () {
         close();
         confirmCost(p, shot, model, function () {
@@ -7358,14 +7434,15 @@ window.SB = window.SB || {};
       };
       acts.appendChild(shoot);
 
-      const add = SB.el('button', 'tb', rec ? 'Replace…' : 'Add from a file…');
-      add.title = 'Put a file you already have on this card.';
+      const add = SB.el('button', 'tb', rec ? 'Add another take…' : 'Add from a file…');
+      add.title = 'Put a file you already have on this card.' +
+        (rec ? ' What is here is kept as another take.' : '');
       add.onclick = function () {
         SB.pickVideoFile().then(function (file) {
           if (!file) return;
           close();
           return attachClip(p, shot, file).then(function (saved) {
-            SB.toast((rec ? 'Clip replaced' : 'Clip added') +
+            SB.toast((rec ? 'Another take added' : 'Clip added') +
               (clipLabel(saved) ? ' · ' + clipLabel(saved) : ''));
           });
         }).catch(function (e) { SB.toast(e.message || String(e), true); });
@@ -7373,11 +7450,14 @@ window.SB = window.SB || {};
       acts.appendChild(add);
 
       if (rec) {
-        const rm = SB.el('button', 'tb danger', 'Remove');
-        rm.title = 'Take the clip off this card. The bytes go with it.';
-        SB.armButton(rm, 'remove for good', function () {
+        const many = SB.Model.takeCount(shot) > 1;
+        const rm = SB.el('button', 'tb danger', many ? 'Remove all takes' : 'Remove');
+        rm.title = many
+          ? 'Take every one of them off this card. The bytes go with them.'
+          : 'Take the clip off this card. The bytes go with it.';
+        SB.armButton(rm, many ? 'remove all for good' : 'remove for good', function () {
           dropClip(p, shot);
-          SB.toast('Clip removed');
+          SB.toast(many ? 'All takes removed' : 'Clip removed');
           close();
         });
         acts.appendChild(rm);
@@ -8948,6 +9028,78 @@ window.SB = window.SB || {};
     '#7c3aed'  // violet
   ];
 
+  /* ---- takes ----
+   *
+   * A clip that is MOSTLY right is the ordinary case, not the exception: you
+   * shoot it again, and until now the second one overwrote the first, so the
+   * only way to keep both was to save one out of the app by hand and remember
+   * what it was. A card holds its takes now.
+   *
+   * `shot.video` is still the CHOSEN take and still the only thing every
+   * reader in the app looks at -- the card badge, the export, the PDF, the
+   * prompt table, the push. `videoAlts` is the rest of them, and it is purely
+   * additive: a board that has never kept one behaves exactly as it did.
+   *
+   * Numbered by when they were made rather than by where they sit, because a
+   * take number is a fact about the shoot and the chosen one moves. */
+  function takes(shot) {
+    const out = [];
+    if (shot && shot.video) out.push({ rec: shot.video, chosen: true });
+    ((shot && shot.videoAlts) || []).forEach(function (r) {
+      if (r) out.push({ rec: r, chosen: false });
+    });
+    out.sort(function (x, y) { return (x.rec.at || 0) - (y.rec.at || 0); });
+    out.forEach(function (x, i) { x.n = i + 1; });
+    return out;
+  }
+
+  function takeCount(shot) {
+    return (shot && shot.video ? 1 : 0) + (((shot && shot.videoAlts) || []).length);
+  }
+
+  /* Keep what is on the card and make room for a new one. The new take
+   * becomes the chosen one, because trying again is what you do when the
+   * current one is not the one. */
+  function keepTake(shot) {
+    if (!shot || !shot.video) return;
+    shot.videoAlts = (shot.videoAlts || []).concat([shot.video]);
+    shot.video = null;
+  }
+
+  /* Swap a take into the chosen slot. The one that was chosen joins the rest
+   * rather than being thrown away -- this is a choice, not a deletion. */
+  function useTake(shot, rec) {
+    if (!shot || !rec || rec === shot.video) return false;
+    const alts = (shot.videoAlts || []).slice();
+    const i = alts.indexOf(rec);
+    if (i < 0) return false;
+    alts.splice(i, 1);
+    if (shot.video) alts.push(shot.video);
+    shot.videoAlts = alts;
+    shot.video = rec;
+    return true;
+  }
+
+  /* One take, gone. Removing the chosen one promotes the most recent of what
+   * is left, so a card with takes never ends up holding none while still
+   * carrying three. */
+  function dropTake(shot, rec) {
+    if (!shot || !rec) return false;
+    if (rec === shot.video) {
+      const rest = (shot.videoAlts || []).slice()
+        .sort(function (x, y) { return (y.at || 0) - (x.at || 0); });
+      shot.video = rest.shift() || null;
+      shot.videoAlts = rest;
+      return true;
+    }
+    const alts = (shot.videoAlts || []).slice();
+    const i = alts.indexOf(rec);
+    if (i < 0) return false;
+    alts.splice(i, 1);
+    shot.videoAlts = alts;
+    return true;
+  }
+
   function newShot(opts) {
     opts = opts || {};
     return {
@@ -8966,6 +9118,9 @@ window.SB = window.SB || {};
       description: '',
       fields: {},                       // extra text boxes, keyed by field id
       image: null,                      // {ref,w,h} into project.blobs
+      /* Every other take of this shot, oldest kept first. `video` above is
+       * the chosen one and stays the only thing the rest of the app reads. */
+      videoAlts: [],
       annotation: null,                 // {ref} — transparent PNG overlay
       /* {ref,serial,ext,w,h,bytes} — the full-size original, in this file.
        * The board draws the proxy above; this is the copy a model is fed, and
@@ -9269,6 +9424,15 @@ window.SB = window.SB || {};
     });
     const s = p.settings = p.settings || {};
     s.shotTypes = (s.shotTypes && s.shotTypes.length) ? s.shotTypes : DEFAULT_SHOT_TYPES.slice();
+    /* Absent is empty is exactly how every board behaved before takes. Walked
+       by hand rather than through eachShot, because migrate runs over shapes
+       that have not been normalised yet -- a scene with no shots array at all
+       is a fixture, a hand-built snapshot, and it must not throw here. */
+    (p.scenes || []).forEach(function (sc) {
+      (sc.shots || []).forEach(function (sh) {
+        if (!Array.isArray(sh.videoAlts)) sh.videoAlts = [];
+      });
+    });
     /* Only what is missing: a line somebody has deliberately emptied stays
        empty, and one they have rewritten stays theirs. */
     s.shotFraming = s.shotFraming || {};
@@ -9911,6 +10075,7 @@ window.SB = window.SB || {};
     CARD_COLORS: CARD_COLORS,
     DEFAULT_SHOT_TYPES: DEFAULT_SHOT_TYPES,
     DEFAULT_FRAMING: DEFAULT_FRAMING, framingFor: framingFor, guessFraming: guessFraming,
+    takes: takes, takeCount: takeCount, keepTake: keepTake, useTake: useTake, dropTake: dropTake,
     IMG_TPL: IMG_TPL, IMG_TPL_V1: IMG_TPL_V1,
     VID_TPL: VID_TPL, VID_TPL_V1: VID_TPL_V1, VID_TPL_V2: VID_TPL_V2,
     H3_VID_TPL: H3_VID_TPL, H3_VID_TPL_V2: H3_VID_TPL_V2, tplsFor: tplsFor,
@@ -13119,10 +13284,15 @@ window.SB = window.SB || {};
        either way, so this badge is the only sign a clip exists. */
     {
       const has = !!sh.video;
-      const play = SB.el('button', 'clip-badge' + (has ? '' : ' none'),
-        '\u25b7' + (has && sh.video.dur ? ' ' + sh.video.dur + 's' : ''));
+      /* A card holds its takes now, so the badge says how many rather than
+         letting three clips hide behind one triangle. */
+      const n = SB.Model.takeCount(sh);
+      const play = SB.el('button', 'clip-badge' + (has ? '' : ' none') + (n > 1 ? ' many' : ''),
+        '\u25b7' + (has && sh.video.dur ? ' ' + sh.video.dur + 's' : '') +
+        (n > 1 ? ' \u00d7' + n : ''));
       play.title = has
-        ? 'Play, replace or remove the clip on this card' +
+        ? (n > 1 ? n + ' takes on this card — play them, choose one, or remove one'
+                 : 'Play, replace or remove the clip on this card') +
           (SB.Clip.label(sh.video) ? ' — ' + SB.Clip.label(sh.video) : '')
         : 'No clip on this card yet — shoot one, or add a file you already have';
       play.onclick = function (ev) { ev.stopPropagation(); SB.Clip.open(P(), sh); };
@@ -19935,6 +20105,7 @@ window.SB = window.SB || {};
     manifest: true,
     scope: 'board',        // 'board' | 'scene' | 'selected'
     madeOnly: false,
+    picksOnly: false,      // a card can hold several takes; write all of them
     naming: 'code'         // 'code' | 'code-serial' | 'serial'
   };
 
@@ -20008,7 +20179,11 @@ window.SB = window.SB || {};
     return c.replace(/^\d+/, function (n) { return n.padStart(width || 1, '0'); });
   }
 
-  function nameFor(code, rec, naming, fallbackExt, width) {
+  /* A card can hold more than one take of the same shot, and an editor wants
+   * to see that in the folder rather than in a sidecar: 1A1, 1A2. A card with
+   * one take is named exactly as it always was — 1A — because a take number
+   * on a shot that was only ever shot once is noise. */
+  function nameFor(code, rec, naming, fallbackExt, width, take) {
     const serial = rec && rec.serial ? SB.Renders.fileName(rec.serial, rec.ext) : '';
     const ext = (rec && rec.ext) || fallbackExt || 'jpg';
     /* No serial means the board copy, which is a second image for the same
@@ -20017,8 +20192,10 @@ window.SB = window.SB || {};
     const board = padCode(code, width) + '_board.' + ext;
     if (naming === 'serial') return serial || board;
     if (!serial) return board;
-    if (naming === 'code-serial') return padCode(code, width) + '_' + serial;
-    return padCode(code, width) + '.' + (rec.ext || ext);
+    /* the serial is already unique per take, so serial naming needs no digit */
+    const c = padCode(code, width) + (take ? String(take) : '');
+    if (naming === 'code-serial') return c + '_' + serial;
+    return c + '.' + (rec.ext || ext);
   }
 
   function extOfUrl(u) {
@@ -20067,15 +20244,27 @@ window.SB = window.SB || {};
       }
 
       if (o.clips && sh.video) {
-        if (sh.video.ref && SB.Renders.has(p, sh.video)) {
-          if (!o.madeOnly || sh.video.made) {
-            const data = SB.Renders.dataUrl(p, sh.video);
+        /* Every take, unless only the pick was asked for. A take number is
+           only put in the name when there is more than one, so a card that was
+           shot once exports exactly as it did before takes existed. */
+        const all = SB.Model.takes(sh);
+        const many = all.length > 1;
+        (o.picksOnly ? all.filter(function (x) { return x.chosen; }) : all)
+          .forEach(function (tk) {
+            const v = tk.rec;
+            if (!v.ref || !SB.Renders.has(p, v)) return;
+            if (o.madeOnly && !v.made) return;
+            const data = SB.Renders.dataUrl(p, v);
             items.push({
-              name: nameFor(r.code, sh.video, o.naming, 'mp4', w), kind: 'clip', data: data,
+              name: nameFor(r.code, v, o.naming, 'mp4', w, many ? tk.n : 0),
+              kind: 'clip', data: data,
               bytes: bytesOf(data), code: r.code, scene: r.sceneName,
-              shot: sh, rec: sh.video, made: sh.video.made || null
+              shot: sh, rec: v, made: v.made || null,
+              take: many ? tk.n : 0, chosen: tk.chosen
             });
-          }
+          });
+        if (sh.video.ref && SB.Renders.has(p, sh.video)) {
+          /* counted above */
         } else if (sh.video.url) {
           /* Held as a link, not a file — and links expire. Worth saying
            * before the export runs rather than after. */
@@ -20198,7 +20387,11 @@ window.SB = window.SB || {};
       if (!it.shot || it.sub) return;
       const e = out[it.shot.id] || (out[it.shot.id] = {});
       if (it.kind === 'original') e.original = it.name;
-      else if (it.kind === 'clip') e.clip = it.name;
+      else if (it.kind === 'clip') {
+        e.takes = (e.takes || 0) + 1;
+        /* the chosen take is what the Clip column names; the rest are counted */
+        if (it.chosen || !e.clip) e.clip = it.name;
+      }
       else if (it.kind === 'board copy' && !e.original) e.boardCopy = it.name;
     });
     return out;
@@ -20210,7 +20403,7 @@ window.SB = window.SB || {};
     const head = ['Scene', 'Code', 'Type', 'Description',
       'First-frame prompt (' + ((im && im.name) || '—') + ')',
       'Video prompt (' + ((vm && vm.name) || '—') + ')',
-      'Original', 'Clip', 'Original serial', 'Clip serial'];
+      'Original', 'Clip', 'Takes', 'Original serial', 'Clip serial'];
     const lines = [head.map(cell).join(',')];
     list.forEach(function (r) {
       const sh = r.shot;
@@ -20225,6 +20418,8 @@ window.SB = window.SB || {};
            no shot list */
         (names[sh.id] && (names[sh.id].original || names[sh.id].boardCopy)) || '',
         (names[sh.id] && names[sh.id].clip) || '',
+        /* how many of this shot are in the folder, so nobody has to count */
+        SB.Model.takeCount(sh) > 1 ? SB.Model.takeCount(sh) : '',
         /* and the serial beside it, because a code is positional and the way
            back to the file inside the board is the number */
         sh.render && sh.render.serial ? SB.Renders.pad(sh.render.serial) : '',
@@ -20247,6 +20442,8 @@ window.SB = window.SB || {};
           file: (it.sub ? it.sub + '/' : '') + it.name,
           kind: it.kind,
           shot: it.code,
+          take: it.take || null,
+          chosen: it.kind === 'clip' ? !!it.chosen : null,
           scene: it.scene,
           serial: (it.rec && it.rec.serial) || null,
           bytes: it.bytes || 0,
@@ -20441,7 +20638,9 @@ window.SB = window.SB || {};
       radio('scope', 'selected', 'the shots I have selected'),
       SB.el('div', 'ex-rule'),
       check('madeOnly', 'only what was made in here',
-        'skips anything dropped in from elsewhere')
+        'skips anything dropped in from elsewhere'),
+      check('picksOnly', 'only the chosen take',
+        'a card can hold several \u2014 this writes just the one it is showing')
     ]));
 
     const w = sceneWidth(P());

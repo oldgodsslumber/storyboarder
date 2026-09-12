@@ -296,9 +296,11 @@
           add('ink', refOf(sh.annotation));
           add('originals', sh.render && sh.render.ref);
           add('clips', sh.video && sh.video.ref);
+          (sh.videoAlts || []).forEach(function (r) { add('clips', r && r.ref); });
           if (isLegacy(sh.render)) out.legacy++;
           if (isDangling(p, sh.render)) out.dangling++;
           if (isDangling(p, sh.video)) out.dangling++;
+          (sh.videoAlts || []).forEach(function (r) { if (isDangling(p, r)) out.dangling++; });
         });
       });
     };

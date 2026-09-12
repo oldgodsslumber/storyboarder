@@ -164,6 +164,65 @@ section('the order an editor opens the folder in');
     sorted.indexOf('12A.webp') > sorted.indexOf('01A.webp'), sorted.join(' '));
 }
 
+/* ------------------------------------------------------------------ takes */
+section('a card that holds more than one take');
+{
+  /* A clip that is MOSTLY right is the ordinary case. The card keeps them, and
+     an editor should see that in the folder rather than in a sidecar. */
+  const { p, a } = board();
+  p.blobs.v2 = 'data:video/mp4;base64,' + 'C'.repeat(24);
+  p.blobs.v3 = 'data:video/mp4;base64,' + 'D'.repeat(24);
+  const first = a.video;
+  a.videoAlts = [
+    { ref: 'v2', serial: 21, ext: 'mp4', bytes: 18, at: (first.at || 0) + 1000 },
+    { ref: 'v3', serial: 22, ext: 'mp4', bytes: 18, at: (first.at || 0) + 2000 }
+  ];
+
+  const names = E.plan(p, withOpts({ naming: 'code' })).items.map(i => i.name);
+  t('every take comes out', names.filter(n => /^1A\d\.mp4$/.test(n)).length === 3, names.join(' '));
+  t('numbered by when it was shot', names.indexOf('1A1.mp4') >= 0 &&
+    names.indexOf('1A2.mp4') >= 0 && names.indexOf('1A3.mp4') >= 0, names.join(' '));
+  t('and they sort together, under the frame they belong to',
+    (function () {
+      const sorted = names.slice().sort();
+      return sorted.indexOf('1A1.mp4') === sorted.indexOf('1A.webp') + 1;
+    })(), names.slice().sort().join(' '));
+
+  /* a card with one take is named exactly as it always was */
+  t('a card shot once carries no take number',
+    names.indexOf('1B.webp') >= 0 && !names.some(n => /^1B\d/.test(n)), names.join(' '));
+
+  /* the pick, for a handoff that wants one file per shot */
+  const picks = E.plan(p, withOpts({ naming: 'code', picksOnly: true })).items.map(i => i.name);
+  t('only the chosen take, when that is what was asked for',
+    picks.filter(n => /\.mp4$/.test(n)).length === 1, picks.join(' '));
+  t('and it is the one the card is showing',
+    picks.indexOf('1A1.mp4') >= 0, picks.join(' '));
+
+  /* under serial naming nothing changes: a serial is already unique per take */
+  const ser = E.plan(p, withOpts({ naming: 'serial' })).items.map(i => i.name);
+  t('serial naming needs no take number',
+    ser.indexOf('0002.mp4') >= 0 && ser.indexOf('0021.mp4') >= 0 && !ser.some(n => /^\d{4}\d\./.test(n)),
+    ser.join(' '));
+
+  /* the sheet says how many are in the folder */
+  const pl = E.plan(p, withOpts({ naming: 'code', shotlist: true }));
+  const text = pl.items.filter(i => /\.csv$/.test(i.name))[0].text;
+  const row = text.split('\r\n')[1];
+  t('the shot list names the chosen take', row.indexOf('1A1.mp4') >= 0, row);
+  t('and counts the rest', /,3,/.test(row), row);
+
+  /* and the manifest says which is which */
+  const man = JSON.parse(E.manifest(p, pl.items));
+  const clips = man.files.filter(f => f.kind === 'clip');
+  t('the manifest numbers each take', clips.every(f => f.take >= 1 && f.take <= 3),
+    JSON.stringify(clips.map(f => f.take)));
+  t('and names exactly one of them the pick',
+    clips.filter(f => f.chosen).length === 1, JSON.stringify(clips.map(f => f.chosen)));
+
+  t('nothing collides', E.plan(p, withOpts({ naming: 'code' })).clashes.length === 0, '');
+}
+
 /* ------------------------------------------------------------- collisions */
 section('two files that want one name');
 {
