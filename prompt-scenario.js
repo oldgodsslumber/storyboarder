@@ -682,6 +682,119 @@
           proj.settings.models.map(function (m) { return m.name; }).join(','));
       }
 
+      /* ---------- a hand edit made while the writer works is not overwritten ----
+       *
+       * The writer takes tens of seconds. In that time the person who pressed
+       * the button reads the prompt that is already there and fixes it. The
+       * answer that comes back was written against the old text and knows
+       * nothing about the fix — storing it threw the fix away, silently, with
+       * no undo anywhere behind it. */
+      {
+        const im2 = SB.Model.imageModel(P());
+        shots.a.prompts[im2.id].imagePrompt = 'what the model wrote last time';
+        window.__calls = [];
+        window.__reply = function () {
+          /* mid-flight: the box is edited by hand */
+          shots.a.prompts[im2.id].imagePrompt = 'my fix, by hand';
+          return null;                         // and then the model answers
+        };
+        const r2 = await SB.Prompts.generateFor(shots.a, { image: true })
+          .catch(function (e) { return { error: e.message || String(e) }; });
+        window.__reply = null;
+        t('a prompt edited by hand while the writer worked is kept',
+          shots.a.prompts[im2.id].imagePrompt === 'my fix, by hand',
+          shots.a.prompts[im2.id].imagePrompt);
+        t('and the caller is told which one was kept',
+          !!r2 && r2.kept && r2.kept.length === 1 && r2.kept[0].field === 'imagePrompt',
+          JSON.stringify(r2));
+        t('and nothing is reported as written',
+          !!r2 && r2.written && r2.written.length === 0, JSON.stringify(r2 && r2.written));
+
+        /* left alone, the answer still lands — this is not a lock */
+        const r3 = await SB.Prompts.generateFor(shots.a, { image: true })
+          .catch(function (e) { return { error: e.message || String(e) }; });
+        t('an untouched prompt is still replaced',
+          shots.a.prompts[im2.id].imagePrompt !== 'my fix, by hand' &&
+          !!r3 && r3.written.join() === 'imagePrompt',
+          shots.a.prompts[im2.id].imagePrompt);
+      }
+
+      /* ---------- the frame is allowed to leave a person out of itself ----
+       *
+       * "Shot type: Close-up." was the whole of what the prompt said about
+       * framing, against a cast block describing a man from his hair to his
+       * jeans and calling itself the authoritative record. The block won: a
+       * close-up of somebody's hands came back with their stubble in it. */
+      {
+        const sh = shots.a;
+        const wasType = sh.type, wasDesc = sh.description, wasIds = sh.personaIds;
+        const per = SB.Personas.add(P(), 'person');
+        per.name = 'Danny';
+        per.description = '34, close-cropped dark hair, three-day stubble, charcoal henley.';
+        sh.personaIds = [per.id];
+        sh.type = 'Close-up';
+        sh.description = 'Close-up of Danny\u2019s hands typing.';
+
+        const im2 = SB.Model.imageModel(P());
+        let vm2 = SB.Model.videoModel(P());
+        const job = SB.Prompts.jobsFor(sh, im2, vm2, { image: true })[0];
+        const sys = job.system;
+
+        t('the prompt says what this shot type shows',
+          /WHAT THIS FRAME SHOWS/.test(sys) && /nothing below the chest/i.test(sys),
+          sys.slice(0, 60));
+        t('and that the description may crop tighter but never wider',
+          /never widens it/i.test(sys), '');
+        t('and that somebody acting outside the frame is still acting',
+          /doing it off camera/i.test(sys), '');
+        t('the cast block is scoped to what the frame shows',
+          /Write only the parts that are inside the frame/i.test(sys), '');
+        t('and no longer asks for the person "fully"',
+          !/describe this person fully/i.test(sys), 'the old wording is still there');
+
+        /* a type with no line of its own says nothing rather than guessing */
+        sh.type = 'Drone orbit';
+        const job2 = SB.Prompts.jobsFor(sh, im2, vm2, { image: true })[0];
+        t('a type nobody has described still names itself',
+          /Shot type: Drone orbit\./.test(job2.system), '');
+        t('and an unset type says to take the framing from the description',
+          (function () {
+            sh.type = '';
+            const j = SB.Prompts.jobsFor(sh, im2, vm2, { image: true })[0];
+            return /No shot type is set on this card/.test(j.system);
+          })(), '');
+
+        /* a frame-only video model is SHOWN the framing, so it is not told it */
+        sh.type = 'Close-up';
+        /* this board has no video model picked, and the question is about the
+           kind of model, so one of each is asked directly */
+        const wasVid = P().settings.videoModelId;
+        const frameOnly = P().settings.models.filter(function (m) {
+          return m.kind === 'video' && SB.Model.videoInherits(m);
+        })[0];
+        const fullRef = P().settings.models.filter(function (m) {
+          return m.kind === 'video' && !SB.Model.videoInherits(m);
+        })[0];
+        P().settings.videoModelId = fullRef ? fullRef.id : null;
+        const fJob = fullRef ? SB.Prompts.jobsFor(sh, im2, fullRef, { video: true })[0] : null;
+        t('a full-reference video model IS told the framing',
+          !!fJob && /WHAT THIS FRAME SHOWS/.test(fJob.system || ''),
+          'model=' + (fullRef && fullRef.name));
+        P().settings.videoModelId = wasVid;
+
+        const vJob = frameOnly ? SB.Prompts.jobsFor(sh, im2, frameOnly, { video: true })[0] : null;
+        const inherits = true;
+        vm2 = frameOnly;
+        const vSys = (vJob && vJob.system) || '';
+        t('a video job that is handed the frame is not told the framing in words',
+          !!vJob && (inherits ? !/WHAT THIS FRAME SHOWS/.test(vSys)
+                              : /WHAT THIS FRAME SHOWS/.test(vSys)),
+          'job=' + !!vJob + ' inherits=' + inherits + ' model=' + (vm2 && vm2.name));
+
+        sh.type = wasType; sh.description = wasDesc; sh.personaIds = wasIds;
+        SB.Personas.remove(P(), per.id);
+      }
+
       t('no page errors', (window.__err || []).length === 0, JSON.stringify(window.__err));
     } catch (e) {
       out.push('FAIL exception :: ' + (e && e.stack || e));

@@ -66,6 +66,35 @@
    * This is a rider rather than template text on purpose. Templates are stored
    * per project inside the file, so editing the default only reaches boards
    * made afterwards; a rider reaches every board that already exists. */
+  /* WHAT THIS FRAME SHOWS — the thing the prompt never said.
+   *
+   * "Shot type: Close-up." was the whole of it, against a cast block that
+   * described a man from his hair to his jeans and called itself authoritative.
+   * A type is only a word; what it MEANS — what a close-up leaves outside
+   * itself — had no representation anywhere, so the block won and a shot of
+   * somebody's hands came back with their stubble in it.
+   *
+   * Two rules travel with the line, and they are the ones that were missing:
+   * the description may crop tighter but never wider, and somebody acting
+   * where the frame cannot see them is still acting. */
+  function framingBlock(p, shot) {
+    const type = (shot && shot.type) || '';
+    const line = SB.Model.framingFor(p, type);
+    const out = ['WHAT THIS FRAME SHOWS'];
+    out.push(type
+      ? '- Shot type: ' + type + '.' + (line ? ' ' + line : '')
+      : '- No shot type is set on this card. Take the framing from the shot description, and ' +
+        'if it does not say, frame it as tightly as the action allows.');
+    out.push('- The shot description may narrow this further — to a pair of hands, a screen, ' +
+      'one eye. It never widens it. Nothing outside this framing is in the picture, however ' +
+      'fully any block in this instruction describes it.');
+    out.push('- Anyone the description has DOING something who does not fit inside this frame is ' +
+      'doing it off camera. The action is real and still happening — write it only where ' +
+      'the frame can see it, or in what it does to what the frame CAN see. Do not widen the shot ' +
+      'to fit them in, and do not draw them at its edge.');
+    return out.join('\n');
+  }
+
   const FIRST_FRAME_RIDER = [
     'THE FIRST FRAME IS ONE INSTANT',
     '- You are describing a single photograph: the state of things at the moment this shot ' +
@@ -506,6 +535,13 @@
     if (role === 'image' || role === 'video' || role === 'both') {
       if (parts.length) parts.push('');
       parts.push(GENDER_RIDER);
+    }
+    /* A frame-only video job is shown the picture, so it can SEE the framing —
+       telling it in words is the same mistake as repeating the house style at
+       it. Every other job is told. */
+    if (role === 'image' || role === 'both' || (role === 'video' && !inherits)) {
+      if (parts.length) parts.push('');
+      parts.push(framingBlock(p, shot));
     }
     if (role === 'image' || role === 'both') {
       if (parts.length) parts.push('');

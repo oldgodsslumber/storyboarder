@@ -116,6 +116,16 @@ button,input,select,textarea{font:inherit;color:inherit}
 .mini.arm:hover{border-color:var(--danger);color:#fff}
 .save-state{color:var(--fg-dim);font-size:11px;min-width:74px}
 .save-state.dirty{color:var(--accent2)}
+/* how many generations are in the air, on the button that opens the panel the
+   push lives in — it is the only indicator, and that panel gets closed */
+.tb .tb-count{
+  display:inline-block;margin-left:6px;min-width:15px;padding:0 4px;
+  border-radius:8px;font-size:10px;font-weight:700;line-height:15px;text-align:center;
+  background:var(--accent);color:var(--on-accent);
+}
+.tb .tb-count.held{background:var(--danger)}
+.tb.working .tb-count{animation:tb-pulse 1.6s ease-in-out infinite}
+@keyframes tb-pulse{0%,100%{opacity:1}50%{opacity:.45}}
 .save-state.saved{color:var(--ok)}
 
 /* ---------- layout ---------- */
@@ -287,6 +297,19 @@ button,input,select,textarea{font:inherit;color:inherit}
 .badge.warn{border-color:var(--danger);color:var(--danger);cursor:help}
 /* not an error — the prompt is fine, it is just describing an older wardrobe */
 .badge.stale{border-color:var(--accent2);color:var(--accent2);cursor:help}
+/* the description names a framing the dropdown disagrees with — a button,
+   because the whole point is that it is one click to settle */
+.fr-host{display:inline-flex;align-items:center}
+.badge.framing{
+  background:none;cursor:pointer;font-family:inherit;
+  border-color:var(--accent2);color:var(--accent2);
+}
+.badge.framing:hover{background:var(--accent2);color:var(--on-accent)}
+/* one row per shot type in Settings: the name, then what it shows */
+.set-framing{display:flex;flex-direction:column;gap:6px;width:100%}
+.set-fr-row{display:grid;grid-template-columns:130px 1fr;gap:8px;align-items:start}
+.set-fr-name{font-size:11px;color:var(--fg-dim);padding-top:6px}
+.set-fr-text{font-size:11px;line-height:1.45;resize:vertical}
 
 .frame{
   position:relative;background:var(--frame-bg);aspect-ratio:16/9;display:flex;
@@ -924,6 +947,17 @@ button.linkish{
 .pt-row{padding:10px 12px;border-bottom:1px solid var(--line)}
 .pt-row:hover{background:var(--bg2)}
 .pt-row.noshot{opacity:.6}
+/* a clip landed here and nobody has watched it yet — cleared the moment it is
+   played, so a board of twenty rows says which ones are new since you looked */
+.pt-row.fresh{
+  background:color-mix(in srgb,var(--ok) 11%,transparent);
+  box-shadow:inset 3px 0 0 var(--ok);
+  transition:background .25s ease,box-shadow .25s ease;
+}
+.pt-row.fresh:hover{background:color-mix(in srgb,var(--ok) 17%,transparent)}
+/* kept on screen because it was on screen when it stopped matching the filter */
+.pt-row.settled .pt-code-line .code{opacity:.65}
+.badge.done{border-color:var(--ok);color:var(--ok);cursor:help;margin-left:6px}
 .pt-cell{min-width:0}
 .pt-scene{
   position:sticky;top:26px;z-index:1;
@@ -1235,7 +1269,7 @@ body.comment-mode .frame{cursor:crosshair}
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-09-11 19:43 · 964d9e7+";</script>
+<script>window.SB_BUILD = "2026-09-12 00:24 · 84a8ca7+";</script>
 
 <div id="app">
 
@@ -1792,6 +1826,265 @@ window.SB = window.SB || {};
     if (cls) e.className = cls;
     if (text != null) e.textContent = text;
     return e;
+  };
+
+})(window.SB);
+
+</script>
+<script>
+/* ===== js/focus.js ===== */
+/* focus.js — nothing the app does in the background may take the caret.
+ *
+ * The panels here are rebuilt by throwing their DOM away and making it again:
+ * board.render(), promptpanel.render() and the rest all start with
+ * innerHTML = ''. That is fine when YOU asked for it — you clicked something
+ * and you are looking at the result. It is not fine when a clip comes back
+ * from ImagineArt, or a writer model finishes a prompt, forty seconds after
+ * you clicked it, while you are in the middle of a sentence in a different
+ * box. The box being typed in is destroyed and made again, so the caret goes
+ * to <body>: the rest of the sentence goes nowhere, and a space bar pressed
+ * afterwards is a space bar pressed on whatever the browser focused instead —
+ * which, if that was a "generate" button, writes the prompt again over the one
+ * that had just been fixed by hand. There is no undo for a prompt.
+ *
+ * Two rules, and every rebuild goes through one of them:
+ *
+ *   keep(fn)         rebuild, then put the caret back exactly where it was —
+ *                    same box, same offset, same selection, same scroll.
+ *   defer(key, fn)   a rebuild nobody asked for waits until the typing stops.
+ *
+ * keep() alone would cover the caret, because a rebuild is synchronous and no
+ * keystroke can land inside one. defer() is for everything a snapshot cannot
+ * carry across: an open @ popover, an IME mid-word, and the plain fact that
+ * watching the page shudder while you write is unpleasant.
+ */
+(function (SB) {
+  'use strict';
+
+  /* How long after the last keystroke a box still counts as being written in.
+   * Long enough to cover the gap between words, short enough that a rebuild
+   * never feels withheld. */
+  const QUIET = 1500;
+
+  /* A deferred rebuild is delayed, not dropped. If someone types without ever
+   * stopping it still has to land, or a finished clip never appears and the
+   * button that made it sits at "…" forever. keep() is what makes landing
+   * harmless, so these are backstops rather than deadlines. */
+  const MAX_WAIT = 4000;
+  const MAX_WAIT_POPUP = 15000;
+
+  let lastKey = 0;
+
+  /* The headless test harnesses run these modules against a handful of DOM
+   * stubs. There is no caret in a stub, so every rule here stands down and a
+   * rebuild simply happens. */
+  const DOM = typeof document !== 'undefined' &&
+    typeof document.querySelector === 'function' &&
+    typeof document.addEventListener === 'function';
+
+  function isEditable(el) {
+    if (!el || el.nodeType !== 1) return false;
+    if (el.tagName === 'TEXTAREA') return !el.disabled && !el.readOnly;
+    if (el.tagName === 'INPUT') {
+      return !el.disabled && !el.readOnly &&
+        !/^(button|submit|reset|checkbox|radio|range|file|color|image)$/i.test(el.type || 'text');
+    }
+    return !!el.isContentEditable;
+  }
+
+  /* Is the caret in a box right now? */
+  function typing() { return DOM && isEditable(document.activeElement); }
+
+  /* The @ popover is anchored to a box a rebuild would replace, so it cannot
+   * survive one — while it is up, nothing rebuilds. */
+  function popup() { return DOM && !!document.querySelector('.men-pop'); }
+
+  function busy() {
+    if (!typing()) return false;
+    return popup() || (Date.now() - lastKey < QUIET);
+  }
+
+  if (DOM) {
+    document.addEventListener('keydown', function (ev) {
+      if (isEditable(ev.target)) lastKey = Date.now();
+    }, true);
+    document.addEventListener('input', function (ev) {
+      if (isEditable(ev.target)) lastKey = Date.now();
+    }, true);
+  }
+
+  /* ------------------------------------------------------------- the caret
+   *
+   * The box itself is gone after a rebuild, so it is found again rather than
+   * held: a selector built out of the tag, the classes, and the data-
+   * attributes the app already puts on everything it can name (data-shot,
+   * data-scene, data-model, data-field). Those are stable across a rebuild by
+   * design — they are how the rest of the app finds a card again too. */
+  const KEYS = ['shot', 'scene', 'model', 'field', 'persona', 'push', 'row'];
+
+  function anchored(el) {
+    if (el.id) return true;
+    return KEYS.some(function (k) { return el.dataset && el.dataset[k] != null; });
+  }
+
+  function stepFor(el) {
+    let s = el.tagName.toLowerCase();
+    if (el.id && /^[A-Za-z_][\w-]*$/.test(el.id)) return s + '#' + el.id;
+    String(el.className || '').trim().split(/\s+/).forEach(function (c) {
+      if (/^[A-Za-z_][\w-]*$/.test(c)) s += '.' + c;
+    });
+    KEYS.forEach(function (k) {
+      const v = el.dataset ? el.dataset[k] : null;
+      if (v != null && !/["\\]/.test(v)) s += '[data-' + k + '="' + v + '"]';
+    });
+    return s;
+  }
+
+  function pathOf(el) {
+    const parts = [];
+    let cur = el, depth = 0;
+    while (cur && cur.nodeType === 1 && cur !== document.body && depth < 6) {
+      parts.unshift(stepFor(cur));
+      if (anchored(cur)) break;
+      cur = cur.parentElement;
+      depth++;
+    }
+    if (!parts.length) return null;
+    /* descendant, not child: a wrapper div that appears between two rebuilds
+     * must not be what loses somebody their sentence */
+    const q = parts.join(' ');
+    let idx = 0;
+    try {
+      const all = document.querySelectorAll(q);
+      for (let i = 0; i < all.length; i++) { if (all[i] === el) { idx = i; break; } }
+    } catch (e) { return null; }
+    return { q: q, idx: idx };
+  }
+
+  function snapshot() {
+    if (!DOM) return null;
+    const el = document.activeElement;
+    if (!isEditable(el)) return null;
+    const path = pathOf(el);
+    if (!path) return null;
+    const s = { q: path.q, idx: path.idx, scroll: el.scrollTop || 0 };
+    if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') {
+      s.kind = 'field';
+      try {
+        s.start = el.selectionStart;
+        s.end = el.selectionEnd;
+        s.dir = el.selectionDirection || 'none';
+      } catch (e) { /* an input type with no selection to speak of */ }
+    } else {
+      s.kind = 'rich';
+      /* a reference box counts a chip as one object, and the offset is into
+       * the text the box READS as — which is what survives being rebuilt */
+      try { s.at = SB.RefBox ? SB.RefBox.caret(el) : null; } catch (e) { s.at = null; }
+    }
+    return s;
+  }
+
+  function restore(s) {
+    if (!s || !DOM) return;
+    /* Only ever put back what was LOST. If the rebuild deliberately moved the
+     * caret — a new card opening with its description ready to type into, a
+     * dialog taking over — that is the app answering the user, and dragging
+     * focus back out of it would be this module causing the very bug it is
+     * here to stop. */
+    const live = document.activeElement;
+    if (live && live !== document.body && document.body.contains(live)) return;
+    let el = null;
+    try {
+      const all = document.querySelectorAll(s.q);
+      el = all[s.idx] || all[0] || null;
+    } catch (e) { return; }
+    if (!isEditable(el)) return;
+    try { el.focus({ preventScroll: true }); } catch (e) { el.focus(); }
+    if (s.scroll) el.scrollTop = s.scroll;
+    if (s.kind === 'field' && s.start != null) {
+      /* The text can have changed underneath — a prompt rewritten by the model
+       * is the whole point of some of these rebuilds. Clamp rather than give
+       * up: the end of a shorter string is where the caret belongs. */
+      const max = (el.value || '').length;
+      const a = Math.min(s.start, max);
+      const b = Math.min(s.end == null ? s.start : s.end, max);
+      try { el.setSelectionRange(a, b, s.dir); } catch (e) { }
+    } else if (s.kind === 'rich' && s.at != null && SB.RefBox) {
+      try { SB.RefBox.setCaret(el, s.at); } catch (e) { }
+    }
+  }
+
+  /* Rebuild, and give the caret back. */
+  function keep(fn) {
+    const s = snapshot();
+    try { return fn(); }
+    finally { restore(s); }
+  }
+
+  /* ----------------------------------------------------------- the waiting */
+
+  const pending = new Map();      // key -> { fn, since }
+  let timer = null;
+
+  function arm() {
+    if (timer) return;
+    timer = setInterval(function () {
+      const now = Date.now();
+      const cap = popup() ? MAX_WAIT_POPUP : MAX_WAIT;
+      const free = !busy();
+      const due = [];
+      pending.forEach(function (job, key) {
+        if (free || now - job.since >= cap) due.push(key);
+      });
+      due.forEach(function (key) {
+        const job = pending.get(key);
+        pending.delete(key);
+        try { job.fn(); } catch (e) { console.error('[storyboarder] deferred rebuild failed', e); }
+      });
+      if (!pending.size) { clearInterval(timer); timer = null; }
+    }, 200);
+  }
+
+  /* A rebuild that arrived on its own — a finished clip, a written prompt —
+   * rather than from a click. One job per key: a second clip landing while the
+   * first is still waiting replaces it rather than queueing another, and the
+   * wait is measured from the first, so nothing is starved by a busy board. */
+  function defer(key, fn) {
+    if (!busy()) { fn(); return; }
+    const had = pending.get(key);
+    pending.set(key, { fn: fn, since: had ? had.since : Date.now() });
+    arm();
+  }
+
+  /* Everything waiting, now — for a test, or for anything that has to see the
+   * DOM it asked for. */
+  function flush() {
+    const jobs = Array.from(pending.values());
+    pending.clear();
+    if (timer) { clearInterval(timer); timer = null; }
+    jobs.forEach(function (j) { try { j.fn(); } catch (e) { console.error(e); } });
+  }
+
+  /* --------------------------------------------------- the loaded space bar
+   *
+   * A mouse click leaves a button focused, and the space bar presses whatever
+   * button is focused. On a button whose whole job is to overwrite text a
+   * person wrote by hand — with no undo behind it — that is one stray space
+   * away from losing the work. So a button marked costly gives the keyboard
+   * back after a POINTER press. A keyboard press keeps it: there, focus is
+   * the only way back to the button, and nobody reaches it by accident. */
+  function costly(btn) {
+    if (!btn || !btn.addEventListener) return btn;
+    btn.addEventListener('click', function (ev) {
+      if (ev.detail > 0) btn.blur();          // detail 0 = keyboard, or synthetic
+    });
+    return btn;
+  }
+
+  SB.Focus = {
+    keep: keep, defer: defer, flush: flush, costly: costly,
+    typing: typing, busy: busy, isEditable: isEditable,
+    snapshot: snapshot, restore: restore
   };
 
 })(window.SB);
@@ -2981,6 +3274,35 @@ window.SB = window.SB || {};
    * This is a rider rather than template text on purpose. Templates are stored
    * per project inside the file, so editing the default only reaches boards
    * made afterwards; a rider reaches every board that already exists. */
+  /* WHAT THIS FRAME SHOWS — the thing the prompt never said.
+   *
+   * "Shot type: Close-up." was the whole of it, against a cast block that
+   * described a man from his hair to his jeans and called itself authoritative.
+   * A type is only a word; what it MEANS — what a close-up leaves outside
+   * itself — had no representation anywhere, so the block won and a shot of
+   * somebody's hands came back with their stubble in it.
+   *
+   * Two rules travel with the line, and they are the ones that were missing:
+   * the description may crop tighter but never wider, and somebody acting
+   * where the frame cannot see them is still acting. */
+  function framingBlock(p, shot) {
+    const type = (shot && shot.type) || '';
+    const line = SB.Model.framingFor(p, type);
+    const out = ['WHAT THIS FRAME SHOWS'];
+    out.push(type
+      ? '- Shot type: ' + type + '.' + (line ? ' ' + line : '')
+      : '- No shot type is set on this card. Take the framing from the shot description, and ' +
+        'if it does not say, frame it as tightly as the action allows.');
+    out.push('- The shot description may narrow this further — to a pair of hands, a screen, ' +
+      'one eye. It never widens it. Nothing outside this framing is in the picture, however ' +
+      'fully any block in this instruction describes it.');
+    out.push('- Anyone the description has DOING something who does not fit inside this frame is ' +
+      'doing it off camera. The action is real and still happening — write it only where ' +
+      'the frame can see it, or in what it does to what the frame CAN see. Do not widen the shot ' +
+      'to fit them in, and do not draw them at its edge.');
+    return out.join('\n');
+  }
+
   const FIRST_FRAME_RIDER = [
     'THE FIRST FRAME IS ONE INSTANT',
     '- You are describing a single photograph: the state of things at the moment this shot ' +
@@ -3421,6 +3743,13 @@ window.SB = window.SB || {};
     if (role === 'image' || role === 'video' || role === 'both') {
       if (parts.length) parts.push('');
       parts.push(GENDER_RIDER);
+    }
+    /* A frame-only video job is shown the picture, so it can SEE the framing —
+       telling it in words is the same mistake as repeating the house style at
+       it. Every other job is told. */
+    if (role === 'image' || role === 'both' || (role === 'video' && !inherits)) {
+      if (parts.length) parts.push('');
+      parts.push(framingBlock(p, shot));
     }
     if (role === 'image' || role === 'both') {
       if (parts.length) parts.push('');
@@ -6187,6 +6516,13 @@ window.SB = window.SB || {};
       };
       const frameRef = (shot.image && shot.image.ref) || '';
 
+      /* Ids, not objects. Everything this generation needs to find its way
+         home is looked up again when it arrives — see land(). */
+      const ticket = {
+        projectId: p.id, projectName: p.name || '', shotId: shot.id,
+        code: codeOf(p, shot) || '', role: role, frameRef: frameRef, made: made
+      };
+
       const res = resolutionFor(p, slugNow, role);
       const qual = role === 'image' ? qualityFor(p, slugNow) : '';
       made.resolution = res || '';
@@ -6206,7 +6542,7 @@ window.SB = window.SB || {};
         }).then(function (got) {
           made.slug = got.usedSlug || made.slug;
           made.via = got.via || made.via;
-          return fileImage(p, shot, got, made).then(function (out) {
+          return land(ticket, got).then(function (out) {
             out.usedSlug = got.usedSlug;
             return out;
           });
@@ -6221,7 +6557,7 @@ window.SB = window.SB || {};
         }).then(function (got) {
           made.slug = got.usedSlug || made.slug;
           made.via = got.via || made.via;
-          return fileVideo(p, targetFor(p, shot, frameRef), got, made).then(function (out) {
+          return land(ticket, got).then(function (out) {
             out.usedSlug = got.usedSlug;
             return out;
           });
@@ -6287,6 +6623,99 @@ window.SB = window.SB || {};
    * time for two cards to be swapped. A clip belongs to the frame it was
    * animated from, so it is filed against that picture rather than against
    * the card that asked. */
+  /* ---------------- landing a generation ----------------
+   *
+   * A generation takes minutes, and run() used to close over the project and
+   * the shot OBJECT it was started from. Both of those can stop being the
+   * board you are looking at while it is in the air:
+   *
+   *   Open… / New          swaps SB.app.project outright
+   *   restoring a version  replaces p.scenes with cloned snapshot scenes, so
+   *                        the shot object is no longer the shot in the board
+   *   deleting the card    takes it out of every scene
+   *
+   * In every one of those, the clip landed perfectly — onto an object nothing
+   * points at. Then Store.touch() fired, and writeNow() asked S.getProject()
+   * for the board to write, which was the NEW one. So the file on disk was
+   * rewritten without the clip, the clip lived in the memory of an
+   * unreferenced object, and reopening the board it belonged to did not have
+   * it. Minutes of generation and the credits, gone with no error.
+   *
+   * So nothing is captured but ids, and the board is looked up again at the
+   * moment the bytes arrive. If it is not the one on screen, the result is
+   * PARKED rather than filed, and filed when that board is opened again. */
+  const PARKED = [];
+
+  function parkedFor(projectId) {
+    return PARKED.filter(function (x) { return x.projectId === projectId; });
+  }
+  function parkedCount() { return PARKED.length; }
+
+  /* Somebody opened a board. Anything waiting for it is filed now. */
+  function claimParked(p) {
+    if (!p || !p.id) return 0;
+    const mine = parkedFor(p.id);
+    if (!mine.length) return 0;
+    mine.forEach(function (x) {
+      const i = PARKED.indexOf(x);
+      if (i >= 0) PARKED.splice(i, 1);
+    });
+    let filed = 0, lost = 0;
+    const step = function (i) {
+      if (i >= mine.length) {
+        if (filed) {
+          SB.toast(filed === 1 ? 'The clip that finished while this board was closed is on it now'
+            : filed + ' generations that finished while this board was closed are on it now');
+        }
+        if (lost) SB.toast(lost + ' could not be filed — the card is gone', true);
+        notify();
+        return;
+      }
+      const x = mine[i];
+      const f = SB.Model.findShot(p, x.shotId);
+      if (!f) { lost++; return step(i + 1); }
+      const done = function () { filed++; step(i + 1); };
+      const fail = function (e) {
+        lost++;
+        console.error('[storyboarder] a parked generation could not be filed', e);
+        step(i + 1);
+      };
+      if (x.role === 'image') fileImage(p, f.shot, x.got, x.made).then(done).catch(fail);
+      else fileVideo(p, targetFor(p, f.shot, x.frameRef), x.got, x.made).then(done).catch(fail);
+    };
+    step(0);
+    return mine.length;
+  }
+
+  /* The board this was started on, if it is still the board on screen. */
+  function boardIfOpen(projectId) {
+    const cur = SB.app && SB.app.project;
+    return (cur && cur.id === projectId) ? cur : null;
+  }
+
+  function land(ticket, got) {
+    const p = boardIfOpen(ticket.projectId);
+    const f = p ? SB.Model.findShot(p, ticket.shotId) : null;
+    if (!p || !f) {
+      PARKED.push({
+        projectId: ticket.projectId, projectName: ticket.projectName,
+        shotId: ticket.shotId, code: ticket.code, role: ticket.role,
+        frameRef: ticket.frameRef, got: got, made: ticket.made, at: Date.now()
+      });
+      notify();
+      SB.toast('The ' + (ticket.role === 'image' ? 'frame' : 'clip') + ' for ' +
+        (ticket.code || 'a card') + ' finished, but ' +
+        (p ? 'that card is no longer on the board'
+           : '“' + (ticket.projectName || 'the board it belongs to') + '” is not open') +
+        '. It is held' + (p ? '' : ' — open that board again and it will be filed') +
+        '. Closing this tab loses it.', true);
+      return Promise.resolve({ kind: ticket.role, parked: true });
+    }
+    return ticket.role === 'image'
+      ? fileImage(p, f.shot, got, ticket.made)
+      : fileVideo(p, targetFor(p, f.shot, ticket.frameRef), got, ticket.made);
+  }
+
   function targetFor(p, shot, frameRef) {
     if (!frameRef) return shot;
     if (shot.image && shot.image.ref === frameRef) return shot;
@@ -6294,13 +6723,20 @@ window.SB = window.SB || {};
   }
 
   function fileVideo(p, shot, got, made) {
-    const rec = { at: Date.now(), url: got.url || '', thumb: got.thumb || '', made: made || null };
+    /* unseen: nobody has watched this one yet. Shooting a dozen clips means
+     * going away and coming back to a board where every row looks the same,
+     * with no way to tell the one that just landed from the one watched ten
+     * minutes ago — so a clip arrives marked, and watching it unmarks it.
+     * Only clips made HERE: a file somebody dropped in was chosen by hand and
+     * has already been seen. */
+    const rec = { at: Date.now(), url: got.url || '', thumb: got.thumb || '',
+      made: made || null, unseen: true };
     if (!got.blob) {
       /* ImagineArt made it but the browser could not read the bytes back
        * across origins: hold the link, say so, and leave a way to try again
        * while the link is still alive. */
       shot.video = rec;
-      SB.app.changed(true);
+      SB.Focus.defer('clip:' + shot.id, function () { SB.app.changed(true); });
       return Promise.resolve({ kind: 'video', remoteOnly: true });
     }
     return SB.Renders.keepVideo(p, got.blob, shot.video, made).then(function (saved) {
@@ -6311,9 +6747,13 @@ window.SB = window.SB || {};
       if (saved) {
         saved.url = rec.url;
         saved.thumb = rec.thumb;
+        saved.unseen = true;
       }
       shot.video = saved || rec;
-      SB.app.changed(true);
+      /* Minutes after the button was pressed. Whoever pressed it is writing
+         something else by now, and rebuilding the board under them is how a
+         half-typed prompt used to disappear. */
+      SB.Focus.defer('clip:' + shot.id, function () { SB.app.changed(true); });
       return { kind: 'video', remoteOnly: !saved };
     });
   }
@@ -6335,8 +6775,10 @@ window.SB = window.SB || {};
       if (!saved) throw new Error('the clip could not be stored');
       saved.url = rec.url;
       saved.thumb = rec.thumb;
+      /* fetching the bytes is not watching the clip */
+      if (rec.unseen) saved.unseen = true;
       shot.video = saved;
-      SB.app.changed(true);
+      SB.Focus.defer('clip:' + shot.id, function () { SB.app.changed(true); });
       return true;
     });
   }
@@ -6821,6 +7263,15 @@ window.SB = window.SB || {};
   function openClip(p, shot) {
     const rec = shot && shot.video;
     const model = SB.Model.videoModel(p);
+
+    /* Opening this is watching it — the clip autoplays below. Painted in
+     * place rather than by a rebuild: the prompt table this is usually opened
+     * from has boxes in it that somebody may be typing in. */
+    if (rec && rec.unseen) {
+      delete rec.unseen;
+      SB.Store.touch();
+      notify();
+    }
     const box = SB.el('div', 'clip-box');
     let objectUrl = '';
     let m = null;
@@ -7037,10 +7488,11 @@ window.SB = window.SB || {};
     whyNot: whyNot, promptFor: promptFor,
     /* jobs */
     job: job, busy: busy, clear: clear, onChange: onChange, runningJobs: runningJobs,
+    claimParked: claimParked, parkedCount: parkedCount, parkedFor: parkedFor,
     ensureTools: ensureTools,
     /* exposed for the tests */
     _bind: bind, _pickScore: score, _harvest: harvest, _parseRpc: parseRpc,
-    _fileVideo: fileVideo
+    _fileVideo: fileVideo, _land: land, _start: start
   };
 
 })(window.SB);
@@ -7418,9 +7870,11 @@ window.SB = window.SB || {};
    * position, {{NAME}} = the persona's name. */
   const REF_TEMPLATES = {
     numbered: 'Reference images are supplied in order. Refer to each recurring subject as ' +
-      '"the person in image {{N}}" and keep their face, hair and wardrobe exactly as in that image.',
+      '"the person in image {{N}}". Where this frame shows their face, hair or wardrobe, keep ' +
+      'it exactly as in that image; where it does not, say nothing about it.',
     named: 'Reference images are supplied for each named subject. Refer to them by name ' +
-      '({{NAME}}) and keep their face, hair and wardrobe exactly as in the reference.',
+      '({{NAME}}). Where this frame shows their face, hair or wardrobe, keep it exactly as in ' +
+      'the reference; where it does not, say nothing about it.',
     none: ''
   };
 
@@ -7448,7 +7902,7 @@ window.SB = window.SB || {};
       heading: 'CAST — these people recur across the board. They must look the same every time.',
       descLabel: 'description + wardrobe',
       descHint: 'Age range, build, hair, and the exact outfit — fabric and colour.',
-      noImage: 'No reference image — describe this person fully and identically every time.',
+      noImage: 'No reference image — describe this person identically every time, as far as this frame shows them.',
       refBrief: 'a clean, front-facing reference frame of this person: plain background, ' +
         'even natural light, neutral expression, full length from head to feet with the whole ' +
         'outfit in frame. ' + NEUTRAL_REF
@@ -7458,7 +7912,7 @@ window.SB = window.SB || {};
       heading: 'LOCATIONS — these places recur across the board. They must look the same every time.',
       descLabel: 'the place, and what is fixed about it',
       descHint: 'Architecture, surfaces, furniture, light sources, time of day — what never changes.',
-      noImage: 'No reference image — describe this place fully and identically every time.',
+      noImage: 'No reference image — describe this place identically every time, as far as this frame shows it.',
       refBrief: 'a clean establishing reference frame of this place: wide, eye level, ' +
         'no people in shot, the light as it normally is there. ' + NEUTRAL_REF
     },
@@ -7468,7 +7922,8 @@ window.SB = window.SB || {};
         'They must look the same every time.',
       descLabel: 'the object, product or screen',
       descHint: 'Form, size, material, finish, colour, and any logo or screen state that must be exact.',
-      noImage: 'No reference image — describe this object fully and identically every time.',
+      noImage: 'No reference image — describe this object identically every time, as far as ' +
+        'this frame shows it.',
       refBrief: 'a clean product-style reference frame of this object: plain background, ' +
         'even light, three-quarter view, the whole object in frame. ' + NEUTRAL_REF
     }
@@ -7843,6 +8298,18 @@ window.SB = window.SB || {};
       'their appearance, hair, wardrobe or surroundings, it is out of date — follow this block ' +
       'and ignore it. The shot description still governs what they are DOING and where.');
 
+    /* ...and then this block, which describes a whole person, was read as a
+       list of things to draw. It is not: it is what they look like WHEN YOU CAN
+       SEE THEM, and a frame decides how much of that is true of itself. A
+       close-up of a pair of hands says nothing about anyone's hair, and the
+       block used to hand over the hair anyway, under a paragraph calling itself
+       authoritative — so the hair went in. */
+    lines.push('Each description above is of the WHOLE subject. This shot may show very little ' +
+      'of it — a pair of hands, one face, a corner of a room. Write only the parts that are ' +
+      'inside the frame described above; everything else is out of shot, and putting it into ' +
+      'words puts it into the picture. Being described here is not a reason to widen the shot ' +
+      'or to pull back far enough to show it.');
+
     /* ...and this block was being read as a guest list. It names everyone cast
      * in the shot and hands over a numbered reference image for each, which to
      * a writer looks like a manifest of who is in the picture — so somebody the
@@ -8187,6 +8654,98 @@ window.SB = window.SB || {};
     'Two shot', 'Insert', 'Cutaway', 'POV', 'Screen capture', 'Talking head'
   ];
 
+  /* What each shot type actually SHOWS.
+   *
+   * The type was a word in a line of the template and nothing else — "Shot
+   * type: Close-up." — with no statement anywhere of what a close-up excludes.
+   * So a cast block describing a man from his hair to his jeans, declared
+   * authoritative, outvoted it every time: a close-up of somebody's hands came
+   * back with his stubble and his henley in it, because nothing in the prompt
+   * had ever said that a frame can leave a person out of itself.
+   *
+   * These are that statement. One line per type, sent with the prompt, and
+   * editable per board in Settings because a board's idea of "Medium" is its
+   * own business. */
+  const DEFAULT_FRAMING = {
+    'Wide':
+      'The whole figure, or the whole space, with room around it. Wardrobe, posture and ' +
+      'setting all read; a face is small and carries little detail.',
+    'Medium':
+      'From roughly the waist up. Wardrobe above the waist, hands when they come up, and ' +
+      'enough room behind to place the person. Nothing below the waist is in shot.',
+    'Close-up':
+      'A head and shoulders, or the single thing the description names — a pair of hands, ' +
+      'a screen, an object. Almost none of the room is in shot, and nothing below the chest.',
+    'Extreme close-up':
+      'One detail fills the frame. Nothing around it is visible: no face unless the face IS ' +
+      'the detail, no wardrobe, no room.',
+    'Over the shoulder':
+      'Past the near figure — the back of a head and one shoulder, soft and unread — ' +
+      'onto what they are looking at. The near figure is a silhouette, not a portrait.',
+    'Two shot':
+      'Two figures sharing the frame, from roughly the waist up. Both read; the space around ' +
+      'them barely does.',
+    'Insert':
+      'An object, a screen, a document or a detail, filling the frame. No person is in shot ' +
+      'unless a part of them — a hand, a sleeve — is holding or touching the thing.',
+    'Cutaway':
+      'Something other than the main action, in its own frame. Whoever the scene is about is ' +
+      'not in this one.',
+    'POV':
+      'What the character sees, from where their eyes are. They are not in the frame — at ' +
+      'most their own hands or feet at its edge.',
+    'Screen capture':
+      'The screen itself, filling the frame — the interface as it would be captured, not ' +
+      'photographed. No room, no person, no reflection unless the description asks for one.',
+    'Talking head':
+      'One person to camera, head and shoulders, plain and centred. Face and wardrobe above ' +
+      'the chest read; the room behind is soft and incidental.'
+  };
+
+  /* The line for a shot's type, or '' — a type somebody added by hand has none
+   * until they write one, and saying nothing is better than guessing. */
+  function framingFor(p, type) {
+    const map = (p && p.settings && p.settings.shotFraming) || {};
+    const v = map[type];
+    return typeof v === 'string' ? v.trim() : '';
+  }
+
+  /* Which shot type a description is describing, if it says.
+   *
+   * The type comes from the dropdown and stays there — this is only for
+   * noticing that the two disagree, which is worth a badge and one click, not
+   * a silent correction. Longest names first, so "extreme close-up" is not
+   * read as "close-up". */
+  const FRAMING_WORDS = [
+    ['Extreme close-up', /\b(?:extreme|tight)\s+close[\s-]?ups?\b|\becus?\b|\bxcus?\b/i],
+    ['Over the shoulder', /\bover[\s-]the[\s-]shoulders?\b|\bots\b/i],
+    ['Screen capture', /\bscreen\s?(?:capture|grab|recording)\b|\bscreencaps?\b/i],
+    ['Talking head', /\btalking[\s-]heads?\b|\bpiece to camera\b|\bstraight to camera\b/i],
+    ['Close-up', /\bclose[\s-]?ups?\b|\bclose on\b|\btight on\b/i],
+    ['Two shot', /\btwo[\s-]?shots?\b|\b2[\s-]?shots?\b/i],
+    ['Cutaway', /\bcut[\s-]?aways?\b/i],
+    ['Insert', /\binserts?\b/i],
+    ['POV', /\bpov\b|\bpoint[\s-]of[\s-]view\b/i],
+    ['Medium', /\bmedium\s+(?:shot|close)\b|\bmid[\s-]?shots?\b/i],
+    ['Wide', /\bwides?\b|\bwide\s+shots?\b|\bestablishing\b/i]
+  ];
+
+  /* Only ever a type the board actually offers, matched by name however it is
+   * capitalised — a renamed or trimmed list must not produce a badge offering
+   * a type that is not in the dropdown. */
+  function guessFraming(p, text) {
+    const t = String(text == null ? '' : text);
+    if (!t.trim()) return '';
+    const offered = (p && p.settings && p.settings.shotTypes) || [];
+    for (let i = 0; i < FRAMING_WORDS.length; i++) {
+      if (!FRAMING_WORDS[i][1].test(t)) continue;
+      const want = FRAMING_WORDS[i][0].toLowerCase();
+      const match = offered.filter(function (x) { return String(x).toLowerCase() === want; })[0];
+      if (match) return match;
+    }
+    return '';
+  }
+
   /* The wording every board was written with, kept so a template nobody has
    * touched can be brought up to date without overwriting one somebody has. */
   const IMG_TPL_V1 =
@@ -8496,6 +9055,7 @@ window.SB = window.SB || {};
       versions: [],
       settings: {
         shotTypes: DEFAULT_SHOT_TYPES.slice(),
+        shotFraming: Object.assign({}, DEFAULT_FRAMING),
         fields: SB.Fields.defaults(),
         models: defaultModels(),
         imageModelId: null,
@@ -8709,6 +9269,12 @@ window.SB = window.SB || {};
     });
     const s = p.settings = p.settings || {};
     s.shotTypes = (s.shotTypes && s.shotTypes.length) ? s.shotTypes : DEFAULT_SHOT_TYPES.slice();
+    /* Only what is missing: a line somebody has deliberately emptied stays
+       empty, and one they have rewritten stays theirs. */
+    s.shotFraming = s.shotFraming || {};
+    Object.keys(DEFAULT_FRAMING).forEach(function (k) {
+      if (!(k in s.shotFraming)) s.shotFraming[k] = DEFAULT_FRAMING[k];
+    });
     SB.Fields.migrate(p);
     s.models = (s.models && s.models.length) ? s.models : defaultModels();
     /* The MiniMax entry shipped under its platform name with the generic
@@ -9344,6 +9910,7 @@ window.SB = window.SB || {};
     FILE_VERSION: FILE_VERSION,
     CARD_COLORS: CARD_COLORS,
     DEFAULT_SHOT_TYPES: DEFAULT_SHOT_TYPES,
+    DEFAULT_FRAMING: DEFAULT_FRAMING, framingFor: framingFor, guessFraming: guessFraming,
     IMG_TPL: IMG_TPL, IMG_TPL_V1: IMG_TPL_V1,
     VID_TPL: VID_TPL, VID_TPL_V1: VID_TPL_V1, VID_TPL_V2: VID_TPL_V2,
     H3_VID_TPL: H3_VID_TPL, H3_VID_TPL_V2: H3_VID_TPL_V2, tplsFor: tplsFor,
@@ -9519,11 +10086,17 @@ window.SB = window.SB || {};
           : 'partially_preserved - the frame it supplies is the starting point for this shot ' +
             'and is carried forward with the changes described below.'));
     });
+    /* "retained exactly" is about IDENTITY, not about how much of them the shot
+     * shows. Written without that clause it read as an order to put the whole
+     * description on the screen, so a close-up of a pair of hands carried the
+     * wardrobe and the haircut of a man who was, in that frame, two hands. */
     subjects(p, shot).forEach(function (s) {
       const d = clause(s.description);
       lines.push('<Subject ' + s.n + '> (appears in [Shot 1]): fully_preserved - ' +
-        (d ? d.charAt(0).toLowerCase() + d.slice(1) + ' are retained exactly.'
-           : 'identity, wardrobe and appearance are retained exactly.'));
+        (d ? d.charAt(0).toLowerCase() + d.slice(1) + ' are retained exactly wherever this ' +
+             'shot’s framing shows them.'
+           : 'identity, wardrobe and appearance are retained exactly wherever this shot’s ' +
+             'framing shows them.'));
     });
     return lines.join('\n');
   }
@@ -11060,7 +11633,13 @@ window.SB = window.SB || {};
    * used to fling you back to the top and away from the card you were on.
    * Hold the position, and if a card was selected, hold IT still: the cards
    * change height, so the same scrollTop is not the same place. */
-  function render() {
+  /* The board is rebuilt from nothing every time, so whatever box had the
+   * caret is destroyed by it. Focus.keep puts the caret back in the same box
+   * at the same offset — see focus.js for why that matters more than it
+   * sounds like it does. */
+  function render() { SB.Focus.keep(renderNow); }
+
+  function renderNow() {
     armAutoScroll();
     const panel = document.getElementById('boardPanel');
     const prevTop = panel ? panel.scrollTop : 0;
@@ -11842,8 +12421,14 @@ window.SB = window.SB || {};
       if (t === sh.type) o.selected = true;
       sel.appendChild(o);
     });
-    sel.addEventListener('change', function () { sh.type = sel.value; SB.app.changed(false); });
+    sel.addEventListener('change', function () {
+      sh.type = sel.value;
+      SB.app.changed(false);
+      refreshFraming(sh.id);          // the badge is about to agree, or to go
+      SB.PromptPanel.follow();
+    });
     head.appendChild(sel);
+    head.appendChild(framingHost(sh));
 
     if (sh.noShot) head.appendChild(SB.el('span', 'badge noshot', 'no shot'));
 
@@ -11930,6 +12515,7 @@ window.SB = window.SB || {};
         sh.description = t;
         SB.app.changed(false);
         refreshFeed(sh.id);
+        refreshFraming(sh.id);
       },
       placeholder: 'What we see. @ anything the model should be shown.',
       ctx: { shot: sh, code: SB.Model.code(si, sj) }
@@ -12380,6 +12966,58 @@ window.SB = window.SB || {};
     return b;
   }
 
+  /* ---------------- the framing the description asks for ----------------
+   *
+   * The shot type comes from the dropdown and stays there: it is the one place
+   * the framing is stated, and the prompt is written to it. But a description
+   * that opens "close-up of Danny's hands" is saying the same thing in words,
+   * and when the two disagree the dropdown wins silently — which is how a card
+   * reading "closeup of his hands" went out as "Shot type: Wide" and came back
+   * with his whole face in it.
+   *
+   * So: notice, say so, and offer the one click. Never change it by itself —
+   * "insert" in the middle of a sentence is a word as often as it is a framing,
+   * and a dropdown that moves on its own is worse than one that is wrong. */
+  function framingWanted(sh) {
+    const want = SB.Model.guessFraming(P(), SB.Refs.plain(P(), sh.description || ''));
+    return (want && want !== sh.type) ? want : '';
+  }
+
+  function paintFraming(host, sh) {
+    host.innerHTML = '';
+    const want = framingWanted(sh);
+    if (!want) return;
+    const b = SB.el('button', 'badge warn framing', want);
+    b.title = 'The description says ' + want.toLowerCase() + ', but this card is set to ' +
+      (sh.type ? '“' + sh.type + '”' : 'no shot type') + ' — and the shot type is what ' +
+      'the prompt is written to. Click to set it to ' + want + '.';
+    b.onclick = function (ev) {
+      ev.stopPropagation();
+      sh.type = want;
+      SB.app.changed(true);
+      SB.PromptPanel.follow();
+      SB.toast('1 card set to ' + want);
+    };
+    host.appendChild(b);
+  }
+
+  /* A host per card, wherever one is drawn — the card head and the prompt
+     table both carry one, and both are repainted from the same keystroke. */
+  function framingHost(sh) {
+    const host = SB.el('span', 'fr-host');
+    host.dataset.shot = sh.id;
+    paintFraming(host, sh);
+    return host;
+  }
+
+  function refreshFraming(id) {
+    const f = SB.Model.findShot(P(), id);
+    if (!f) return;
+    document.querySelectorAll('.fr-host[data-shot="' + id + '"]').forEach(function (h) {
+      paintFraming(h, f.shot);
+    });
+  }
+
   /* Re-evaluate the badges without rebuilding the cards — editing a persona
    * description is a keystroke-rate event, and replacing the textarea under the
    * cursor would be worse than the staleness. */
@@ -12412,7 +13050,7 @@ window.SB = window.SB || {};
     if (mv) t.appendChild(mv);
     const gb = genderBadge(sh, m, field);
     if (gb) t.appendChild(gb);
-    const gen = SB.el('button', 'mini', 'generate');
+    const gen = SB.Focus.costly(SB.el('button', 'mini', 'generate'));
     gen.style.marginLeft = 'auto';
     gen.onclick = function () {
       gen.disabled = true; gen.textContent = '…';
@@ -12662,7 +13300,9 @@ window.SB = window.SB || {};
     return SB.downscaleImage(src).then(function (img) {
       const proxy = SB.Blobs.image(P(), img.data, img.w, img.h);
       sh.image = proxy;
-      SB.app.changed(true);
+      /* Always asynchronous — a generated still can land long after the click
+         that asked for it, so it queues behind whatever is being typed. */
+      SB.Focus.defer('image:' + sh.id, function () { SB.app.changed(true); });
 
       const existing = sh.render;
       return SB.Renders.keep(P(), src, existing, made).then(function (rec) {
@@ -12735,6 +13375,7 @@ window.SB = window.SB || {};
     renderScriptWindows: renderScriptWindows,
     refreshCast: refreshCast,
     refreshCastRows: refreshCastRows, refreshPromptStale: refreshPromptStale,
+    framingHost: framingHost, refreshFraming: refreshFraming,
     refreshFeed: refreshFeed,
     refreshSerial: refreshSerial,
     saveFeed: saveFeed,
@@ -13692,6 +14333,46 @@ window.SB = window.SB || {};
    *
    * Resolves with what was written. Rejects if nothing could be.
    */
+  /* Which prompts are being written right now, keyed shot:field.
+   *
+   * This used to live in the pressed button's own textContent — "…" meant
+   * busy. Two things followed from that. A repaint could not tell a running
+   * button from an idle one, so it re-enabled it; and closing the panel threw
+   * the state away entirely, so reopening it mid-write showed a ready button,
+   * and pressing it again sent a second call for the same prompt. Two calls
+   * against the day's allowance, and — since a prompt edited while another
+   * is in flight is now kept rather than overwritten — the second one came
+   * back and was dropped with a message about an edit nobody had made.
+   *
+   * So it lives here, next to the shot it is about, the way a push does. */
+  const WRITING = {};
+
+  function writeKey(shotId, field) { return shotId + ':' + field; }
+  function writing(shotId, field) { return !!WRITING[writeKey(shotId, field)]; }
+  function writingAny(shotId) {
+    return writing(shotId, 'imagePrompt') || writing(shotId, 'videoPrompt');
+  }
+
+  const WATCHERS = [];
+  function onWriting(fn) {
+    WATCHERS.push(fn);
+    return function () {
+      const i = WATCHERS.indexOf(fn);
+      if (i >= 0) WATCHERS.splice(i, 1);
+    };
+  }
+  function tellWatchers() {
+    WATCHERS.slice().forEach(function (fn) { try { fn(); } catch (e) { } });
+  }
+
+  function markWriting(shotId, fields, on) {
+    fields.forEach(function (f) {
+      if (on) WRITING[writeKey(shotId, f)] = true;
+      else delete WRITING[writeKey(shotId, f)];
+    });
+    tellWatchers();
+  }
+
   function generateFor(shot, roles) {
     const p = P();
     const im = SB.Model.imageModel(p), vm = SB.Model.videoModel(p);
@@ -13714,8 +14395,39 @@ window.SB = window.SB || {};
     const jobs = jobsFor(shot, im, vm, roles);
     if (!jobs.length) return Promise.reject(new Error('Nothing to write for this shot.'));
 
+    /* One at a time per field: a second press while the first is in the air is
+       a second call for the same prompt, and the guard below is the only thing
+       standing between that and two charges. */
+    const fields = [];
+    jobs.forEach(function (j) {
+      j.targets.forEach(function (tg) {
+        if (fields.indexOf(tg.field) < 0) fields.push(tg.field);
+      });
+    });
+    if (fields.some(function (f) { return writing(shot.id, f); })) {
+      return Promise.reject(new Error('That prompt is already being written.'));
+    }
+    markWriting(shot.id, fields, true);
+    const done = function () { markWriting(shot.id, fields, false); };
+
     const written = [];
+    const kept = [];
     let lastError = null;
+
+    /* What each target said at the moment we asked. A writer model takes tens
+     * of seconds, and in that time the person who pressed the button reads the
+     * prompt that is already there and fixes it by hand. The answer that comes
+     * back was written against the OLD text and knows nothing about the fix —
+     * storing it threw the fix away, silently, with no undo behind it. A hand
+     * edit is the newer intent, so it wins, and the button is there to press
+     * again if the written one was wanted after all. */
+    const asked = {};
+    jobs.forEach(function (j) {
+      j.targets.forEach(function (t) {
+        const pr = shot.prompts[t.model.id];
+        asked[t.model.id + '|' + t.field] = (pr && pr[t.field]) || '';
+      });
+    });
 
     /* One after another. Two jobs only happen when the image and the video
      * model differ, and a wall that stops the first would stop the second. */
@@ -13728,6 +14440,11 @@ window.SB = window.SB || {};
       }).then(function (res) {
         const vals = j.map ? j.map(res) : res;
         j.targets.forEach(function (t) {
+          const now = (shot.prompts[t.model.id] || {})[t.field] || '';
+          if (now !== asked[t.model.id + '|' + t.field]) {
+            kept.push({ field: t.field, model: t.model });
+            return;
+          }
           store(shot, t.model, t.field, vals[t.field]);
           written.push(t.field);
           /* One rewrite is all it gets. A move that survives it is not thrown
@@ -13761,14 +14478,34 @@ window.SB = window.SB || {};
     }
 
     return step(0).then(function () {
-      SB.app.changed(true);
-      if (!written.length) throw lastError || new Error('Nothing was written');
-      return { written: written, error: lastError ? lastError.message : null };
+      done();
+      /* This lands whenever the writer model is done — which is routinely
+         while the user has moved on and is typing in another box. It waits
+         for a gap in the typing. */
+      SB.Focus.defer('prompts:' + shot.id, function () { SB.app.changed(true); });
+      if (kept.length) {
+        const f = SB.Model.findShot(P(), shot.id);
+        SB.toast('Your edit to the ' +
+          kept.map(function (k) {
+            return k.field === 'imagePrompt' ? 'first-frame prompt' : 'video prompt';
+          }).join(' and ') +
+          (f ? ' for ' + f.code : '') +
+          ' was kept — it changed while the writer was working, so the new one was ' +
+          'dropped. Generate again to replace it.', true);
+      }
+      if (!written.length && !kept.length) throw lastError || new Error('Nothing was written');
+      return { written: written, kept: kept, error: lastError ? lastError.message : null };
+    }).catch(function (e) {
+      /* step() swallows its own failures, so this is the throw above and
+         anything unforeseen — either way the field stops being busy. */
+      done();
+      throw e;
     });
   }
 
   SB.Prompts = {
     generateFor: generateFor,
+    writing: writing, writingAny: writingAny, onWriting: onWriting,
     jobsFor: jobsFor, fill: fill, raw: ask
   };
 
@@ -14631,6 +15368,21 @@ window.SB = window.SB || {};
   let root = null;
   let bodyEl, statusEl, usageEl, limitEl, headEl;
   let filter = 'all';
+  /* Which rows the filter let through when it was CHOSEN.
+   *
+   * The filter used to be re-applied on every render, and a render happens
+   * whenever anything lands — a clip, a written prompt, a frame. So the row
+   * most likely to stop matching was the one being worked in: type the last
+   * missing prompt of a card by hand, have a clip land on another card
+   * mid-sentence, and the row under the caret was gone, with the rest of the
+   * sentence going nowhere and no way to tell where it went.
+   *
+   * A filter is a way of choosing what to work on, not a rule the table has to
+   * keep obeying while you work. So it is applied when it is picked, and what
+   * it let through stays until it is picked again. Anything that newly matches
+   * still appears — that is the filter doing its job — nothing is taken away.
+   */
+  let pinned = null;
   /* A push runs for minutes and this table re-renders on every keystroke, so
      nothing about a running job is kept here — it is read back out of
      SB.Imagine each time something is painted. These two only say that the
@@ -14658,13 +15410,19 @@ window.SB = window.SB || {};
     document.getElementById('modalRoot').appendChild(root);
     document.getElementById('btnPrompts').classList.add('on');
     watchJobs();
+    pinFilter();
     render();
   }
 
   /* Repaint just the push buttons: once a second so the elapsed time on a
      running job moves, and whenever a job starts, finishes or fails. A full
      render() would throw away whatever textarea has the caret in it. */
+  let unwatchWriting = null;
+
   function watchJobs() {
+    /* a prompt being written is not an ImagineArt job, and it can start and
+       end from the card as well as from this table */
+    unwatchWriting = SB.Prompts.onWriting(paintGens);
     if (!SB.Imagine) return;
     unwatch = SB.Imagine.onChange(paintPushes);
     ticker = setInterval(paintPushes, 1000);
@@ -14672,6 +15430,7 @@ window.SB = window.SB || {};
 
   function stopWatching() {
     if (unwatch) { unwatch(); unwatch = null; }
+    if (unwatchWriting) { unwatchWriting(); unwatchWriting = null; }
     if (ticker) { clearInterval(ticker); ticker = null; }
   }
 
@@ -14753,14 +15512,38 @@ window.SB = window.SB || {};
     return one(im, 'imagePrompt') || one(vm, 'videoPrompt');
   }
 
+  function matches(r, im, vm) {
+    if (filter === 'missing') return isMissing(r, im, vm);
+    if (filter === 'stale') return isStale(r, im, vm);
+    if (filter === 'scene') return r.scene.id === SB.app.selectedSceneId;
+    return true;
+  }
+
+  /* Take the filter's word for it, now. Everything it lets through is kept
+     until somebody asks again. */
+  function pinFilter() {
+    const im = SB.Model.imageModel(P()), vm = SB.Model.videoModel(P());
+    pinned = {};
+    allRows().forEach(function (r) {
+      if (matches(r, im, vm)) pinned[r.shot.id] = 1;
+    });
+  }
+
+  /* What is on screen: what the filter let through when it was chosen, plus
+     anything that has come to match since. Never less. */
   function visible(im, vm) {
     const rows = allRows();
-    if (filter === 'missing') return rows.filter(function (r) { return isMissing(r, im, vm); });
-    if (filter === 'stale') return rows.filter(function (r) { return isStale(r, im, vm); });
-    if (filter === 'scene') {
-      return rows.filter(function (r) { return r.scene.id === SB.app.selectedSceneId; });
-    }
-    return rows;
+    if (filter === 'all') return rows;
+    if (!pinned) pinFilter();
+    return rows.filter(function (r) {
+      return pinned[r.shot.id] || matches(r, im, vm);
+    });
+  }
+
+  /* A row still on screen because it was being worked on when it stopped
+     matching — which is worth saying, or the filter looks broken. */
+  function settled(r, im, vm) {
+    return filter !== 'all' && !matches(r, im, vm);
   }
 
   /* --------------------------------------------------------------- header */
@@ -14826,7 +15609,11 @@ window.SB = window.SB || {};
     ['scene', 'This scene']].forEach(function (t) {
       const b = SB.el('button', 'tb toggle' + (filter === t[0] ? ' on' : ''),
         t[1] + ' ' + counts[t[0]]);
-      b.onclick = function () { filter = t[0]; render(); };
+      b.onclick = function () {
+        filter = t[0];
+        pinFilter();              // re-picking a filter is how you re-narrow it
+        render();
+      };
       tabs.appendChild(b);
     });
     r1.appendChild(tabs);
@@ -14987,7 +15774,11 @@ window.SB = window.SB || {};
 
   /* ---------------------------------------------------------------- table */
 
-  function render() {
+  /* Rebuilt from nothing, like the board — so the caret goes back where it
+     was rather than to <body>. */
+  function render() { SB.Focus.keep(renderNow); }
+
+  function renderNow() {
     if (!root || !P()) return;
     const p = P();
     const im = SB.Model.imageModel(p), vm = SB.Model.videoModel(p);
@@ -15035,7 +15826,9 @@ window.SB = window.SB || {};
 
   function rowEl(r, im, vm) {
     const sh = r.shot;
-    const row = SB.el('div', 'pt-row' + (sh.noShot ? ' noshot' : ''));
+    const row = SB.el('div', 'pt-row' + (sh.noShot ? ' noshot' : '') +
+      (sh.video && sh.video.unseen ? ' fresh' : '') +
+      (settled(r, im, vm) ? ' settled' : ''));
     row.dataset.shot = sh.id;
 
     /* ---- what it is ---- */
@@ -15052,6 +15845,12 @@ window.SB = window.SB || {};
         : 'This number is all that is left: the original is not in this file. Drop the ' +
           'picture in again to bring it with you.';
       line.appendChild(ser);
+    }
+    if (settled(r, im, vm)) {
+      const d = SB.el('span', 'badge done', 'done');
+      d.title = 'This one no longer matches the filter \u2014 it is kept on screen because it ' +
+        'was on screen. Click the filter again to narrow the list.';
+      line.appendChild(d);
     }
     c1.appendChild(line);
 
@@ -15074,6 +15873,9 @@ window.SB = window.SB || {};
     c1.appendChild(thumb);
     c1.appendChild(SB.el('div', 'pt-type' + (sh.noShot ? ' noshot' : ''),
       sh.noShot ? 'no shot' + (sh.type ? ' · ' + sh.type : '') : (sh.type || '—')));
+    /* the same badge the card carries, on the screen where the prompts are
+       actually read — this is where a wrong shot type is noticed */
+    c1.appendChild(SB.Board.framingHost(sh));
     row.appendChild(c1);
 
     /* ---- what it says ---- */
@@ -15086,7 +15888,9 @@ window.SB = window.SB || {};
         sh.description = t;
         SB.Store.touch();
         SB.Board.refreshCastRows();
+        SB.Board.refreshFraming(sh.id);
         refreshFeedCell(sh.id);
+        paintGens();          // a description is the thing "generate" waits for
       },
       placeholder: 'What we see. @ anything the model should be shown.',
       ctx: { shot: sh, code: r.code }
@@ -15130,7 +15934,7 @@ window.SB = window.SB || {};
     const IM = SB.Imagine;
     if (!IM) return null;
     const role = roleOf(field);
-    const b = SB.el('button', 'mini push');
+    const b = SB.Focus.costly(SB.el('button', 'mini push'));
     /* held on the button: paintPush runs once before either is in the
        document, and a parentNode lookup would find nothing */
     b.__why = note || null;
@@ -15260,6 +16064,18 @@ window.SB = window.SB || {};
 
   /* In place, without re-rendering: a running job ticks every second and the
      boxes around it must keep their text and their caret. */
+  /* Which rows have a clip nobody has watched yet. A class on the row, toggled
+     where it stands — a rebuild would be both wasteful and, if a box in the
+     table has the caret, rude. Runs on the same beat as the push buttons, so a
+     clip landing lights its row within the second and watching it puts the row
+     back. */
+  function paintFresh() {
+    bodyEl.querySelectorAll('.pt-row[data-shot]').forEach(function (row) {
+      const f = SB.Model.findShot(P(), row.dataset.shot);
+      row.classList.toggle('fresh', !!(f && f.shot.video && f.shot.video.unseen));
+    });
+  }
+
   function paintPushes() {
     if (!root || !P() || !SB.Imagine) return;
     const p = P();
@@ -15271,7 +16087,50 @@ window.SB = window.SB || {};
       if (!f || !m) return;
       paintPush(b, f.shot, m, bits[1]);
     });
+    paintFresh();
+    paintGens();
     paintAccount();
+  }
+
+  /* Whether a prompt can be written, and why not — repainted where it stands.
+   *
+   * This was decided once, when the row was built, out of a description that
+   * the box three cells to the left can change at any moment. Typing a
+   * description into a card that had none therefore left "✦ generate"
+   * disabled until the panel was closed and opened again, which is a render by
+   * another name.
+   *
+   * The panel's own description box does not call app.changed() — that would
+   * rebuild the table under the caret — so the repaint has to be this one:
+   * in place, on the same beat as the push buttons. */
+  function paintGen(b, sh, field) {
+    if (SB.Prompts.writing(sh.id, field)) {
+      b.disabled = true;
+      b.textContent = '\u2026';
+      b.title = 'Writing this one now.';
+      return;
+    }
+    b.textContent = '\u2726 generate';
+    const hasDesc = !!(sh.description || '').trim();
+    b.disabled = !!sh.noShot || !hasDesc;
+    const m = field === 'imagePrompt' ? SB.Model.imageModel(P()) : SB.Model.videoModel(P());
+    const already = m && ((sh.prompts || {})[m.id] || {})[field];
+    b.title = sh.noShot
+      ? 'A \u201cno shot\u201d card never generates'
+      : !hasDesc
+        ? 'Write a description first \u2014 there is nothing for the writer to work from'
+        : already
+          ? 'Write this one again, replacing what is there'
+          : 'Write this prompt from the description';
+  }
+
+  function paintGens() {
+    if (!root || !P() || !bodyEl) return;
+    bodyEl.querySelectorAll('[data-gen]').forEach(function (b) {
+      const bits = b.dataset.gen.split(':');
+      const f = SB.Model.findShot(P(), bits[0]);
+      if (f) paintGen(b, f.shot, bits[1]);
+    });
   }
 
   function promptCell(sh, m, field) {
@@ -15284,6 +16143,11 @@ window.SB = window.SB || {};
 
     const ta = document.createElement('textarea');
     ta.className = 'pt-text';
+    /* Named, so that a rebuild can find this exact box again and give the
+       caret back to it rather than to the page. */
+    ta.dataset.shot = sh.id;
+    ta.dataset.model = m.id;
+    ta.dataset.field = field;
     ta.value = (pr && pr[field]) || '';
     ta.placeholder = sh.noShot ? '(\u201cno shot\u201d \u2014 never generated)' : 'not generated yet';
     ta.addEventListener('input', function () {
@@ -15367,27 +16231,23 @@ window.SB = window.SB || {};
     const push = pushBtn(sh, m, field, why);
     if (push) foot.appendChild(push);
 
-    const gen = SB.el('button', 'mini primary', '\u2726 generate');
-    gen.disabled = !!sh.noShot || !(sh.description || '').trim();
-    if (gen.disabled) {
-      gen.title = sh.noShot ? 'A \u201cno shot\u201d card never generates'
-        : 'Write a description first \u2014 there is nothing for the writer to work from';
-    } else if (ta.value) {
-      gen.title = 'Write this one again, replacing what is there';
-    }
+    const gen = SB.Focus.costly(SB.el('button', 'mini primary', '\u2726 generate'));
+    gen.dataset.gen = sh.id + ':' + field;
+    paintGen(gen, sh, field);
     gen.onclick = function () {
-      gen.disabled = true;
-      gen.textContent = '\u2026';
       setStatus('writing the ' + (field === 'imagePrompt' ? 'first frame' : 'video') +
         ' prompt for ' + code(sh) + '\u2026');
       const roles = field === 'imagePrompt' ? { image: true } : { video: true };
-      SB.Prompts.generateFor(sh, roles).then(function () {
-        setStatus('');
+      SB.Prompts.generateFor(sh, roles).then(function (r) {
+        setStatus(r && r.kept && r.kept.length ? 'kept your edit \u2014 see the toast' : '');
         refreshUsage();
-        render();
+        /* The buttons come back from the state rather than from a rebuild, so
+           the row stops saying "\u2026" at once even when the rebuild is
+           waiting for a gap in the typing. */
+        paintGens();
+        SB.Focus.defer('promptpanel', render);
       }).catch(function (e) {
-        gen.disabled = false;
-        gen.textContent = '\u2726 generate';
+        paintGens();
         refreshUsage();
         writeError(e, function () { gen.onclick(); });
       });
@@ -15823,7 +16683,11 @@ window.SB = window.SB || {};
 
   /* --------------------------------------------------------------- render */
 
-  function render() {
+  /* Rebuilt from nothing, like the board — so the caret goes back where it
+     was rather than to <body>. */
+  function render() { SB.Focus.keep(renderNow); }
+
+  function renderNow() {
     if (!root || !P()) return;
     renderRefs();
     renderScenes();
@@ -17115,6 +17979,38 @@ window.SB = window.SB || {};
     types.value = p.settings.shotTypes.join('\n');
     panels.general.appendChild(field('Shot types (one per line)', types));
 
+    /* What each type SHOWS, in a sentence, sent with every prompt.
+     *
+     * A type on its own is a word: "Close-up" told the writer nothing about
+     * what a close-up leaves out, so a cast block describing a whole person
+     * outvoted it and a shot of somebody's hands came back with their face in
+     * it. This is where that sentence lives, per board, because one board's
+     * idea of a Medium is not another's. Empty is allowed, and means "say
+     * nothing about the framing for this type". */
+    const workingFraming = Object.assign({}, p.settings.shotFraming || {});
+    const framingHost = SB.el('div', 'set-framing');
+    const renderFraming = function () {
+      framingHost.innerHTML = '';
+      const list = types.value.split(/\r?\n/).map(function (x) { return x.trim(); })
+        .filter(function (x) { return x; });
+      list.forEach(function (t) {
+        const row = SB.el('div', 'set-fr-row');
+        row.appendChild(SB.el('span', 'set-fr-name', t));
+        const ta = document.createElement('textarea');
+        ta.rows = 2;
+        ta.className = 'set-fr-text';
+        ta.value = workingFraming[t] == null ? '' : workingFraming[t];
+        ta.placeholder = 'What does this framing show, and what does it leave out?';
+        ta.addEventListener('input', function () { workingFraming[t] = ta.value; });
+        row.appendChild(ta);
+        framingHost.appendChild(row);
+      });
+    };
+    renderFraming();
+    /* the list above is editable in the same dialog, so the rows follow it */
+    types.addEventListener('input', renderFraming);
+    panels.general.appendChild(field('What each shot type shows', framingHost));
+
     const themeSel = document.createElement('select');
     [['dark', 'Dark'], ['light', 'Light']].forEach(function (o) {
       const op = document.createElement('option');
@@ -18196,6 +19092,9 @@ window.SB = window.SB || {};
             const t = types.value.split('\n').map(function (s) { return s.trim(); })
               .filter(function (s) { return s; });
             p.settings.shotTypes = t.length ? t : SB.Model.DEFAULT_SHOT_TYPES.slice();
+            /* Kept whole rather than filtered to the current list: a type taken
+               out and put back keeps the sentence somebody wrote for it. */
+            p.settings.shotFraming = workingFraming;
 
             /* Card fields: removals take their text off every card, so they are
              * applied here rather than while the dialog is open. */
@@ -18322,6 +19221,11 @@ window.SB = window.SB || {};
   function restore(v) {
     const p = P();
     if (!confirm('Restore "' + v.name + '"?\n\nThe current state is saved as a version first, so nothing is lost.')) return;
+    /* A restore replaces p.scenes with cloned snapshot scenes, so every shot
+       object a running generation was started against stops being the shot
+       that is in the board. It is found again by id when it lands, but a card
+       the snapshot does not have cannot take a clip at all. */
+    if (!SB.app.confirmLeavingJobs('Restoring a version')) return;
     freeze(p, 'before restoring ' + v.name);
     p.master = SB.clone(v.snapshot.master);
     p.scenes = SB.clone(v.snapshot.scenes);
@@ -19440,7 +20344,11 @@ window.SB = window.SB || {};
     return (n / 1048576).toFixed(1) + ' MB';
   }
 
-  function render() {
+  /* Rebuilt from nothing, like the board — so the caret goes back where it
+     was rather than to <body>. */
+  function render() { SB.Focus.keep(renderNow); }
+
+  function renderNow() {
     if (!root) return;
     const p = P();
     bodyEl.innerHTML = '';
@@ -19711,11 +20619,56 @@ window.SB = window.SB || {};
     b.appendChild(SB.el('span', 'build-stamp', build));
   }
 
+  /* A generation runs for minutes with nothing on screen to say so: the push
+   * button is the only indicator in the app and it lives inside the Prompts
+   * panel, which is exactly the thing somebody closes to go and look at
+   * something else. The button that opens that panel carries the count. */
+  function watchJobs() {
+    if (!SB.Imagine) return;
+    const btn = document.getElementById('btnPrompts');
+    const paint = function () {
+      const n = SB.Imagine.runningJobs();
+      const held = SB.Imagine.parkedCount();
+      let dot = btn.querySelector('.tb-count');
+      if (!n && !held) { if (dot) dot.remove(); btn.classList.remove('working'); return; }
+      if (!dot) { dot = SB.el('span', 'tb-count'); btn.appendChild(dot); }
+      dot.textContent = String(n || held);
+      dot.classList.toggle('held', !n && !!held);
+      btn.classList.toggle('working', !!n);
+      btn.title = (n ? n + ' generation' + (n === 1 ? '' : 's') + ' running on ImagineArt. ' : '') +
+        (held ? held + ' finished and waiting for the board ' +
+          (held === 1 ? 'it belongs' : 'they belong') + ' to.' : '');
+    };
+    SB.Imagine.onChange(paint);
+    /* the count is state, not a clock — but a job that fails while the panel
+       is shut has to clear the dot too, and notify() covers that */
+    paint();
+  }
+
   function renderChrome() {
     const p = app.project;
     document.getElementById('projName').value = p.name || '';
     document.getElementById('verLabel').textContent = p.versionName || ('v' + p.versionNumber);
   }
+
+  /* Leaving a board while ImagineArt is still working on it.
+   *
+   * The generation itself survives — it is not tied to the panel or the page —
+   * but what comes back can only be filed into the board it belongs to, and
+   * that board will not be open. It is held rather than lost (see land() in
+   * imagine.js), and this is where that is said out loud, while the choice is
+   * still the user's. */
+  app.confirmLeavingJobs = function (what) {
+    const n = SB.Imagine ? SB.Imagine.runningJobs() : 0;
+    if (!n) return true;
+    return confirm(n === 1
+      ? 'ImagineArt is still working on one generation for this board.\n\n' + what +
+        ' now and it cannot be filed until you open this board again. It is held ' +
+        'until then, but closing the tab loses it.\n\nGo ahead?'
+      : 'ImagineArt is still working on ' + n + ' generations for this board.\n\n' + what +
+        ' now and they cannot be filed until you open this board again. They are held ' +
+        'until then, but closing the tab loses them.\n\nGo ahead?');
+  };
 
   function setProject(p) {
     app.project = p;
@@ -19729,6 +20682,9 @@ window.SB = window.SB || {};
     SB.PersonaPanel.refresh();
     /* every way a board becomes the current one comes through here */
     app.offerBoardSettings();
+    /* ...including the way back to a board something finished for while it
+       was closed. Anything held for it is filed now. */
+    if (SB.Imagine && SB.Imagine.claimParked) SB.Imagine.claimParked(p);
   }
 
   /* ---------------- boot ---------------- */
@@ -19775,6 +20731,7 @@ window.SB = window.SB || {};
     stampBuild();
     setProject(SB.Model.newProject());
     wire();
+    watchJobs();
 
     SB.Store.lastHandle().then(function (h) {
       if (!h) {
@@ -19893,11 +20850,15 @@ window.SB = window.SB || {};
 
     $('btnNew').addEventListener('click', function () {
       if (!confirm('Start a new project? The current one is already saved to its file.')) return;
+      if (!app.confirmLeavingJobs('Starting a new project')) return;
       SB.Store.detach();
       setProject(SB.Model.newProject());
     });
 
-    $('btnOpen').addEventListener('click', doOpen);
+    $('btnOpen').addEventListener('click', function () {
+      if (!app.confirmLeavingJobs('Opening another board')) return;
+      doOpen();
+    });
     $('btnSaveAs').addEventListener('click', doSaveAs);
     $('btnCopy').addEventListener('click', function () {
       if (!SB.Store.downloadCopy(app.project)) SB.toast('Nothing to copy yet', true);
@@ -20001,8 +20962,14 @@ window.SB = window.SB || {};
       }
     });
 
+    /* Pressing shoot does not dirty the board — the touch happens when the
+       clip LANDS — so a saved board with a generation in the air used to close
+       without a word, and the app had no way back to it: the job map is memory
+       only. Anything held for a board that is not open goes the same way. */
     window.addEventListener('beforeunload', function (e) {
-      if (SB.Store.S.dirty) { e.preventDefault(); e.returnValue = ''; }
+      const busy = SB.Imagine &&
+        (SB.Imagine.runningJobs() > 0 || SB.Imagine.parkedCount() > 0);
+      if (SB.Store.S.dirty || busy) { e.preventDefault(); e.returnValue = ''; }
     });
   }
 

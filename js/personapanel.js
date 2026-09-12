@@ -301,7 +301,11 @@
 
   /* --------------------------------------------------------------- render */
 
-  function render() {
+  /* Rebuilt from nothing, like the board — so the caret goes back where it
+     was rather than to <body>. */
+  function render() { SB.Focus.keep(renderNow); }
+
+  function renderNow() {
     if (!root || !P()) return;
     renderRefs();
     renderScenes();

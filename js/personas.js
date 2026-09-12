@@ -20,9 +20,11 @@
    * position, {{NAME}} = the persona's name. */
   const REF_TEMPLATES = {
     numbered: 'Reference images are supplied in order. Refer to each recurring subject as ' +
-      '"the person in image {{N}}" and keep their face, hair and wardrobe exactly as in that image.',
+      '"the person in image {{N}}". Where this frame shows their face, hair or wardrobe, keep ' +
+      'it exactly as in that image; where it does not, say nothing about it.',
     named: 'Reference images are supplied for each named subject. Refer to them by name ' +
-      '({{NAME}}) and keep their face, hair and wardrobe exactly as in the reference.',
+      '({{NAME}}). Where this frame shows their face, hair or wardrobe, keep it exactly as in ' +
+      'the reference; where it does not, say nothing about it.',
     none: ''
   };
 
@@ -50,7 +52,7 @@
       heading: 'CAST — these people recur across the board. They must look the same every time.',
       descLabel: 'description + wardrobe',
       descHint: 'Age range, build, hair, and the exact outfit — fabric and colour.',
-      noImage: 'No reference image — describe this person fully and identically every time.',
+      noImage: 'No reference image — describe this person identically every time, as far as this frame shows them.',
       refBrief: 'a clean, front-facing reference frame of this person: plain background, ' +
         'even natural light, neutral expression, full length from head to feet with the whole ' +
         'outfit in frame. ' + NEUTRAL_REF
@@ -60,7 +62,7 @@
       heading: 'LOCATIONS — these places recur across the board. They must look the same every time.',
       descLabel: 'the place, and what is fixed about it',
       descHint: 'Architecture, surfaces, furniture, light sources, time of day — what never changes.',
-      noImage: 'No reference image — describe this place fully and identically every time.',
+      noImage: 'No reference image — describe this place identically every time, as far as this frame shows it.',
       refBrief: 'a clean establishing reference frame of this place: wide, eye level, ' +
         'no people in shot, the light as it normally is there. ' + NEUTRAL_REF
     },
@@ -70,7 +72,8 @@
         'They must look the same every time.',
       descLabel: 'the object, product or screen',
       descHint: 'Form, size, material, finish, colour, and any logo or screen state that must be exact.',
-      noImage: 'No reference image — describe this object fully and identically every time.',
+      noImage: 'No reference image — describe this object identically every time, as far as ' +
+        'this frame shows it.',
       refBrief: 'a clean product-style reference frame of this object: plain background, ' +
         'even light, three-quarter view, the whole object in frame. ' + NEUTRAL_REF
     }
@@ -444,6 +447,18 @@
       'people, places and things look. Where the shot description says anything different about ' +
       'their appearance, hair, wardrobe or surroundings, it is out of date — follow this block ' +
       'and ignore it. The shot description still governs what they are DOING and where.');
+
+    /* ...and then this block, which describes a whole person, was read as a
+       list of things to draw. It is not: it is what they look like WHEN YOU CAN
+       SEE THEM, and a frame decides how much of that is true of itself. A
+       close-up of a pair of hands says nothing about anyone's hair, and the
+       block used to hand over the hair anyway, under a paragraph calling itself
+       authoritative — so the hair went in. */
+    lines.push('Each description above is of the WHOLE subject. This shot may show very little ' +
+      'of it — a pair of hands, one face, a corner of a room. Write only the parts that are ' +
+      'inside the frame described above; everything else is out of shot, and putting it into ' +
+      'words puts it into the picture. Being described here is not a reason to widen the shot ' +
+      'or to pull back far enough to show it.');
 
     /* ...and this block was being read as a guest list. It names everyone cast
      * in the shot and hands over a numbered reference image for each, which to

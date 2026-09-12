@@ -1959,6 +1959,13 @@
       };
       const frameRef = (shot.image && shot.image.ref) || '';
 
+      /* Ids, not objects. Everything this generation needs to find its way
+         home is looked up again when it arrives — see land(). */
+      const ticket = {
+        projectId: p.id, projectName: p.name || '', shotId: shot.id,
+        code: codeOf(p, shot) || '', role: role, frameRef: frameRef, made: made
+      };
+
       const res = resolutionFor(p, slugNow, role);
       const qual = role === 'image' ? qualityFor(p, slugNow) : '';
       made.resolution = res || '';
@@ -1978,7 +1985,7 @@
         }).then(function (got) {
           made.slug = got.usedSlug || made.slug;
           made.via = got.via || made.via;
-          return fileImage(p, shot, got, made).then(function (out) {
+          return land(ticket, got).then(function (out) {
             out.usedSlug = got.usedSlug;
             return out;
           });
@@ -1993,7 +2000,7 @@
         }).then(function (got) {
           made.slug = got.usedSlug || made.slug;
           made.via = got.via || made.via;
-          return fileVideo(p, targetFor(p, shot, frameRef), got, made).then(function (out) {
+          return land(ticket, got).then(function (out) {
             out.usedSlug = got.usedSlug;
             return out;
           });
@@ -2059,6 +2066,99 @@
    * time for two cards to be swapped. A clip belongs to the frame it was
    * animated from, so it is filed against that picture rather than against
    * the card that asked. */
+  /* ---------------- landing a generation ----------------
+   *
+   * A generation takes minutes, and run() used to close over the project and
+   * the shot OBJECT it was started from. Both of those can stop being the
+   * board you are looking at while it is in the air:
+   *
+   *   Open… / New          swaps SB.app.project outright
+   *   restoring a version  replaces p.scenes with cloned snapshot scenes, so
+   *                        the shot object is no longer the shot in the board
+   *   deleting the card    takes it out of every scene
+   *
+   * In every one of those, the clip landed perfectly — onto an object nothing
+   * points at. Then Store.touch() fired, and writeNow() asked S.getProject()
+   * for the board to write, which was the NEW one. So the file on disk was
+   * rewritten without the clip, the clip lived in the memory of an
+   * unreferenced object, and reopening the board it belonged to did not have
+   * it. Minutes of generation and the credits, gone with no error.
+   *
+   * So nothing is captured but ids, and the board is looked up again at the
+   * moment the bytes arrive. If it is not the one on screen, the result is
+   * PARKED rather than filed, and filed when that board is opened again. */
+  const PARKED = [];
+
+  function parkedFor(projectId) {
+    return PARKED.filter(function (x) { return x.projectId === projectId; });
+  }
+  function parkedCount() { return PARKED.length; }
+
+  /* Somebody opened a board. Anything waiting for it is filed now. */
+  function claimParked(p) {
+    if (!p || !p.id) return 0;
+    const mine = parkedFor(p.id);
+    if (!mine.length) return 0;
+    mine.forEach(function (x) {
+      const i = PARKED.indexOf(x);
+      if (i >= 0) PARKED.splice(i, 1);
+    });
+    let filed = 0, lost = 0;
+    const step = function (i) {
+      if (i >= mine.length) {
+        if (filed) {
+          SB.toast(filed === 1 ? 'The clip that finished while this board was closed is on it now'
+            : filed + ' generations that finished while this board was closed are on it now');
+        }
+        if (lost) SB.toast(lost + ' could not be filed — the card is gone', true);
+        notify();
+        return;
+      }
+      const x = mine[i];
+      const f = SB.Model.findShot(p, x.shotId);
+      if (!f) { lost++; return step(i + 1); }
+      const done = function () { filed++; step(i + 1); };
+      const fail = function (e) {
+        lost++;
+        console.error('[storyboarder] a parked generation could not be filed', e);
+        step(i + 1);
+      };
+      if (x.role === 'image') fileImage(p, f.shot, x.got, x.made).then(done).catch(fail);
+      else fileVideo(p, targetFor(p, f.shot, x.frameRef), x.got, x.made).then(done).catch(fail);
+    };
+    step(0);
+    return mine.length;
+  }
+
+  /* The board this was started on, if it is still the board on screen. */
+  function boardIfOpen(projectId) {
+    const cur = SB.app && SB.app.project;
+    return (cur && cur.id === projectId) ? cur : null;
+  }
+
+  function land(ticket, got) {
+    const p = boardIfOpen(ticket.projectId);
+    const f = p ? SB.Model.findShot(p, ticket.shotId) : null;
+    if (!p || !f) {
+      PARKED.push({
+        projectId: ticket.projectId, projectName: ticket.projectName,
+        shotId: ticket.shotId, code: ticket.code, role: ticket.role,
+        frameRef: ticket.frameRef, got: got, made: ticket.made, at: Date.now()
+      });
+      notify();
+      SB.toast('The ' + (ticket.role === 'image' ? 'frame' : 'clip') + ' for ' +
+        (ticket.code || 'a card') + ' finished, but ' +
+        (p ? 'that card is no longer on the board'
+           : '“' + (ticket.projectName || 'the board it belongs to') + '” is not open') +
+        '. It is held' + (p ? '' : ' — open that board again and it will be filed') +
+        '. Closing this tab loses it.', true);
+      return Promise.resolve({ kind: ticket.role, parked: true });
+    }
+    return ticket.role === 'image'
+      ? fileImage(p, f.shot, got, ticket.made)
+      : fileVideo(p, targetFor(p, f.shot, ticket.frameRef), got, ticket.made);
+  }
+
   function targetFor(p, shot, frameRef) {
     if (!frameRef) return shot;
     if (shot.image && shot.image.ref === frameRef) return shot;
@@ -2066,13 +2166,20 @@
   }
 
   function fileVideo(p, shot, got, made) {
-    const rec = { at: Date.now(), url: got.url || '', thumb: got.thumb || '', made: made || null };
+    /* unseen: nobody has watched this one yet. Shooting a dozen clips means
+     * going away and coming back to a board where every row looks the same,
+     * with no way to tell the one that just landed from the one watched ten
+     * minutes ago — so a clip arrives marked, and watching it unmarks it.
+     * Only clips made HERE: a file somebody dropped in was chosen by hand and
+     * has already been seen. */
+    const rec = { at: Date.now(), url: got.url || '', thumb: got.thumb || '',
+      made: made || null, unseen: true };
     if (!got.blob) {
       /* ImagineArt made it but the browser could not read the bytes back
        * across origins: hold the link, say so, and leave a way to try again
        * while the link is still alive. */
       shot.video = rec;
-      SB.app.changed(true);
+      SB.Focus.defer('clip:' + shot.id, function () { SB.app.changed(true); });
       return Promise.resolve({ kind: 'video', remoteOnly: true });
     }
     return SB.Renders.keepVideo(p, got.blob, shot.video, made).then(function (saved) {
@@ -2083,9 +2190,13 @@
       if (saved) {
         saved.url = rec.url;
         saved.thumb = rec.thumb;
+        saved.unseen = true;
       }
       shot.video = saved || rec;
-      SB.app.changed(true);
+      /* Minutes after the button was pressed. Whoever pressed it is writing
+         something else by now, and rebuilding the board under them is how a
+         half-typed prompt used to disappear. */
+      SB.Focus.defer('clip:' + shot.id, function () { SB.app.changed(true); });
       return { kind: 'video', remoteOnly: !saved };
     });
   }
@@ -2107,8 +2218,10 @@
       if (!saved) throw new Error('the clip could not be stored');
       saved.url = rec.url;
       saved.thumb = rec.thumb;
+      /* fetching the bytes is not watching the clip */
+      if (rec.unseen) saved.unseen = true;
       shot.video = saved;
-      SB.app.changed(true);
+      SB.Focus.defer('clip:' + shot.id, function () { SB.app.changed(true); });
       return true;
     });
   }
@@ -2593,6 +2706,15 @@
   function openClip(p, shot) {
     const rec = shot && shot.video;
     const model = SB.Model.videoModel(p);
+
+    /* Opening this is watching it — the clip autoplays below. Painted in
+     * place rather than by a rebuild: the prompt table this is usually opened
+     * from has boxes in it that somebody may be typing in. */
+    if (rec && rec.unseen) {
+      delete rec.unseen;
+      SB.Store.touch();
+      notify();
+    }
     const box = SB.el('div', 'clip-box');
     let objectUrl = '';
     let m = null;
@@ -2809,10 +2931,11 @@
     whyNot: whyNot, promptFor: promptFor,
     /* jobs */
     job: job, busy: busy, clear: clear, onChange: onChange, runningJobs: runningJobs,
+    claimParked: claimParked, parkedCount: parkedCount, parkedFor: parkedFor,
     ensureTools: ensureTools,
     /* exposed for the tests */
     _bind: bind, _pickScore: score, _harvest: harvest, _parseRpc: parseRpc,
-    _fileVideo: fileVideo
+    _fileVideo: fileVideo, _land: land, _start: start
   };
 
 })(window.SB);

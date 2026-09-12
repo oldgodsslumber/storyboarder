@@ -110,6 +110,16 @@ button,input,select,textarea{font:inherit;color:inherit}
 .mini.arm:hover{border-color:var(--danger);color:#fff}
 .save-state{color:var(--fg-dim);font-size:11px;min-width:74px}
 .save-state.dirty{color:var(--accent2)}
+/* how many generations are in the air, on the button that opens the panel the
+   push lives in — it is the only indicator, and that panel gets closed */
+.tb .tb-count{
+  display:inline-block;margin-left:6px;min-width:15px;padding:0 4px;
+  border-radius:8px;font-size:10px;font-weight:700;line-height:15px;text-align:center;
+  background:var(--accent);color:var(--on-accent);
+}
+.tb .tb-count.held{background:var(--danger)}
+.tb.working .tb-count{animation:tb-pulse 1.6s ease-in-out infinite}
+@keyframes tb-pulse{0%,100%{opacity:1}50%{opacity:.45}}
 .save-state.saved{color:var(--ok)}
 
 /* ---------- layout ---------- */
@@ -281,6 +291,19 @@ button,input,select,textarea{font:inherit;color:inherit}
 .badge.warn{border-color:var(--danger);color:var(--danger);cursor:help}
 /* not an error — the prompt is fine, it is just describing an older wardrobe */
 .badge.stale{border-color:var(--accent2);color:var(--accent2);cursor:help}
+/* the description names a framing the dropdown disagrees with — a button,
+   because the whole point is that it is one click to settle */
+.fr-host{display:inline-flex;align-items:center}
+.badge.framing{
+  background:none;cursor:pointer;font-family:inherit;
+  border-color:var(--accent2);color:var(--accent2);
+}
+.badge.framing:hover{background:var(--accent2);color:var(--on-accent)}
+/* one row per shot type in Settings: the name, then what it shows */
+.set-framing{display:flex;flex-direction:column;gap:6px;width:100%}
+.set-fr-row{display:grid;grid-template-columns:130px 1fr;gap:8px;align-items:start}
+.set-fr-name{font-size:11px;color:var(--fg-dim);padding-top:6px}
+.set-fr-text{font-size:11px;line-height:1.45;resize:vertical}
 
 .frame{
   position:relative;background:var(--frame-bg);aspect-ratio:16/9;display:flex;
@@ -918,6 +941,17 @@ button.linkish{
 .pt-row{padding:10px 12px;border-bottom:1px solid var(--line)}
 .pt-row:hover{background:var(--bg2)}
 .pt-row.noshot{opacity:.6}
+/* a clip landed here and nobody has watched it yet — cleared the moment it is
+   played, so a board of twenty rows says which ones are new since you looked */
+.pt-row.fresh{
+  background:color-mix(in srgb,var(--ok) 11%,transparent);
+  box-shadow:inset 3px 0 0 var(--ok);
+  transition:background .25s ease,box-shadow .25s ease;
+}
+.pt-row.fresh:hover{background:color-mix(in srgb,var(--ok) 17%,transparent)}
+/* kept on screen because it was on screen when it stopped matching the filter */
+.pt-row.settled .pt-code-line .code{opacity:.65}
+.badge.done{border-color:var(--ok);color:var(--ok);cursor:help;margin-left:6px}
 .pt-cell{min-width:0}
 .pt-scene{
   position:sticky;top:26px;z-index:1;

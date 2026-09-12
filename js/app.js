@@ -96,11 +96,56 @@
     b.appendChild(SB.el('span', 'build-stamp', build));
   }
 
+  /* A generation runs for minutes with nothing on screen to say so: the push
+   * button is the only indicator in the app and it lives inside the Prompts
+   * panel, which is exactly the thing somebody closes to go and look at
+   * something else. The button that opens that panel carries the count. */
+  function watchJobs() {
+    if (!SB.Imagine) return;
+    const btn = document.getElementById('btnPrompts');
+    const paint = function () {
+      const n = SB.Imagine.runningJobs();
+      const held = SB.Imagine.parkedCount();
+      let dot = btn.querySelector('.tb-count');
+      if (!n && !held) { if (dot) dot.remove(); btn.classList.remove('working'); return; }
+      if (!dot) { dot = SB.el('span', 'tb-count'); btn.appendChild(dot); }
+      dot.textContent = String(n || held);
+      dot.classList.toggle('held', !n && !!held);
+      btn.classList.toggle('working', !!n);
+      btn.title = (n ? n + ' generation' + (n === 1 ? '' : 's') + ' running on ImagineArt. ' : '') +
+        (held ? held + ' finished and waiting for the board ' +
+          (held === 1 ? 'it belongs' : 'they belong') + ' to.' : '');
+    };
+    SB.Imagine.onChange(paint);
+    /* the count is state, not a clock — but a job that fails while the panel
+       is shut has to clear the dot too, and notify() covers that */
+    paint();
+  }
+
   function renderChrome() {
     const p = app.project;
     document.getElementById('projName').value = p.name || '';
     document.getElementById('verLabel').textContent = p.versionName || ('v' + p.versionNumber);
   }
+
+  /* Leaving a board while ImagineArt is still working on it.
+   *
+   * The generation itself survives — it is not tied to the panel or the page —
+   * but what comes back can only be filed into the board it belongs to, and
+   * that board will not be open. It is held rather than lost (see land() in
+   * imagine.js), and this is where that is said out loud, while the choice is
+   * still the user's. */
+  app.confirmLeavingJobs = function (what) {
+    const n = SB.Imagine ? SB.Imagine.runningJobs() : 0;
+    if (!n) return true;
+    return confirm(n === 1
+      ? 'ImagineArt is still working on one generation for this board.\n\n' + what +
+        ' now and it cannot be filed until you open this board again. It is held ' +
+        'until then, but closing the tab loses it.\n\nGo ahead?'
+      : 'ImagineArt is still working on ' + n + ' generations for this board.\n\n' + what +
+        ' now and they cannot be filed until you open this board again. They are held ' +
+        'until then, but closing the tab loses them.\n\nGo ahead?');
+  };
 
   function setProject(p) {
     app.project = p;
@@ -114,6 +159,9 @@
     SB.PersonaPanel.refresh();
     /* every way a board becomes the current one comes through here */
     app.offerBoardSettings();
+    /* ...including the way back to a board something finished for while it
+       was closed. Anything held for it is filed now. */
+    if (SB.Imagine && SB.Imagine.claimParked) SB.Imagine.claimParked(p);
   }
 
   /* ---------------- boot ---------------- */
@@ -160,6 +208,7 @@
     stampBuild();
     setProject(SB.Model.newProject());
     wire();
+    watchJobs();
 
     SB.Store.lastHandle().then(function (h) {
       if (!h) {
@@ -278,11 +327,15 @@
 
     $('btnNew').addEventListener('click', function () {
       if (!confirm('Start a new project? The current one is already saved to its file.')) return;
+      if (!app.confirmLeavingJobs('Starting a new project')) return;
       SB.Store.detach();
       setProject(SB.Model.newProject());
     });
 
-    $('btnOpen').addEventListener('click', doOpen);
+    $('btnOpen').addEventListener('click', function () {
+      if (!app.confirmLeavingJobs('Opening another board')) return;
+      doOpen();
+    });
     $('btnSaveAs').addEventListener('click', doSaveAs);
     $('btnCopy').addEventListener('click', function () {
       if (!SB.Store.downloadCopy(app.project)) SB.toast('Nothing to copy yet', true);
@@ -386,8 +439,14 @@
       }
     });
 
+    /* Pressing shoot does not dirty the board — the touch happens when the
+       clip LANDS — so a saved board with a generation in the air used to close
+       without a word, and the app had no way back to it: the job map is memory
+       only. Anything held for a board that is not open goes the same way. */
     window.addEventListener('beforeunload', function (e) {
-      if (SB.Store.S.dirty) { e.preventDefault(); e.returnValue = ''; }
+      const busy = SB.Imagine &&
+        (SB.Imagine.runningJobs() > 0 || SB.Imagine.parkedCount() > 0);
+      if (SB.Store.S.dirty || busy) { e.preventDefault(); e.returnValue = ''; }
     });
   }
 

@@ -186,6 +186,38 @@
     types.value = p.settings.shotTypes.join('\n');
     panels.general.appendChild(field('Shot types (one per line)', types));
 
+    /* What each type SHOWS, in a sentence, sent with every prompt.
+     *
+     * A type on its own is a word: "Close-up" told the writer nothing about
+     * what a close-up leaves out, so a cast block describing a whole person
+     * outvoted it and a shot of somebody's hands came back with their face in
+     * it. This is where that sentence lives, per board, because one board's
+     * idea of a Medium is not another's. Empty is allowed, and means "say
+     * nothing about the framing for this type". */
+    const workingFraming = Object.assign({}, p.settings.shotFraming || {});
+    const framingHost = SB.el('div', 'set-framing');
+    const renderFraming = function () {
+      framingHost.innerHTML = '';
+      const list = types.value.split(/\r?\n/).map(function (x) { return x.trim(); })
+        .filter(function (x) { return x; });
+      list.forEach(function (t) {
+        const row = SB.el('div', 'set-fr-row');
+        row.appendChild(SB.el('span', 'set-fr-name', t));
+        const ta = document.createElement('textarea');
+        ta.rows = 2;
+        ta.className = 'set-fr-text';
+        ta.value = workingFraming[t] == null ? '' : workingFraming[t];
+        ta.placeholder = 'What does this framing show, and what does it leave out?';
+        ta.addEventListener('input', function () { workingFraming[t] = ta.value; });
+        row.appendChild(ta);
+        framingHost.appendChild(row);
+      });
+    };
+    renderFraming();
+    /* the list above is editable in the same dialog, so the rows follow it */
+    types.addEventListener('input', renderFraming);
+    panels.general.appendChild(field('What each shot type shows', framingHost));
+
     const themeSel = document.createElement('select');
     [['dark', 'Dark'], ['light', 'Light']].forEach(function (o) {
       const op = document.createElement('option');
@@ -1267,6 +1299,9 @@
             const t = types.value.split('\n').map(function (s) { return s.trim(); })
               .filter(function (s) { return s; });
             p.settings.shotTypes = t.length ? t : SB.Model.DEFAULT_SHOT_TYPES.slice();
+            /* Kept whole rather than filtered to the current list: a type taken
+               out and put back keeps the sentence somebody wrote for it. */
+            p.settings.shotFraming = workingFraming;
 
             /* Card fields: removals take their text off every card, so they are
              * applied here rather than while the dialog is open. */

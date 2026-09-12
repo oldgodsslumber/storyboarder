@@ -298,6 +298,46 @@
    *
    * Resolves with what was written. Rejects if nothing could be.
    */
+  /* Which prompts are being written right now, keyed shot:field.
+   *
+   * This used to live in the pressed button's own textContent — "…" meant
+   * busy. Two things followed from that. A repaint could not tell a running
+   * button from an idle one, so it re-enabled it; and closing the panel threw
+   * the state away entirely, so reopening it mid-write showed a ready button,
+   * and pressing it again sent a second call for the same prompt. Two calls
+   * against the day's allowance, and — since a prompt edited while another
+   * is in flight is now kept rather than overwritten — the second one came
+   * back and was dropped with a message about an edit nobody had made.
+   *
+   * So it lives here, next to the shot it is about, the way a push does. */
+  const WRITING = {};
+
+  function writeKey(shotId, field) { return shotId + ':' + field; }
+  function writing(shotId, field) { return !!WRITING[writeKey(shotId, field)]; }
+  function writingAny(shotId) {
+    return writing(shotId, 'imagePrompt') || writing(shotId, 'videoPrompt');
+  }
+
+  const WATCHERS = [];
+  function onWriting(fn) {
+    WATCHERS.push(fn);
+    return function () {
+      const i = WATCHERS.indexOf(fn);
+      if (i >= 0) WATCHERS.splice(i, 1);
+    };
+  }
+  function tellWatchers() {
+    WATCHERS.slice().forEach(function (fn) { try { fn(); } catch (e) { } });
+  }
+
+  function markWriting(shotId, fields, on) {
+    fields.forEach(function (f) {
+      if (on) WRITING[writeKey(shotId, f)] = true;
+      else delete WRITING[writeKey(shotId, f)];
+    });
+    tellWatchers();
+  }
+
   function generateFor(shot, roles) {
     const p = P();
     const im = SB.Model.imageModel(p), vm = SB.Model.videoModel(p);
@@ -320,8 +360,39 @@
     const jobs = jobsFor(shot, im, vm, roles);
     if (!jobs.length) return Promise.reject(new Error('Nothing to write for this shot.'));
 
+    /* One at a time per field: a second press while the first is in the air is
+       a second call for the same prompt, and the guard below is the only thing
+       standing between that and two charges. */
+    const fields = [];
+    jobs.forEach(function (j) {
+      j.targets.forEach(function (tg) {
+        if (fields.indexOf(tg.field) < 0) fields.push(tg.field);
+      });
+    });
+    if (fields.some(function (f) { return writing(shot.id, f); })) {
+      return Promise.reject(new Error('That prompt is already being written.'));
+    }
+    markWriting(shot.id, fields, true);
+    const done = function () { markWriting(shot.id, fields, false); };
+
     const written = [];
+    const kept = [];
     let lastError = null;
+
+    /* What each target said at the moment we asked. A writer model takes tens
+     * of seconds, and in that time the person who pressed the button reads the
+     * prompt that is already there and fixes it by hand. The answer that comes
+     * back was written against the OLD text and knows nothing about the fix —
+     * storing it threw the fix away, silently, with no undo behind it. A hand
+     * edit is the newer intent, so it wins, and the button is there to press
+     * again if the written one was wanted after all. */
+    const asked = {};
+    jobs.forEach(function (j) {
+      j.targets.forEach(function (t) {
+        const pr = shot.prompts[t.model.id];
+        asked[t.model.id + '|' + t.field] = (pr && pr[t.field]) || '';
+      });
+    });
 
     /* One after another. Two jobs only happen when the image and the video
      * model differ, and a wall that stops the first would stop the second. */
@@ -334,6 +405,11 @@
       }).then(function (res) {
         const vals = j.map ? j.map(res) : res;
         j.targets.forEach(function (t) {
+          const now = (shot.prompts[t.model.id] || {})[t.field] || '';
+          if (now !== asked[t.model.id + '|' + t.field]) {
+            kept.push({ field: t.field, model: t.model });
+            return;
+          }
           store(shot, t.model, t.field, vals[t.field]);
           written.push(t.field);
           /* One rewrite is all it gets. A move that survives it is not thrown
@@ -367,14 +443,34 @@
     }
 
     return step(0).then(function () {
-      SB.app.changed(true);
-      if (!written.length) throw lastError || new Error('Nothing was written');
-      return { written: written, error: lastError ? lastError.message : null };
+      done();
+      /* This lands whenever the writer model is done — which is routinely
+         while the user has moved on and is typing in another box. It waits
+         for a gap in the typing. */
+      SB.Focus.defer('prompts:' + shot.id, function () { SB.app.changed(true); });
+      if (kept.length) {
+        const f = SB.Model.findShot(P(), shot.id);
+        SB.toast('Your edit to the ' +
+          kept.map(function (k) {
+            return k.field === 'imagePrompt' ? 'first-frame prompt' : 'video prompt';
+          }).join(' and ') +
+          (f ? ' for ' + f.code : '') +
+          ' was kept — it changed while the writer was working, so the new one was ' +
+          'dropped. Generate again to replace it.', true);
+      }
+      if (!written.length && !kept.length) throw lastError || new Error('Nothing was written');
+      return { written: written, kept: kept, error: lastError ? lastError.message : null };
+    }).catch(function (e) {
+      /* step() swallows its own failures, so this is the throw above and
+         anything unforeseen — either way the field stops being busy. */
+      done();
+      throw e;
     });
   }
 
   SB.Prompts = {
     generateFor: generateFor,
+    writing: writing, writingAny: writingAny, onWriting: onWriting,
     jobsFor: jobsFor, fill: fill, raw: ask
   };
 

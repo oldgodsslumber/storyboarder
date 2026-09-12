@@ -389,6 +389,66 @@ try {
   t('a comment can be deleted from the list',
     await evaluate('return SB.Model.scriptComments(SB.app.project).length;') === 0, '');
 
+  /* ---------------- a rebuild must not take the caret ----------------
+   *
+   * This is the bug this whole file exists for, in its real form: a clip or a
+   * prompt comes back from a server long after the button was pressed, the
+   * panel it lands in is rebuilt from nothing, and the box being typed in at
+   * that moment is destroyed. Typed with real keys, because a synthetic event
+   * cannot tell you where the caret went. */
+  await evaluate(
+    'SB.app.commentMode = false; document.body.classList.remove("comment-mode");' +
+    'SB.ScriptMode.close && SB.ScriptMode.close();' +
+    'SB.app.project.settings.showVideoPrompt = true;' +
+    'SB.app.changed(true); return 1;');
+  await sleep(200);
+  const pSel = await evaluate(
+    'var id=null;SB.Model.eachShot(SB.app.project,function(s){if(!id)id=s.id});' +
+    'var el=document.querySelector(".prompt-box[data-shot=\\"" + id + "\\"] textarea");' +
+    'if(el) el.scrollIntoView({block:"center"});' +
+    'return ".prompt-box[data-shot=\\"" + id + "\\"] textarea";');
+  await sleep(120);
+  const pbox = await boxOf(pSel);
+  t('a card has a video prompt box', !!pbox && pbox.w > 40, pbox);
+
+  await clickAt(pbox.x + 30, pbox.y + 12);
+  await sleep(80);
+  await typeText('A slow push');
+
+  /* the clip lands, mid-sentence */
+  await evaluate('SB.app.changed(true); return 1;');
+  await sleep(60);
+  t('the caret is still in the box a rebuild just replaced',
+    await evaluate('var a=document.activeElement;' +
+      'return !!a && a.tagName === "TEXTAREA" && a.classList.contains("pt-text") === false;'),
+    await evaluate('var a=document.activeElement; return a ? a.tagName + "." + a.className : "null";'));
+
+  await typeText(' in.');
+  await sleep(150);
+  t('the rest of the sentence lands in the same box',
+    await evaluate('var a=document.activeElement; return a ? a.value : "";') === 'A slow push in.',
+    await evaluate('var a=document.activeElement; return a ? a.value : "(nothing focused)";'));
+  t('and the board kept it',
+    (await evaluate('var v="";SB.Model.eachShot(SB.app.project,function(s){' +
+      'if(!v){var k=Object.keys(s.prompts||{});k.forEach(function(i){' +
+      'if(s.prompts[i].videoPrompt)v=s.prompts[i].videoPrompt})}});return v;')) === 'A slow push in.',
+    await evaluate('var v="";SB.Model.eachShot(SB.app.project,function(s){' +
+      'if(!v){var k=Object.keys(s.prompts||{});k.forEach(function(i){' +
+      'if(s.prompts[i].videoPrompt)v=s.prompts[i].videoPrompt})}});return v;'));
+
+  /* and the loaded space bar: a generate button pressed with the mouse must
+     not keep the keyboard, or the next space writes the prompt again */
+  const gSel = pSel.replace(' textarea', ' .ptitle .mini');
+  const gbox = await boxOf(gSel);
+  if (gbox) {
+    await clickAt(gbox.x + gbox.w / 2, gbox.y + gbox.h / 2);
+    await sleep(120);
+    t('a generate button pressed with the mouse does not keep the keyboard',
+      await evaluate('var a=document.activeElement;' +
+        'return !a || a === document.body || a.tagName !== "BUTTON";'),
+      await evaluate('var a=document.activeElement; return a ? a.tagName + "." + a.className : "null";'));
+  }
+
   errors.push(...(await evaluate('return window.__err;')));
   t('no page errors', errors.length === 0, errors);
 } catch (e) {

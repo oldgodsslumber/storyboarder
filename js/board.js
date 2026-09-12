@@ -286,7 +286,13 @@
    * used to fling you back to the top and away from the card you were on.
    * Hold the position, and if a card was selected, hold IT still: the cards
    * change height, so the same scrollTop is not the same place. */
-  function render() {
+  /* The board is rebuilt from nothing every time, so whatever box had the
+   * caret is destroyed by it. Focus.keep puts the caret back in the same box
+   * at the same offset — see focus.js for why that matters more than it
+   * sounds like it does. */
+  function render() { SB.Focus.keep(renderNow); }
+
+  function renderNow() {
     armAutoScroll();
     const panel = document.getElementById('boardPanel');
     const prevTop = panel ? panel.scrollTop : 0;
@@ -1068,8 +1074,14 @@
       if (t === sh.type) o.selected = true;
       sel.appendChild(o);
     });
-    sel.addEventListener('change', function () { sh.type = sel.value; SB.app.changed(false); });
+    sel.addEventListener('change', function () {
+      sh.type = sel.value;
+      SB.app.changed(false);
+      refreshFraming(sh.id);          // the badge is about to agree, or to go
+      SB.PromptPanel.follow();
+    });
     head.appendChild(sel);
+    head.appendChild(framingHost(sh));
 
     if (sh.noShot) head.appendChild(SB.el('span', 'badge noshot', 'no shot'));
 
@@ -1156,6 +1168,7 @@
         sh.description = t;
         SB.app.changed(false);
         refreshFeed(sh.id);
+        refreshFraming(sh.id);
       },
       placeholder: 'What we see. @ anything the model should be shown.',
       ctx: { shot: sh, code: SB.Model.code(si, sj) }
@@ -1606,6 +1619,58 @@
     return b;
   }
 
+  /* ---------------- the framing the description asks for ----------------
+   *
+   * The shot type comes from the dropdown and stays there: it is the one place
+   * the framing is stated, and the prompt is written to it. But a description
+   * that opens "close-up of Danny's hands" is saying the same thing in words,
+   * and when the two disagree the dropdown wins silently — which is how a card
+   * reading "closeup of his hands" went out as "Shot type: Wide" and came back
+   * with his whole face in it.
+   *
+   * So: notice, say so, and offer the one click. Never change it by itself —
+   * "insert" in the middle of a sentence is a word as often as it is a framing,
+   * and a dropdown that moves on its own is worse than one that is wrong. */
+  function framingWanted(sh) {
+    const want = SB.Model.guessFraming(P(), SB.Refs.plain(P(), sh.description || ''));
+    return (want && want !== sh.type) ? want : '';
+  }
+
+  function paintFraming(host, sh) {
+    host.innerHTML = '';
+    const want = framingWanted(sh);
+    if (!want) return;
+    const b = SB.el('button', 'badge warn framing', want);
+    b.title = 'The description says ' + want.toLowerCase() + ', but this card is set to ' +
+      (sh.type ? '“' + sh.type + '”' : 'no shot type') + ' — and the shot type is what ' +
+      'the prompt is written to. Click to set it to ' + want + '.';
+    b.onclick = function (ev) {
+      ev.stopPropagation();
+      sh.type = want;
+      SB.app.changed(true);
+      SB.PromptPanel.follow();
+      SB.toast('1 card set to ' + want);
+    };
+    host.appendChild(b);
+  }
+
+  /* A host per card, wherever one is drawn — the card head and the prompt
+     table both carry one, and both are repainted from the same keystroke. */
+  function framingHost(sh) {
+    const host = SB.el('span', 'fr-host');
+    host.dataset.shot = sh.id;
+    paintFraming(host, sh);
+    return host;
+  }
+
+  function refreshFraming(id) {
+    const f = SB.Model.findShot(P(), id);
+    if (!f) return;
+    document.querySelectorAll('.fr-host[data-shot="' + id + '"]').forEach(function (h) {
+      paintFraming(h, f.shot);
+    });
+  }
+
   /* Re-evaluate the badges without rebuilding the cards — editing a persona
    * description is a keystroke-rate event, and replacing the textarea under the
    * cursor would be worse than the staleness. */
@@ -1638,7 +1703,7 @@
     if (mv) t.appendChild(mv);
     const gb = genderBadge(sh, m, field);
     if (gb) t.appendChild(gb);
-    const gen = SB.el('button', 'mini', 'generate');
+    const gen = SB.Focus.costly(SB.el('button', 'mini', 'generate'));
     gen.style.marginLeft = 'auto';
     gen.onclick = function () {
       gen.disabled = true; gen.textContent = '…';
@@ -1888,7 +1953,9 @@
     return SB.downscaleImage(src).then(function (img) {
       const proxy = SB.Blobs.image(P(), img.data, img.w, img.h);
       sh.image = proxy;
-      SB.app.changed(true);
+      /* Always asynchronous — a generated still can land long after the click
+         that asked for it, so it queues behind whatever is being typed. */
+      SB.Focus.defer('image:' + sh.id, function () { SB.app.changed(true); });
 
       const existing = sh.render;
       return SB.Renders.keep(P(), src, existing, made).then(function (rec) {
@@ -1961,6 +2028,7 @@
     renderScriptWindows: renderScriptWindows,
     refreshCast: refreshCast,
     refreshCastRows: refreshCastRows, refreshPromptStale: refreshPromptStale,
+    framingHost: framingHost, refreshFraming: refreshFraming,
     refreshFeed: refreshFeed,
     refreshSerial: refreshSerial,
     saveFeed: saveFeed,

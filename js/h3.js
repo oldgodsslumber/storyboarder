@@ -142,11 +142,17 @@
           : 'partially_preserved - the frame it supplies is the starting point for this shot ' +
             'and is carried forward with the changes described below.'));
     });
+    /* "retained exactly" is about IDENTITY, not about how much of them the shot
+     * shows. Written without that clause it read as an order to put the whole
+     * description on the screen, so a close-up of a pair of hands carried the
+     * wardrobe and the haircut of a man who was, in that frame, two hands. */
     subjects(p, shot).forEach(function (s) {
       const d = clause(s.description);
       lines.push('<Subject ' + s.n + '> (appears in [Shot 1]): fully_preserved - ' +
-        (d ? d.charAt(0).toLowerCase() + d.slice(1) + ' are retained exactly.'
-           : 'identity, wardrobe and appearance are retained exactly.'));
+        (d ? d.charAt(0).toLowerCase() + d.slice(1) + ' are retained exactly wherever this ' +
+             'shot’s framing shows them.'
+           : 'identity, wardrobe and appearance are retained exactly wherever this shot’s ' +
+             'framing shows them.'));
     });
     return lines.join('\n');
   }

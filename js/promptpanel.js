@@ -17,6 +17,21 @@
   let root = null;
   let bodyEl, statusEl, usageEl, limitEl, headEl;
   let filter = 'all';
+  /* Which rows the filter let through when it was CHOSEN.
+   *
+   * The filter used to be re-applied on every render, and a render happens
+   * whenever anything lands — a clip, a written prompt, a frame. So the row
+   * most likely to stop matching was the one being worked in: type the last
+   * missing prompt of a card by hand, have a clip land on another card
+   * mid-sentence, and the row under the caret was gone, with the rest of the
+   * sentence going nowhere and no way to tell where it went.
+   *
+   * A filter is a way of choosing what to work on, not a rule the table has to
+   * keep obeying while you work. So it is applied when it is picked, and what
+   * it let through stays until it is picked again. Anything that newly matches
+   * still appears — that is the filter doing its job — nothing is taken away.
+   */
+  let pinned = null;
   /* A push runs for minutes and this table re-renders on every keystroke, so
      nothing about a running job is kept here — it is read back out of
      SB.Imagine each time something is painted. These two only say that the
@@ -44,13 +59,19 @@
     document.getElementById('modalRoot').appendChild(root);
     document.getElementById('btnPrompts').classList.add('on');
     watchJobs();
+    pinFilter();
     render();
   }
 
   /* Repaint just the push buttons: once a second so the elapsed time on a
      running job moves, and whenever a job starts, finishes or fails. A full
      render() would throw away whatever textarea has the caret in it. */
+  let unwatchWriting = null;
+
   function watchJobs() {
+    /* a prompt being written is not an ImagineArt job, and it can start and
+       end from the card as well as from this table */
+    unwatchWriting = SB.Prompts.onWriting(paintGens);
     if (!SB.Imagine) return;
     unwatch = SB.Imagine.onChange(paintPushes);
     ticker = setInterval(paintPushes, 1000);
@@ -58,6 +79,7 @@
 
   function stopWatching() {
     if (unwatch) { unwatch(); unwatch = null; }
+    if (unwatchWriting) { unwatchWriting(); unwatchWriting = null; }
     if (ticker) { clearInterval(ticker); ticker = null; }
   }
 
@@ -139,14 +161,38 @@
     return one(im, 'imagePrompt') || one(vm, 'videoPrompt');
   }
 
+  function matches(r, im, vm) {
+    if (filter === 'missing') return isMissing(r, im, vm);
+    if (filter === 'stale') return isStale(r, im, vm);
+    if (filter === 'scene') return r.scene.id === SB.app.selectedSceneId;
+    return true;
+  }
+
+  /* Take the filter's word for it, now. Everything it lets through is kept
+     until somebody asks again. */
+  function pinFilter() {
+    const im = SB.Model.imageModel(P()), vm = SB.Model.videoModel(P());
+    pinned = {};
+    allRows().forEach(function (r) {
+      if (matches(r, im, vm)) pinned[r.shot.id] = 1;
+    });
+  }
+
+  /* What is on screen: what the filter let through when it was chosen, plus
+     anything that has come to match since. Never less. */
   function visible(im, vm) {
     const rows = allRows();
-    if (filter === 'missing') return rows.filter(function (r) { return isMissing(r, im, vm); });
-    if (filter === 'stale') return rows.filter(function (r) { return isStale(r, im, vm); });
-    if (filter === 'scene') {
-      return rows.filter(function (r) { return r.scene.id === SB.app.selectedSceneId; });
-    }
-    return rows;
+    if (filter === 'all') return rows;
+    if (!pinned) pinFilter();
+    return rows.filter(function (r) {
+      return pinned[r.shot.id] || matches(r, im, vm);
+    });
+  }
+
+  /* A row still on screen because it was being worked on when it stopped
+     matching — which is worth saying, or the filter looks broken. */
+  function settled(r, im, vm) {
+    return filter !== 'all' && !matches(r, im, vm);
   }
 
   /* --------------------------------------------------------------- header */
@@ -212,7 +258,11 @@
     ['scene', 'This scene']].forEach(function (t) {
       const b = SB.el('button', 'tb toggle' + (filter === t[0] ? ' on' : ''),
         t[1] + ' ' + counts[t[0]]);
-      b.onclick = function () { filter = t[0]; render(); };
+      b.onclick = function () {
+        filter = t[0];
+        pinFilter();              // re-picking a filter is how you re-narrow it
+        render();
+      };
       tabs.appendChild(b);
     });
     r1.appendChild(tabs);
@@ -373,7 +423,11 @@
 
   /* ---------------------------------------------------------------- table */
 
-  function render() {
+  /* Rebuilt from nothing, like the board — so the caret goes back where it
+     was rather than to <body>. */
+  function render() { SB.Focus.keep(renderNow); }
+
+  function renderNow() {
     if (!root || !P()) return;
     const p = P();
     const im = SB.Model.imageModel(p), vm = SB.Model.videoModel(p);
@@ -421,7 +475,9 @@
 
   function rowEl(r, im, vm) {
     const sh = r.shot;
-    const row = SB.el('div', 'pt-row' + (sh.noShot ? ' noshot' : ''));
+    const row = SB.el('div', 'pt-row' + (sh.noShot ? ' noshot' : '') +
+      (sh.video && sh.video.unseen ? ' fresh' : '') +
+      (settled(r, im, vm) ? ' settled' : ''));
     row.dataset.shot = sh.id;
 
     /* ---- what it is ---- */
@@ -438,6 +494,12 @@
         : 'This number is all that is left: the original is not in this file. Drop the ' +
           'picture in again to bring it with you.';
       line.appendChild(ser);
+    }
+    if (settled(r, im, vm)) {
+      const d = SB.el('span', 'badge done', 'done');
+      d.title = 'This one no longer matches the filter \u2014 it is kept on screen because it ' +
+        'was on screen. Click the filter again to narrow the list.';
+      line.appendChild(d);
     }
     c1.appendChild(line);
 
@@ -460,6 +522,9 @@
     c1.appendChild(thumb);
     c1.appendChild(SB.el('div', 'pt-type' + (sh.noShot ? ' noshot' : ''),
       sh.noShot ? 'no shot' + (sh.type ? ' · ' + sh.type : '') : (sh.type || '—')));
+    /* the same badge the card carries, on the screen where the prompts are
+       actually read — this is where a wrong shot type is noticed */
+    c1.appendChild(SB.Board.framingHost(sh));
     row.appendChild(c1);
 
     /* ---- what it says ---- */
@@ -472,7 +537,9 @@
         sh.description = t;
         SB.Store.touch();
         SB.Board.refreshCastRows();
+        SB.Board.refreshFraming(sh.id);
         refreshFeedCell(sh.id);
+        paintGens();          // a description is the thing "generate" waits for
       },
       placeholder: 'What we see. @ anything the model should be shown.',
       ctx: { shot: sh, code: r.code }
@@ -516,7 +583,7 @@
     const IM = SB.Imagine;
     if (!IM) return null;
     const role = roleOf(field);
-    const b = SB.el('button', 'mini push');
+    const b = SB.Focus.costly(SB.el('button', 'mini push'));
     /* held on the button: paintPush runs once before either is in the
        document, and a parentNode lookup would find nothing */
     b.__why = note || null;
@@ -646,6 +713,18 @@
 
   /* In place, without re-rendering: a running job ticks every second and the
      boxes around it must keep their text and their caret. */
+  /* Which rows have a clip nobody has watched yet. A class on the row, toggled
+     where it stands — a rebuild would be both wasteful and, if a box in the
+     table has the caret, rude. Runs on the same beat as the push buttons, so a
+     clip landing lights its row within the second and watching it puts the row
+     back. */
+  function paintFresh() {
+    bodyEl.querySelectorAll('.pt-row[data-shot]').forEach(function (row) {
+      const f = SB.Model.findShot(P(), row.dataset.shot);
+      row.classList.toggle('fresh', !!(f && f.shot.video && f.shot.video.unseen));
+    });
+  }
+
   function paintPushes() {
     if (!root || !P() || !SB.Imagine) return;
     const p = P();
@@ -657,7 +736,50 @@
       if (!f || !m) return;
       paintPush(b, f.shot, m, bits[1]);
     });
+    paintFresh();
+    paintGens();
     paintAccount();
+  }
+
+  /* Whether a prompt can be written, and why not — repainted where it stands.
+   *
+   * This was decided once, when the row was built, out of a description that
+   * the box three cells to the left can change at any moment. Typing a
+   * description into a card that had none therefore left "✦ generate"
+   * disabled until the panel was closed and opened again, which is a render by
+   * another name.
+   *
+   * The panel's own description box does not call app.changed() — that would
+   * rebuild the table under the caret — so the repaint has to be this one:
+   * in place, on the same beat as the push buttons. */
+  function paintGen(b, sh, field) {
+    if (SB.Prompts.writing(sh.id, field)) {
+      b.disabled = true;
+      b.textContent = '\u2026';
+      b.title = 'Writing this one now.';
+      return;
+    }
+    b.textContent = '\u2726 generate';
+    const hasDesc = !!(sh.description || '').trim();
+    b.disabled = !!sh.noShot || !hasDesc;
+    const m = field === 'imagePrompt' ? SB.Model.imageModel(P()) : SB.Model.videoModel(P());
+    const already = m && ((sh.prompts || {})[m.id] || {})[field];
+    b.title = sh.noShot
+      ? 'A \u201cno shot\u201d card never generates'
+      : !hasDesc
+        ? 'Write a description first \u2014 there is nothing for the writer to work from'
+        : already
+          ? 'Write this one again, replacing what is there'
+          : 'Write this prompt from the description';
+  }
+
+  function paintGens() {
+    if (!root || !P() || !bodyEl) return;
+    bodyEl.querySelectorAll('[data-gen]').forEach(function (b) {
+      const bits = b.dataset.gen.split(':');
+      const f = SB.Model.findShot(P(), bits[0]);
+      if (f) paintGen(b, f.shot, bits[1]);
+    });
   }
 
   function promptCell(sh, m, field) {
@@ -670,6 +792,11 @@
 
     const ta = document.createElement('textarea');
     ta.className = 'pt-text';
+    /* Named, so that a rebuild can find this exact box again and give the
+       caret back to it rather than to the page. */
+    ta.dataset.shot = sh.id;
+    ta.dataset.model = m.id;
+    ta.dataset.field = field;
     ta.value = (pr && pr[field]) || '';
     ta.placeholder = sh.noShot ? '(\u201cno shot\u201d \u2014 never generated)' : 'not generated yet';
     ta.addEventListener('input', function () {
@@ -753,27 +880,23 @@
     const push = pushBtn(sh, m, field, why);
     if (push) foot.appendChild(push);
 
-    const gen = SB.el('button', 'mini primary', '\u2726 generate');
-    gen.disabled = !!sh.noShot || !(sh.description || '').trim();
-    if (gen.disabled) {
-      gen.title = sh.noShot ? 'A \u201cno shot\u201d card never generates'
-        : 'Write a description first \u2014 there is nothing for the writer to work from';
-    } else if (ta.value) {
-      gen.title = 'Write this one again, replacing what is there';
-    }
+    const gen = SB.Focus.costly(SB.el('button', 'mini primary', '\u2726 generate'));
+    gen.dataset.gen = sh.id + ':' + field;
+    paintGen(gen, sh, field);
     gen.onclick = function () {
-      gen.disabled = true;
-      gen.textContent = '\u2026';
       setStatus('writing the ' + (field === 'imagePrompt' ? 'first frame' : 'video') +
         ' prompt for ' + code(sh) + '\u2026');
       const roles = field === 'imagePrompt' ? { image: true } : { video: true };
-      SB.Prompts.generateFor(sh, roles).then(function () {
-        setStatus('');
+      SB.Prompts.generateFor(sh, roles).then(function (r) {
+        setStatus(r && r.kept && r.kept.length ? 'kept your edit \u2014 see the toast' : '');
         refreshUsage();
-        render();
+        /* The buttons come back from the state rather than from a rebuild, so
+           the row stops saying "\u2026" at once even when the rebuild is
+           waiting for a gap in the typing. */
+        paintGens();
+        SB.Focus.defer('promptpanel', render);
       }).catch(function (e) {
-        gen.disabled = false;
-        gen.textContent = '\u2726 generate';
+        paintGens();
         refreshUsage();
         writeError(e, function () { gen.onclick(); });
       });

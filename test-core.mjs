@@ -30,7 +30,7 @@ const sandbox = {
 sandbox.window = sandbox;
 vm.createContext(sandbox);
 
-for (const f of ['js/util.js', 'js/doc.js', 'js/blobs.js', 'js/geminimodels.js', 'js/providers.js',
+for (const f of ['js/util.js', 'js/focus.js', 'js/doc.js', 'js/blobs.js', 'js/geminimodels.js', 'js/providers.js',
   'js/brand.js', 'js/renders.js', 'js/imaginemodels.js', 'js/refs.js', 'js/personas.js', 'js/fields.js', 'js/model.js', 'js/store.js',
   'js/coverage.js']) {
   vm.runInContext(readFileSync(join(root, f), 'utf8'), sandbox, { filename: f });
@@ -2707,6 +2707,60 @@ console.log('\n— an edit is counted, so "saved" can mean what it says —');
   eq(S.dirty, true, 'and marks the board dirty');
   SB.Store.touch();
   eq(S.edits, 2, 'every edit counts, not just the first');
+}
+
+/* ---------------------------------------------------------------- framing
+ *
+ * A shot type was a word in a line and nothing else: nothing anywhere said
+ * what a close-up leaves OUT, so a cast block describing a whole person
+ * outvoted it, and a shot of somebody's hands came back with their face in it.
+ */
+console.log('\n— what a shot type shows —');
+{
+  const p = SB.Model.newProject();
+  eq(p.settings.shotTypes.filter(function (x) { return !SB.Model.framingFor(p, x); }), [],
+    'every default shot type has a line saying what it shows');
+  eq(/nothing below the chest/i.test(SB.Model.framingFor(p, 'Close-up')), true,
+    'and a close-up says what it leaves out');
+  eq(SB.Model.framingFor(p, 'Drone orbit'), '',
+    'a type nobody has written a line for has none, rather than a guess');
+
+  /* an older board gets the lines, and keeps any it has rewritten or cleared */
+  const old = SB.Model.newProject();
+  old.settings.shotFraming = { 'Wide': 'mine', 'Close-up': '' };
+  SB.Model.migrate(old);
+  eq(!!SB.Model.framingFor(old, 'Insert'), true, 'an older board picks up the missing lines');
+  eq(SB.Model.framingFor(old, 'Wide'), 'mine', 'a line somebody rewrote is left alone');
+  eq(SB.Model.framingFor(old, 'Close-up'), '', 'and one they deliberately emptied stays empty');
+}
+
+console.log('\n— the framing a description asks for —');
+{
+  const p = SB.Model.newProject();
+  const g = function (txt) { return SB.Model.guessFraming(p, txt); };
+  eq(g('Close-up of his hands typing.'), 'Close-up', '"close-up of his hands" reads as a close-up');
+  eq(g('closeup on the screen'), 'Close-up', 'and "closeup" with no hyphen');
+  eq(g('Tight on the keyboard.'), 'Close-up', 'and "tight on"');
+  eq(g('Extreme close-up of the key turning.'), 'Extreme close-up',
+    'an extreme close-up is not read as a close-up');
+  eq(g('Wide of the loading bay.'), 'Wide', '"wide" reads as a wide');
+  eq(g('Establishing shot of the yard.'), 'Wide', 'and so does an establishing shot');
+  eq(g('Over the shoulder as she reads.'), 'Over the shoulder', 'over the shoulder is its own thing');
+  eq(g('Insert of the manifest.'), 'Insert', 'and an insert');
+  eq(g('Danny is typing.'), '', 'a description that says nothing about framing guesses nothing');
+  eq(g(''), '', 'and neither does an empty one');
+
+  /* it may only ever offer a type the board actually has in its dropdown */
+  const trimmed = SB.Model.newProject();
+  trimmed.settings.shotTypes = ['Wide', 'Medium'];
+  eq(SB.Model.guessFraming(trimmed, 'Close-up of his hands.'), '',
+    'it never offers a type the dropdown does not have');
+
+  /* ...spelled the way that board spells it */
+  const shouty = SB.Model.newProject();
+  shouty.settings.shotTypes = ['WIDE', 'CLOSE-UP'];
+  eq(SB.Model.guessFraming(shouty, 'close up of his hands'), 'CLOSE-UP',
+    'and it uses the board\u2019s own spelling of the type');
 }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed\n');

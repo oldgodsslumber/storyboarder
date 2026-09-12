@@ -9,6 +9,98 @@
     'Two shot', 'Insert', 'Cutaway', 'POV', 'Screen capture', 'Talking head'
   ];
 
+  /* What each shot type actually SHOWS.
+   *
+   * The type was a word in a line of the template and nothing else — "Shot
+   * type: Close-up." — with no statement anywhere of what a close-up excludes.
+   * So a cast block describing a man from his hair to his jeans, declared
+   * authoritative, outvoted it every time: a close-up of somebody's hands came
+   * back with his stubble and his henley in it, because nothing in the prompt
+   * had ever said that a frame can leave a person out of itself.
+   *
+   * These are that statement. One line per type, sent with the prompt, and
+   * editable per board in Settings because a board's idea of "Medium" is its
+   * own business. */
+  const DEFAULT_FRAMING = {
+    'Wide':
+      'The whole figure, or the whole space, with room around it. Wardrobe, posture and ' +
+      'setting all read; a face is small and carries little detail.',
+    'Medium':
+      'From roughly the waist up. Wardrobe above the waist, hands when they come up, and ' +
+      'enough room behind to place the person. Nothing below the waist is in shot.',
+    'Close-up':
+      'A head and shoulders, or the single thing the description names — a pair of hands, ' +
+      'a screen, an object. Almost none of the room is in shot, and nothing below the chest.',
+    'Extreme close-up':
+      'One detail fills the frame. Nothing around it is visible: no face unless the face IS ' +
+      'the detail, no wardrobe, no room.',
+    'Over the shoulder':
+      'Past the near figure — the back of a head and one shoulder, soft and unread — ' +
+      'onto what they are looking at. The near figure is a silhouette, not a portrait.',
+    'Two shot':
+      'Two figures sharing the frame, from roughly the waist up. Both read; the space around ' +
+      'them barely does.',
+    'Insert':
+      'An object, a screen, a document or a detail, filling the frame. No person is in shot ' +
+      'unless a part of them — a hand, a sleeve — is holding or touching the thing.',
+    'Cutaway':
+      'Something other than the main action, in its own frame. Whoever the scene is about is ' +
+      'not in this one.',
+    'POV':
+      'What the character sees, from where their eyes are. They are not in the frame — at ' +
+      'most their own hands or feet at its edge.',
+    'Screen capture':
+      'The screen itself, filling the frame — the interface as it would be captured, not ' +
+      'photographed. No room, no person, no reflection unless the description asks for one.',
+    'Talking head':
+      'One person to camera, head and shoulders, plain and centred. Face and wardrobe above ' +
+      'the chest read; the room behind is soft and incidental.'
+  };
+
+  /* The line for a shot's type, or '' — a type somebody added by hand has none
+   * until they write one, and saying nothing is better than guessing. */
+  function framingFor(p, type) {
+    const map = (p && p.settings && p.settings.shotFraming) || {};
+    const v = map[type];
+    return typeof v === 'string' ? v.trim() : '';
+  }
+
+  /* Which shot type a description is describing, if it says.
+   *
+   * The type comes from the dropdown and stays there — this is only for
+   * noticing that the two disagree, which is worth a badge and one click, not
+   * a silent correction. Longest names first, so "extreme close-up" is not
+   * read as "close-up". */
+  const FRAMING_WORDS = [
+    ['Extreme close-up', /\b(?:extreme|tight)\s+close[\s-]?ups?\b|\becus?\b|\bxcus?\b/i],
+    ['Over the shoulder', /\bover[\s-]the[\s-]shoulders?\b|\bots\b/i],
+    ['Screen capture', /\bscreen\s?(?:capture|grab|recording)\b|\bscreencaps?\b/i],
+    ['Talking head', /\btalking[\s-]heads?\b|\bpiece to camera\b|\bstraight to camera\b/i],
+    ['Close-up', /\bclose[\s-]?ups?\b|\bclose on\b|\btight on\b/i],
+    ['Two shot', /\btwo[\s-]?shots?\b|\b2[\s-]?shots?\b/i],
+    ['Cutaway', /\bcut[\s-]?aways?\b/i],
+    ['Insert', /\binserts?\b/i],
+    ['POV', /\bpov\b|\bpoint[\s-]of[\s-]view\b/i],
+    ['Medium', /\bmedium\s+(?:shot|close)\b|\bmid[\s-]?shots?\b/i],
+    ['Wide', /\bwides?\b|\bwide\s+shots?\b|\bestablishing\b/i]
+  ];
+
+  /* Only ever a type the board actually offers, matched by name however it is
+   * capitalised — a renamed or trimmed list must not produce a badge offering
+   * a type that is not in the dropdown. */
+  function guessFraming(p, text) {
+    const t = String(text == null ? '' : text);
+    if (!t.trim()) return '';
+    const offered = (p && p.settings && p.settings.shotTypes) || [];
+    for (let i = 0; i < FRAMING_WORDS.length; i++) {
+      if (!FRAMING_WORDS[i][1].test(t)) continue;
+      const want = FRAMING_WORDS[i][0].toLowerCase();
+      const match = offered.filter(function (x) { return String(x).toLowerCase() === want; })[0];
+      if (match) return match;
+    }
+    return '';
+  }
+
   /* The wording every board was written with, kept so a template nobody has
    * touched can be brought up to date without overwriting one somebody has. */
   const IMG_TPL_V1 =
@@ -318,6 +410,7 @@
       versions: [],
       settings: {
         shotTypes: DEFAULT_SHOT_TYPES.slice(),
+        shotFraming: Object.assign({}, DEFAULT_FRAMING),
         fields: SB.Fields.defaults(),
         models: defaultModels(),
         imageModelId: null,
@@ -531,6 +624,12 @@
     });
     const s = p.settings = p.settings || {};
     s.shotTypes = (s.shotTypes && s.shotTypes.length) ? s.shotTypes : DEFAULT_SHOT_TYPES.slice();
+    /* Only what is missing: a line somebody has deliberately emptied stays
+       empty, and one they have rewritten stays theirs. */
+    s.shotFraming = s.shotFraming || {};
+    Object.keys(DEFAULT_FRAMING).forEach(function (k) {
+      if (!(k in s.shotFraming)) s.shotFraming[k] = DEFAULT_FRAMING[k];
+    });
     SB.Fields.migrate(p);
     s.models = (s.models && s.models.length) ? s.models : defaultModels();
     /* The MiniMax entry shipped under its platform name with the generic
@@ -1166,6 +1265,7 @@
     FILE_VERSION: FILE_VERSION,
     CARD_COLORS: CARD_COLORS,
     DEFAULT_SHOT_TYPES: DEFAULT_SHOT_TYPES,
+    DEFAULT_FRAMING: DEFAULT_FRAMING, framingFor: framingFor, guessFraming: guessFraming,
     IMG_TPL: IMG_TPL, IMG_TPL_V1: IMG_TPL_V1,
     VID_TPL: VID_TPL, VID_TPL_V1: VID_TPL_V1, VID_TPL_V2: VID_TPL_V2,
     H3_VID_TPL: H3_VID_TPL, H3_VID_TPL_V2: H3_VID_TPL_V2, tplsFor: tplsFor,

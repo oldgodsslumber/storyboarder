@@ -51,7 +51,7 @@ const sandbox = {
 sandbox.window = sandbox;
 vm.createContext(sandbox);
 
-for (const f of ['js/util.js', 'js/doc.js', 'js/blobs.js', 'js/geminimodels.js', 'js/providers.js',
+for (const f of ['js/util.js', 'js/focus.js', 'js/doc.js', 'js/blobs.js', 'js/geminimodels.js', 'js/providers.js',
   'js/brand.js', 'js/renders.js', 'js/imaginemodels.js', 'js/imagine.js', 'js/refs.js', 'js/personas.js', 'js/fields.js',
   'js/model.js', 'js/store.js']) {
   vm.runInContext(readFileSync(join(root, f), 'utf8'), sandbox, { filename: f });
@@ -379,7 +379,101 @@ section('what a finished clip leaves behind');
   t('and holds the link, with no ref pretending otherwise',
     !shot2.video.ref && shot2.video.url === 'https://cdn.x/b.mp4', JSON.stringify(shot2.video));
 
+  /* which ones are new since you last looked */
+  t('a clip that just landed is marked unwatched', shot.video.unseen === true,
+    JSON.stringify(shot.video));
+  t('and so is one that is only a link', shot2.video.unseen === true,
+    JSON.stringify(shot2.video));
+
   sandbox.SB.Renders = realRenders;
+}
+
+/* ------------------------------ leaving the board a generation belongs to */
+section('a generation whose board is not on screen any more');
+
+{
+  /* run() used to close over the project and the shot OBJECT. Open another
+     board and the clip landed perfectly onto something nothing pointed at,
+     while Store wrote the board that WAS on screen over its own file. */
+  const realRenders = sandbox.SB.Renders;
+  const filedAgainst = [];
+  sandbox.SB.Renders = {
+    keepVideo: function (proj, blob, existing, made) {
+      filedAgainst.push(proj.name);
+      return Promise.resolve({ ref: 'blob-' + filedAgainst.length, serial: 4, ext: 'mp4', bytes: 9, made: made, at: 1 });
+    }
+  };
+  const toasts = [];
+  const realToast = sandbox.SB.toast;
+  sandbox.SB.toast = function (msg, err) { toasts.push(String(msg)); };
+
+  const boardA = SB.Model.newProject();
+  boardA.name = 'Board A';
+  const boardB = SB.Model.newProject();
+  boardB.name = 'Board B';
+  const shotA = boardA.scenes[0].shots[0];
+  let changed = 0;
+  sandbox.SB.app = { project: boardA, changed: function () { changed++; } };
+
+  const made = { by: 'imagine', role: 'video', model: 'Kling', slug: 'kling-1.0-pro' };
+  const ticket = {
+    projectId: boardA.id, projectName: boardA.name, shotId: shotA.id,
+    code: '1A', role: 'video', frameRef: '', made: made
+  };
+
+  /* ...the user opens another board while it is in the air */
+  sandbox.SB.app.project = boardB;
+  const out = await SB.Imagine._land(ticket, { blob: { size: 10 }, url: 'https://cdn.x/a.mp4' });
+
+  t('a clip whose board is closed is not filed into the board that is open',
+    !boardB.scenes[0].shots[0].video, JSON.stringify(boardB.scenes[0].shots[0].video));
+  t('and it is not written into the closed board behind the app\u2019s back either',
+    !shotA.video, JSON.stringify(shotA.video));
+  t('nothing is handed to the file store yet', filedAgainst.length === 0, filedAgainst.join());
+  t('it is held instead', out.parked === true && SB.Imagine.parkedCount() === 1,
+    JSON.stringify(out) + ' held=' + SB.Imagine.parkedCount());
+  t('and the user is told which board it is waiting for',
+    toasts.some(function (x) { return /Board A/.test(x) && /not open/.test(x); }),
+    toasts.join(' | '));
+
+  /* ...and opening that board again files it */
+  sandbox.SB.app.project = boardA;
+  SB.Imagine.claimParked(boardA);
+  await new Promise(function (r) { setTimeout(r, 20); });
+  t('opening the board it belongs to files it', !!shotA.video, JSON.stringify(shotA.video));
+  t('against that board, not the one that was on screen',
+    filedAgainst.join() === 'Board A', filedAgainst.join());
+  t('and nothing is left waiting', SB.Imagine.parkedCount() === 0, SB.Imagine.parkedCount());
+
+  /* the same board, but the shot object was replaced under it — which is what
+     restoring a version does to every card at once */
+  const live = boardA.scenes[0].shots[0];
+  boardA.scenes = SB.clone(boardA.scenes);
+  const t2 = {
+    projectId: boardA.id, projectName: boardA.name, shotId: live.id,
+    code: '1A', role: 'video', frameRef: '', made: made
+  };
+  await SB.Imagine._land(t2, { blob: { size: 10 }, url: 'https://cdn.x/b.mp4' });
+  t('a shot object replaced by a version restore is found again by id',
+    !!boardA.scenes[0].shots[0].video && boardA.scenes[0].shots[0].video.ref === 'blob-2',
+    JSON.stringify(boardA.scenes[0].shots[0].video));
+
+  /* a card that is simply gone cannot take one */
+  const t3 = {
+    projectId: boardA.id, projectName: boardA.name, shotId: 'sh_deleted',
+    code: '9Z', role: 'video', frameRef: '', made: made
+  };
+  const out3 = await SB.Imagine._land(t3, { blob: { size: 10 }, url: 'https://cdn.x/c.mp4' });
+  t('a clip for a deleted card is held rather than dropped on the floor',
+    out3.parked === true, JSON.stringify(out3));
+  t('and claiming it says so instead of filing it somewhere wrong',
+    (function () {
+      SB.Imagine.claimParked(boardA);
+      return SB.Imagine.parkedCount() === 0;
+    })(), SB.Imagine.parkedCount());
+
+  sandbox.SB.Renders = realRenders;
+  sandbox.SB.toast = realToast;
 }
 
 /* --------------------------------------- the headers a browser may send */

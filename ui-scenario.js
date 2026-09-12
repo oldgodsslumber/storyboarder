@@ -546,6 +546,49 @@
         !!acctChip && /Imagine/.test(acctChip.textContent),
         acctChip ? acctChip.textContent : 'missing');
 
+      /* ---- which rows are new since you last looked ----
+       *
+       * Shooting a dozen clips means going away and coming back to a table
+       * where every row looks the same. A clip that has landed and not been
+       * watched tints its row, and watching it puts the row back. */
+      {
+        /* no ref and no link: the window opens without going to the file store,
+           which is all this needs — watching is watching */
+        ptShot.video = { at: Date.now(), unseen: true };
+        SB.PromptPanel.refresh();
+        const fresh = document.querySelector('.pt-row[data-shot="' + ptShot.id + '"]');
+        t('a row whose clip has not been watched is marked',
+          fresh.classList.contains('fresh'), fresh.className);
+        t('and the rows around it are not',
+          !document.querySelector('.pt-row:not([data-shot="' + ptShot.id + '"]).fresh'),
+          document.querySelectorAll('.pt-row.fresh').length + ' marked');
+
+        /* watching it is what clears the mark — and the row is repainted where
+           it stands, without the table being rebuilt under anybody's caret */
+        const before = document.querySelector('.pt-row[data-shot="' + ptShot.id + '"]');
+        SB.Clip.open(P(), ptShot);
+        t('watching the clip clears the mark', !ptShot.video.unseen,
+          JSON.stringify(ptShot.video));
+        /* the repaint is on the same beat as the push buttons, not immediate */
+        await new Promise(function (r) { setTimeout(r, 120); });
+        t('and the row loses its tint without being rebuilt',
+          !before.classList.contains('fresh') &&
+          document.querySelector('.pt-row[data-shot="' + ptShot.id + '"]') === before,
+          before.className);
+        const foot = document.querySelectorAll('#modalRoot .modal-back .foot button');
+        if (foot.length) foot[foot.length - 1].click();
+        t('and the clip window closes again',
+          !document.querySelector('#modalRoot .modal-back'), '');
+
+        /* a clip that was always there is not news */
+        ptShot.video = { at: Date.now() };
+        SB.PromptPanel.refresh();
+        t('a clip nobody just made leaves the row alone',
+          !document.querySelector('.pt-row[data-shot="' + ptShot.id + '"]').classList.contains('fresh'),
+          '');
+        ptShot.video = null;
+      }
+
       /* leave the board as it was for everything after this */
       ptShot.prompts = {};
       SB.PromptPanel.close();
@@ -1856,9 +1899,25 @@
         !!document.querySelector('.modal .tab-panel.on .weigh'), 'no weight readout');
       t('and offers no folder to connect',
         !/renders folder/i.test(document.querySelector('.modal').textContent), 'folder UI is back');
-      t('templates are not on the first tab',
-        document.querySelectorAll('.modal .tab-panel.on textarea').length === 1,
-        document.querySelectorAll('.modal .tab-panel.on textarea').length);
+      /* The first tab carries the shot-type list and one framing line per type
+         and nothing else that takes a paragraph — the model templates live on
+         their own tab, and a template is the thing with placeholders in it. */
+      {
+        const boxes = Array.prototype.slice.call(
+          document.querySelectorAll('.modal .tab-panel.on textarea'));
+        const framing = boxes.filter(function (x) { return x.classList.contains('set-fr-text'); });
+        t('templates are not on the first tab',
+          !boxes.some(function (x) { return /\{\{/.test(x.value); }),
+          boxes.map(function (x) { return x.value.slice(0, 20); }).join(' | '));
+        t('and the shot-type list is the only box that is not a framing line',
+          boxes.length - framing.length === 1, boxes.length + ' boxes, ' + framing.length + ' framing');
+        t('every shot type gets a line to say what it shows',
+          framing.length === P().settings.shotTypes.length,
+          framing.length + ' for ' + P().settings.shotTypes.length + ' types');
+        t('and they are filled in by default',
+          framing.filter(function (x) { return x.value.trim(); }).length === framing.length,
+          framing.filter(function (x) { return !x.value.trim(); }).length + ' empty');
+      }
 
       t('there is a card-fields tab', tab('Card fields'), '');
       t('it lists every field with a placeholder',
@@ -2338,7 +2397,11 @@
             r2.bottom > pr.top && r2.top < pr.bottom, JSON.stringify({ top: r2.top, panel: pr.top }));
         })();
 
-        /* even bottomed out, where the scroller cannot give the space back */
+        /* even bottomed out, where the scroller cannot give the space back.
+           The caret now SURVIVES a rebuild, so the box focused just above is
+           still the anchor until it is let go of — and this case is about the
+           fallback, when nothing is being typed in. */
+        document.activeElement.blur();
         P().settings.showVideoPrompt = true;
         SB.app.changed(true);
         panel.scrollTop = panel.scrollHeight;
@@ -2721,6 +2784,253 @@
         t('a card dragged onto the button still just moves',
           !!f && f.scene.id === sc.id && !f.shot.image,
           (f ? f.scene.id + ' img=' + !!f.shot.image : 'gone') + ' want ' + sc.id);
+      })();
+
+      /* ---- a filter must not take away the row you are working in ----
+       *
+       * The filter used to be re-applied on every render, and a render happens
+       * whenever anything lands. So the row most likely to stop matching was
+       * the one under the caret: type the last missing prompt of a card by
+       * hand, have a clip land on another card mid-sentence, and the row was
+       * gone — with the rest of the sentence going nowhere. */
+      {
+        app.commentMode = false;
+        const sc = P().scenes[0];
+        const im4 = SB.Model.imageModel(P()), vm4 = SB.Model.videoModel(P());
+        const made = [];
+        for (let i = 0; i < 4; i++) {
+          const x = SB.Model.addShot(P(), sc.id, { type: 'Wide' });
+          x.description = 'Pinned test shot ' + i;
+          x.prompts = {};
+          /* only the video prompt is missing, so typing it is what takes the
+             row out of the Missing filter */
+          if (im4) x.prompts[im4.id] = { imagePrompt: 'Frame ' + i + '.', videoPrompt: '', modelName: im4.name, at: Date.now() };
+          made.push(x);
+        }
+        app.changed(true);
+        SB.PromptPanel.open();
+
+        /* pick Missing, the way somebody working through a board does */
+        const tabs = Array.prototype.slice.call(document.querySelectorAll('.lib-head .lib-tabs button'));
+        const missingTab = tabs.filter(function (b) { return /^Missing/.test(b.textContent); })[0];
+        t('the table offers a Missing filter', !!missingTab,
+          tabs.map(function (b) { return b.textContent; }).join(' / '));
+        missingTab.click();
+
+        const sh = made[1];
+        const rowSel = '.pt-row[data-shot="' + sh.id + '"]';
+        t('the card with a prompt still to write is in it', !!document.querySelector(rowSel), '');
+
+        /* write the missing one by hand, which is what stops it matching */
+        const boxes = document.querySelectorAll(rowSel + ' textarea.pt-text');
+        const vbox = boxes[boxes.length - 1];
+        vbox.focus();
+        vbox.value = 'A slow push in along the bay';
+        vbox.dispatchEvent(new Event('input', { bubbles: true }));
+        vbox.setSelectionRange(vbox.value.length, vbox.value.length);
+
+        /* ...and a clip lands on a different card, rebuilding the table */
+        made[3].video = { at: Date.now(), dur: 5, unseen: true };
+        app.changed(true);
+
+        t('the row being typed in is still there', !!document.querySelector(rowSel),
+          document.querySelectorAll('.pt-row').length + ' rows');
+        t('and the caret is still in its box',
+          document.activeElement === document.querySelector(rowSel + ' textarea.pt-text:last-of-type') ||
+          (document.activeElement && document.activeElement.closest &&
+           !!document.activeElement.closest(rowSel)),
+          document.activeElement ? document.activeElement.tagName + '.' + document.activeElement.className : 'null');
+        t('and what was typed is still what it holds',
+          (function () {
+            const b = document.querySelectorAll(rowSel + ' textarea.pt-text');
+            return b[b.length - 1].value === 'A slow push in along the bay';
+          })(), '');
+        t('a row kept past the filter says so, or the filter looks broken',
+          !!document.querySelector(rowSel + ' .badge.done'), '');
+
+        /* picking the filter again is how you re-narrow it */
+        document.activeElement.blur();
+        Array.prototype.slice.call(document.querySelectorAll('.lib-head .lib-tabs button'))
+          .filter(function (b) { return /^Missing/.test(b.textContent); })[0].click();
+        t('picking the filter again drops what no longer matches',
+          !document.querySelector(rowSel), 'still there');
+
+        SB.PromptPanel.close();
+        made.forEach(function (x) { SB.Model.deleteShot(P(), x.id); });
+        app.changed(true);
+      }
+
+      /* ---- typing a description arms "generate", without a rebuild ----
+       *
+       * The button's disabled state was decided once, when the row was built,
+       * out of a description the box three cells to the left can change at any
+       * moment. Typing one into an empty card left it disabled until the panel
+       * was closed and opened again. */
+      {
+        app.commentMode = false;
+        const sh = P().scenes[0].shots[0];
+        sh.description = '';
+        sh.noShot = false;
+        app.changed(true);
+        SB.PromptPanel.open();
+
+        const gens = function () {
+          return Array.prototype.slice.call(
+            document.querySelectorAll('.pt-row[data-shot="' + sh.id + '"] [data-gen]'));
+        };
+        t('a card with no description cannot be generated',
+          gens().length > 0 && gens().every(function (b) { return b.disabled; }),
+          gens().length + ' buttons');
+        t('and says why', /Write a description first/.test(gens()[0].title), gens()[0].title);
+
+        /* type into the panel's own description box, the way a person does */
+        const desc = document.querySelector('.pt-row[data-shot="' + sh.id + '"] .pt-desc');
+        desc.focus();
+        SB.RefBox.write(desc, P(), 'A slow pan across the empty bay.');
+        desc.dispatchEvent(new Event('input', { bubbles: true }));
+
+        t('typing a description arms generate at once, with no rebuild',
+          gens().every(function (b) { return !b.disabled; }),
+          gens().map(function (b) { return b.disabled; }).join());
+        t('and the reason goes with it',
+          !/Write a description first/.test(gens()[0].title), gens()[0].title);
+        t('the caret never left the description box', document.activeElement === desc,
+          document.activeElement ? document.activeElement.className : 'null');
+
+        /* emptying it disarms them again */
+        SB.RefBox.write(desc, P(), '');
+        desc.dispatchEvent(new Event('input', { bubbles: true }));
+        t('and emptying it disarms them again',
+          gens().every(function (b) { return b.disabled; }),
+          gens().map(function (b) { return b.disabled; }).join());
+
+        /* a prompt being written is state, not a button label: it survives the
+           panel being closed and reopened, and it refuses a second press */
+        SB.RefBox.write(desc, P(), 'A slow pan across the empty bay.');
+        desc.dispatchEvent(new Event('input', { bubbles: true }));
+        desc.blur();
+        const im3 = SB.Model.imageModel(P());
+        t('nothing is being written yet', !SB.Prompts.writing(sh.id, 'imagePrompt'), '');
+
+        SB.PromptPanel.close();
+        sh.description = '';
+        app.changed(true);
+      }
+
+      /* ---- the description says one framing, the dropdown says another ----
+       *
+       * The dropdown is what the prompt is written to, and it is born "Wide".
+       * A card reading "closeup of his hands" therefore went out as a wide
+       * shot and came back with a whole person in it, with nothing anywhere
+       * saying the two disagreed. */
+      {
+        app.commentMode = false;
+        const sh = P().scenes[0].shots[0];
+        sh.type = 'Wide';
+        sh.description = 'Close-up of his hands on the keyboard.';
+        app.changed(true);
+
+        const host = document.querySelector('.card[data-shot="' + sh.id + '"] .fr-host');
+        const badge = host && host.querySelector('.badge.framing');
+        t('a description that disagrees with the dropdown says so on the card',
+          !!badge && badge.textContent === 'Close-up', badge ? badge.textContent : 'no badge');
+        t('and it says which way round the disagreement is',
+          !!badge && /says close-up/.test(badge.title) && /set to .Wide./.test(badge.title),
+          badge ? badge.title : '');
+
+        /* one click settles it — and the dropdown is what actually moves */
+        badge.click();
+        t('clicking it sets the shot type', sh.type === 'Close-up', sh.type);
+        const sel = document.querySelector('.card[data-shot="' + sh.id + '"] select.type');
+        t('and the dropdown shows it', sel.value === 'Close-up', sel.value);
+        t('and the badge goes, because they now agree',
+          !document.querySelector('.card[data-shot="' + sh.id + '"] .badge.framing'), '');
+
+        /* it is a disagreement, not a description of one: agreeing is silent */
+        sh.description = 'Wide of the whole floor.';
+        sh.type = 'Wide';
+        app.changed(true);
+        t('a description that agrees with the dropdown says nothing',
+          !document.querySelector('.card[data-shot="' + sh.id + '"] .badge.framing'), '');
+        sh.description = 'Danny is typing.';
+        app.changed(true);
+        t('and one that says nothing about framing says nothing either',
+          !document.querySelector('.card[data-shot="' + sh.id + '"] .badge.framing'), '');
+
+        /* the prompt table carries the same badge, on the screen where the
+           prompts are actually read */
+        sh.type = 'Wide';
+        sh.description = 'Insert of the manifest.';
+        app.changed(true);
+        SB.PromptPanel.open();
+        const rowBadge = document.querySelector('.pt-row[data-shot="' + sh.id + '"] .badge.framing');
+        t('the prompt table carries it too',
+          !!rowBadge && rowBadge.textContent === 'Insert', rowBadge ? rowBadge.textContent : 'none');
+        SB.PromptPanel.close();
+
+        sh.description = '';
+        sh.type = 'Wide';
+        app.changed(true);
+      }
+
+      /* ---- nothing takes the caret ----
+       *
+       * A clip or a written prompt lands minutes after the button that asked
+       * for it, by which time the person is writing somewhere else. The
+       * rebuild it causes used to destroy the box they were in: the rest of
+       * the sentence went to <body>, and a space bar pressed after that went
+       * to whatever the browser had focused instead. */
+      (function () {
+        app.commentMode = false;
+        P().settings.showVideoPrompt = true;
+        app.changed(true);
+
+        /* a reference box (contenteditable) mid-sentence */
+        const sh = P().scenes[0].shots[0];
+        sh.description = 'A long empty corridor, lit from one end.';
+        app.changed(true);
+        const desc = document.querySelector('.desc-box[data-shot="' + sh.id + '"]');
+        desc.focus();
+        SB.RefBox.setCaret(desc, 12);
+        const at = SB.RefBox.caret(desc);
+        app.changed(true);                       // a background rebuild
+        const desc2 = document.querySelector('.desc-box[data-shot="' + sh.id + '"]');
+        t('a rebuild leaves the caret in the description box',
+          document.activeElement === desc2,
+          document.activeElement ? document.activeElement.className : 'null');
+        t('and at the same character',
+          SB.RefBox.caret(desc2) === at, SB.RefBox.caret(desc2) + ' want ' + at);
+
+        /* a prompt textarea, with a selection rather than a bare caret */
+        const box = document.querySelector('.prompt-box[data-shot="' + sh.id + '"] textarea');
+        box.value = 'A slow push in along the corridor.';
+        box.dispatchEvent(new Event('input', { bubbles: true }));
+        box.focus();
+        box.setSelectionRange(7, 11);
+        app.changed(true);
+        const box2 = document.querySelector('.prompt-box[data-shot="' + sh.id + '"] textarea');
+        t('a rebuild leaves the caret in the prompt box', document.activeElement === box2,
+          document.activeElement ? document.activeElement.tagName : 'null');
+        t('and keeps the selection', box2.selectionStart === 7 && box2.selectionEnd === 11,
+          box2.selectionStart + '-' + box2.selectionEnd);
+        t('and the text is the text that was typed',
+          box2.value === 'A slow push in along the corridor.', box2.value);
+
+        /* a rebuild the app asked for on the user's behalf still waits for a
+           gap in the typing — and lands by itself once there is one */
+        box2.dispatchEvent(new KeyboardEvent('keydown', { key: 'x', bubbles: true }));
+        let ran = 0;
+        SB.Focus.defer('test', function () { ran++; });
+        t('a background rebuild waits while a box is being typed in', ran === 0, ran);
+        t('and the app can tell that it is', SB.Focus.busy() === true, SB.Focus.busy());
+        SB.Focus.flush();
+        t('and lands as soon as the typing stops', ran === 1, ran);
+
+        /* with nothing focused there is nothing to protect */
+        box2.blur();
+        let straight = 0;
+        SB.Focus.defer('test2', function () { straight++; });
+        t('with no caret anywhere a rebuild is immediate', straight === 1, straight);
       })();
 
       // comment mode

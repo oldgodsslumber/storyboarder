@@ -61,6 +61,11 @@
   function restore(v) {
     const p = P();
     if (!confirm('Restore "' + v.name + '"?\n\nThe current state is saved as a version first, so nothing is lost.')) return;
+    /* A restore replaces p.scenes with cloned snapshot scenes, so every shot
+       object a running generation was started against stops being the shot
+       that is in the board. It is found again by id when it lands, but a card
+       the snapshot does not have cannot take a clip at all. */
+    if (!SB.app.confirmLeavingJobs('Restoring a version')) return;
     freeze(p, 'before restoring ' + v.name);
     p.master = SB.clone(v.snapshot.master);
     p.scenes = SB.clone(v.snapshot.scenes);
