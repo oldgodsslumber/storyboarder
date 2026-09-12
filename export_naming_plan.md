@@ -1,6 +1,7 @@
 # Export names the files by shot code — plan
 
-Status: **planned, not built.**
+Status: **built.** All four steps, plus the folder-overwrite check. Kept for the reasoning.
+The open question at the bottom was settled the way it leans: `code` is the default.
 
 ## Why
 

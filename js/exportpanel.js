@@ -43,7 +43,7 @@
     manifest: true,
     scope: 'board',        // 'board' | 'scene' | 'selected'
     madeOnly: false,
-    naming: 'serial'       // 'serial' | 'code'
+    naming: 'code'         // 'code' | 'code-serial' | 'serial'
   };
 
   /* ---------------------------------------------------------------- model */
@@ -82,17 +82,51 @@
     try { return new TextEncoder().encode(t).length; } catch (e) { return t.length; }
   }
 
-  function nameFor(code, rec, naming, fallbackExt) {
-    const base = rec && rec.serial
-      ? SB.Renders.fileName(rec.serial, rec.ext)
-      /* No serial: named for its card. A record with no serial but a type of
-         its own keeps that type, or it would export as a .jpg that is not one
-         and collide with that card's actual board copy. */
-      : (SB.Renders.slug(code) || 'shot') + '_board.' +
-        ((rec && rec.ext) || fallbackExt || 'jpg');
-    if (naming !== 'code') return base;
+  /* ------------------------------------------------------------- naming
+   *
+   * An export hands somebody a folder, and the person opening it is cutting
+   * the film. What they need from a filename is which shot this is and where
+   * it goes — 1A, 1B, 1C, the codes on the board, in the PDF, in the CSV and
+   * in every conversation about the edit. The serial is a real number with a
+   * real job, but it is the app's number, not the edit's.
+   *
+   * The serial is untouched INSIDE the file. This is a decision about the
+   * moment bytes leave, and nowhere else.
+   */
+
+  /* Sorted by name, 1A, 2A and 10A come back 10A, 1A, 2A — "0" sorts before
+   * "A" — so on any board past nine scenes, renaming files to their codes
+   * produces a folder in the wrong order, which is the thing this is for.
+   * Padding the scene number to the widest in the board fixes it and leaves
+   * the ordinary case as exactly what it says on the card: 1A, 1B, 2A.
+   *
+   * Board-wide, not export-wide: exporting one scene of a twelve-scene board
+   * has to name its files the same as exporting all of it.
+   *
+   * The letters are left alone. Past twenty-six shots in one scene SB.letters
+   * gives AA, which sorts before B — but padding every ordinary board to
+   * "1_A" to carry a case that rare is the wrong trade, so the panel says so
+   * instead. */
+  function sceneWidth(p) {
+    return String((p && p.scenes && p.scenes.length) || 1).length;
+  }
+
+  function padCode(code, width) {
     const c = SB.Renders.slug(code) || 'shot';
-    return base.indexOf(c + '_') === 0 ? base : c + '_' + base;
+    return c.replace(/^\d+/, function (n) { return n.padStart(width || 1, '0'); });
+  }
+
+  function nameFor(code, rec, naming, fallbackExt, width) {
+    const serial = rec && rec.serial ? SB.Renders.fileName(rec.serial, rec.ext) : '';
+    const ext = (rec && rec.ext) || fallbackExt || 'jpg';
+    /* No serial means the board copy, which is a second image for the same
+       card — the one place two exported files can want one name. It keeps
+       its suffix under every mode. */
+    const board = padCode(code, width) + '_board.' + ext;
+    if (naming === 'serial') return serial || board;
+    if (!serial) return board;
+    if (naming === 'code-serial') return padCode(code, width) + '_' + serial;
+    return padCode(code, width) + '.' + (rec.ext || ext);
   }
 
   function extOfUrl(u) {
@@ -114,6 +148,7 @@
     o = o || opts;
     const items = [];
     const list = rows(p, o.scope);
+    const w = sceneWidth(p);
     let linkOnly = 0, missing = 0;
 
     list.forEach(function (r) {
@@ -125,7 +160,7 @@
           if (!o.madeOnly || rec.made) {
             const data = SB.Renders.dataUrl(p, rec);
             items.push({
-              name: nameFor(r.code, rec, o.naming), kind: 'original', data: data,
+              name: nameFor(r.code, rec, o.naming, null, w), kind: 'original', data: data,
               bytes: bytesOf(data), code: r.code, scene: r.sceneName,
               shot: sh, rec: rec, made: rec.made || null
             });
@@ -144,7 +179,7 @@
           if (!o.madeOnly || sh.video.made) {
             const data = SB.Renders.dataUrl(p, sh.video);
             items.push({
-              name: nameFor(r.code, sh.video, o.naming, 'mp4'), kind: 'clip', data: data,
+              name: nameFor(r.code, sh.video, o.naming, 'mp4', w), kind: 'clip', data: data,
               bytes: bytesOf(data), code: r.code, scene: r.sceneName,
               shot: sh, rec: sh.video, made: sh.video.made || null
             });
@@ -164,7 +199,7 @@
           const data = SB.Blobs.src(p, sh.image);
           if (data) {
             items.push({
-              name: nameFor(r.code, null, o.naming, extOfUrl(data)), kind: 'board copy',
+              name: nameFor(r.code, null, o.naming, extOfUrl(data), w), kind: 'board copy',
               data: data, bytes: bytesOf(data), code: r.code,
               scene: r.sceneName, shot: sh, rec: null,
               /* It only passed the made-in-here filter because the frame it is
@@ -213,7 +248,7 @@
     if (o.shotlist) {
       items.push({
         name: (SB.Renders.slug(p.name) || 'board') + '-shots.csv', kind: 'list',
-        text: csv(p, list), bytes: 0
+        text: csv(p, list, namesByShot(items)), bytes: 0
       });
     }
     /* A manifest of nothing is not an export. With no files to describe, the
@@ -229,11 +264,23 @@
       if (!it.bytes && it.text) it.bytes = textBytes(it.text);
     });
 
+    /* Serial names cannot collide; code names can. The whole list is built
+       before anything is written, so the clash is found here rather than
+       discovered as a silent overwrite in somebody's folder. */
+    const seen = {}, clashes = [];
+    items.forEach(function (it) {
+      const full = (it.sub ? it.sub + '/' : '') + it.name;
+      if (seen[full]) { if (clashes.indexOf(full) < 0) clashes.push(full); }
+      seen[full] = 1;
+    });
+
     return {
       items: items,
       bytes: items.reduce(function (n, it) { return n + (it.bytes || 0); }, 0),
       linkOnly: linkOnly,
       missing: missing,
+      clashes: clashes,
+      wide: items.some(function (it) { return /^\d+[A-Z]{2,}[._]/.test(it.name); }),
       shots: list.length
     };
   }
@@ -249,12 +296,29 @@
     return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
   }
 
-  function csv(p, list) {
+  /* What each shot's files are CALLED in this export, so the sheet and the
+     folder agree. Built from the plan rather than worked out a second time:
+     two copies of a naming rule drift, and this one now has three modes and a
+     padding rule in it. */
+  function namesByShot(items) {
+    const out = {};
+    items.forEach(function (it) {
+      if (!it.shot || it.sub) return;
+      const e = out[it.shot.id] || (out[it.shot.id] = {});
+      if (it.kind === 'original') e.original = it.name;
+      else if (it.kind === 'clip') e.clip = it.name;
+      else if (it.kind === 'board copy' && !e.original) e.boardCopy = it.name;
+    });
+    return out;
+  }
+
+  function csv(p, list, names) {
+    names = names || {};
     const im = SB.Model.imageModel(p), vm = SB.Model.videoModel(p);
     const head = ['Scene', 'Code', 'Type', 'Description',
       'First-frame prompt (' + ((im && im.name) || '—') + ')',
       'Video prompt (' + ((vm && vm.name) || '—') + ')',
-      'Original', 'Clip'];
+      'Original', 'Clip', 'Original serial', 'Clip serial'];
     const lines = [head.map(cell).join(',')];
     list.forEach(function (r) {
       const sh = r.shot;
@@ -264,8 +328,15 @@
         r.sceneName || (r.scene && r.scene.heading) || '', r.code,
         sh.noShot ? 'no shot' : (sh.type || ''),
         SB.Refs.plain(p, sh.description || ''), ip, vp,
-        sh.render && sh.render.serial ? SB.Renders.fileName(sh.render.serial, sh.render.ext) : '',
-        sh.video && sh.video.serial ? SB.Renders.fileName(sh.video.serial, sh.video.ext) : ''
+        /* the name actually written, not the serial one — a shot list that
+           hands an editor filenames that are not in the folder is worse than
+           no shot list */
+        (names[sh.id] && (names[sh.id].original || names[sh.id].boardCopy)) || '',
+        (names[sh.id] && names[sh.id].clip) || '',
+        /* and the serial beside it, because a code is positional and the way
+           back to the file inside the board is the number */
+        sh.render && sh.render.serial ? SB.Renders.pad(sh.render.serial) : '',
+        sh.video && sh.video.serial ? SB.Renders.pad(sh.video.serial) : ''
       ].map(cell).join(','));
     });
     return lines.join('\r\n');
@@ -481,9 +552,13 @@
         'skips anything dropped in from elsewhere')
     ]));
 
+    const w = sceneWidth(P());
+    const eg = padCode('1C', w);
     bodyEl.appendChild(group('naming', [
-      radio('naming', 'serial', '0007.webp', 'the serial — a clip sorts beside its frame'),
-      radio('naming', 'code', '1C_0007.webp', 'the shot code first')
+      radio('naming', 'code', eg + '.webp', 'the shot code, and nothing else'),
+      radio('naming', 'code-serial', eg + '_0007.webp',
+        'the code and the serial — never collides, never renames on a reorder'),
+      radio('naming', 'serial', '0007.webp', 'the serial — the app\u2019s own number')
     ]));
 
     const sheet = SB.el('div', 'ex-group');
@@ -532,6 +607,24 @@
       footEl.appendChild(warn);
     }
 
+    if (pl.clashes.length) {
+      footEl.appendChild(SB.el('div', 'ex-warn',
+        'Two files want the name ' + pl.clashes.slice(0, 3).join(', ') +
+        (pl.clashes.length > 3 ? ' and ' + (pl.clashes.length - 3) + ' more' : '') +
+        '. Nothing will be written until that is settled \u2014 switch the naming to the ' +
+        'code and serial, or narrow what is being exported.'));
+    }
+
+    /* Past twenty-six shots in a scene the letters double, and 1AA sorts
+       before 1B. Said rather than silently padded, because padding every
+       ordinary board to carry this would be the wrong trade. */
+    if (pl.wide && opts.naming !== 'serial') {
+      footEl.appendChild(SB.el('div', 'ex-warn',
+        'A scene here has more than twenty-six shots, so some codes are two letters ' +
+        '(1AA). Those sort before the single letters \u2014 the shot list has the order if ' +
+        'the folder needs checking against it.'));
+    }
+
     if (pl.missing) {
       footEl.appendChild(SB.el('div', 'ex-warn',
         pl.missing + (pl.missing === 1 ? ' frame has' : ' frames have') +
@@ -544,11 +637,12 @@
 
     const acts = SB.el('div', 'ex-acts');
     const dl = SB.el('button', 'tb', 'Download');
-    dl.disabled = !pl.items.length;
+    dl.disabled = !pl.items.length || !!pl.clashes.length;
     dl.title = 'One file at a time through the browser, into wherever downloads go.';
     dl.onclick = function () { go(null); };
     const pick = SB.el('button', 'tb on', 'Choose a folder…');
-    pick.disabled = !pl.items.length || typeof window.showDirectoryPicker !== 'function';
+    pick.disabled = !pl.items.length || !!pl.clashes.length ||
+      typeof window.showDirectoryPicker !== 'function';
     pick.title = 'Write them into a folder. The folder is used and forgotten — nothing about ' +
       'it is kept in the board.';
     pick.onclick = function () {
@@ -583,6 +677,31 @@
 
   let writing = false;
 
+  /* How many of these names are already in that folder.
+   *
+   * Under serials this could not matter: a number belonging to a deleted shot
+   * is never handed out again, so a file that has left the app never comes to
+   * mean something else. A code is the opposite — it is positional, and 1B
+   * this afternoon need not be 1B this morning. Exporting twice into one
+   * folder across a reorder therefore replaces files with different shots,
+   * which is worth one sentence at the only moment it can be acted on.
+   *
+   * Only asked of a folder, because that is the only mode that can look. */
+  function alreadyThere(dir, items) {
+    if (!dir || typeof dir.getFileHandle !== 'function') return Promise.resolve(0);
+    let n = 0;
+    const step = function (i) {
+      if (i >= items.length) return Promise.resolve(n);
+      const it = items[i];
+      if (it.sub) return step(i + 1);          // subfolders are their own question
+      return dir.getFileHandle(it.name)
+        .then(function () { n++; })
+        .catch(function () { })
+        .then(function () { return step(i + 1); });
+    };
+    return step(0);
+  }
+
   function go(dir) {
     /* Two presses used to mean two complete exports — every file written
        twice, two "done" toasts, and in folder mode two writables open on the
@@ -590,12 +709,35 @@
     if (writing) return;
     const pl = plan(P(), opts);
     if (!pl.items.length) return;
+    if (pl.clashes.length) return;
     writing = true;
     if (footEl) {
       footEl.querySelectorAll('.ex-acts .tb').forEach(function (b) { b.disabled = true; });
     }
-    if (statusEl) statusEl.textContent = 'writing 1 of ' + pl.items.length + '…';
-    run(dir, pl.items, function (n, total) {
+    if (statusEl) statusEl.textContent = 'checking the folder…';
+    const cleared = opts.naming === 'serial'
+      ? Promise.resolve(true)
+      : alreadyThere(dir, pl.items).then(function (n) {
+        if (!n) return true;
+        return confirm(n + ' of these ' + pl.items.length + ' names ' +
+          (n === 1 ? 'is' : 'are') + ' already in “' + dir.name + '” and will be ' +
+          'replaced.\n\nShot codes move when the board is reordered, so if that export ' +
+          'was made before a reorder, those are not the same shots.\n\nGo ahead?');
+      });
+
+    cleared.then(function (ok) {
+      if (!ok) {
+        writing = false;
+        if (statusEl) statusEl.textContent = '';
+        if (root) render();
+        return null;
+      }
+      if (statusEl) statusEl.textContent = 'writing 1 of ' + pl.items.length + '…';
+      return runAll();
+    });
+
+    function runAll() {
+    return run(dir, pl.items, function (n, total) {
       if (statusEl) {
         statusEl.textContent = n < total
           ? 'writing ' + (n + 1) + ' of ' + total + '…'
@@ -616,6 +758,7 @@
       SB.toast('Export stopped after ' + (e.wrote || 0) + ' of ' + pl.items.length +
         ': ' + (e.message || e), true);
     });
+    }
   }
 
   SB.ExportPanel = {

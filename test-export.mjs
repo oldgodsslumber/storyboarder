@@ -112,9 +112,77 @@ section('the serials are already the names');
   t('the other board original comes too', names.indexOf('0003.webp') >= 0, names.join(' '));
   t('three files, no more', pl.items.length === 3, pl.items.length);
 
+  /* What an editor is handed: the codes on the board, and nothing else. */
   const coded = E.plan(p, withOpts({ naming: 'code' })).items.map(i => i.name);
-  t('shot-code naming puts the code first', coded.indexOf('1A_0001.webp') >= 0, coded.join(' '));
-  t('and still ends in the serial', coded.indexOf('1B_0003.webp') >= 0, coded.join(' '));
+  t('the shot code IS the name', coded.indexOf('1A.webp') >= 0, coded.join(' '));
+  t('the clip takes its card\u2019s code too', coded.indexOf('1A.mp4') >= 0, coded.join(' '));
+  t('and the next card is the next code', coded.indexOf('1B.webp') >= 0, coded.join(' '));
+  t('the serial is nowhere in the name', !coded.some(n => /\d{4}/.test(n)), coded.join(' '));
+
+  const both = E.plan(p, withOpts({ naming: 'code-serial' })).items.map(i => i.name);
+  t('code-and-serial keeps both', both.indexOf('1A_0001.webp') >= 0, both.join(' '));
+  t('and cannot collide, whatever the board does', both.indexOf('1B_0003.webp') >= 0, both.join(' '));
+
+  t('the code is the default now, because that is what an export is for',
+    E.plan(p, { originals: true, clips: true, scope: 'board' }).items
+      .map(i => i.name).indexOf('1A.webp') >= 0, '');
+}
+
+/* ---------------------------------------------------------------- sorting */
+section('the order an editor opens the folder in');
+{
+  /* 1A, 2A, 10A sorted by name is 10A, 1A, 2A -- "0" sorts before "A" -- so a
+     straight rename to codes hands over a folder in the wrong order, which is
+     the thing the rename is for. */
+  const { p } = board();
+  const nine = E.plan(p, withOpts({ naming: 'code' })).items.map(i => i.name);
+  t('a board of nine scenes or fewer is named exactly as the card reads',
+    nine.indexOf('1A.webp') >= 0 && !nine.some(n => /^0/.test(n)), nine.join(' '));
+
+  /* grow it past nine scenes and the padding appears */
+  for (let i = 0; i < 11; i++) SB.Model.addScene(p);
+  const wide = E.plan(p, withOpts({ naming: 'code' })).items.map(i => i.name);
+  t('past nine scenes the scene number is padded', wide.indexOf('01A.webp') >= 0, wide.join(' '));
+
+  /* the assertion that actually matters: sorted by name is board order */
+  const shots = [];
+  p.scenes.forEach((sc, si) => sc.shots.forEach((sh, sj) => shots.push(SB.Model.code(si, sj))));
+  /* put a frame on the last card of the twelfth scene so there is something
+     to sort against the first */
+  const last = p.scenes[11];
+  last.shots.push(SB.Model.newShot({ type: 'Wide' }));
+  last.shots[0].render = { ref: 'r9', serial: 9, ext: 'webp', bytes: 10 };
+  p.blobs.r9 = 'data:image/webp;base64,' + 'B'.repeat(16);
+  const names = E.plan(p, withOpts({ naming: 'code' })).items.map(i => i.name);
+  const sorted = names.slice().sort();
+  t('sorted by name is the order they play',
+    sorted.join(' ') === names.slice().sort((a, b) => {
+      const na = parseInt(a, 10), nb = parseInt(b, 10);
+      return na - nb || (a < b ? -1 : a > b ? 1 : 0);
+    }).join(' '), sorted.join(' '));
+  t('and the twelfth scene sorts after the first, not before it',
+    sorted.indexOf('12A.webp') > sorted.indexOf('01A.webp'), sorted.join(' '));
+}
+
+/* ------------------------------------------------------------- collisions */
+section('two files that want one name');
+{
+  /* The one place codes can collide: a card whose original AND board copy are
+     both exported are both images for the same code. */
+  const { p } = board();
+  const pl = E.plan(p, withOpts({ naming: 'code', proxies: true }));
+  const names = pl.items.map(i => i.name);
+  t('the board copy keeps a suffix of its own',
+    names.some(n => /_board\./.test(n)), names.join(' '));
+  t('so nothing clashes', pl.clashes.length === 0, pl.clashes.join(' '));
+
+  /* and when something does, it is found before anything is written */
+  const forced = E.plan(p, withOpts({ naming: 'code' }));
+  forced.items.push({ name: forced.items[0].name, kind: 'original', bytes: 1 });
+  const dup = {};
+  let clash = 0;
+  forced.items.forEach(it => { if (dup[it.name]) clash++; dup[it.name] = 1; });
+  t('a duplicate is detectable from the plan alone', clash === 1, clash);
 }
 
 /* ------------------------------------------------------------- the warnings */
@@ -172,21 +240,28 @@ section('the board copies, when they are asked for');
 section('the shot list');
 {
   const { p, im } = board();
-  const pl = E.plan(p, withOpts({ originals: false, clips: false, shotlist: true }));
-  t('one file', pl.items.length === 1 && /\.csv$/.test(pl.items[0].name), pl.items[0].name);
-  const text = pl.items[0].text;
+  const pl = E.plan(p, withOpts({ originals: true, clips: true, shotlist: true, naming: 'code' }));
+  const text = pl.items.filter(i => /\.csv$/.test(i.name))[0].text;
   const lines = text.split('\r\n');
   t('a header and a row per shot', lines.length === 4, lines.length);
   t('it names the model each prompt was written for',
     lines[0].indexOf(im.name) >= 0, lines[0]);
   t('the prompt is in it', text.indexOf('A wide of the floor, one lamp on.') >= 0, '');
-  t('and the files it points at',
-    text.indexOf('0001.webp') >= 0 && text.indexOf('0002.mp4') >= 0, '');
+  t('and the files it points at are the ones in the folder',
+    text.indexOf('1A.webp') >= 0 && text.indexOf('1A.mp4') >= 0, lines[1]);
+  t('with the serial beside them, which is the way back into the board',
+    /,0001,0002/.test(text), lines[1]);
+  t('under serial naming it points at those names instead',
+    (function () {
+      const pl2 = E.plan(p, withOpts({ originals: true, clips: true, shotlist: true, naming: 'serial' }));
+      const t2 = pl2.items.filter(i => /\.csv$/.test(i.name))[0].text;
+      return t2.indexOf('0001.webp') >= 0 && t2.indexOf('1A.webp') < 0;
+    })(), '');
   t('a comma in a description cannot break the row',
     (function () {
       const b2 = board();
       b2.b.description = 'Two things, and a "quote".';
-      const one = E.csv(b2.p, [{ scene: b2.sc, shot: b2.b, code: '1B' }]);
+      const one = E.csv(b2.p, [{ scene: b2.sc, shot: b2.b, code: '1B' }], {});
       return one.split('\r\n')[1].indexOf('"Two things, and a ""quote""."') >= 0;
     })(), '');
 }
