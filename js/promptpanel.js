@@ -179,13 +179,27 @@
   }
 
   /* What is on screen: what the filter let through when it was chosen, plus
-     anything that has come to match since. Never less. */
+     anything that has come to match since. Never less.
+   *
+   * "Never less" has to include the ones that arrived AFTER the pin. A row
+   * that newly matched was shown but never pinned, so the first time it
+   * stopped matching it was deleted -- and the row that newly matches is
+   * exactly the one being worked on. Add a card, write its last missing
+   * prompt by hand, have anything land: the row went, mid-sentence, with the
+   * rest of what was typed. That is the bug this pinning exists to prevent,
+   * and it was still live on the rows most likely to hit it.
+   *
+   * So being on screen is what pins a row, not being on screen at one
+   * particular moment. */
   function visible(im, vm) {
     const rows = allRows();
     if (filter === 'all') return rows;
     if (!pinned) pinFilter();
     return rows.filter(function (r) {
-      return pinned[r.shot.id] || matches(r, im, vm);
+      if (pinned[r.shot.id]) return true;
+      if (!matches(r, im, vm)) return false;
+      pinned[r.shot.id] = 1;
+      return true;
     });
   }
 
@@ -621,8 +635,11 @@
         } else {
           SB.toast(out.kind === 'video' ? 'Clip saved into the board' : 'Frame updated');
         }
-        /* The picture or the clip is new, so the row itself has changed. */
-        render();
+        /* The picture or the clip is new, so the row itself has changed --
+           but this lands minutes after the button was pressed, so it waits for
+           a gap in the typing the way the generate handler does rather than
+           rebuilding the table under somebody's caret. */
+        SB.Focus.defer('promptpanel', render);
       }).catch(function (e) {
         /* The reason stays on the button until the next press: the job registry
            is the only place it is written down. */

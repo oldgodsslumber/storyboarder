@@ -109,7 +109,8 @@
       let dot = btn.querySelector('.tb-count');
       if (!n && !held) { if (dot) dot.remove(); btn.classList.remove('working'); return; }
       if (!dot) { dot = SB.el('span', 'tb-count'); btn.appendChild(dot); }
-      dot.textContent = String(n || held);
+      /* both, not whichever is non-zero: two running and three held read "2" */
+      dot.textContent = String(n + held);
       dot.classList.toggle('held', !n && !!held);
       btn.classList.toggle('working', !!n);
       btn.title = (n ? n + ' generation' + (n === 1 ? '' : 's') + ' running on ImagineArt. ' : '') +

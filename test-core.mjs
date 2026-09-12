@@ -2734,6 +2734,98 @@ console.log('\n— what a shot type shows —');
   eq(SB.Model.framingFor(old, 'Close-up'), '', 'and one they deliberately emptied stays empty');
 }
 
+console.log('\n— a card never holds takes it cannot show —');
+{
+  /* addTake used to be two steps -- empty the slot, then fill it -- and
+     anything that failed in between left a card holding every take it had and
+     none of them chosen. Every reader is gated on shot.video, so they vanished
+     from the card, the clip window and the export while their bytes stayed in
+     the file, and the Remove button is only built when there IS a chosen take,
+     so they could not even be deleted. */
+  const p = SB.Model.newProject();
+  const sh = p.scenes[0].shots[0];
+  const one = { ref: 'a', serial: 1, ext: 'mp4', bytes: 10, at: 1000 };
+  const two = { ref: 'b', serial: 2, ext: 'mp4', bytes: 10, at: 2000 };
+
+  SB.Model.addTake(sh, one);
+  eq(sh.video, one, 'the first take is the chosen one');
+  eq(sh.videoAlts, [], 'and there is nothing else yet');
+
+  SB.Model.addTake(sh, two);
+  eq(sh.video, two, 'a second take becomes the chosen one');
+  eq(sh.videoAlts, [one], 'and the first is kept');
+  eq(SB.Model.takeCount(sh), 2, 'both are on the card');
+
+  /* the slot is never empty while alternates exist */
+  eq(SB.Model.addTake(sh, null), null, 'adding nothing does nothing');
+  eq(sh.video, two, 'and leaves the chosen one alone');
+  eq(sh.videoAlts, [one], 'and the rest alone');
+
+  /* adding the record that is already chosen must not duplicate it */
+  SB.Model.addTake(sh, two);
+  eq(SB.Model.takeCount(sh), 2, 'adding the chosen take again changes nothing');
+
+  /* and a board written by the build that could strand them is repaired */
+  const hurt = SB.Model.newProject();
+  const hs = hurt.scenes[0].shots[0];
+  hs.video = null;
+  hs.videoAlts = [one, two];
+  SB.Model.migrate(hurt);
+  eq(hurt.scenes[0].shots[0].video, two, 'a stranded card gets its newest take back');
+  eq(hurt.scenes[0].shots[0].videoAlts, [one], 'and keeps the rest');
+}
+
+console.log('\n— the serial counter knows about every take —');
+{
+  /* Alternates claim from the same counter. Left out of the high-water sweep,
+     a board whose counter was behind handed a new clip a serial an alternate
+     already owned -- and the whole point of a serial is that it never repeats. */
+  const p = SB.Model.newProject();
+  p.renderSeq = 0;
+  p.scenes[0].shots[0].videoAlts = [
+    { ref: 'a', serial: 41, ext: 'mp4', bytes: 10, at: 1 },
+    { ref: 'b', serial: 77, ext: 'mp4', bytes: 10, at: 2 }
+  ];
+  SB.Model.migrate(p);
+  eq(p.renderSeq >= 77, true, 'the counter is past the highest take');
+
+  /* a take with no usable serial is not a take */
+  const junk = SB.Model.newProject();
+  junk.scenes[0].shots[0].video = { ref: 'c', serial: 3, ext: 'mp4', bytes: 10, at: 3 };
+  junk.scenes[0].shots[0].videoAlts = [{ ref: 'd', url: 'https://x/y.mp4' }];
+  SB.Model.migrate(junk);
+  eq(junk.scenes[0].shots[0].videoAlts, [], 'an alternate with no serial is dropped');
+  eq(!!junk.scenes[0].shots[0].video, true, 'and the chosen one is untouched');
+}
+
+console.log('\n— a framing is how a description opens —');
+{
+  /* Bare word patterns read ordinary English as a shot type, and the badge
+     then offered one click to set the card to the wrong framing -- which every
+     prompt written afterwards is written to. */
+  const p = SB.Model.newProject();
+  const g = function (t) { return SB.Model.guessFraming(p, t); };
+  eq(g('She is wide awake, staring at the ceiling.'), '', 'wide awake is not a wide');
+  eq(g('The wide-eyed child.'), '', 'nor is wide-eyed');
+  eq(g('A cutaway sofa in the showroom.'), '', 'a cutaway sofa is furniture');
+  eq(g('Insert the key into the lock and turn it.'), '', 'inserting a key is not an insert');
+  eq(g('He inserts the coin.'), '', 'nor is inserting a coin');
+  eq(g('over the shoulder strap of her bag'), '', 'a shoulder strap is not a framing');
+  eq(g('Nationwide coverage on the TV.'), '', 'and nationwide is not wide');
+  eq(g('He leans close to her ear.'), '', 'leaning close is not a close-up');
+
+  /* ...while every way somebody actually writes one still reads */
+  eq(g('Wide of the loading bay.'), 'Wide', 'a wide still reads');
+  eq(g('Wide.'), 'Wide', 'even on its own');
+  eq(g('Wide shot of the yard.'), 'Wide', 'and spelled out');
+  eq(g('Establishing shot of the yard.'), 'Wide', 'an establishing shot is a wide');
+  eq(g('A close-up of the badge.'), 'Close-up', 'an article in front is fine');
+  eq(g('Tight on the keyboard.'), 'Close-up', 'tight on is a close-up');
+  eq(g('Insert of the manifest.'), 'Insert', 'an insert of something is an insert');
+  eq(g('Over the shoulder as she reads.'), 'Over the shoulder', 'over the shoulder reads');
+  eq(g('POV: the corridor ahead.'), 'POV', 'and a POV');
+}
+
 console.log('\n— the framing a description asks for —');
 {
   const p = SB.Model.newProject();

@@ -223,6 +223,70 @@ section('a card that holds more than one take');
   t('nothing collides', E.plan(p, withOpts({ naming: 'code' })).clashes.length === 0, '');
 }
 
+/* -------------------------------------------- takes that cannot be written */
+section('a take with nothing behind it is counted, not dropped');
+{
+  /* These used to be skipped without a word, so a card holding two dead takes
+     reported nothing missing while Settings could see them perfectly well. */
+  const { p, a } = board();
+  const first = a.video;
+  a.videoAlts = [
+    { ref: 'gone', serial: 31, ext: 'mp4', bytes: 9, at: (first.at || 0) + 1000 },
+    { serial: 32, ext: 'mp4', bytes: 9, url: 'https://cdn/x.mp4', at: (first.at || 0) + 2000 }
+  ];
+  const pl = E.plan(p, withOpts({ naming: 'code' }));
+  const names = pl.items.map(i => i.name);
+  t('the take that can be written is', names.some(n => /^1A1\.mp4$/.test(n)), names.join(' '));
+  t('the one with no bytes is counted as missing', pl.missing >= 1, 'missing=' + pl.missing);
+  t('and the one held as a link is counted as a link',
+    pl.linkOnly >= 1, 'linkOnly=' + pl.linkOnly);
+  t('neither is written', names.filter(n => /\.mp4$/.test(n)).length === 1, names.join(' '));
+
+  /* the Takes column says what is in the FOLDER, not what is on the card:
+     three takes here, one file, so there is nothing to count */
+  const withList = E.plan(p, withOpts({ naming: 'code', shotlist: true }));
+  const row = withList.items.filter(i => /\.csv$/.test(i.name))[0].text.split('\r\n')[1];
+  const cells = row.split(',');
+  t('the card holds three takes', SB.Model.takeCount(a) === 3, SB.Model.takeCount(a));
+  t('but the shot list counts the one that was written',
+    cells[cells.length - 3] === '', JSON.stringify(cells.slice(-4)));
+}
+
+section('the chosen take and its serial are the same take');
+{
+  /* The Clip column and the Clip-serial column were read from different
+     places, so a chosen take that could not be written left the row pointing
+     at one take's name and another take's serial. */
+  const { p, a } = board();
+  const first = a.video;
+  const good = { ref: first.ref, serial: 77, ext: 'mp4', bytes: 9, at: (first.at || 0) + 1000 };
+  a.video = { ref: 'gone', serial: 2, ext: 'mp4', bytes: 9, at: first.at || 0 };
+  a.videoAlts = [good];
+  const pl = E.plan(p, withOpts({ naming: 'code', shotlist: true }));
+  const row = pl.items.filter(i => /\.csv$/.test(i.name))[0].text.split('\r\n')[1];
+  const cells = row.split(',');
+  t('the row names the take that was actually written',
+    row.indexOf('1A2.mp4') >= 0, row);
+  t('and its serial, not the one that could not be written',
+    row.indexOf('0077') >= 0 && row.indexOf('0002') < 0, row);
+}
+
+section('a two-letter code is flagged even when it carries a take number');
+{
+  const { p, a } = board();
+  const sc = p.scenes[0];
+  for (let i = 0; i < 30; i++) sc.shots.push(SB.Model.newShot({ type: 'Wide' }));
+  const last = sc.shots[sc.shots.length - 1];
+  p.blobs.vx = 'data:video/mp4;base64,' + 'E'.repeat(24);
+  p.blobs.vy = 'data:video/mp4;base64,' + 'F'.repeat(24);
+  last.video = { ref: 'vx', serial: 90, ext: 'mp4', bytes: 18, at: 2000 };
+  last.videoAlts = [{ ref: 'vy', serial: 91, ext: 'mp4', bytes: 18, at: 1000 }];
+  const pl = E.plan(p, withOpts({ naming: 'code' }));
+  const names = pl.items.map(i => i.name);
+  t('the code really has two letters', names.some(n => /^1A[A-Z]\d\.mp4$/.test(n)), names.join(' '));
+  t('and the warning fires anyway', pl.wide === true, 'wide=' + pl.wide);
+}
+
 /* ------------------------------------------------------------- collisions */
 section('two files that want one name');
 {

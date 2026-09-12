@@ -2139,6 +2139,18 @@
   function land(ticket, got) {
     const p = boardIfOpen(ticket.projectId);
     const f = p ? SB.Model.findShot(p, ticket.shotId) : null;
+    /* Parking is for a board that is not open, because opening it is what
+       claims the result. A card deleted out of the board you are LOOKING at
+       has no such moment coming: parked, it sat in the list forever, holding
+       the toolbar count up and warning on every close, promising a recovery
+       that could not happen. There is nowhere to put it, so say that. */
+    if (p && !f) {
+      SB.toast('The ' + (ticket.role === 'image' ? 'frame' : 'clip') + ' for ' +
+        (ticket.code || 'a card') + ' finished, but that card is not on the board ' +
+        'any more \u2014 so there is nowhere to put it.', true);
+      notify();
+      return Promise.resolve({ kind: ticket.role, dropped: true });
+    }
     if (!p || !f) {
       PARKED.push({
         projectId: ticket.projectId, projectName: ticket.projectName,
@@ -2169,8 +2181,8 @@
     /* Shooting again is what you do when the clip is mostly right, so the one
      * on the card is kept rather than overwritten. The new one becomes the
      * chosen take -- trying again is an attempt to do better -- and the old
-     * one is a click away in the clip window. */
-    SB.Model.keepTake(shot);
+     * one is a click away in the clip window. The swap happens at the bottom
+     * of this function, in one step, once there is something to swap IN. */
     /* unseen: nobody has watched this one yet. Shooting a dozen clips means
      * going away and coming back to a board where every row looks the same,
      * with no way to tell the one that just landed from the one watched ten
@@ -2183,7 +2195,7 @@
       /* ImagineArt made it but the browser could not read the bytes back
        * across origins: hold the link, say so, and leave a way to try again
        * while the link is still alive. */
-      shot.video = rec;
+      SB.Model.addTake(shot, rec);
       SB.Focus.defer('clip:' + shot.id, function () { SB.app.changed(true); });
       return Promise.resolve({ kind: 'video', remoteOnly: true });
     }
@@ -2197,7 +2209,7 @@
         saved.thumb = rec.thumb;
         saved.unseen = true;
       }
-      shot.video = saved || rec;
+      SB.Model.addTake(shot, saved || rec);
       /* Minutes after the button was pressed. Whoever pressed it is writing
          something else by now, and rebuilding the board under them is how a
          half-typed prompt used to disappear. */
@@ -2647,14 +2659,15 @@
       return Promise.reject(new Error('That is not a video file.'));
     }
     return clipMeta(file).then(function (meta) {
-      /* Same rule as a generated one: a card holds its takes. */
-      SB.Model.keepTake(shot);
+      /* Same rule as a generated one: a card holds its takes -- and nothing
+         moves until there is a record to move to, or a file that turns out to
+         be unreadable takes every take on the card out of reach. */
       return SB.Renders.keepVideo(p, file, null).then(function (saved) {
         if (!saved) throw new Error('the clip could not be stored');
         if (meta.dur) saved.dur = meta.dur;
         if (meta.w) { saved.w = meta.w; saved.h = meta.h; }
         saved.name = file.name || '';
-        shot.video = saved;
+        SB.Model.addTake(shot, saved);
         SB.app.changed(true);
         return saved;
       });

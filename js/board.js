@@ -1866,7 +1866,7 @@
     const had = !!sh.video;
     return SB.Clip.attach(P(), sh, file).then(function (rec) {
       if (!rec) return null;
-      SB.toast((had ? 'Clip replaced — the one that was here is gone' : 'Clip added') +
+      SB.toast((had ? 'Another take added — the one that was here is kept' : 'Clip added') +
         (SB.Clip.label(rec) ? ' · ' + SB.Clip.label(rec) : ''));
       return rec;
     }).catch(function (e) {
@@ -1896,7 +1896,8 @@
       const old = SB.Clip.label(sh.video) || 'a clip';
       box.appendChild(SB.el('div', 'pp-note warn',
         code + ' already holds ' + old + (sh.video.name ? ' (' + sh.video.name + ')' : '') +
-        '. A card holds one clip, so taking a new one throws that away.'));
+        '. It is kept as another take — the new one becomes the chosen one, and ' +
+        'the clip window has both.'));
     }
     box.appendChild(SB.el('div', 'pp-note', files.length === 1
       ? 'Replace it with:'
@@ -1947,7 +1948,8 @@
     }
 
     m = SB.modal({
-      title: files.length > 1 ? 'Which clip for ' + code + '?' : 'Replace the clip on ' + code + '?',
+      title: files.length > 1 ? 'Which clip for ' + code + '?'
+        : 'Add another take to ' + code + '?',
       width: '460px',
       body: box,
       buttons: buttons

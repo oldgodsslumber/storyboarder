@@ -76,14 +76,49 @@
    * offset into the serialised text and put back the same way. A chip counts as
    * its whole token, which is why a caret landing "inside" one lands after it. */
   function caret(box) {
+    const at = offsets(box);
+    return at ? at.end : null;
+  }
+
+  /* Both ends, not just the far one.
+   *
+   * caret() answers "where is the caret", which is the same question as "where
+   * does the selection end" -- so a rebuild put back a collapsed caret and
+   * somebody who had selected a phrase to replace typed an insertion instead.
+   * The start is measured the same way. */
+  function offsets(box) {
     const sel = window.getSelection();
     if (!sel || !sel.rangeCount || !box.contains(sel.anchorNode)) return null;
-    const r = sel.getRangeAt(0).cloneRange();
-    r.selectNodeContents(box);
-    r.setEnd(sel.getRangeAt(0).endContainer, sel.getRangeAt(0).endOffset);
-    const frag = document.createElement('div');
-    frag.appendChild(r.cloneContents());
-    return read(frag).length;
+    const live = sel.getRangeAt(0);
+    const upTo = function (node, off) {
+      const r = live.cloneRange();
+      r.selectNodeContents(box);
+      r.setEnd(node, off);
+      const frag = document.createElement('div');
+      frag.appendChild(r.cloneContents());
+      return read(frag).length;
+    };
+    return {
+      start: upTo(live.startContainer, live.startOffset),
+      end: upTo(live.endContainer, live.endOffset)
+    };
+  }
+
+  /* Put a range back. Collapsed when the two ends are the same, which is the
+   * ordinary case and what setCaret already did. */
+  function setRange(box, start, end) {
+    setCaret(box, start);
+    if (end == null || end === start) return;
+    const sel = window.getSelection();
+    const from = sel && sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
+    setCaret(box, end);
+    if (!from || !sel.rangeCount) return;
+    const to = sel.getRangeAt(0);
+    const r = document.createRange();
+    r.setStart(from.startContainer, from.startOffset);
+    r.setEnd(to.startContainer, to.startOffset);
+    sel.removeAllRanges();
+    sel.addRange(r);
   }
 
   function setCaret(box, at) {
@@ -206,6 +241,9 @@
     }, 0);
   }
 
-  SB.RefBox = { attach: attach, read: read, write: write, caret: caret, setCaret: setCaret, go: go };
+  SB.RefBox = {
+    attach: attach, read: read, write: write,
+    caret: caret, setCaret: setCaret, offsets: offsets, setRange: setRange, go: go
+  };
 
 })(window.SB);

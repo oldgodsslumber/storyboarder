@@ -458,17 +458,36 @@ section('a generation whose board is not on screen any more');
     !!boardA.scenes[0].shots[0].video && boardA.scenes[0].shots[0].video.ref === 'blob-2',
     JSON.stringify(boardA.scenes[0].shots[0].video));
 
-  /* a card that is simply gone cannot take one */
+  /* A card deleted out of the board you are LOOKING at has no moment coming
+     when it could be claimed -- claimParked only runs when a board becomes
+     current. Parked, it sat in the list forever, holding the toolbar count up
+     and warning on every close for a recovery that could not happen. */
   const t3 = {
     projectId: boardA.id, projectName: boardA.name, shotId: 'sh_deleted',
     code: '9Z', role: 'video', frameRef: '', made: made
   };
   const out3 = await SB.Imagine._land(t3, { blob: { size: 10 }, url: 'https://cdn.x/c.mp4' });
-  t('a clip for a deleted card is held rather than dropped on the floor',
-    out3.parked === true, JSON.stringify(out3));
-  t('and claiming it says so instead of filing it somewhere wrong',
+  t('a clip for a card deleted out of the OPEN board is not held',
+    out3.dropped === true && out3.parked !== true, JSON.stringify(out3));
+  t('so nothing is left waiting for a moment that will never come',
+    SB.Imagine.parkedCount() === 0, SB.Imagine.parkedCount());
+  t('and it says there is nowhere to put it',
+    toasts.some(function (x) { return /nowhere to put it/.test(x); }),
+    toasts.slice(-2).join(' | '));
+
+  /* ...but a card deleted from a board that is CLOSED is still parked, because
+     opening that board is exactly the moment it would be filed. */
+  const t4 = {
+    projectId: boardB.id, projectName: boardB.name, shotId: 'sh_gone_too',
+    code: '9Y', role: 'video', frameRef: '', made: made
+  };
+  sandbox.SB.app.project = boardA;
+  const out4 = await SB.Imagine._land(t4, { blob: { size: 10 }, url: 'https://cdn.x/d.mp4' });
+  t('a closed board keeps its result waiting', out4.parked === true, JSON.stringify(out4));
+  t('and opening it reports the card gone rather than filing it somewhere wrong',
     (function () {
-      SB.Imagine.claimParked(boardA);
+      sandbox.SB.app.project = boardB;
+      SB.Imagine.claimParked(boardB);
       return SB.Imagine.parkedCount() === 0;
     })(), SB.Imagine.parkedCount());
 

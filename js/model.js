@@ -71,19 +71,45 @@
    * noticing that the two disagree, which is worth a badge and one click, not
    * a silent correction. Longest names first, so "extreme close-up" is not
    * read as "close-up". */
+  /* [type, pattern, strict]
+   *
+   * `strict` marks the ones that are also ordinary English -- wide, insert,
+   * cutaway, over the shoulder. Those have to be followed by the kind of thing
+   * a slug line follows them with; the rest carry their own preposition or are
+   * not words anybody uses by accident. */
   const FRAMING_WORDS = [
-    ['Extreme close-up', /\b(?:extreme|tight)\s+close[\s-]?ups?\b|\becus?\b|\bxcus?\b/i],
-    ['Over the shoulder', /\bover[\s-]the[\s-]shoulders?\b|\bots\b/i],
-    ['Screen capture', /\bscreen\s?(?:capture|grab|recording)\b|\bscreencaps?\b/i],
-    ['Talking head', /\btalking[\s-]heads?\b|\bpiece to camera\b|\bstraight to camera\b/i],
-    ['Close-up', /\bclose[\s-]?ups?\b|\bclose on\b|\btight on\b/i],
-    ['Two shot', /\btwo[\s-]?shots?\b|\b2[\s-]?shots?\b/i],
-    ['Cutaway', /\bcut[\s-]?aways?\b/i],
-    ['Insert', /\binserts?\b/i],
-    ['POV', /\bpov\b|\bpoint[\s-]of[\s-]view\b/i],
-    ['Medium', /\bmedium\s+(?:shot|close)\b|\bmid[\s-]?shots?\b/i],
-    ['Wide', /\bwides?\b|\bwide\s+shots?\b|\bestablishing\b/i]
+    ['Extreme close-up', '(?:extreme|tight)\\s+close[\\s-]?ups?|ecus?|xcus?', false],
+    ['Over the shoulder', 'over[\\s-]the[\\s-]shoulders?|ots', true],
+    ['Screen capture', 'screen\\s?(?:capture|grab|recording)|screencaps?', false],
+    ['Talking head', 'talking[\\s-]heads?|piece to camera|straight to camera', false],
+    ['Close-up', 'close[\\s-]?ups?|close on|tight on', false],
+    ['Two shot', 'two[\\s-]?shots?|2[\\s-]?shots?', false],
+    ['Cutaway', 'cut[\\s-]?aways?', true],
+    ['Insert', 'inserts?', true],
+    ['POV', 'pov|point[\\s-]of[\\s-]view', false],
+    ['Medium', 'medium\\s+(?:shot|close)|mid[\\s-]?shots?', false],
+    ['Wide', 'wide\\s+shots?|wides?|establishing(?:\\s+shot)?', true]
   ];
+
+  /* A framing is how a description OPENS, not a word that appears in it.
+   *
+   * Bare word patterns read ordinary English as a shot type: "she is wide
+   * awake" became Wide, "insert the key into the lock" became Insert, "a
+   * cutaway sofa in the showroom" became Cutaway -- and the badge then offered
+   * one click to set the card to the wrong framing, which every prompt written
+   * afterwards is written to. Nothing about that is visible on the card.
+   *
+   * So the word has to lead the description, and -- where it is a word people
+   * use for other things -- be followed by what a slug line follows it with
+   * rather than by an object. "Insert of the manifest" is a framing; "insert
+   * the key" is an instruction. "Wide of the bay" is a framing; "wide-eyed"
+   * is not. */
+  const STRICT_TAIL = '(?=$|\\s*[,.:;\\u2014\\u2013]|\\s+(?:of|on|as|shot)\\b)';
+
+  function framingRe(body, strict) {
+    return new RegExp('^\\s*(?:a|an|the)?\\s*(?:' + body + ')\\b' +
+      (strict ? STRICT_TAIL : ''), 'i');
+  }
 
   /* Only ever a type the board actually offers, matched by name however it is
    * capitalised — a renamed or trimmed list must not produce a badge offering
@@ -93,7 +119,7 @@
     if (!t.trim()) return '';
     const offered = (p && p.settings && p.settings.shotTypes) || [];
     for (let i = 0; i < FRAMING_WORDS.length; i++) {
-      if (!FRAMING_WORDS[i][1].test(t)) continue;
+      if (!framingRe(FRAMING_WORDS[i][1], FRAMING_WORDS[i][2]).test(t)) continue;
       const want = FRAMING_WORDS[i][0].toLowerCase();
       const match = offered.filter(function (x) { return String(x).toLowerCase() === want; })[0];
       if (match) return match;
@@ -332,13 +358,34 @@
     return (shot && shot.video ? 1 : 0) + (((shot && shot.videoAlts) || []).length);
   }
 
-  /* Keep what is on the card and make room for a new one. The new take
-   * becomes the chosen one, because trying again is what you do when the
-   * current one is not the one. */
-  function keepTake(shot) {
-    if (!shot || !shot.video) return;
-    shot.videoAlts = (shot.videoAlts || []).concat([shot.video]);
-    shot.video = null;
+  /* A new take arrives: the one that was chosen joins the rest, and the new
+   * one takes its place. In ONE step.
+   *
+   * This was two -- empty the slot, then fill it -- and anything that failed
+   * in between left a card holding every take it had and none of them chosen.
+   * Every reader is gated on shot.video, so they vanished from the card, the
+   * clip window and the export while their bytes stayed in the file; the
+   * Remove button is only built when there IS a chosen take, so they could not
+   * even be deleted. A zero-byte file dropped on a card did it. */
+  function addTake(shot, rec) {
+    if (!shot || !rec) return null;
+    if (shot.video && shot.video !== rec) {
+      shot.videoAlts = (shot.videoAlts || []).concat([shot.video]);
+    }
+    shot.video = rec;
+    return rec;
+  }
+
+  /* A card with takes and no chosen one cannot show, export or delete any of
+   * them. addTake makes it unreachable; this repairs a board written by the
+   * build where it was not. */
+  function repairTakes(sh) {
+    if (!sh || sh.video || !(sh.videoAlts && sh.videoAlts.length)) return false;
+    const rest = sh.videoAlts.slice()
+      .sort(function (a, b) { return (b.at || 0) - (a.at || 0); });
+    sh.video = rest.shift() || null;
+    sh.videoAlts = rest;
+    return true;
   }
 
   /* Swap a take into the chosen slot. The one that was chosen joins the rest
@@ -688,6 +735,15 @@
            the whole point of a serial is that it never repeats. */
         sh.video = goodRender(sh.video);
         if (sh.video) p.renderSeq = Math.max(p.renderSeq | 0, sh.video.serial);
+        /* The other takes claim from that counter too, and are the one record
+           list this sweep used to walk past. Left out, a board whose counter
+           was behind handed a new clip a serial an alternate already owned. */
+        sh.videoAlts = (Array.isArray(sh.videoAlts) ? sh.videoAlts : [])
+          .map(goodRender).filter(Boolean);
+        sh.videoAlts.forEach(function (r) {
+          p.renderSeq = Math.max(p.renderSeq | 0, r.serial);
+        });
+        repairTakes(sh);
         sh.personaIds = Array.isArray(sh.personaIds) ? sh.personaIds : [];
           sh.castEnters = (Array.isArray(sh.castEnters) ? sh.castEnters : [])
             .filter(function (id) { return sh.personaIds.indexOf(id) >= 0; });
@@ -706,6 +762,7 @@
     (p.scenes || []).forEach(function (sc) {
       (sc.shots || []).forEach(function (sh) {
         if (!Array.isArray(sh.videoAlts)) sh.videoAlts = [];
+        repairTakes(sh);
       });
     });
     /* Only what is missing: a line somebody has deliberately emptied stays
@@ -888,6 +945,15 @@
            the whole point of a serial is that it never repeats. */
         sh.video = goodRender(sh.video);
         if (sh.video) p.renderSeq = Math.max(p.renderSeq | 0, sh.video.serial);
+        /* The other takes claim from that counter too, and are the one record
+           list this sweep used to walk past. Left out, a board whose counter
+           was behind handed a new clip a serial an alternate already owned. */
+        sh.videoAlts = (Array.isArray(sh.videoAlts) ? sh.videoAlts : [])
+          .map(goodRender).filter(Boolean);
+        sh.videoAlts.forEach(function (r) {
+          p.renderSeq = Math.max(p.renderSeq | 0, r.serial);
+        });
+        repairTakes(sh);
         sh.personaIds = Array.isArray(sh.personaIds) ? sh.personaIds : [];
         /* Empty for every board written before this, which is the right answer:
            nobody was marked as arriving, so everybody was already there. */
@@ -1350,7 +1416,8 @@
     CARD_COLORS: CARD_COLORS,
     DEFAULT_SHOT_TYPES: DEFAULT_SHOT_TYPES,
     DEFAULT_FRAMING: DEFAULT_FRAMING, framingFor: framingFor, guessFraming: guessFraming,
-    takes: takes, takeCount: takeCount, keepTake: keepTake, useTake: useTake, dropTake: dropTake,
+    takes: takes, takeCount: takeCount, addTake: addTake, repairTakes: repairTakes,
+    useTake: useTake, dropTake: dropTake,
     IMG_TPL: IMG_TPL, IMG_TPL_V1: IMG_TPL_V1,
     VID_TPL: VID_TPL, VID_TPL_V1: VID_TPL_V1, VID_TPL_V2: VID_TPL_V2,
     H3_VID_TPL: H3_VID_TPL, H3_VID_TPL_V2: H3_VID_TPL_V2, tplsFor: tplsFor,

@@ -265,6 +265,21 @@
     return ask(text, { type: 'OBJECT', properties: props, required: keys }, system);
   }
 
+  /* The board this was asked for, if it is still the board on screen.
+   *
+   * generateFor used to close over the shot OBJECT and store() wrote straight
+   * into it -- the same pattern land() in imagine.js was rewritten to drop.
+   * A writer model takes tens of seconds, and opening another board or
+   * restoring a version in that window put the finished prompt on an orphan,
+   * reported success, and then touched the board that WAS on screen over the
+   * top of its own file. There is no undo behind a prompt. */
+  function stillOpen(projectId, shotId) {
+    const cur = SB.app && SB.app.project;
+    if (!cur || cur.id !== projectId) return null;
+    const f = SB.Model.findShot(cur, shotId);
+    return f ? f.shot : null;
+  }
+
   function store(shot, model, field, value) {
     const cur = shot.prompts[model.id] || { imagePrompt: '', videoPrompt: '' };
     cur[field] = value || '';
@@ -360,6 +375,9 @@
     const jobs = jobsFor(shot, im, vm, roles);
     if (!jobs.length) return Promise.reject(new Error('Nothing to write for this shot.'));
 
+    /* Ids, not the object. Looked up again when the answer arrives. */
+    const projectId = p.id, shotId = shot.id;
+
     /* One at a time per field: a second press while the first is in the air is
        a second call for the same prompt, and the guard below is the only thing
        standing between that and two charges. */
@@ -404,26 +422,32 @@
         return verify(j, res);
       }).then(function (res) {
         const vals = j.map ? j.map(res) : res;
+        const live = stillOpen(projectId, shotId);
+        if (!live) {
+          lastError = new Error('That board is not open any more, so the prompt ' +
+            'was not written. Open it and generate again.');
+          return;
+        }
         j.targets.forEach(function (t) {
-          const now = (shot.prompts[t.model.id] || {})[t.field] || '';
+          const now = (live.prompts[t.model.id] || {})[t.field] || '';
           if (now !== asked[t.model.id + '|' + t.field]) {
             kept.push({ field: t.field, model: t.model });
             return;
           }
-          store(shot, t.model, t.field, vals[t.field]);
+          store(live, t.model, t.field, vals[t.field]);
           written.push(t.field);
           /* One rewrite is all it gets. A move that survives it is not thrown
              away — the rest of the paragraph is usually right — but it is
              marked, so nobody ships a push in they never asked for. */
-          const pr = shot.prompts[t.model.id];
+          const pr = live.prompts[t.model.id];
           if (t.field === 'videoPrompt') {
-            const left = SB.Brand.moveProblems(P(), shot, vals[t.field]).length
+            const left = SB.Brand.moveProblems(P(), live, vals[t.field]).length
               ? SB.Brand.movesIn(vals[t.field]) : [];
             if (left.length) pr.moved = left; else delete pr.moved;
           }
           /* Same bargain as the camera: the prompt is kept, and the words it
              decided on its own are named on the card. */
-          const g = SB.Brand.genderProblems(P(), shot, vals[t.field]);
+          const g = SB.Brand.genderProblems(P(), live, vals[t.field]);
           if (g.length) {
             const said = SB.Brand.genderedTerms(vals[t.field]);
             const allowed = SB.Brand.castSides(P(), shot);

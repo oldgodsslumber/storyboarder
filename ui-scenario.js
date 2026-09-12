@@ -1190,22 +1190,36 @@
           JSON.stringify((d0.video || {}).name));
         t('and no modal is left behind', !document.querySelector('.modal .clip-pick'), '');
 
-        /* dropping onto a card that already holds one says what is at stake */
+        /* Dropping onto a card that already holds one used to say the clip
+           was about to be destroyed. It is kept as another take now, and the
+           dialog has to say the true thing -- a warning that lies makes people
+           avoid a safe action, or mourn a clip that is still there. */
+        const beforeDrop = SB.Model.takeCount(d0);
         SB.Board.clipDrop(d0, [three[2]]);
         await settle(function () { return !!document.querySelector('.modal .clip-pick'); });
         const warn = document.querySelector('.modal .clip-pick .pp-note.warn');
-        t('replacing an existing clip says so before it happens',
-          !!warn && /already holds/.test(warn.textContent) && /throws that away/.test(warn.textContent),
-          warn ? warn.textContent.slice(0, 60) : 'no warning');
+        t('dropping onto a card that holds one says what will happen to it',
+          !!warn && /already holds/.test(warn.textContent) &&
+          /kept as another take/.test(warn.textContent) &&
+          !/throws that away/.test(warn.textContent),
+          warn ? warn.textContent.slice(0, 80) : 'no warning');
         document.querySelector('.modal .clip-row').click();
         await settle(function () { return (d0.video || {}).name === 'shot1e.mp4'; });
-        t('and the replacement is what is there afterwards',
+        t('and nothing was thrown away', SB.Model.takeCount(d0) === beforeDrop + 1,
+          SB.Model.takeCount(d0) + ' vs ' + beforeDrop);
+        t('and the new one is the chosen take afterwards',
           (d0.video || {}).name === 'shot1e.mp4', JSON.stringify((d0.video || {}).name));
-        t('one clip on the card, not three',
-          SB.Renders.weigh(P()).clips.n === 1, SB.Renders.weigh(P()).clips.n);
+        t('one card, two takes \u2014 not three clips spread over the board',
+          SB.Model.takeCount(d0) === 2 &&
+          SB.Model.takes(d0).every(function (x) { return SB.Renders.has(P(), x.rec); }),
+          SB.Model.takeCount(d0) + ' takes, ' + SB.Renders.weigh(P()).clips.n + ' blobs');
 
-        /* one each, across the cards that follow */
+        /* one each, across the cards that follow.
+           Clearing the chosen take alone would leave the card holding takes it
+           could not show, export or delete -- which is the state addTake exists
+           to make unreachable, so the reset clears both. */
         d0.video = null;
+        d0.videoAlts = [];
         SB.app.changed(true);
         SB.Board.clipDrop(d0, three);
         await settle(function () { return !!document.querySelector('.modal .clip-pick'); });

@@ -190,7 +190,15 @@
         (o.picksOnly ? all.filter(function (x) { return x.chosen; }) : all)
           .forEach(function (tk) {
             const v = tk.rec;
-            if (!v.ref || !SB.Renders.has(p, v)) return;
+            /* Counted, not skipped. These used to be dropped without a word,
+               so a card holding two dead takes reported nothing missing while
+               Settings could see them perfectly well. */
+            if (!v.ref || !SB.Renders.has(p, v)) {
+              if (o.madeOnly && !v.made) return;
+              if (v.url) linkOnly++;
+              else missing++;
+              return;
+            }
             if (o.madeOnly && !v.made) return;
             const data = SB.Renders.dataUrl(p, v);
             items.push({
@@ -201,16 +209,6 @@
               take: many ? tk.n : 0, chosen: tk.chosen
             });
           });
-        if (sh.video.ref && SB.Renders.has(p, sh.video)) {
-          /* counted above */
-        } else if (sh.video.url) {
-          /* Held as a link, not a file — and links expire. Worth saying
-           * before the export runs rather than after. */
-          linkOnly++;
-        } else if (!o.madeOnly) {
-          /* A clip record with neither bytes nor a link left. */
-          missing++;
-        }
       }
 
       if (o.proxies && sh.image) {
@@ -299,7 +297,8 @@
       linkOnly: linkOnly,
       missing: missing,
       clashes: clashes,
-      wide: items.some(function (it) { return /^\d+[A-Z]{2,}[._]/.test(it.name); }),
+      /* 1AE.mp4 and 1AE1.mp4 are the same problem; the digit must not hide it */
+      wide: items.some(function (it) { return /^\d+[A-Z]{2,}\d*[._]/.test(it.name); }),
       shots: list.length
     };
   }
@@ -327,8 +326,11 @@
       if (it.kind === 'original') e.original = it.name;
       else if (it.kind === 'clip') {
         e.takes = (e.takes || 0) + 1;
-        /* the chosen take is what the Clip column names; the rest are counted */
-        if (it.chosen || !e.clip) e.clip = it.name;
+        /* The Clip column names the chosen take, and the serial column has to
+           name the SAME one -- they were read from different places, so a
+           chosen take that could not be written left the row pointing at one
+           take's name and another take's serial. */
+        if (it.chosen || !e.clip) { e.clip = it.name; e.clipSerial = it.rec && it.rec.serial; }
       }
       else if (it.kind === 'board copy' && !e.original) e.boardCopy = it.name;
     });
@@ -356,12 +358,16 @@
            no shot list */
         (names[sh.id] && (names[sh.id].original || names[sh.id].boardCopy)) || '',
         (names[sh.id] && names[sh.id].clip) || '',
-        /* how many of this shot are in the folder, so nobody has to count */
-        SB.Model.takeCount(sh) > 1 ? SB.Model.takeCount(sh) : '',
+        /* how many of this shot are IN THE FOLDER -- counted off the plan, not
+           off the card, because picksOnly, madeOnly and a take with no bytes
+           all mean the two are different numbers */
+        (names[sh.id] && names[sh.id].takes > 1) ? names[sh.id].takes : '',
         /* and the serial beside it, because a code is positional and the way
            back to the file inside the board is the number */
         sh.render && sh.render.serial ? SB.Renders.pad(sh.render.serial) : '',
-        sh.video && sh.video.serial ? SB.Renders.pad(sh.video.serial) : ''
+        (names[sh.id] && names[sh.id].clipSerial)
+          ? SB.Renders.pad(names[sh.id].clipSerial)
+          : (sh.video && sh.video.serial ? SB.Renders.pad(sh.video.serial) : '')
       ].map(cell).join(','));
     });
     return lines.join('\r\n');
@@ -691,7 +697,11 @@
     const p = P();
     const todo = [];
     rows(p, opts.scope).forEach(function (r) {
-      if (r.shot.video && !r.shot.video.ref && r.shot.video.url) todo.push(r.shot);
+      /* any take held as a link, not only the chosen one */
+      const any = SB.Model.takes(r.shot).some(function (tk) {
+        return !tk.rec.ref && tk.rec.url;
+      });
+      if (any) todo.push(r.shot);
     });
     let ok = 0;
     const next = function (i) {

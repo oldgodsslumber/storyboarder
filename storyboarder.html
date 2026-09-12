@@ -1281,7 +1281,7 @@ body.comment-mode .frame{cursor:crosshair}
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-09-12 14:09 · 55d0e44+";</script>
+<script>window.SB_BUILD = "2026-09-12 14:53 · 2209dee+";</script>
 
 <div id="app">
 
@@ -1990,8 +1990,14 @@ window.SB = window.SB || {};
     } else {
       s.kind = 'rich';
       /* a reference box counts a chip as one object, and the offset is into
-       * the text the box READS as — which is what survives being rebuilt */
-      try { s.at = SB.RefBox ? SB.RefBox.caret(el) : null; } catch (e) { s.at = null; }
+       * the text the box READS as — which is what survives being rebuilt.
+       * Both ends: a rebuild used to hand back a collapsed caret, so a phrase
+       * selected for replacing was typed over rather than replaced. */
+      try {
+        const at = SB.RefBox && SB.RefBox.offsets ? SB.RefBox.offsets(el) : null;
+        s.at = at ? at.end : (SB.RefBox ? SB.RefBox.caret(el) : null);
+        s.from = at ? at.start : null;
+      } catch (e) { s.at = null; s.from = null; }
     }
     return s;
   }
@@ -2022,7 +2028,13 @@ window.SB = window.SB || {};
       const b = Math.min(s.end == null ? s.start : s.end, max);
       try { el.setSelectionRange(a, b, s.dir); } catch (e) { }
     } else if (s.kind === 'rich' && s.at != null && SB.RefBox) {
-      try { SB.RefBox.setCaret(el, s.at); } catch (e) { }
+      try {
+        if (s.from != null && s.from !== s.at && SB.RefBox.setRange) {
+          SB.RefBox.setRange(el, s.from, s.at);
+        } else {
+          SB.RefBox.setCaret(el, s.at);
+        }
+      } catch (e) { }
     }
   }
 
@@ -6714,6 +6726,18 @@ window.SB = window.SB || {};
   function land(ticket, got) {
     const p = boardIfOpen(ticket.projectId);
     const f = p ? SB.Model.findShot(p, ticket.shotId) : null;
+    /* Parking is for a board that is not open, because opening it is what
+       claims the result. A card deleted out of the board you are LOOKING at
+       has no such moment coming: parked, it sat in the list forever, holding
+       the toolbar count up and warning on every close, promising a recovery
+       that could not happen. There is nowhere to put it, so say that. */
+    if (p && !f) {
+      SB.toast('The ' + (ticket.role === 'image' ? 'frame' : 'clip') + ' for ' +
+        (ticket.code || 'a card') + ' finished, but that card is not on the board ' +
+        'any more \u2014 so there is nowhere to put it.', true);
+      notify();
+      return Promise.resolve({ kind: ticket.role, dropped: true });
+    }
     if (!p || !f) {
       PARKED.push({
         projectId: ticket.projectId, projectName: ticket.projectName,
@@ -6744,8 +6768,8 @@ window.SB = window.SB || {};
     /* Shooting again is what you do when the clip is mostly right, so the one
      * on the card is kept rather than overwritten. The new one becomes the
      * chosen take -- trying again is an attempt to do better -- and the old
-     * one is a click away in the clip window. */
-    SB.Model.keepTake(shot);
+     * one is a click away in the clip window. The swap happens at the bottom
+     * of this function, in one step, once there is something to swap IN. */
     /* unseen: nobody has watched this one yet. Shooting a dozen clips means
      * going away and coming back to a board where every row looks the same,
      * with no way to tell the one that just landed from the one watched ten
@@ -6758,7 +6782,7 @@ window.SB = window.SB || {};
       /* ImagineArt made it but the browser could not read the bytes back
        * across origins: hold the link, say so, and leave a way to try again
        * while the link is still alive. */
-      shot.video = rec;
+      SB.Model.addTake(shot, rec);
       SB.Focus.defer('clip:' + shot.id, function () { SB.app.changed(true); });
       return Promise.resolve({ kind: 'video', remoteOnly: true });
     }
@@ -6772,7 +6796,7 @@ window.SB = window.SB || {};
         saved.thumb = rec.thumb;
         saved.unseen = true;
       }
-      shot.video = saved || rec;
+      SB.Model.addTake(shot, saved || rec);
       /* Minutes after the button was pressed. Whoever pressed it is writing
          something else by now, and rebuilding the board under them is how a
          half-typed prompt used to disappear. */
@@ -7222,14 +7246,15 @@ window.SB = window.SB || {};
       return Promise.reject(new Error('That is not a video file.'));
     }
     return clipMeta(file).then(function (meta) {
-      /* Same rule as a generated one: a card holds its takes. */
-      SB.Model.keepTake(shot);
+      /* Same rule as a generated one: a card holds its takes -- and nothing
+         moves until there is a record to move to, or a file that turns out to
+         be unreadable takes every take on the card out of reach. */
       return SB.Renders.keepVideo(p, file, null).then(function (saved) {
         if (!saved) throw new Error('the clip could not be stored');
         if (meta.dur) saved.dur = meta.dur;
         if (meta.w) { saved.w = meta.w; saved.h = meta.h; }
         saved.name = file.name || '';
-        shot.video = saved;
+        SB.Model.addTake(shot, saved);
         SB.app.changed(true);
         return saved;
       });
@@ -8796,19 +8821,45 @@ window.SB = window.SB || {};
    * noticing that the two disagree, which is worth a badge and one click, not
    * a silent correction. Longest names first, so "extreme close-up" is not
    * read as "close-up". */
+  /* [type, pattern, strict]
+   *
+   * `strict` marks the ones that are also ordinary English -- wide, insert,
+   * cutaway, over the shoulder. Those have to be followed by the kind of thing
+   * a slug line follows them with; the rest carry their own preposition or are
+   * not words anybody uses by accident. */
   const FRAMING_WORDS = [
-    ['Extreme close-up', /\b(?:extreme|tight)\s+close[\s-]?ups?\b|\becus?\b|\bxcus?\b/i],
-    ['Over the shoulder', /\bover[\s-]the[\s-]shoulders?\b|\bots\b/i],
-    ['Screen capture', /\bscreen\s?(?:capture|grab|recording)\b|\bscreencaps?\b/i],
-    ['Talking head', /\btalking[\s-]heads?\b|\bpiece to camera\b|\bstraight to camera\b/i],
-    ['Close-up', /\bclose[\s-]?ups?\b|\bclose on\b|\btight on\b/i],
-    ['Two shot', /\btwo[\s-]?shots?\b|\b2[\s-]?shots?\b/i],
-    ['Cutaway', /\bcut[\s-]?aways?\b/i],
-    ['Insert', /\binserts?\b/i],
-    ['POV', /\bpov\b|\bpoint[\s-]of[\s-]view\b/i],
-    ['Medium', /\bmedium\s+(?:shot|close)\b|\bmid[\s-]?shots?\b/i],
-    ['Wide', /\bwides?\b|\bwide\s+shots?\b|\bestablishing\b/i]
+    ['Extreme close-up', '(?:extreme|tight)\\s+close[\\s-]?ups?|ecus?|xcus?', false],
+    ['Over the shoulder', 'over[\\s-]the[\\s-]shoulders?|ots', true],
+    ['Screen capture', 'screen\\s?(?:capture|grab|recording)|screencaps?', false],
+    ['Talking head', 'talking[\\s-]heads?|piece to camera|straight to camera', false],
+    ['Close-up', 'close[\\s-]?ups?|close on|tight on', false],
+    ['Two shot', 'two[\\s-]?shots?|2[\\s-]?shots?', false],
+    ['Cutaway', 'cut[\\s-]?aways?', true],
+    ['Insert', 'inserts?', true],
+    ['POV', 'pov|point[\\s-]of[\\s-]view', false],
+    ['Medium', 'medium\\s+(?:shot|close)|mid[\\s-]?shots?', false],
+    ['Wide', 'wide\\s+shots?|wides?|establishing(?:\\s+shot)?', true]
   ];
+
+  /* A framing is how a description OPENS, not a word that appears in it.
+   *
+   * Bare word patterns read ordinary English as a shot type: "she is wide
+   * awake" became Wide, "insert the key into the lock" became Insert, "a
+   * cutaway sofa in the showroom" became Cutaway -- and the badge then offered
+   * one click to set the card to the wrong framing, which every prompt written
+   * afterwards is written to. Nothing about that is visible on the card.
+   *
+   * So the word has to lead the description, and -- where it is a word people
+   * use for other things -- be followed by what a slug line follows it with
+   * rather than by an object. "Insert of the manifest" is a framing; "insert
+   * the key" is an instruction. "Wide of the bay" is a framing; "wide-eyed"
+   * is not. */
+  const STRICT_TAIL = '(?=$|\\s*[,.:;\\u2014\\u2013]|\\s+(?:of|on|as|shot)\\b)';
+
+  function framingRe(body, strict) {
+    return new RegExp('^\\s*(?:a|an|the)?\\s*(?:' + body + ')\\b' +
+      (strict ? STRICT_TAIL : ''), 'i');
+  }
 
   /* Only ever a type the board actually offers, matched by name however it is
    * capitalised — a renamed or trimmed list must not produce a badge offering
@@ -8818,7 +8869,7 @@ window.SB = window.SB || {};
     if (!t.trim()) return '';
     const offered = (p && p.settings && p.settings.shotTypes) || [];
     for (let i = 0; i < FRAMING_WORDS.length; i++) {
-      if (!FRAMING_WORDS[i][1].test(t)) continue;
+      if (!framingRe(FRAMING_WORDS[i][1], FRAMING_WORDS[i][2]).test(t)) continue;
       const want = FRAMING_WORDS[i][0].toLowerCase();
       const match = offered.filter(function (x) { return String(x).toLowerCase() === want; })[0];
       if (match) return match;
@@ -9057,13 +9108,34 @@ window.SB = window.SB || {};
     return (shot && shot.video ? 1 : 0) + (((shot && shot.videoAlts) || []).length);
   }
 
-  /* Keep what is on the card and make room for a new one. The new take
-   * becomes the chosen one, because trying again is what you do when the
-   * current one is not the one. */
-  function keepTake(shot) {
-    if (!shot || !shot.video) return;
-    shot.videoAlts = (shot.videoAlts || []).concat([shot.video]);
-    shot.video = null;
+  /* A new take arrives: the one that was chosen joins the rest, and the new
+   * one takes its place. In ONE step.
+   *
+   * This was two -- empty the slot, then fill it -- and anything that failed
+   * in between left a card holding every take it had and none of them chosen.
+   * Every reader is gated on shot.video, so they vanished from the card, the
+   * clip window and the export while their bytes stayed in the file; the
+   * Remove button is only built when there IS a chosen take, so they could not
+   * even be deleted. A zero-byte file dropped on a card did it. */
+  function addTake(shot, rec) {
+    if (!shot || !rec) return null;
+    if (shot.video && shot.video !== rec) {
+      shot.videoAlts = (shot.videoAlts || []).concat([shot.video]);
+    }
+    shot.video = rec;
+    return rec;
+  }
+
+  /* A card with takes and no chosen one cannot show, export or delete any of
+   * them. addTake makes it unreachable; this repairs a board written by the
+   * build where it was not. */
+  function repairTakes(sh) {
+    if (!sh || sh.video || !(sh.videoAlts && sh.videoAlts.length)) return false;
+    const rest = sh.videoAlts.slice()
+      .sort(function (a, b) { return (b.at || 0) - (a.at || 0); });
+    sh.video = rest.shift() || null;
+    sh.videoAlts = rest;
+    return true;
   }
 
   /* Swap a take into the chosen slot. The one that was chosen joins the rest
@@ -9413,6 +9485,15 @@ window.SB = window.SB || {};
            the whole point of a serial is that it never repeats. */
         sh.video = goodRender(sh.video);
         if (sh.video) p.renderSeq = Math.max(p.renderSeq | 0, sh.video.serial);
+        /* The other takes claim from that counter too, and are the one record
+           list this sweep used to walk past. Left out, a board whose counter
+           was behind handed a new clip a serial an alternate already owned. */
+        sh.videoAlts = (Array.isArray(sh.videoAlts) ? sh.videoAlts : [])
+          .map(goodRender).filter(Boolean);
+        sh.videoAlts.forEach(function (r) {
+          p.renderSeq = Math.max(p.renderSeq | 0, r.serial);
+        });
+        repairTakes(sh);
         sh.personaIds = Array.isArray(sh.personaIds) ? sh.personaIds : [];
           sh.castEnters = (Array.isArray(sh.castEnters) ? sh.castEnters : [])
             .filter(function (id) { return sh.personaIds.indexOf(id) >= 0; });
@@ -9431,6 +9512,7 @@ window.SB = window.SB || {};
     (p.scenes || []).forEach(function (sc) {
       (sc.shots || []).forEach(function (sh) {
         if (!Array.isArray(sh.videoAlts)) sh.videoAlts = [];
+        repairTakes(sh);
       });
     });
     /* Only what is missing: a line somebody has deliberately emptied stays
@@ -9613,6 +9695,15 @@ window.SB = window.SB || {};
            the whole point of a serial is that it never repeats. */
         sh.video = goodRender(sh.video);
         if (sh.video) p.renderSeq = Math.max(p.renderSeq | 0, sh.video.serial);
+        /* The other takes claim from that counter too, and are the one record
+           list this sweep used to walk past. Left out, a board whose counter
+           was behind handed a new clip a serial an alternate already owned. */
+        sh.videoAlts = (Array.isArray(sh.videoAlts) ? sh.videoAlts : [])
+          .map(goodRender).filter(Boolean);
+        sh.videoAlts.forEach(function (r) {
+          p.renderSeq = Math.max(p.renderSeq | 0, r.serial);
+        });
+        repairTakes(sh);
         sh.personaIds = Array.isArray(sh.personaIds) ? sh.personaIds : [];
         /* Empty for every board written before this, which is the right answer:
            nobody was marked as arriving, so everybody was already there. */
@@ -10075,7 +10166,8 @@ window.SB = window.SB || {};
     CARD_COLORS: CARD_COLORS,
     DEFAULT_SHOT_TYPES: DEFAULT_SHOT_TYPES,
     DEFAULT_FRAMING: DEFAULT_FRAMING, framingFor: framingFor, guessFraming: guessFraming,
-    takes: takes, takeCount: takeCount, keepTake: keepTake, useTake: useTake, dropTake: dropTake,
+    takes: takes, takeCount: takeCount, addTake: addTake, repairTakes: repairTakes,
+    useTake: useTake, dropTake: dropTake,
     IMG_TPL: IMG_TPL, IMG_TPL_V1: IMG_TPL_V1,
     VID_TPL: VID_TPL, VID_TPL_V1: VID_TPL_V1, VID_TPL_V2: VID_TPL_V2,
     H3_VID_TPL: H3_VID_TPL, H3_VID_TPL_V2: H3_VID_TPL_V2, tplsFor: tplsFor,
@@ -11373,14 +11465,49 @@ window.SB = window.SB || {};
    * offset into the serialised text and put back the same way. A chip counts as
    * its whole token, which is why a caret landing "inside" one lands after it. */
   function caret(box) {
+    const at = offsets(box);
+    return at ? at.end : null;
+  }
+
+  /* Both ends, not just the far one.
+   *
+   * caret() answers "where is the caret", which is the same question as "where
+   * does the selection end" -- so a rebuild put back a collapsed caret and
+   * somebody who had selected a phrase to replace typed an insertion instead.
+   * The start is measured the same way. */
+  function offsets(box) {
     const sel = window.getSelection();
     if (!sel || !sel.rangeCount || !box.contains(sel.anchorNode)) return null;
-    const r = sel.getRangeAt(0).cloneRange();
-    r.selectNodeContents(box);
-    r.setEnd(sel.getRangeAt(0).endContainer, sel.getRangeAt(0).endOffset);
-    const frag = document.createElement('div');
-    frag.appendChild(r.cloneContents());
-    return read(frag).length;
+    const live = sel.getRangeAt(0);
+    const upTo = function (node, off) {
+      const r = live.cloneRange();
+      r.selectNodeContents(box);
+      r.setEnd(node, off);
+      const frag = document.createElement('div');
+      frag.appendChild(r.cloneContents());
+      return read(frag).length;
+    };
+    return {
+      start: upTo(live.startContainer, live.startOffset),
+      end: upTo(live.endContainer, live.endOffset)
+    };
+  }
+
+  /* Put a range back. Collapsed when the two ends are the same, which is the
+   * ordinary case and what setCaret already did. */
+  function setRange(box, start, end) {
+    setCaret(box, start);
+    if (end == null || end === start) return;
+    const sel = window.getSelection();
+    const from = sel && sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
+    setCaret(box, end);
+    if (!from || !sel.rangeCount) return;
+    const to = sel.getRangeAt(0);
+    const r = document.createRange();
+    r.setStart(from.startContainer, from.startOffset);
+    r.setEnd(to.startContainer, to.startOffset);
+    sel.removeAllRanges();
+    sel.addRange(r);
   }
 
   function setCaret(box, at) {
@@ -11503,7 +11630,10 @@ window.SB = window.SB || {};
     }, 0);
   }
 
-  SB.RefBox = { attach: attach, read: read, write: write, caret: caret, setCaret: setCaret, go: go };
+  SB.RefBox = {
+    attach: attach, read: read, write: write,
+    caret: caret, setCaret: setCaret, offsets: offsets, setRange: setRange, go: go
+  };
 
 })(window.SB);
 
@@ -13378,7 +13508,7 @@ window.SB = window.SB || {};
     const had = !!sh.video;
     return SB.Clip.attach(P(), sh, file).then(function (rec) {
       if (!rec) return null;
-      SB.toast((had ? 'Clip replaced — the one that was here is gone' : 'Clip added') +
+      SB.toast((had ? 'Another take added — the one that was here is kept' : 'Clip added') +
         (SB.Clip.label(rec) ? ' · ' + SB.Clip.label(rec) : ''));
       return rec;
     }).catch(function (e) {
@@ -13408,7 +13538,8 @@ window.SB = window.SB || {};
       const old = SB.Clip.label(sh.video) || 'a clip';
       box.appendChild(SB.el('div', 'pp-note warn',
         code + ' already holds ' + old + (sh.video.name ? ' (' + sh.video.name + ')' : '') +
-        '. A card holds one clip, so taking a new one throws that away.'));
+        '. It is kept as another take — the new one becomes the chosen one, and ' +
+        'the clip window has both.'));
     }
     box.appendChild(SB.el('div', 'pp-note', files.length === 1
       ? 'Replace it with:'
@@ -13459,7 +13590,8 @@ window.SB = window.SB || {};
     }
 
     m = SB.modal({
-      title: files.length > 1 ? 'Which clip for ' + code + '?' : 'Replace the clip on ' + code + '?',
+      title: files.length > 1 ? 'Which clip for ' + code + '?'
+        : 'Add another take to ' + code + '?',
       width: '460px',
       body: box,
       buttons: buttons
@@ -14470,6 +14602,21 @@ window.SB = window.SB || {};
     return ask(text, { type: 'OBJECT', properties: props, required: keys }, system);
   }
 
+  /* The board this was asked for, if it is still the board on screen.
+   *
+   * generateFor used to close over the shot OBJECT and store() wrote straight
+   * into it -- the same pattern land() in imagine.js was rewritten to drop.
+   * A writer model takes tens of seconds, and opening another board or
+   * restoring a version in that window put the finished prompt on an orphan,
+   * reported success, and then touched the board that WAS on screen over the
+   * top of its own file. There is no undo behind a prompt. */
+  function stillOpen(projectId, shotId) {
+    const cur = SB.app && SB.app.project;
+    if (!cur || cur.id !== projectId) return null;
+    const f = SB.Model.findShot(cur, shotId);
+    return f ? f.shot : null;
+  }
+
   function store(shot, model, field, value) {
     const cur = shot.prompts[model.id] || { imagePrompt: '', videoPrompt: '' };
     cur[field] = value || '';
@@ -14565,6 +14712,9 @@ window.SB = window.SB || {};
     const jobs = jobsFor(shot, im, vm, roles);
     if (!jobs.length) return Promise.reject(new Error('Nothing to write for this shot.'));
 
+    /* Ids, not the object. Looked up again when the answer arrives. */
+    const projectId = p.id, shotId = shot.id;
+
     /* One at a time per field: a second press while the first is in the air is
        a second call for the same prompt, and the guard below is the only thing
        standing between that and two charges. */
@@ -14609,26 +14759,32 @@ window.SB = window.SB || {};
         return verify(j, res);
       }).then(function (res) {
         const vals = j.map ? j.map(res) : res;
+        const live = stillOpen(projectId, shotId);
+        if (!live) {
+          lastError = new Error('That board is not open any more, so the prompt ' +
+            'was not written. Open it and generate again.');
+          return;
+        }
         j.targets.forEach(function (t) {
-          const now = (shot.prompts[t.model.id] || {})[t.field] || '';
+          const now = (live.prompts[t.model.id] || {})[t.field] || '';
           if (now !== asked[t.model.id + '|' + t.field]) {
             kept.push({ field: t.field, model: t.model });
             return;
           }
-          store(shot, t.model, t.field, vals[t.field]);
+          store(live, t.model, t.field, vals[t.field]);
           written.push(t.field);
           /* One rewrite is all it gets. A move that survives it is not thrown
              away — the rest of the paragraph is usually right — but it is
              marked, so nobody ships a push in they never asked for. */
-          const pr = shot.prompts[t.model.id];
+          const pr = live.prompts[t.model.id];
           if (t.field === 'videoPrompt') {
-            const left = SB.Brand.moveProblems(P(), shot, vals[t.field]).length
+            const left = SB.Brand.moveProblems(P(), live, vals[t.field]).length
               ? SB.Brand.movesIn(vals[t.field]) : [];
             if (left.length) pr.moved = left; else delete pr.moved;
           }
           /* Same bargain as the camera: the prompt is kept, and the words it
              decided on its own are named on the card. */
-          const g = SB.Brand.genderProblems(P(), shot, vals[t.field]);
+          const g = SB.Brand.genderProblems(P(), live, vals[t.field]);
           if (g.length) {
             const said = SB.Brand.genderedTerms(vals[t.field]);
             const allowed = SB.Brand.castSides(P(), shot);
@@ -15700,13 +15856,27 @@ window.SB = window.SB || {};
   }
 
   /* What is on screen: what the filter let through when it was chosen, plus
-     anything that has come to match since. Never less. */
+     anything that has come to match since. Never less.
+   *
+   * "Never less" has to include the ones that arrived AFTER the pin. A row
+   * that newly matched was shown but never pinned, so the first time it
+   * stopped matching it was deleted -- and the row that newly matches is
+   * exactly the one being worked on. Add a card, write its last missing
+   * prompt by hand, have anything land: the row went, mid-sentence, with the
+   * rest of what was typed. That is the bug this pinning exists to prevent,
+   * and it was still live on the rows most likely to hit it.
+   *
+   * So being on screen is what pins a row, not being on screen at one
+   * particular moment. */
   function visible(im, vm) {
     const rows = allRows();
     if (filter === 'all') return rows;
     if (!pinned) pinFilter();
     return rows.filter(function (r) {
-      return pinned[r.shot.id] || matches(r, im, vm);
+      if (pinned[r.shot.id]) return true;
+      if (!matches(r, im, vm)) return false;
+      pinned[r.shot.id] = 1;
+      return true;
     });
   }
 
@@ -16142,8 +16312,11 @@ window.SB = window.SB || {};
         } else {
           SB.toast(out.kind === 'video' ? 'Clip saved into the board' : 'Frame updated');
         }
-        /* The picture or the clip is new, so the row itself has changed. */
-        render();
+        /* The picture or the clip is new, so the row itself has changed --
+           but this lands minutes after the button was pressed, so it waits for
+           a gap in the typing the way the generate handler does rather than
+           rebuilding the table under somebody's caret. */
+        SB.Focus.defer('promptpanel', render);
       }).catch(function (e) {
         /* The reason stays on the button until the next press: the job registry
            is the only place it is written down. */
@@ -20252,7 +20425,15 @@ window.SB = window.SB || {};
         (o.picksOnly ? all.filter(function (x) { return x.chosen; }) : all)
           .forEach(function (tk) {
             const v = tk.rec;
-            if (!v.ref || !SB.Renders.has(p, v)) return;
+            /* Counted, not skipped. These used to be dropped without a word,
+               so a card holding two dead takes reported nothing missing while
+               Settings could see them perfectly well. */
+            if (!v.ref || !SB.Renders.has(p, v)) {
+              if (o.madeOnly && !v.made) return;
+              if (v.url) linkOnly++;
+              else missing++;
+              return;
+            }
             if (o.madeOnly && !v.made) return;
             const data = SB.Renders.dataUrl(p, v);
             items.push({
@@ -20263,16 +20444,6 @@ window.SB = window.SB || {};
               take: many ? tk.n : 0, chosen: tk.chosen
             });
           });
-        if (sh.video.ref && SB.Renders.has(p, sh.video)) {
-          /* counted above */
-        } else if (sh.video.url) {
-          /* Held as a link, not a file — and links expire. Worth saying
-           * before the export runs rather than after. */
-          linkOnly++;
-        } else if (!o.madeOnly) {
-          /* A clip record with neither bytes nor a link left. */
-          missing++;
-        }
       }
 
       if (o.proxies && sh.image) {
@@ -20361,7 +20532,8 @@ window.SB = window.SB || {};
       linkOnly: linkOnly,
       missing: missing,
       clashes: clashes,
-      wide: items.some(function (it) { return /^\d+[A-Z]{2,}[._]/.test(it.name); }),
+      /* 1AE.mp4 and 1AE1.mp4 are the same problem; the digit must not hide it */
+      wide: items.some(function (it) { return /^\d+[A-Z]{2,}\d*[._]/.test(it.name); }),
       shots: list.length
     };
   }
@@ -20389,8 +20561,11 @@ window.SB = window.SB || {};
       if (it.kind === 'original') e.original = it.name;
       else if (it.kind === 'clip') {
         e.takes = (e.takes || 0) + 1;
-        /* the chosen take is what the Clip column names; the rest are counted */
-        if (it.chosen || !e.clip) e.clip = it.name;
+        /* The Clip column names the chosen take, and the serial column has to
+           name the SAME one -- they were read from different places, so a
+           chosen take that could not be written left the row pointing at one
+           take's name and another take's serial. */
+        if (it.chosen || !e.clip) { e.clip = it.name; e.clipSerial = it.rec && it.rec.serial; }
       }
       else if (it.kind === 'board copy' && !e.original) e.boardCopy = it.name;
     });
@@ -20418,12 +20593,16 @@ window.SB = window.SB || {};
            no shot list */
         (names[sh.id] && (names[sh.id].original || names[sh.id].boardCopy)) || '',
         (names[sh.id] && names[sh.id].clip) || '',
-        /* how many of this shot are in the folder, so nobody has to count */
-        SB.Model.takeCount(sh) > 1 ? SB.Model.takeCount(sh) : '',
+        /* how many of this shot are IN THE FOLDER -- counted off the plan, not
+           off the card, because picksOnly, madeOnly and a take with no bytes
+           all mean the two are different numbers */
+        (names[sh.id] && names[sh.id].takes > 1) ? names[sh.id].takes : '',
         /* and the serial beside it, because a code is positional and the way
            back to the file inside the board is the number */
         sh.render && sh.render.serial ? SB.Renders.pad(sh.render.serial) : '',
-        sh.video && sh.video.serial ? SB.Renders.pad(sh.video.serial) : ''
+        (names[sh.id] && names[sh.id].clipSerial)
+          ? SB.Renders.pad(names[sh.id].clipSerial)
+          : (sh.video && sh.video.serial ? SB.Renders.pad(sh.video.serial) : '')
       ].map(cell).join(','));
     });
     return lines.join('\r\n');
@@ -20753,7 +20932,11 @@ window.SB = window.SB || {};
     const p = P();
     const todo = [];
     rows(p, opts.scope).forEach(function (r) {
-      if (r.shot.video && !r.shot.video.ref && r.shot.video.url) todo.push(r.shot);
+      /* any take held as a link, not only the chosen one */
+      const any = SB.Model.takes(r.shot).some(function (tk) {
+        return !tk.rec.ref && tk.rec.url;
+      });
+      if (any) todo.push(r.shot);
     });
     let ok = 0;
     const next = function (i) {
@@ -20974,7 +21157,8 @@ window.SB = window.SB || {};
       let dot = btn.querySelector('.tb-count');
       if (!n && !held) { if (dot) dot.remove(); btn.classList.remove('working'); return; }
       if (!dot) { dot = SB.el('span', 'tb-count'); btn.appendChild(dot); }
-      dot.textContent = String(n || held);
+      /* both, not whichever is non-zero: two running and three held read "2" */
+      dot.textContent = String(n + held);
       dot.classList.toggle('held', !n && !!held);
       btn.classList.toggle('working', !!n);
       btn.title = (n ? n + ' generation' + (n === 1 ? '' : 's') + ' running on ImagineArt. ' : '') +

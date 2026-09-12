@@ -143,8 +143,14 @@
     } else {
       s.kind = 'rich';
       /* a reference box counts a chip as one object, and the offset is into
-       * the text the box READS as — which is what survives being rebuilt */
-      try { s.at = SB.RefBox ? SB.RefBox.caret(el) : null; } catch (e) { s.at = null; }
+       * the text the box READS as — which is what survives being rebuilt.
+       * Both ends: a rebuild used to hand back a collapsed caret, so a phrase
+       * selected for replacing was typed over rather than replaced. */
+      try {
+        const at = SB.RefBox && SB.RefBox.offsets ? SB.RefBox.offsets(el) : null;
+        s.at = at ? at.end : (SB.RefBox ? SB.RefBox.caret(el) : null);
+        s.from = at ? at.start : null;
+      } catch (e) { s.at = null; s.from = null; }
     }
     return s;
   }
@@ -175,7 +181,13 @@
       const b = Math.min(s.end == null ? s.start : s.end, max);
       try { el.setSelectionRange(a, b, s.dir); } catch (e) { }
     } else if (s.kind === 'rich' && s.at != null && SB.RefBox) {
-      try { SB.RefBox.setCaret(el, s.at); } catch (e) { }
+      try {
+        if (s.from != null && s.from !== s.at && SB.RefBox.setRange) {
+          SB.RefBox.setRange(el, s.from, s.at);
+        } else {
+          SB.RefBox.setCaret(el, s.at);
+        }
+      } catch (e) { }
     }
   }
 
