@@ -786,8 +786,19 @@
       writing = false;
       if (statusEl) statusEl.textContent = '';
       if (root) render();
+      /* What they are CALLED, and the first one by name.
+       *
+       * "It did not rename them" is not a thing anybody should have to work
+       * out from a folder: an export that says how it named things, and shows
+       * one, answers it at the moment it happens -- and if the answer is the
+       * wrong one it says which setting to go and change. */
+      const first = pl.items.filter(function (it) { return it.kind !== 'list'; })[0];
       SB.toast(n + ' file' + (n === 1 ? '' : 's') + ' written' +
-        (dir ? ' to ' + dir.name : '') + ' — ' + size(pl.bytes));
+        (dir ? ' to ' + dir.name : '') + ' — ' + size(pl.bytes) +
+        (first ? ', named by ' +
+          (opts.naming === 'serial' ? 'serial'
+            : opts.naming === 'code-serial' ? 'shot code and serial' : 'shot code') +
+          ' (' + first.name + ')' : ''));
     }).catch(function (e) {
       writing = false;
       if (statusEl) statusEl.textContent = '';
