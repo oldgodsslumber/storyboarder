@@ -897,22 +897,46 @@
     const push = pushBtn(sh, m, field, why);
     if (push) foot.appendChild(push);
 
-    /* A card can feed more references than the push can carry, and the prompt
-       names every one of them as supplied. Said here, where the push is. */
+    /* What this push will actually hand over, ALWAYS said -- not only when
+       there is a shortfall.
+     *
+     * This chip first appeared only when a card fed more references than the
+     * push could carry, which meant the ordinary case -- one subject, one
+     * reference -- showed nothing at all. So "no chip" could mean "sending
+     * one" or "there is nothing to send", and those are the two answers
+     * somebody staring at a wrong face most needs told apart. */
     const refs = SB.Imagine && SB.Imagine.refsFor
       ? SB.Imagine.refsFor(P(), sh, roleOf(field)) : null;
-    if (refs && refs.feed > refs.carries) {
-      const left = refs.feed - refs.carries;
-      const chip = SB.el('span', 'badge warn refs',
-        refs.carries ? '1 of ' + refs.feed + ' refs' : 'no refs sent');
-      chip.title = refs.carries
-        ? 'This card feeds ' + refs.feed + ' reference pictures and a still push carries one \u2014 ' +
-          '\u201c' + (refs.first.label || 'the first') + '\u201d, which is the one the prompt calls ' +
-          'image 1. The other ' + left + ' reach the model only as the words in the prompt. ' +
-          'Drop them in by hand on ImagineArt if they have to be matched exactly.'
-        : 'An API-key push cannot carry a reference picture at all, and the prompt below ' +
-          'describes ' + refs.feed + ' of them as supplied. Sign in to ImagineArt to send ' +
-          'the first one, or drop them in by hand.';
+    if (refs) {
+      let text, why, warn;
+      if (refs.byKey && refs.feed) {
+        text = 'no refs sent'; warn = true;
+        why = 'An API-key push carries no reference picture at all, and the prompt describes ' +
+          refs.feed + ' of them as supplied. Sign in to ImagineArt to send the first one, or ' +
+          'drop them in by hand there.';
+      } else if (!refs.feed) {
+        text = 'no refs'; warn = !!refs.wordsOnly;
+        why = refs.wordsOnly
+          ? refs.wordsOnly + ' subject' + (refs.wordsOnly === 1 ? ' on this card has' : 's on this card have') +
+            ' no reference frame, so nothing is sent and the model works from the words alone. ' +
+            'Give them a reference in the References panel if they have to look the same every time.'
+          : 'Nothing is marked on this card, so the push carries the prompt and nothing else.';
+      } else if (refs.feed > refs.carries) {
+        text = '1 of ' + refs.feed + ' refs'; warn = true;
+        why = 'This card feeds ' + refs.feed + ' reference pictures and a still push carries one \u2014 ' +
+          '\u201c' + ((refs.first && refs.first.label) || 'the first') + '\u201d, the one the prompt calls ' +
+          'image 1. The other ' + (refs.feed - refs.carries) + ' reach the model only as words. ' +
+          'Drop them in by hand on ImagineArt if they have to be matched exactly.';
+      } else {
+        text = 'sends 1 ref'; warn = false;
+        why = '\u201c' + ((refs.first && refs.first.label) || 'One reference') + '\u201d is uploaded ' +
+          'with this push and named as image 1 in the prompt.' +
+          (refs.wordsOnly ? ' ' + refs.wordsOnly + ' other subject' +
+            (refs.wordsOnly === 1 ? ' has' : 's have') + ' no reference frame, so ' +
+            (refs.wordsOnly === 1 ? 'it reaches' : 'they reach') + ' the model as words only.' : '');
+      }
+      const chip = SB.el('span', 'badge refs' + (warn ? ' warn' : ' ok'), text);
+      chip.title = why;
       foot.appendChild(chip);
     }
 

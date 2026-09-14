@@ -952,6 +952,9 @@ button.linkish{
 /* kept on screen because it was on screen when it stopped matching the filter */
 .pt-row.settled .pt-code-line .code{opacity:.65}
 .badge.done{border-color:var(--ok);color:var(--ok);cursor:help;margin-left:6px}
+/* what a push will actually carry — said on every row, not only the bad ones */
+.badge.refs{cursor:help}
+.badge.refs.ok{border-color:var(--line2);color:var(--fg-dim)}
 /* the takes on one card, in the clip window */
 .clip-takes{display:flex;flex-direction:column;gap:4px;margin:10px 0 4px}
 .clip-take{

@@ -2849,6 +2849,71 @@
           (f ? f.scene.id + ' img=' + !!f.shot.image : 'gone') + ' want ' + sc.id);
       })();
 
+      /* ---- the row says what the push will actually carry ----
+       *
+       * A still push sends one reference picture, and for a long time it sent
+       * none at all while the prompt it carried said "reference images are
+       * supplied in order". The row has to say which it is -- including when
+       * the answer is "one", because a chip that only appears when something
+       * is WRONG cannot be told apart from a chip that is broken. It was: the
+       * first version of this was exported onto the wrong object, so it never
+       * rendered once, and "no chip" read as "nothing to send". */
+      {
+        app.commentMode = false;
+        t('the prompt table can ask what a push will carry',
+          !!(SB.Imagine && typeof SB.Imagine.refsFor === 'function'),
+          'SB.Imagine.refsFor is ' + typeof (SB.Imagine || {}).refsFor);
+
+        const sc = P().scenes[0];
+        const png = 'data:image/webp;base64,' + 'A'.repeat(64);
+        P().blobs.refpic = png;
+        const withPic = SB.Personas.add(P(), 'person');
+        withPic.name = 'Pictured';
+        SB.Personas.setImage(withPic, { ref: 'refpic', w: 64, h: 36 }, 'front', null);
+        const noPic = SB.Personas.add(P(), 'person');
+        noPic.name = 'Described only';
+
+        const im5 = SB.Model.imageModel(P());
+        const made = [['one ref', [withPic.id]], ['no ref frame', [noPic.id]],
+          ['two subjects', [withPic.id, noPic.id]], ['nobody', []]]
+          .map(function (r) {
+            const x = SB.Model.addShot(P(), sc.id, { type: 'Close-up' });
+            x.description = 'Chip test: ' + r[0];
+            x.personaIds = r[1].slice();
+            x.prompts = {};
+            if (im5) x.prompts[im5.id] = { imagePrompt: 'A prompt.', videoPrompt: '', modelName: im5.name, at: Date.now() };
+            return x;
+          });
+        app.changed(true);
+        SB.PromptPanel.open();
+
+        const chipOf = function (sh) {
+          const c = document.querySelector('.pt-row[data-shot="' + sh.id + '"] .badge.refs');
+          return c ? c.textContent : '(none)';
+        };
+        t('a card with one reference says it is sending it',
+          chipOf(made[0]) === 'sends 1 ref', chipOf(made[0]));
+        t('a subject with no reference frame is called out, not left silent',
+          chipOf(made[1]) === 'no refs', chipOf(made[1]));
+        t('and that one is a warning, because the words are all the model gets',
+          !!document.querySelector('.pt-row[data-shot="' + made[1].id + '"] .badge.refs.warn'), '');
+        t('a card feeding more than the push carries says one of them travels',
+          chipOf(made[2]) === 'sends 1 ref', chipOf(made[2]));
+        t('and names which one, since the prompt calls it image 1',
+          /Pictured/.test(document.querySelector('.pt-row[data-shot="' + made[2].id + '"] .badge.refs').title),
+          document.querySelector('.pt-row[data-shot="' + made[2].id + '"] .badge.refs').title.slice(0, 60));
+        t('an empty card says so without crying wolf',
+          chipOf(made[3]) === 'no refs' &&
+          !document.querySelector('.pt-row[data-shot="' + made[3].id + '"] .badge.refs.warn'),
+          chipOf(made[3]));
+
+        SB.PromptPanel.close();
+        made.forEach(function (x) { SB.Model.deleteShot(P(), x.id); });
+        SB.Personas.remove(P(), withPic.id);
+        SB.Personas.remove(P(), noPic.id);
+        app.changed(true);
+      }
+
       /* ---- a filter must not take away the row you are working in ----
        *
        * The filter used to be re-applied on every render, and a render happens

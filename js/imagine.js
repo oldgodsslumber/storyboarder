@@ -2618,11 +2618,21 @@
    * the thing nobody could see. */
   function refsFor(p, shot, role) {
     const feed = SB.Refs.images(p, shot);
-    if (!feed.length) return null;
+    /* Subjects on the card that have no reference frame of their own. They
+       reach the model as words and nothing else, and looking at the card there
+       is no way to tell them from the ones that do. */
+    const named = SB.Refs.feed(p, shot).filter(function (e) { return e.kind === 'subject'; });
+    const wordsOnly = named.filter(function (e) { return !e.images.length; }).length;
     const carries = role === 'image'
       ? (transport() === 'key' ? 0 : 1)
       : 1;
-    return { feed: feed.length, carries: Math.min(carries, feed.length), first: feed[0] };
+    return {
+      feed: feed.length,
+      wordsOnly: wordsOnly,
+      carries: Math.min(carries, feed.length),
+      first: feed[0] || null,
+      byKey: transport() === 'key'
+    };
   }
 
   function whyNot(p, shot, model, role) {
@@ -3046,7 +3056,7 @@
        worth the tidiness */
     play: openClip,
     attach: attachClip, drop: dropClip,
-    label: clipLabel, meta: clipMeta, confirmCost: confirmCost, refsFor: refsFor
+    label: clipLabel, meta: clipMeta, confirmCost: confirmCost
   };
 
   SB.Imagine = {
@@ -3081,6 +3091,7 @@
     whyNot: whyNot, promptFor: promptFor,
     /* jobs */
     job: job, busy: busy, clear: clear, onChange: onChange, runningJobs: runningJobs,
+    refsFor: refsFor,
     claimParked: claimParked, parkedCount: parkedCount, parkedFor: parkedFor,
     ensureTools: ensureTools,
     /* exposed for the tests */
