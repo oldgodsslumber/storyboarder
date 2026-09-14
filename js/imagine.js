@@ -1621,36 +1621,53 @@
     const viaMcp = function () {
       const why = needOrg();
       if (why) return Promise.reject(new Error(why));
-      /* aspect_ratio, model and duration are required-but-nullable on this
-       * tool, so the keys travel even when there is nothing to put in them. */
-      const args = {
-        org_id: orgId(),
-        prompt: canon.prompt,
-        model: canon.slug || null,
-        aspect_ratio: canon.aspect || null,
-        duration: null,
-        image_url: opts.imageUrl || null
-      };
-      if (canon.resolution) args.resolution = canon.resolution;
-      if (canon.quality) args.quality = canon.quality;
-      /* Everything inside this `then` happens after ImagineArt accepted the
-       * job, so every failure in it is a failure of a generation that has
-       * already cost something — never a reason to try the other door. A
-       * rejection from callRaw itself is the tools refusing the job, which
-       * is the one case the fallback is for. */
-      return callRaw(TOOL.image, args).then(function (got) {
-        const id = assetId(got);
-        const settled = (got.url && !id)
-          ? Promise.resolve(got) : waitForAsset(id || got.text, canon.onState);
-        return settled.then(function (g2) {
-          noteDoor('mcp');
-          return finishImage(g2);
-        }).then(function (out) {
-          out.usedSlug = canon.slug || '';
-          out.via = 'mcp';
-          return out;
-        }).catch(afterSubmit);
-      });
+      /* A reference is a URL, never bytes, and ours are local -- so it is
+       * uploaded first, exactly as the video door already does with its frame.
+       *
+       * If that upload fails the push does NOT quietly carry on without it.
+       * Falling through to a door that cannot carry a reference at all would
+       * render the prompt's "keep their face exactly as in that image" against
+       * no image, which is the whole bug this is here to fix -- so the failure
+       * is marked as final and says what it was. */
+      return (opts.refBlob ? uploadForUrl(opts.refBlob) : Promise.resolve(''))
+        .catch(function (e) {
+          const err = new Error('The reference picture could not be uploaded, so the ' +
+            'still was not made: ' + (e.message || e) + '. Nothing was charged.');
+          err.submitted = true;
+          throw err;
+        })
+        .then(function (refUrl) {
+          /* aspect_ratio, model and duration are required-but-nullable on this
+           * tool, so the keys travel even when there is nothing to put in them. */
+          const args = {
+            org_id: orgId(),
+            prompt: canon.prompt,
+            model: canon.slug || null,
+            aspect_ratio: canon.aspect || null,
+            duration: null,
+            image_url: refUrl || opts.imageUrl || null
+          };
+          if (canon.resolution) args.resolution = canon.resolution;
+          if (canon.quality) args.quality = canon.quality;
+          /* Everything inside this `then` happens after ImagineArt accepted
+           * the job, so every failure in it is a failure of a generation that
+           * has already cost something — never a reason to try the other
+           * door. A rejection from callRaw itself is the tools refusing the
+           * job, which is the one case the fallback is for. */
+          return callRaw(TOOL.image, args).then(function (got) {
+            const id = assetId(got);
+            const settled = (got.url && !id)
+              ? Promise.resolve(got) : waitForAsset(id || got.text, canon.onState);
+            return settled.then(function (g2) {
+              noteDoor('mcp');
+              return finishImage(g2);
+            }).then(function (out) {
+              out.usedSlug = canon.slug || '';
+              out.via = 'mcp';
+              return out;
+            }).catch(afterSubmit);
+          });
+        });
     };
     const viaRest = function () {
       /* The v2 API knows this model by a different name, and the board
@@ -1976,10 +1993,12 @@
       const before = alone ? balanceNow() : Promise.resolve(null);
 
       const work = role === 'image'
-        ? before.then(function () {
+        ? before.then(function () { return firstRef(p, shot); }).then(function (ref) {
+          made.reference = ref ? { label: ref.label, n: ref.n, of: ref.of } : null;
           return image({
             prompt: text, slug: slugNow, restSlug: slugOf(model, 'key'),
             aspect: aspect, resolution: res, quality: qual,
+            refBlob: ref && ref.blob,
             onState: function () { state('waiting'); }
           });
         }).then(function (got) {
@@ -2039,6 +2058,41 @@
    * carrying, its ≤480p proxy if the original predates them being kept in the
    * file, and nothing at all if the shot has no picture — which is a
    * text-to-video, not a failure. */
+  /* The reference picture a STILL push can carry.
+   *
+   * It could not carry one at all until now. generate_image was called with
+   * prompt, model and aspect and nothing else, while the prompt it carried
+   * said "Reference images are supplied in order -- refer to each recurring
+   * subject as the person in image 1, and keep their face, hair and wardrobe
+   * exactly as in that image". Nothing was supplied. The model was told about
+   * pictures it had never been given and did the only thing left to it, which
+   * is invent an image 1 and call it whoever the words named. That is worse
+   * than sending nothing and saying nothing: the mapping reads as authority.
+   *
+   * The door takes ONE (generate_image takes a single image_url; only
+   * generate_video takes an array), so it carries the first in feed order --
+   * which is the one the prompt's own mapping calls image 1, so the words and
+   * the picture finally agree. Everything after it stays described in words,
+   * and the panel says how many those are rather than leaving it to be
+   * discovered in the result.
+   *
+   * The original where the board has one, the proxy where it does not: a
+   * reference is there to be matched, and 480p is a poor thing to match. */
+  function firstRef(p, shot) {
+    const feed = SB.Refs.images(p, shot);
+    const e = feed[0];
+    if (!e) return Promise.resolve(null);
+    const name = 'ref1-' + (SB.Renders.slug(e.label) || 'ref') + '.png';
+    return SB.Renders.file(p, e.render).then(function (f) {
+      if (f) return { blob: f, name: f.name || name, label: e.label, n: e.n, of: feed.length };
+      const src = e.img ? SB.Blobs.src(p, e.img) : '';
+      if (!src) return null;
+      return dataUrlToBlob(src).then(function (b) {
+        return { blob: b, name: name, label: e.label, n: e.n, of: feed.length };
+      });
+    }).catch(function () { return null; });
+  }
+
   function startFrame(p, shot) {
     return SB.Renders.file(p, shot.render).then(function (f) {
       if (f) return { blob: f, name: f.name };
@@ -2556,6 +2610,21 @@
    * every row and the chip already carries it; the row one is the entire
    * reason one card differs from the one beside it.
    */
+  /* What a push of this shot will actually hand over, in words, so it can be
+   * said on the button rather than discovered in the result.
+   *
+   * A still carries one reference and a card routinely feeds three; the
+   * prompt's numbered mapping describes all of them as supplied. That gap is
+   * the thing nobody could see. */
+  function refsFor(p, shot, role) {
+    const feed = SB.Refs.images(p, shot);
+    if (!feed.length) return null;
+    const carries = role === 'image'
+      ? (transport() === 'key' ? 0 : 1)
+      : 1;
+    return { feed: feed.length, carries: Math.min(carries, feed.length), first: feed[0] };
+  }
+
   function whyNot(p, shot, model, role) {
     const field = role === 'image' ? 'imagePrompt' : 'videoPrompt';
     if (!model) {
@@ -2722,8 +2791,14 @@
     const when = made.at ? ' on ' + new Date(made.at).toLocaleDateString() : '';
     const res = made.resolution ? ' at ' + made.resolution : '';
     const cost = costFor(made.slug || '', '', made.resolution || '');
+    /* Which picture went with it, because "it ignored the reference" and "it
+       was never sent one" look identical in the result. */
+    const ref = made.reference
+      ? ' Sent with \u201c' + (made.reference.label || 'a reference') + '\u201d' +
+        (made.reference.of > 1 ? ' (1 of ' + made.reference.of + ' the card feeds)' : '') + '.'
+      : '';
     return 'Made here' + when + ' by ' + (made.model || made.slug || 'a model') + res +
-      (cost ? ', about ' + cost.credits + ' credits' : '') + '.';
+      (cost ? ', about ' + cost.credits + ' credits' : '') + '.' + ref;
   }
 
   function openClip(p, shot) {
@@ -2971,7 +3046,7 @@
        worth the tidiness */
     play: openClip,
     attach: attachClip, drop: dropClip,
-    label: clipLabel, meta: clipMeta, confirmCost: confirmCost
+    label: clipLabel, meta: clipMeta, confirmCost: confirmCost, refsFor: refsFor
   };
 
   SB.Imagine = {
@@ -3010,7 +3085,7 @@
     ensureTools: ensureTools,
     /* exposed for the tests */
     _bind: bind, _pickScore: score, _harvest: harvest, _parseRpc: parseRpc,
-    _fileVideo: fileVideo, _land: land, _start: start
+    _fileVideo: fileVideo, _land: land, _start: start, _image: image, _firstRef: firstRef
   };
 
 })(window.SB);

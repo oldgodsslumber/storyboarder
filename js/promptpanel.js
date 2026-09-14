@@ -897,6 +897,25 @@
     const push = pushBtn(sh, m, field, why);
     if (push) foot.appendChild(push);
 
+    /* A card can feed more references than the push can carry, and the prompt
+       names every one of them as supplied. Said here, where the push is. */
+    const refs = SB.Imagine && SB.Imagine.refsFor
+      ? SB.Imagine.refsFor(P(), sh, roleOf(field)) : null;
+    if (refs && refs.feed > refs.carries) {
+      const left = refs.feed - refs.carries;
+      const chip = SB.el('span', 'badge warn refs',
+        refs.carries ? '1 of ' + refs.feed + ' refs' : 'no refs sent');
+      chip.title = refs.carries
+        ? 'This card feeds ' + refs.feed + ' reference pictures and a still push carries one \u2014 ' +
+          '\u201c' + (refs.first.label || 'the first') + '\u201d, which is the one the prompt calls ' +
+          'image 1. The other ' + left + ' reach the model only as the words in the prompt. ' +
+          'Drop them in by hand on ImagineArt if they have to be matched exactly.'
+        : 'An API-key push cannot carry a reference picture at all, and the prompt below ' +
+          'describes ' + refs.feed + ' of them as supplied. Sign in to ImagineArt to send ' +
+          'the first one, or drop them in by hand.';
+      foot.appendChild(chip);
+    }
+
     const gen = SB.Focus.costly(SB.el('button', 'mini primary', '\u2726 generate'));
     gen.dataset.gen = sh.id + ':' + field;
     paintGen(gen, sh, field);

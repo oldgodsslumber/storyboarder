@@ -496,6 +496,111 @@ section('a generation whose board is not on screen any more');
 }
 
 /* --------------------------------------- the headers a browser may send */
+section('a still carries its reference picture');
+
+{
+  /* generate_image was called with prompt, model and aspect and NOTHING else,
+     while the prompt it carried said "Reference images are supplied in order --
+     refer to each recurring subject as the person in image 1, and keep their
+     face exactly as in that image". Nothing was supplied. The model was told
+     about a picture it had never been given, so it invented one. */
+  const calls = [];
+  const realFetch = sandbox.fetch;
+  sandbox.fetch = function (url, init) {
+    const body = JSON.parse(init.body);
+    calls.push(body);
+    const name = body.params && body.params.name;
+    let result = { content: [{ type: 'text', text: 'ok' }] };
+    if (name === 'user_upload') {
+      result = { content: [{ type: 'text', text: 'https://cdn.imagine/up/ref1.png' }],
+                 structuredContent: { url: 'https://cdn.imagine/up/ref1.png' } };
+    } else if (name === 'generate_image') {
+      result = { content: [{ type: 'text', text: 'https://cdn.imagine/out/made.png' }],
+                 structuredContent: { url: 'https://cdn.imagine/out/made.png' } };
+    }
+    return Promise.resolve({
+      ok: true, status: 200,
+      headers: { get: function () { return null; } },
+      text: function () {
+        return Promise.resolve(JSON.stringify({ jsonrpc: '2.0', id: body.id, result: result }));
+      }
+    });
+  };
+  SB.Imagine.setTransport('oauth');
+  store.set('sb.imagine.tokens', JSON.stringify({
+    access_token: 'tok', refresh_token: 'r', expires_at: Date.now() + 3600000, email: 'a@b.c'
+  }));
+  SB.Imagine.setOrg({ id: 'org-1', name: 'Test org' });
+
+  await SB.Imagine._image({
+    prompt: 'A close-up of his hands.', slug: 'gpt-image', aspect: '16:9',
+    refBlob: new Blob([new Uint8Array(12)], { type: 'image/png' })
+  }).catch(function () { return null; });
+
+  const upload = calls.filter(c => c.params && c.params.name === 'user_upload')[0];
+  const gen = calls.filter(c => c.params && c.params.name === 'generate_image')[0];
+  t('the reference is uploaded first, because the tool takes a URL and not bytes',
+    !!upload, calls.map(c => c.params && c.params.name).join(','));
+  t('and generate_image is called with the URL it came back with',
+    !!gen && gen.params.arguments.image_url === 'https://cdn.imagine/up/ref1.png',
+    gen ? JSON.stringify(gen.params.arguments.image_url) : 'no call');
+  t('the prompt still travels with it',
+    !!gen && gen.params.arguments.prompt === 'A close-up of his hands.',
+    gen ? gen.params.arguments.prompt : '');
+
+  /* no reference on the card is still a legal push, with nothing attached */
+  calls.length = 0;
+  await SB.Imagine._image({ prompt: 'No refs here.', slug: 'gpt-image', aspect: '16:9' })
+    .catch(function () { return null; });
+  const bare = calls.filter(c => c.params && c.params.name === 'generate_image')[0];
+  t('a card with no references uploads nothing',
+    !calls.some(c => c.params && c.params.name === 'user_upload'),
+    calls.map(c => c.params && c.params.name).join(','));
+  t('and sends a null image_url rather than a broken one',
+    !!bare && bare.params.arguments.image_url === null,
+    bare ? JSON.stringify(bare.params.arguments.image_url) : 'no call');
+
+  /* an upload that fails must NOT quietly render without the reference: the
+     prompt claims the picture was supplied, so a still made without it is the
+     bug wearing a different hat */
+  calls.length = 0;
+  sandbox.fetch = function (url, init) {
+    const body = JSON.parse(init.body);
+    calls.push(body);
+    if (body.params && body.params.name === 'user_upload') {
+      return Promise.resolve({
+        ok: true, status: 200, headers: { get: function () { return null; } },
+        text: function () {
+          return Promise.resolve(JSON.stringify({
+            jsonrpc: '2.0', id: body.id, error: { code: -32000, message: 'upload refused' }
+          }));
+        }
+      });
+    }
+    return Promise.resolve({
+      ok: true, status: 200, headers: { get: function () { return null; } },
+      text: function () {
+        return Promise.resolve(JSON.stringify({ jsonrpc: '2.0', id: body.id,
+          result: { content: [{ type: 'text', text: 'https://cdn.imagine/out/oops.png' }] } }));
+      }
+    });
+  };
+  let failed = null;
+  await SB.Imagine._image({
+    prompt: 'A close-up of his hands.', slug: 'gpt-image', aspect: '16:9',
+    refBlob: new Blob([new Uint8Array(12)], { type: 'image/png' })
+  }).catch(function (e) { failed = e; });
+  t('an upload that fails stops the push', !!failed, 'it went ahead anyway');
+  t('and says so, rather than making a picture without the reference',
+    !!failed && /reference picture could not be uploaded/i.test(failed.message),
+    failed ? failed.message : '');
+  t('and nothing was generated', !calls.some(c => c.params && c.params.name === 'generate_image'),
+    calls.map(c => c.params && c.params.name).join(','));
+
+  sandbox.fetch = realFetch;
+  SB.Imagine.signOut();
+}
+
 section('what actually goes on the wire');
 
 {
