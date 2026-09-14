@@ -489,6 +489,15 @@
    * stays loadable without pdf.js (the node tests load neither). */
   function defaultExport() {
     return {
+      /* Which document the PDF button makes. The board is the storyboard
+       * sheets; the references are what the subjects on it LOOK like, which is
+       * a different thing on paper and the thing you hand somebody who has to
+       * match them. 'both' prints the references after the board. */
+      doc: 'board',              // 'board' | 'refs' | 'both'
+      refPreset: 'refs4',
+      refShots: true,            // which cards each subject appears on
+      refUnused: true,           // subjects no card uses
+      refFeeds: false,           // the per-card mapping, in feed order
       preset: 'sheet6',
       showType: true,
       showScript: true,

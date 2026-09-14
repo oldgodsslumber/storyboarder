@@ -24,8 +24,14 @@ html = html.slice(0, at) + '<script>\n' + scenario + '\n</script>' + html.slice(
 const tmp = join(root, '_uitest_' + Date.now() + '.html');   // unique: file:// gets cached
 writeFileSync(tmp, html, 'utf8');
 
+/* The budget is how long the scenario gets, in virtual ms, before Chrome
+   dumps whatever is on screen. It was 6000, which was plenty until the
+   scenario grew a PDF section that renders every preset into an iframe and
+   now a second document besides -- past that, the run stopped mid-way and
+   reported "did not report", which reads like a crash and is not one.
+   If this file ever says that again, try raising this before hunting. */
 const dom = execFileSync(CHROME, [
-  '--headless=new', '--disable-gpu', '--virtual-time-budget=6000',
+  '--headless=new', '--disable-gpu', '--virtual-time-budget=20000',
   '--dump-dom', 'file:///' + tmp.replace(/\\/g, '/')
 ], { maxBuffer: 64 * 1024 * 1024, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
 

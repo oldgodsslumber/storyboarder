@@ -31,7 +31,7 @@ sandbox.window = sandbox;
 vm.createContext(sandbox);
 
 for (const f of ['js/util.js', 'js/focus.js', 'js/doc.js', 'js/blobs.js', 'js/geminimodels.js', 'js/providers.js',
-  'js/brand.js', 'js/renders.js', 'js/imaginemodels.js', 'js/refs.js', 'js/personas.js', 'js/fields.js', 'js/model.js', 'js/store.js',
+  'js/brand.js', 'js/renders.js', 'js/imaginemodels.js', 'js/refs.js', 'js/personas.js', 'js/fields.js', 'js/model.js', 'js/store.js', 'js/pdf.js',
   'js/coverage.js']) {
   vm.runInContext(readFileSync(join(root, f), 'utf8'), sandbox, { filename: f });
 }
@@ -2796,6 +2796,92 @@ console.log('\n— the serial counter knows about every take —');
   SB.Model.migrate(junk);
   eq(junk.scenes[0].shots[0].videoAlts, [], 'an alternate with no serial is dropped');
   eq(!!junk.scenes[0].shots[0].video, true, 'and the chosen one is untouched');
+}
+
+console.log('\n— the reference sheets —');
+{
+  /* The PDF button made one document: the storyboard. What the subjects on it
+     are supposed to LOOK like had no page of its own, so the only way to see a
+     board's references together was one at a time in the References panel. */
+  const p = SB.Model.newProject();
+  p.name = 'Bridge Crest';
+  SB.app = { project: p, changed: function () { } };
+  p.blobs.k1 = 'data:image/webp;base64,' + 'A'.repeat(40);
+
+  const danny = SB.Personas.add(p, { kind: 'person', name: 'Danny' });
+  danny.description = '34, close-cropped dark hair.';
+  SB.Personas.setImage(danny, { ref: 'k1', w: 8, h: 8 }, 'front', null);
+  const ruth = SB.Personas.add(p, { kind: 'person', name: 'Ruth' });
+  ruth.description = 'Silver bob. No frame yet.';
+  const bay = SB.Personas.add(p, { kind: 'place', name: 'The bay' });
+  const clip = SB.Personas.add(p, { kind: 'thing', name: 'The manifest' });
+
+  const sh = p.scenes[0].shots[0];
+  sh.description = 'Close-up of hands.';
+  sh.personaIds = [danny.id, bay.id];
+
+  const cells = SB.Pdf.refCells({ refUnused: true });
+  eq(cells.map(function (c) { return c.name; }), ['Danny', 'Ruth', 'The bay', 'The manifest'],
+    'every subject is on the sheet, cast first, then locations, then objects');
+  eq(cells.map(function (c) { return c.group; }),
+    ['Cast', 'Cast', 'Locations', 'Objects'], 'grouped by what they are');
+  eq(cells[0].shots, ['1A'], 'and each says which cards it appears on');
+  eq(cells[1].none, true, 'a subject with no reference frame is marked as having none');
+  eq(cells[0].proxy, true, 'and one with only a board copy says that too');
+
+  /* a page of references that quietly shows the 854x480 board copy is the
+     export bug this app has had twice; it says so on the page instead */
+  const shown = SB.Pdf.html({ doc: 'refs', silent: true });
+  eq(/board copy only/.test(shown), true, 'the sheet says when it is printing a board copy');
+  eq(/described in words only/.test(shown), true, 'and when there is no picture at all');
+
+  /* subjects nothing uses are worth hiding when the sheet is a handover */
+  eq(SB.Pdf.refCells({ refUnused: false }).map(function (c) { return c.name; }),
+    ['Danny', 'The bay'], 'the unused ones can be left off');
+
+  /* each kind starts its own sheet: a heading halfway down a mixed page is
+     not findable by somebody flipping for one subject */
+  const L = SB.Pdf.layout({ doc: 'refs' });
+  eq(L.refs, 4, 'the count is the subjects, not the shots');
+  eq(L.sheets, 3, 'and cast, locations and objects take a sheet each');
+
+  /* the toggles actually reach the page */
+  eq(/class="on"/.test(SB.Pdf.html({ doc: 'refs', refShots: true, silent: true })), true,
+    'the cards a subject is on can be printed');
+  eq(/class="on"/.test(SB.Pdf.html({ doc: 'refs', refShots: false, silent: true })), false,
+    'or left off');
+  eq(/What each card hands over/.test(SB.Pdf.html({ doc: 'refs', refFeeds: true, silent: true })), true,
+    'the per-card mapping can ride along');
+  eq(/What each card hands over/.test(shown), false, 'and is off unless asked for');
+
+  /* the feed page is the order somebody dropping files in by hand needs */
+  const rows = SB.Pdf.feedRows();
+  eq(rows.length, 1, 'only cards that feed something are listed');
+  eq(rows[0].code, '1A', 'by code');
+  eq(rows[0].items.map(function (i) { return i.n; }), [1], 'numbered the way the prompt names them');
+
+  /* both documents in one file, each with its own paper and its own grid */
+  const both = SB.Pdf.html({ doc: 'both', silent: true });
+  eq(/<div class="bd">/.test(both) && /<div class="rf">/.test(both), true,
+    'both documents ride in one file');
+  eq(/\.bd \.cell\{/.test(both), true, 'the board rules are scoped to the board pages');
+  eq(/\.rf \.rcell\{/.test(both), true, 'and the reference rules to the reference pages');
+  eq(/\.rf \.bd /.test(both), false, 'and neither is nested inside the other');
+  const bl = SB.Pdf.layout({ doc: 'both' });
+  eq(bl.sheets, bl.boardSheets + bl.refSheets, 'and the sheet count is both halves');
+
+  /* a board with nothing to show says so rather than printing an empty grid */
+  const bare = SB.Model.newProject();
+  SB.app = { project: bare, changed: function () { } };
+  eq(/no references yet/.test(SB.Pdf.html({ doc: 'refs', silent: true })), true,
+    'a board with no subjects says so');
+
+  /* the storyboard document is untouched by any of this */
+  SB.app = { project: p, changed: function () { } };
+  const board = SB.Pdf.html({ doc: 'board', silent: true });
+  eq(/<div class="rf">/.test(board), false, 'printing the board prints only the board');
+  eq(/rcell/.test(board), false, 'with no reference cells in it');
+  eq(SB.Pdf.layout({ doc: 'board' }).refs, 0, 'and it does not count references');
 }
 
 console.log('\n— a framing is how a description opens —');

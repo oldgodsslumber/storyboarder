@@ -54,6 +54,40 @@
     }
   ];
 
+  /* The reference sheets. Same grid idea as a contact sheet, but a reference
+   * is mostly picture: the whole point of the page is what somebody has to
+   * match, so the frame takes the room and the words sit under it.
+   *
+   *   frame — the picture's height in the cell; 'fill' hands it what is left
+   *   desc  — line clamp on the description; 0 prints all of it
+   */
+  const REF_PRESETS = [
+    {
+      id: 'refs4', label: 'References — 4 up (portrait)',
+      orient: 'portrait', cols: 2, rows: 2, frame: '78mm', desc: 6, font: 11
+    },
+    {
+      id: 'refs6', label: 'References — 6 up (portrait)',
+      orient: 'portrait', cols: 2, rows: 3, frame: '52mm', desc: 4, font: 10
+    },
+    {
+      id: 'refs9', label: 'Reference index — 9 up (portrait)',
+      orient: 'portrait', cols: 3, rows: 3, frame: '40mm', desc: 2, font: 9
+    },
+    {
+      id: 'refs1', label: 'One reference a sheet (portrait)',
+      orient: 'portrait', cols: 1, rows: 1, frame: 'fill', desc: 0, font: 13
+    },
+    {
+      id: 'refs3w', label: 'References — 3 up (landscape)',
+      orient: 'landscape', cols: 3, rows: 1, frame: '74mm', desc: 6, font: 11
+    }
+  ];
+
+  function refPreset(id) {
+    return REF_PRESETS.filter(function (x) { return x.id === id; })[0] || REF_PRESETS[0];
+  }
+
   /* The sheet is sized to fit BOTH A4 and Letter with 12mm margins, so it
    * prints whole on either: portrait takes A4's printable width and Letter's
    * printable height, landscape the other way round. The portrait height used
@@ -142,6 +176,83 @@
     return out;
   }
 
+  /* ---------- the references ----------
+   *
+   * Every recurring subject the board carries, in library order: cast, then
+   * locations, then objects. The picture is the ORIGINAL where the board has
+   * one -- a reference exists to be matched, and the 854x480 proxy that is
+   * plenty for a card on screen is not plenty for somebody holding the page.
+   */
+  function refCells(o) {
+    const p = P();
+    o = options(o);
+    const used = {};
+    /* which cards each subject turns up on, by code, mentioned or merely cast */
+    p.scenes.forEach(function (sc, si) {
+      sc.shots.forEach(function (sh, sj) {
+        if (sh.noShot) return;
+        const code = SB.Model.code(si, sj);
+        SB.Refs.feed(p, sh).forEach(function (e) {
+          if (e.kind !== 'subject') return;
+          (used[e.id] = used[e.id] || []).push(code);
+        });
+      });
+    });
+
+    const out = [];
+    SB.Personas.KINDS.forEach(function (kind) {
+      const mine = SB.Personas.all(p).filter(function (per) {
+        return SB.Personas.kindOf(per).id === kind.id;
+      });
+      mine.forEach(function (per, i) {
+        const shots = used[per.id] || [];
+        if (!shots.length && !o.refUnused) return;
+        const hero = SB.Personas.hero(per);
+        const full = hero && hero.render ? SB.Renders.dataUrl(p, hero.render) : '';
+        out.push({
+          id: per.id,
+          name: per.name || 'unnamed',
+          kind: kind.label,
+          kindId: kind.id,
+          group: kind.plural,
+          groupFirst: i === 0,
+          role: (hero && hero.label) || '',
+          desc: (per.description || '').replace(/\s+/g, ' ').trim(),
+          img: full || (hero ? SB.Blobs.src(p, hero) : ''),
+          /* said on the page, because a page of references that quietly shows
+             the board copy is the export bug this app has had twice */
+          proxy: !full && !!hero,
+          none: !hero,
+          shots: shots,
+          serial: (hero && hero.render && hero.render.serial) || 0
+        });
+      });
+    });
+    return out;
+  }
+
+  /* The mapping each card hands over, in feed order -- the order somebody
+   * dropping the files into a model by hand has to use. Only cards that feed
+   * anything appear. */
+  function feedRows() {
+    const p = P();
+    const out = [];
+    p.scenes.forEach(function (sc, si) {
+      sc.shots.forEach(function (sh, sj) {
+        if (sh.noShot) return;
+        const list = SB.Refs.images(p, sh);
+        if (!list.length) return;
+        out.push({
+          code: SB.Model.code(si, sj),
+          items: list.map(function (e) {
+            return { n: e.n, label: e.label, role: e.role || '', kind: e.kind };
+          })
+        });
+      });
+    });
+    return out;
+  }
+
   /* ---------- pagination ---------- */
 
   /* Returns [{banner, items}]. A banner is a cell whose scene heading and
@@ -180,14 +291,171 @@
     return pages;
   }
 
+  /* One page per grid-full, broken at each kind so cast, locations and objects
+   * never share a sheet -- the page is a thing somebody flips through looking
+   * for one subject, and a heading halfway down a mixed sheet is not findable. */
+  function paginateRefs(list, pr) {
+    const perPage = pr.cols * pr.rows;
+    const pages = [];
+    let page = null;
+    list.forEach(function (c) {
+      if (!page || page.group !== c.group || page.items.length >= perPage) {
+        page = { group: c.group, items: [], first: !pages.some(function (x) {
+          return x.group === c.group;
+        }) };
+        pages.push(page);
+      }
+      page.items.push(c);
+    });
+    return pages;
+  }
+
+  function refCellHTML(c, pr, o) {
+    const pic = c.img
+      ? '<img src="' + c.img + '">'
+      : '<div class="empty">no reference frame</div>';
+    const tags = [];
+    if (c.role) tags.push('<span class="role">' + SB.esc(c.role) + '</span>');
+    if (c.serial) tags.push('<span class="ser">' + SB.Renders.pad(c.serial) + '</span>');
+    if (c.proxy) tags.push('<span class="warn">board copy only</span>');
+    if (c.none) tags.push('<span class="warn">described in words only</span>');
+    const where = !o.refShots ? ''
+      : c.shots.length
+        ? '<div class="on">' + SB.esc(c.shots.join(', ')) + '</div>'
+        : '<div class="on none">on no card</div>';
+    return '<figure class="rcell">' +
+      '<div class="frame">' + pic + '</div>' +
+      '<div class="side">' +
+      '<div class="meta"><span class="nm">' + SB.esc(c.name) + '</span>' +
+      tags.join('') + '</div>' +
+      '<div class="desc grow"><div class="clip">' +
+      (c.desc ? SB.esc(c.desc) : '<i class="dim">(no description yet)</i>') +
+      '</div></div>' + where +
+      '</div></figure>';
+  }
+
+  function feedHTML(rows) {
+    if (!rows.length) return '';
+    const body = rows.map(function (r) {
+      return '<tr><td class="c">' + SB.esc(r.code) + '</td><td>' +
+        r.items.map(function (i) {
+          return '<span class="fi"><b>' + i.n + '</b> ' + SB.esc(i.label) +
+            (i.role ? ' <i>(' + SB.esc(i.role) + ')</i>' : '') + '</span>';
+        }).join('') + '</td></tr>';
+    }).join('');
+    return '<section class="page"><div class="feedwrap">' +
+      '<h2>What each card hands over</h2>' +
+      '<p class="lead">In this order. The number is the position the prompt names, ' +
+      'so a model fed them out of order is being told about different pictures.</p>' +
+      '<table class="feed"><thead><tr><th>Shot</th><th>References, in order</th></tr></thead>' +
+      '<tbody>' + body + '</tbody></table></div></section>';
+  }
+
+  function refCSS(pr) {
+    const paper = PAPER[pr.orient];
+    return [
+      '@page{size:' + pr.orient + ';margin:12mm}',
+      '*{box-sizing:border-box}',
+      ':root{--page-w:' + paper.w + ';--page-h:' + paper.h + ';--gap:5mm}',
+      'html,body{margin:0;padding:0}',
+      'body{font:' + pr.font + 'px/1.45 "Segoe UI",system-ui,sans-serif;color:#111;' +
+      'background:#e9eaee;-webkit-print-color-adjust:exact;print-color-adjust:exact}',
+      '.page{width:var(--page-w);height:var(--page-h);margin:8mm auto;background:#fff;' +
+      'display:flex;flex-direction:column;box-shadow:0 1px 8px rgba(0,0,0,.22);break-after:page}',
+      '.page:last-child{break-after:auto}',
+      '.rhead{flex:0 0 auto;display:flex;align-items:baseline;gap:8px;padding:0 0 3mm;' +
+      'border-bottom:2px solid #111;margin-bottom:4mm}',
+      '.rhead h1{margin:0;font-size:1.7em;letter-spacing:.3px}',
+      '.rhead .sub{color:#555}',
+      '.grid{flex:1;min-height:0;display:grid;' +
+      'grid-template-columns:repeat(' + pr.cols + ',minmax(0,1fr));' +
+      'grid-template-rows:repeat(' + pr.rows + ',minmax(0,1fr));gap:var(--gap)}',
+      '.rcell{margin:0;min-width:0;min-height:0;display:flex;flex-direction:column;' +
+      'overflow:hidden;border:1px solid ' + INK.line + ';border-radius:3px;background:#fff}',
+      '.frame{background:#f2f3f5;border-bottom:1px solid ' + INK.soft + ';display:flex;' +
+      'align-items:center;justify-content:center;overflow:hidden}',
+      pr.frame === 'fill'
+        ? '.rcell .frame{flex:1 1 auto;min-height:0}'
+        : '.rcell .frame{flex:0 0 ' + pr.frame + ';height:' + pr.frame + '}',
+      '.frame img{max-width:100%;max-height:100%;width:auto;height:auto;display:block;' +
+      'object-fit:contain}',
+      '.empty{color:#9aa0aa;font-size:9px;letter-spacing:.4px;text-transform:uppercase}',
+      '.side{flex:1 1 auto;min-width:0;min-height:0;display:flex;flex-direction:column;' +
+      'overflow:hidden}',
+      '.meta{flex:0 0 auto;display:flex;gap:6px;align-items:baseline;flex-wrap:wrap;' +
+      'padding:3px 5px;background:' + INK.meta + ';border-bottom:1px solid ' + INK.soft + '}',
+      '.nm{font-weight:700;font-size:1.1em}',
+      '.role,.ser{font-size:.82em;color:#666;text-transform:uppercase;letter-spacing:.4px}',
+      '.ser{font-variant-numeric:tabular-nums}',
+      '.warn{font-size:.8em;color:#a4442c;text-transform:uppercase;letter-spacing:.4px}',
+      '.desc{flex:0 1 auto;min-height:0;padding:4px 5px;color:#333;overflow:hidden}',
+      '.grow{flex:1 1 auto}',
+      '.clip{display:-webkit-box;-webkit-box-orient:vertical;overflow:hidden;white-space:pre-wrap}',
+      pr.desc ? '.desc .clip{-webkit-line-clamp:' + pr.desc + '}' : '.desc .clip{display:block}',
+      '.on{flex:0 0 auto;padding:3px 5px 4px;border-top:1px dashed #e3e5e9;color:#555;' +
+      'font-size:.85em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+      '.on.none{color:#9aa0aa;font-style:italic}',
+      '.dim{color:#9aa0aa}',
+      /* the mapping page */
+      '.feedwrap{flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column}',
+      '.feedwrap h2{margin:0 0 1mm;font-size:1.4em}',
+      '.lead{margin:0 0 4mm;color:#555}',
+      'table.feed{width:100%;border-collapse:collapse}',
+      'table.feed th{text-align:left;font-size:.8em;text-transform:uppercase;letter-spacing:.5px;' +
+      'color:#666;border-bottom:1px solid ' + INK.line + ';padding:2mm 1mm}',
+      'table.feed td{vertical-align:top;padding:1.6mm 1mm;border-bottom:1px solid #eef0f3}',
+      'table.feed td.c{font-weight:700;width:18mm;white-space:nowrap}',
+      '.fi{display:inline-block;margin:0 4mm 1mm 0}',
+      '.fi b{display:inline-block;min-width:4mm;color:#666}',
+      'footer{flex:0 0 auto;padding-top:3mm;font-size:9px;color:#666;text-align:center}',
+      '@media print{body{background:#fff}.page{width:auto;height:var(--page-h);margin:0;' +
+      'box-shadow:none}}'
+    ].filter(Boolean).join('');
+  }
+
+  /* The reference document: a cover-less gallery of what everything on this
+   * board is supposed to look like, and optionally the per-card mapping. */
+  function refPages(o) {
+    const p = P();
+    o = options(o);
+    const pr = refPreset(o.refPreset);
+    const list = refCells(o);
+    const pages = paginateRefs(list, pr);
+    let out = pages.map(function (pg, i) {
+      const head = '<div class="rhead"><h1>' + SB.esc(pg.group) + '</h1>' +
+        '<span class="sub">' + SB.esc(p.name || 'Untitled') +
+        ' \u00b7 ' + SB.esc(p.versionName || '') + '</span></div>';
+      const foot = o.footer
+        ? '<footer>references \u00b7 ' + SB.esc(pg.group) + ' \u00b7 page ' + (i + 1) +
+          ' of ' + pages.length + '</footer>'
+        : '';
+      return '<section class="page">' + head + '<div class="grid">' +
+        pg.items.map(function (c) { return refCellHTML(c, pr, o); }).join('') +
+        '</div>' + foot + '</section>';
+    }).join('');
+    if (!out) {
+      out = '<section class="page"><p>This board has no references yet. ' +
+        'Add them in the References panel.</p></section>';
+    }
+    if (o.refFeeds) out += feedHTML(feedRows());
+    return { html: out, css: refCSS(pr), preset: pr, count: list.length, sheets: pages.length };
+  }
+
   function layout(o) {
     o = options(o);
     const pr = preset(o.preset);
     const list = cells();
+    const board = o.doc === 'refs' ? 0 : paginate(list, pr, o).length;
+    const refs = o.doc === 'board' ? null : refPages(o);
+    const shown = o.doc === 'refs' ? refs.preset : pr;
     return {
-      preset: pr, opts: o, perPage: pr.cols * pr.rows,
-      paper: PAPER[pr.orient], shots: list.length,
-      sheets: paginate(list, pr, o).length
+      preset: shown, boardPreset: pr, opts: o, perPage: shown.cols * shown.rows,
+      paper: PAPER[shown.orient],
+      shots: list.length,
+      refs: refs ? refs.count : 0,
+      sheets: board + (refs ? refs.sheets + (o.refFeeds ? 1 : 0) : 0),
+      boardSheets: board,
+      refSheets: refs ? refs.sheets + (o.refFeeds ? 1 : 0) : 0
     };
   }
 
@@ -335,6 +603,59 @@
   function html(o) {
     const p = P();
     o = options(o);
+
+    /* Two documents out of one button.
+     *
+     * The board is the storyboard; the references are what the subjects on it
+     * are supposed to LOOK like, which is a different page and a different
+     * job -- it is the thing you hand somebody who has to match them, and
+     * until now the only way to see a board's references together was to open
+     * them one at a time in the References panel.
+     *
+     * Both prints the references after the board, in one file, because that is
+     * one thing to send rather than two. The two halves have their own paper
+     * and their own grid, so each rule is scoped to its own pages rather than
+     * one stylesheet trying to be both. */
+    if (o.doc === 'refs' || o.doc === 'both') {
+      const refs = refPages(o);
+      const boardPart = o.doc === 'both' ? boardPages(o) : null;
+      const css = (boardPart ? scope('.bd', boardPart.css) : '') + scope('.rf', refs.css);
+      const body =
+        (boardPart ? '<div class="bd">' + boardPart.html + '</div>' : '') +
+        '<div class="rf">' + refs.html + '</div>';
+      return '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + SB.esc(p.name) +
+        ' \u2014 ' + (o.doc === 'both' ? 'storyboard and references' : 'references') +
+        '</title><style>' + css + '</style></head><body>' + body +
+        (o.silent ? '' : '<script>' + READY + '<\/script>') + '</body></html>';
+    }
+    const built = boardPages(o);
+    return '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + SB.esc(p.name) +
+      ' \u2014 storyboard</title><style>' + built.css + '</style></head><body>' + built.html +
+      (o.silent ? '' : '<script>' + READY + '<\/script>') + '</body></html>';
+  }
+
+  /* Both halves carry rules for .page, .grid, .frame and .meta, and the shapes
+   * behind those names are not the same. Rather than rename one set -- which
+   * would make every selector in the board sheet read as though the reference
+   * sheet were the reason for it -- each set is prefixed with the wrapper its
+   * own pages sit in. @page and @media are left alone: they are not selectors
+   * and there is only one paper per half anyway. */
+  function scope(sel, css) {
+    return String(css).replace(/(^|\})([^{}@]+)\{/g, function (all, close, heads) {
+      const out = heads.split(',').map(function (h) {
+        const t = h.trim();
+        if (!t) return t;
+        if (/^(html|body|:root)$/.test(t)) return t;          // document-wide, leave them
+        if (/^\d/.test(t)) return t;                          // a keyframe stop
+        return sel + ' ' + t;
+      }).join(',');
+      return close + out + '{';
+    });
+  }
+
+  function boardPages(o) {
+    const p = P();
+    o = options(o);
     const pr = preset(o.preset);
     const list = cells();
     const sheets = paginate(list, pr, o);
@@ -357,10 +678,7 @@
         foot + '</section>';
     }).join('');
     if (!pages) pages = '<section class="page"><p>Nothing to print — every shot is marked “no shot”.</p></section>';
-
-    return '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + SB.esc(p.name) +
-      ' — storyboard</title><style>' + sheetCSS(pr, o) + '</style></head><body>' + pages +
-      (o.silent ? '' : '<script>' + READY + '<\/script>') + '</body></html>';
+    return { html: pages, css: sheetCSS(pr, o) };
   }
 
   function exportPdf(o) {
@@ -373,7 +691,10 @@
 
   SB.Pdf = {
     exportPdf: exportPdf, html: html, cells: cells,
-    PRESETS: PRESETS, PAPER: PAPER, preset: preset, layout: layout, options: options
+    PRESETS: PRESETS, REF_PRESETS: REF_PRESETS, PAPER: PAPER,
+    preset: preset, refPreset: refPreset,
+    refCells: refCells, feedRows: feedRows, refPages: refPages,
+    layout: layout, options: options
   };
 
 })(window.SB);

@@ -304,14 +304,25 @@
         document.getElementById('btnPdf').click();
         var back = document.querySelector('.modal-back');
         t('the PDF button opens the export dialog', back !== null, '');
-        var sel = back.querySelector('.xp-left select');
+        /* The first select in the dialog is which DOCUMENT to print now, so
+           the layout picker is asked for by the box it lives in rather than by
+           being first -- which is how this test started driving the wrong
+           control and previewing the wrong document. */
+        var docSel = back.querySelector('.xp-left select');
+        t('the dialog asks which document to print first',
+          docSel && [].map.call(docSel.options, function (o) { return o.value; }).join(',')
+            === 'board,refs,both',
+          docSel ? [].map.call(docSel.options, function (o) { return o.value; }).join(',') : 'none');
+        t('and opens on the storyboard', docSel.value === 'board', docSel.value);
+
+        var sel = back.querySelector('.xp-board select');
         t('the dialog offers every preset',
           sel && sel.options.length === SB.Pdf.PRESETS.length,
           sel ? sel.options.length : 'no picker');
-        var boxes = back.querySelectorAll('.xp-left .pp-toggle input');
+        var boxes = back.querySelectorAll('.xp-board .pp-toggle input');
         t('the dialog opens showing what the board already prints',
-          boxes.length === 7 && [].every.call(boxes, function (b, i) {
-            return b.checked === (i < 4 || i === 6);      // the two scene options start off
+          boxes.length === 6 && [].every.call(boxes, function (b, i) {
+            return b.checked === (i < 4);                 // the two scene options start off
           }),
           [].map.call(boxes, function (b) { return b.checked; }).join(','));
         var pv = back.querySelector('.xp-frame');
@@ -329,8 +340,40 @@
             .split(' ').length === 3,
           getComputedStyle(pv.contentDocument.querySelector('.grid')).gridTemplateColumns);
         t('the sheet count is reported',
-          /\d+ shots? → \d+ sheets?/.test(back.querySelector('.xp-count').textContent),
+          /\d+ shots? · \d+ sheets?|\d+ shots? → \d+ sheets?/
+            .test(back.querySelector('.xp-count').textContent),
           back.querySelector('.xp-count').textContent);
+
+        /* ---- the other document the button makes ---- */
+        t('the reference controls are out of the way until they are wanted',
+          back.querySelector('.xp-refs').style.display === 'none',
+          back.querySelector('.xp-refs').style.display);
+        docSel.value = 'refs';
+        docSel.onchange();
+        t('choosing the references puts the board controls away',
+          back.querySelector('.xp-board').style.display === 'none' &&
+          back.querySelector('.xp-refs').style.display !== 'none',
+          back.querySelector('.xp-board').style.display + '/' +
+          back.querySelector('.xp-refs').style.display);
+        t('and previews an actual reference sheet',
+          pv.contentDocument.querySelector('.page') !== null &&
+          /references/.test(pv.contentDocument.title),
+          pv.contentDocument.title);
+        t('counted in references, not shots',
+          /reference/.test(back.querySelector('.xp-count').textContent),
+          back.querySelector('.xp-count').textContent);
+        docSel.value = 'both';
+        docSel.onchange();
+        t('both puts the board controls back',
+          back.querySelector('.xp-board').style.display !== 'none' &&
+          back.querySelector('.xp-refs').style.display !== 'none',
+          back.querySelector('.xp-board').style.display + '/' +
+          back.querySelector('.xp-refs').style.display);
+        t('and the count is both halves',
+          /shots? · .*reference/.test(back.querySelector('.xp-count').textContent),
+          back.querySelector('.xp-count').textContent);
+        docSel.value = 'board';
+        docSel.onchange();
 
         // Cancel has to leave the project exactly as it was
         var was = JSON.stringify(P().settings.export);
@@ -346,8 +389,8 @@
         SB.Pdf.exportPdf = function (o) { handed = o; };
         document.getElementById('btnPdf').click();
         var back2 = document.querySelector('.modal-back');
-        back2.querySelector('.xp-left select').value = 'notes4';
-        back2.querySelector('.xp-left select').onchange();
+        back2.querySelector('.xp-board select').value = 'notes4';
+        back2.querySelector('.xp-board select').onchange();
         [].filter.call(back2.querySelectorAll('.foot .tb'), function (b) {
           return b.textContent === 'Export';
         })[0].click();
