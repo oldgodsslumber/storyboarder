@@ -1019,6 +1019,19 @@ button.linkish{
 /* One lane: the words for this half, the pictures they pull in, the prompt.
    Read down the column and it is the order you work in. */
 .pt-lane{position:relative}
+/* What this push asks the model for, beside the button that sends it. The
+   menus are the model's own lists, so an unlisted value cannot be chosen —
+   it would be swapped for the model's floor without a word. */
+.shoot-row{display:flex;gap:4px;align-items:center}
+.shoot-pick{
+  font-size:10px;padding:1px 4px;border-radius:4px;cursor:pointer;
+  border:1px solid var(--line2);background:var(--bg3);color:var(--fg-dim);
+}
+.shoot-pick:hover{color:var(--fg);border-color:var(--accent)}
+/* this card asks for something of its own */
+.shoot-pick.mine{border-color:var(--accent);color:var(--accent)}
+/* what was asked for is not on this model's list */
+.shoot-pick.fell{border-color:var(--danger);color:var(--danger)}
 .pt-lane-cap{display:none}
 .pt-lane-desc{min-height:44px;font-size:12px;background:var(--bg3)}
 /* An empty lane box is the shared description doing the work, not a gap */

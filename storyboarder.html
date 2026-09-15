@@ -1025,6 +1025,19 @@ button.linkish{
 /* One lane: the words for this half, the pictures they pull in, the prompt.
    Read down the column and it is the order you work in. */
 .pt-lane{position:relative}
+/* What this push asks the model for, beside the button that sends it. The
+   menus are the model's own lists, so an unlisted value cannot be chosen —
+   it would be swapped for the model's floor without a word. */
+.shoot-row{display:flex;gap:4px;align-items:center}
+.shoot-pick{
+  font-size:10px;padding:1px 4px;border-radius:4px;cursor:pointer;
+  border:1px solid var(--line2);background:var(--bg3);color:var(--fg-dim);
+}
+.shoot-pick:hover{color:var(--fg);border-color:var(--accent)}
+/* this card asks for something of its own */
+.shoot-pick.mine{border-color:var(--accent);color:var(--accent)}
+/* what was asked for is not on this model's list */
+.shoot-pick.fell{border-color:var(--danger);color:var(--danger)}
 .pt-lane-cap{display:none}
 .pt-lane-desc{min-height:44px;font-size:12px;background:var(--bg3)}
 /* An empty lane box is the shared description doing the work, not a gap */
@@ -1335,7 +1348,7 @@ body.comment-mode .frame{cursor:crosshair}
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-09-15 17:48 · f7d5f87+";</script>
+<script>window.SB_BUILD = "2026-09-15 18:13 · 9649860+";</script>
 
 <div id="app">
 
@@ -5539,12 +5552,85 @@ window.SB = window.SB || {};
     return (v === '1080p' || v === 'default') ? v : 'best';
   }
 
+  /* ---------------- the shoot controls ----------------
+   *
+   * Three questions with the same shape: what does this card ask for, what
+   * does the board ask for when the card is quiet, and what will this model
+   * actually take? The last one is not advisory — an unlisted value is
+   * silently swapped for the model's own floor, so a choice that does not
+   * survive has to be caught here rather than discovered in the result.
+   *
+   * `shoot` on a shot is sparse: a key that is absent means "the board's
+   * answer", so changing a board default moves every card that never said
+   * otherwise.
+   */
+  function override(shot, what) {
+    const v = shot && shot.shoot && shot.shoot[what];
+    return typeof v === 'string' && v ? v : (typeof v === 'number' ? String(v) : '');
+  }
+
+  /* What a card will actually be shot at, and whether that is what was asked
+   * for. Returns { value, asked, allowed, fell } — `fell` is true when the
+   * request could not be honoured, which is the thing worth saying out loud. */
+  function settleOne(p, shot, slug, kind, what) {
+    const tool = kind === 'image' ? TOOL.image : TOOL.video;
+    const allowed = allowFor(tool, slug, what);
+    const asked = override(shot, what) ||
+      (what === 'duration' ? (p.settings.imagineDuration || '')
+        : what === 'quality' ? (p.settings.imagineQuality || '') : '');
+    if (!allowed || !allowed.length) {
+      /* [] is the model saying it takes none of this and uses its own;
+         null is "not known yet". Either way nothing is sent. */
+      return { value: '', asked: asked, allowed: allowed || [], fell: !!(asked && allowed) };
+    }
+    if (asked && allowed.indexOf(asked) >= 0) {
+      return { value: asked, asked: asked, allowed: allowed, fell: false };
+    }
+    if (asked) {
+      /* the nearest thing it does take, rather than its floor by accident */
+      const n = parseFloat(asked);
+      let best = allowed[0];
+      if (isFinite(n)) {
+        let gap = Infinity;
+        allowed.forEach(function (v) {
+          const m = parseFloat(v);
+          if (!isFinite(m)) return;
+          if (Math.abs(m - n) < gap) { gap = Math.abs(m - n); best = v; }
+        });
+      }
+      return { value: best, asked: asked, allowed: allowed, fell: true };
+    }
+    return { value: '', asked: '', allowed: allowed, fell: false };
+  }
+
+  /* Everything one push will ask for, in one object, so the row that shows it
+   * and the call that sends it cannot drift apart. */
+  function settle(p, shot, slug, kind) {
+    const out = {
+      resolution: resolutionFor(p, slug, kind, shot),
+      quality: kind === 'image' ? qualityFor(p, slug, shot) : '',
+      duration: kind === 'image' ? '' : settleOne(p, shot, slug, kind, 'duration')
+    };
+    return out;
+  }
+
+  /* How long this clip runs. '' sends nothing, which is the model's own
+   * default — 6s on ltx-2.3, 4s on most of the rest, and what every clip
+   * this app ever made was given, because the key was hard-coded to null. */
+  function durationFor(p, shot, slug) {
+    return settleOne(p, shot, slug, 'video', 'duration').value;
+  }
+
   /* The resolution to ask this model for, or '' to send nothing — which is
    * the honest answer both for "leave it alone" and for a model that ignores
    * the field. */
-  function resolutionFor(p, slug, kind) {
-    if (policy(p) === 'default') return '';
+  function resolutionFor(p, slug, kind, shot) {
     const list = allowFor(kind === 'image' ? TOOL.image : TOOL.video, slug, 'resolution');
+    /* A card that names one outranks the policy — that is what an override
+     * is for — but it still has to be something the model offers. */
+    const mine = override(shot, 'resolution');
+    if (mine && list && list.indexOf(mine) >= 0) return mine;
+    if (policy(p) === 'default') return '';
     if (!list || !list.length) return '';
     const sorted = list.slice().sort(function (a, b) { return rank(a) - rank(b); });
     if (policy(p) === 'best') return sorted[sorted.length - 1];
@@ -5555,9 +5641,11 @@ window.SB = window.SB || {};
   }
 
   /* Only gpt-image-2 takes one, and its floor is "low". */
-  function qualityFor(p, slug) {
-    if (policy(p) === 'default') return '';
+  function qualityFor(p, slug, shot) {
     const list = allowFor(TOOL.image, slug, 'quality');
+    const mine = override(shot, 'quality') || (p.settings.imagineQuality || '');
+    if (mine && list && list.indexOf(mine) >= 0) return mine;
+    if (policy(p) === 'default') return '';
     if (!list || !list.length) return '';
     /* The ladder gained rungs: gpt-image-2 does low/medium/high, and the 2.5
      * models do auto/low/medium/high/xhigh/max. A fixed preference of "high"
@@ -6713,9 +6801,14 @@ window.SB = window.SB || {};
         code: codeOf(p, shot) || '', role: role, frameRef: frameRef, made: made
       };
 
-      const res = resolutionFor(p, slugNow, role);
-      const qual = role === 'image' ? qualityFor(p, slugNow) : '';
+      const res = resolutionFor(p, slugNow, role, shot);
+      const qual = role === 'image' ? qualityFor(p, slugNow, shot) : '';
+      /* The one that was never sent at all: every clip this app made ran at
+       * the model's own default length because this key was hard-coded to
+       * null. A storyboard is the one thing that knows how long a shot is. */
+      const dur = role === 'image' ? '' : durationFor(p, shot, slugNow);
       made.resolution = res || '';
+      made.duration = dur || '';
 
       /* A measurement is only worth anything if this generation is the only
        * one in the air: two at once and the difference is both of them. */
@@ -6750,7 +6843,7 @@ window.SB = window.SB || {};
         : before.then(function () { return startFrame(p, shot); }).then(function (frame) {
           return video({
             prompt: text, slug: slugNow, restSlug: slugOf(model, 'key'),
-            aspect: aspect, resolution: res,
+            aspect: aspect, resolution: res, duration: dur,
             frame: frame && frame.blob, frameName: frame && frame.name,
             onState: function () { state('waiting'); }
           });
@@ -7865,7 +7958,8 @@ window.SB = window.SB || {};
     account: account, whoAmI: whoAmI, balance: balance,
     /* discovery, for the Settings readout */
     discover: discover, toolList: toolList, tools: function () { return mcp.tools || []; },
-    capabilities: capabilities, rawTools: rawTools, report: report, door: door,
+    capabilities: capabilities, rawTools: rawTools,
+    durationFor: durationFor, settleOne: settleOne, settle: settle, report: report, door: door,
     restVerdict: function () { return lsStr(K_REST); },
     catalog: catalog, catalogAll: catalogAll, catalogSource: catalogSource,
     worked: worked, noteWorked: noteWorked,
@@ -9606,6 +9700,11 @@ window.SB = window.SB || {};
        * the chosen one and stays the only thing the rest of the app reads. */
       videoAlts: [],
       annotation: null,                 // {ref} — transparent PNG overlay
+      /* What this card asks of the generator, where it differs from the
+       * board: { duration, resolution, quality }. Sparse on purpose — a key
+       * that is not here is the board's answer, so moving a board default
+       * moves every card that never overrode it. */
+      shoot: {},
       /* {ref,serial,ext,w,h,bytes} — the full-size original, in this file.
        * The board draws the proxy above; this is the copy a model is fed, and
        * it rides with the content. */
@@ -9719,6 +9818,19 @@ window.SB = window.SB || {};
          *             480p on Seedance, 720p on Veo, 1K and "low" quality on
          *             the stills. Sending nothing is not sending "normal". */
         imagineResolution: 'best',
+        /* How long a clip runs, in seconds as a string, when the card does
+         * not say. Clamped to whatever the chosen model actually takes — the
+         * lists differ wildly (ltx-2.3 does 6/8/10, wan-2.2 is fixed at 4,
+         * seedance-2.5 takes any second from 4 to 30) and an unlisted value
+         * is silently swapped for the model's own floor. '' means whatever
+         * the model does on its own, which is what every clip got before
+         * this existed. */
+        imagineDuration: '',
+        /* Render quality, separate from resolution because they are separate
+         * questions: max quality at 1K is a perfectly sensible pair, and
+         * before this it could not be asked for. '' follows the resolution
+         * policy, which is what it used to do unconditionally. */
+        imagineQuality: '',
         /* Whether the organization travels in the file. It is not a secret
          * and a team shares one, so it saves everybody a step — but a board
          * can travel further than the team that made it. */
@@ -10050,6 +10162,8 @@ window.SB = window.SB || {};
     if (typeof s.imagineAspect !== 'string') s.imagineAspect = '16:9';
     if (s.originals !== 'webp' && s.originals !== 'source') s.originals = 'webp';
     if (['best', '1080p', 'default'].indexOf(s.imagineResolution) < 0) s.imagineResolution = 'best';
+    if (typeof s.imagineDuration !== 'string') s.imagineDuration = '';
+    if (typeof s.imagineQuality !== 'string') s.imagineQuality = '';
     if (typeof s.imagineShareOrg !== 'boolean') s.imagineShareOrg = true;
     if (s.imagine && typeof s.imagine !== 'object') s.imagine = null;
     /* belt and braces: a board that has been through a version of this app
@@ -10111,6 +10225,7 @@ window.SB = window.SB || {};
            did: every lane falls back to the description it already had. */
         sh.imageDescription = sh.imageDescription || '';
         sh.videoDescription = sh.videoDescription || '';
+        if (!sh.shoot || typeof sh.shoot !== 'object') sh.shoot = {};
         sh.fields = (sh.fields && typeof sh.fields === 'object') ? sh.fields : {};
         sh.comments = Array.isArray(sh.comments) ? sh.comments : [];
         sh.prompts = sh.prompts || {};
@@ -10465,7 +10580,7 @@ window.SB = window.SB || {};
 
   const CONTENT_KEYS = [
     'type', 'color', 'image', 'annotation', 'description',
-    'imageDescription', 'videoDescription',
+    'imageDescription', 'videoDescription', 'shoot',
     'fields', 'prompts', 'personaIds', 'castEnters', 'comments', 'render', 'video'
   ];
 
@@ -16961,6 +17076,90 @@ window.SB = window.SB || {};
    */
   function roleOf(field) { return field === 'imagePrompt' ? 'image' : 'video'; }
 
+  /* ---------------------------------------------------------- the shoot row
+   *
+   * What this push will ask the model for, beside the button that sends it.
+   * Every menu is the model's OWN list — an unlisted value is swapped for the
+   * model's floor without a word, so it must not be possible to choose one.
+   *
+   * A card says nothing until it does: the first entry is the board's answer,
+   * and a card that has overridden it is drawn in the accent so a board's
+   * worth of rows can be scanned for the ones that differ.
+   */
+  const SHOOT = {
+    duration: { label: 's', title: 'How long this clip runs' },
+    resolution: { label: '', title: 'What size this is asked for' },
+    quality: { label: '', title: 'How hard the model is asked to work' }
+  };
+
+  function shootPick(sh, slug, kind, what) {
+    const IM = SB.Imagine;
+    const one = IM.settleOne(P(), sh, slug, kind, what);
+    if (!one.allowed.length) return null;          // the model takes none
+    const mine = (sh.shoot || {})[what] || '';
+    const sel = document.createElement('select');
+    sel.className = 'shoot-pick' + (mine ? ' mine' : '') + (one.fell ? ' fell' : '');
+
+    /* what happens when this card says nothing */
+    const board = IM.settleOne(P(), { shoot: {} }, slug, kind, what);
+    const first = document.createElement('option');
+    first.value = '';
+    first.textContent = board.value
+      ? board.value + (what === 'duration' ? 's' : '') + ' · board'
+      : 'model\u2019s own';
+    sel.appendChild(first);
+
+    one.allowed.forEach(function (v) {
+      const o = document.createElement('option');
+      o.value = v;
+      o.textContent = v + (what === 'duration' ? 's' : '');
+      if (v === mine) o.selected = true;
+      sel.appendChild(o);
+    });
+
+    /* A request this model cannot honour is shown rather than swallowed. */
+    if (one.fell && one.asked) {
+      const bad = document.createElement('option');
+      bad.value = '';
+      bad.disabled = true;
+      bad.textContent = one.asked + (what === 'duration' ? 's' : '') +
+        ' \u2014 not on ' + slug;
+      sel.insertBefore(bad, sel.firstChild);
+    }
+
+    sel.title = SHOOT[what].title + '.\n' +
+      (mine ? 'This card asks for ' + mine + '.' : 'Following the board.') +
+      '\nThis model takes: ' + one.allowed.join(', ') + '.' +
+      (one.fell ? '\n' + one.asked + ' is not among them \u2014 ' + one.value +
+        ' is what would be sent.' : '');
+
+    sel.onchange = function () {
+      sh.shoot = sh.shoot || {};
+      if (sel.value) sh.shoot[what] = sel.value; else delete sh.shoot[what];
+      SB.app.changed(false);
+      render();
+    };
+    return sel;
+  }
+
+  function shootRow(sh, m, field) {
+    const IM = SB.Imagine;
+    if (!IM || !IM.settleOne || !m || sh.noShot) return null;
+    const slug = IM.slugOf(m);
+    if (!slug) return null;
+    const kind = roleOf(field);
+    const wrap = SB.el('div', 'shoot-row');
+    const want = kind === 'video' ? ['duration', 'resolution'] : ['resolution', 'quality'];
+    let any = false;
+    want.forEach(function (what) {
+      const pick = shootPick(sh, slug, kind, what);
+      if (!pick) return;
+      any = true;
+      wrap.appendChild(pick);
+    });
+    return any ? wrap : null;
+  }
+
   function pushBtn(sh, m, field, note) {
     const IM = SB.Imagine;
     if (!IM) return null;
@@ -17031,18 +17230,22 @@ window.SB = window.SB || {};
      real generation; a published one is ImagineArt's base price, and a floor
      for anything longer or larger. Kept apart, because they are not the same
      claim. */
-  function priceOf(m, role) {
+  function priceOf(m, role, sh) {
     if (!SB.Imagine || !m) return null;
     const slug = SB.Imagine.slugOf(m);
     if (!slug) return null;
-    const res = SB.Imagine.resolutionFor(P(), slug, role);
-    const c = SB.Imagine.costFor(slug, '', res);
+    const res = SB.Imagine.resolutionFor(P(), slug, role, sh);
+    /* costFor has been keyed on duration since it was written and has only
+       ever been handed '' — a clip that runs twice as long costs accordingly,
+       so this is the key finally carrying something. */
+    const dur = role === 'video' ? SB.Imagine.durationFor(P(), sh, slug) : '';
+    const c = SB.Imagine.costFor(slug, dur, res);
     if (!c) return { res: res };
     return { res: res, credits: c.credits, from: c.from, note: c.note };
   }
 
-  function priceLine(m, role) {
-    const pr = priceOf(m, role);
+  function priceLine(m, role, sh) {
+    const pr = priceOf(m, role, sh);
     if (!pr) return '';
     const bits = [];
     if (pr.res) bits.push('at ' + pr.res);
@@ -17090,9 +17293,9 @@ window.SB = window.SB || {};
     } else if (role === 'video') {
       b.title = (sh.render || sh.image
         ? 'Animate this shot’s own frame with the prompt above.'
-        : 'No frame on this card yet, so this is text-to-video.') + priceLine(m, role);
+        : 'No frame on this card yet, so this is text-to-video.') + priceLine(m, role, sh);
     } else {
-      b.title = 'Make this frame on ImagineArt and put it on the card.' + priceLine(m, role);
+      b.title = 'Make this frame on ImagineArt and put it on the card.' + priceLine(m, role, sh);
     }
   }
 
@@ -17272,6 +17475,9 @@ window.SB = window.SB || {};
       play.onclick = function () { SB.Clip.open(P(), sh); };
       foot.appendChild(play);
     }
+
+    const shoot = shootRow(sh, m, field);
+    if (shoot) foot.appendChild(shoot);
 
     foot.appendChild(SB.el('span', 'spacer'));
 
@@ -19942,6 +20148,29 @@ window.SB = window.SB || {};
       if ((p.settings.imagineResolution || 'best') === o[0]) el.selected = true;
       imRes.appendChild(el);
     });
+    /* How long a clip runs when a card does not say. Not a per-model list
+       here — the board does not know which model a given card will use — so
+       it is a plain number, clamped to that model's own list at push time
+       and shown struck through on any card that cannot honour it. */
+    const imDur = document.createElement('select');
+    [['', 'Whatever each model does on its own'], ['3', '3 seconds'], ['4', '4 seconds'],
+     ['5', '5 seconds'], ['6', '6 seconds'], ['8', '8 seconds'], ['10', '10 seconds'],
+     ['12', '12 seconds'], ['15', '15 seconds']].forEach(function (o) {
+      const el = document.createElement('option');
+      el.value = o[0]; el.textContent = o[1];
+      if ((p.settings.imagineDuration || '') === o[0]) el.selected = true;
+      imDur.appendChild(el);
+    });
+
+    const imQual = document.createElement('select');
+    [['', 'Follow the resolution setting'], ['low', 'low'], ['medium', 'medium'],
+     ['high', 'high'], ['xhigh', 'xhigh'], ['max', 'max']].forEach(function (o) {
+      const el = document.createElement('option');
+      el.value = o[0]; el.textContent = o[1];
+      if ((p.settings.imagineQuality || '') === o[0]) el.selected = true;
+      imQual.appendChild(el);
+    });
+
     const imResF = field('Resolution asked for', imRes);
     imResF.style.marginTop = '14px';
     panels.imagine.appendChild(imResF);
@@ -19950,6 +20179,20 @@ window.SB = window.SB || {};
       'FIRST resolution on its own list, which is its floor. Seedance makes 480p that way, ' +
       'Veo 720p, the stills 1K, and GPT Image at low quality. Asked for the best it has, ' +
       'LTX gives 2160p.'));
+
+    panels.imagine.appendChild(field('Clip length', imDur));
+    panels.imagine.appendChild(SB.el('div', 'pp-note',
+      'Every clip this app made before this setting existed ran at the model\u2019s own ' +
+      'default \u2014 six seconds on LTX, four on most of the rest \u2014 because no length ' +
+      'was ever sent. Each model takes its own set: a length it does not offer is quietly ' +
+      'swapped for its shortest, so a card whose model cannot do this one says so and shows ' +
+      'what it will actually send. Any card can ask for its own.'));
+
+    panels.imagine.appendChild(field('Quality asked for', imQual));
+    panels.imagine.appendChild(SB.el('div', 'pp-note',
+      'Separate from resolution, because they are separate questions \u2014 the best work ' +
+      'the model can do at a small size is a sensible thing to ask for. Only the GPT Image ' +
+      'models take it; the 2.5 ones go up to xhigh and max.'));
 
     const imShare = document.createElement('input');
     imShare.type = 'checkbox';
@@ -20359,6 +20602,8 @@ window.SB = window.SB || {};
             SB.Store.setOoba({ url: oUrl.value, model: oobaModel, key: oKey.value });
             p.settings.imagineAspect = imAspect.value || '16:9';
             p.settings.imagineResolution = imRes.value || 'best';
+            p.settings.imagineDuration = imDur.value || '';
+            p.settings.imagineQuality = imQual.value || '';
             p.settings.imagineShareOrg = imShare.checked;
             if (IM) IM.publishToBoard(p);
             if (IM) {

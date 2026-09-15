@@ -888,12 +888,85 @@
     return (v === '1080p' || v === 'default') ? v : 'best';
   }
 
+  /* ---------------- the shoot controls ----------------
+   *
+   * Three questions with the same shape: what does this card ask for, what
+   * does the board ask for when the card is quiet, and what will this model
+   * actually take? The last one is not advisory — an unlisted value is
+   * silently swapped for the model's own floor, so a choice that does not
+   * survive has to be caught here rather than discovered in the result.
+   *
+   * `shoot` on a shot is sparse: a key that is absent means "the board's
+   * answer", so changing a board default moves every card that never said
+   * otherwise.
+   */
+  function override(shot, what) {
+    const v = shot && shot.shoot && shot.shoot[what];
+    return typeof v === 'string' && v ? v : (typeof v === 'number' ? String(v) : '');
+  }
+
+  /* What a card will actually be shot at, and whether that is what was asked
+   * for. Returns { value, asked, allowed, fell } — `fell` is true when the
+   * request could not be honoured, which is the thing worth saying out loud. */
+  function settleOne(p, shot, slug, kind, what) {
+    const tool = kind === 'image' ? TOOL.image : TOOL.video;
+    const allowed = allowFor(tool, slug, what);
+    const asked = override(shot, what) ||
+      (what === 'duration' ? (p.settings.imagineDuration || '')
+        : what === 'quality' ? (p.settings.imagineQuality || '') : '');
+    if (!allowed || !allowed.length) {
+      /* [] is the model saying it takes none of this and uses its own;
+         null is "not known yet". Either way nothing is sent. */
+      return { value: '', asked: asked, allowed: allowed || [], fell: !!(asked && allowed) };
+    }
+    if (asked && allowed.indexOf(asked) >= 0) {
+      return { value: asked, asked: asked, allowed: allowed, fell: false };
+    }
+    if (asked) {
+      /* the nearest thing it does take, rather than its floor by accident */
+      const n = parseFloat(asked);
+      let best = allowed[0];
+      if (isFinite(n)) {
+        let gap = Infinity;
+        allowed.forEach(function (v) {
+          const m = parseFloat(v);
+          if (!isFinite(m)) return;
+          if (Math.abs(m - n) < gap) { gap = Math.abs(m - n); best = v; }
+        });
+      }
+      return { value: best, asked: asked, allowed: allowed, fell: true };
+    }
+    return { value: '', asked: '', allowed: allowed, fell: false };
+  }
+
+  /* Everything one push will ask for, in one object, so the row that shows it
+   * and the call that sends it cannot drift apart. */
+  function settle(p, shot, slug, kind) {
+    const out = {
+      resolution: resolutionFor(p, slug, kind, shot),
+      quality: kind === 'image' ? qualityFor(p, slug, shot) : '',
+      duration: kind === 'image' ? '' : settleOne(p, shot, slug, kind, 'duration')
+    };
+    return out;
+  }
+
+  /* How long this clip runs. '' sends nothing, which is the model's own
+   * default — 6s on ltx-2.3, 4s on most of the rest, and what every clip
+   * this app ever made was given, because the key was hard-coded to null. */
+  function durationFor(p, shot, slug) {
+    return settleOne(p, shot, slug, 'video', 'duration').value;
+  }
+
   /* The resolution to ask this model for, or '' to send nothing — which is
    * the honest answer both for "leave it alone" and for a model that ignores
    * the field. */
-  function resolutionFor(p, slug, kind) {
-    if (policy(p) === 'default') return '';
+  function resolutionFor(p, slug, kind, shot) {
     const list = allowFor(kind === 'image' ? TOOL.image : TOOL.video, slug, 'resolution');
+    /* A card that names one outranks the policy — that is what an override
+     * is for — but it still has to be something the model offers. */
+    const mine = override(shot, 'resolution');
+    if (mine && list && list.indexOf(mine) >= 0) return mine;
+    if (policy(p) === 'default') return '';
     if (!list || !list.length) return '';
     const sorted = list.slice().sort(function (a, b) { return rank(a) - rank(b); });
     if (policy(p) === 'best') return sorted[sorted.length - 1];
@@ -904,9 +977,11 @@
   }
 
   /* Only gpt-image-2 takes one, and its floor is "low". */
-  function qualityFor(p, slug) {
-    if (policy(p) === 'default') return '';
+  function qualityFor(p, slug, shot) {
     const list = allowFor(TOOL.image, slug, 'quality');
+    const mine = override(shot, 'quality') || (p.settings.imagineQuality || '');
+    if (mine && list && list.indexOf(mine) >= 0) return mine;
+    if (policy(p) === 'default') return '';
     if (!list || !list.length) return '';
     /* The ladder gained rungs: gpt-image-2 does low/medium/high, and the 2.5
      * models do auto/low/medium/high/xhigh/max. A fixed preference of "high"
@@ -2062,9 +2137,14 @@
         code: codeOf(p, shot) || '', role: role, frameRef: frameRef, made: made
       };
 
-      const res = resolutionFor(p, slugNow, role);
-      const qual = role === 'image' ? qualityFor(p, slugNow) : '';
+      const res = resolutionFor(p, slugNow, role, shot);
+      const qual = role === 'image' ? qualityFor(p, slugNow, shot) : '';
+      /* The one that was never sent at all: every clip this app made ran at
+       * the model's own default length because this key was hard-coded to
+       * null. A storyboard is the one thing that knows how long a shot is. */
+      const dur = role === 'image' ? '' : durationFor(p, shot, slugNow);
       made.resolution = res || '';
+      made.duration = dur || '';
 
       /* A measurement is only worth anything if this generation is the only
        * one in the air: two at once and the difference is both of them. */
@@ -2099,7 +2179,7 @@
         : before.then(function () { return startFrame(p, shot); }).then(function (frame) {
           return video({
             prompt: text, slug: slugNow, restSlug: slugOf(model, 'key'),
-            aspect: aspect, resolution: res,
+            aspect: aspect, resolution: res, duration: dur,
             frame: frame && frame.blob, frameName: frame && frame.name,
             onState: function () { state('waiting'); }
           });
@@ -3214,7 +3294,8 @@
     account: account, whoAmI: whoAmI, balance: balance,
     /* discovery, for the Settings readout */
     discover: discover, toolList: toolList, tools: function () { return mcp.tools || []; },
-    capabilities: capabilities, rawTools: rawTools, report: report, door: door,
+    capabilities: capabilities, rawTools: rawTools,
+    durationFor: durationFor, settleOne: settleOne, settle: settle, report: report, door: door,
     restVerdict: function () { return lsStr(K_REST); },
     catalog: catalog, catalogAll: catalogAll, catalogSource: catalogSource,
     worked: worked, noteWorked: noteWorked,

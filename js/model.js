@@ -451,6 +451,11 @@
        * the chosen one and stays the only thing the rest of the app reads. */
       videoAlts: [],
       annotation: null,                 // {ref} — transparent PNG overlay
+      /* What this card asks of the generator, where it differs from the
+       * board: { duration, resolution, quality }. Sparse on purpose — a key
+       * that is not here is the board's answer, so moving a board default
+       * moves every card that never overrode it. */
+      shoot: {},
       /* {ref,serial,ext,w,h,bytes} — the full-size original, in this file.
        * The board draws the proxy above; this is the copy a model is fed, and
        * it rides with the content. */
@@ -564,6 +569,19 @@
          *             480p on Seedance, 720p on Veo, 1K and "low" quality on
          *             the stills. Sending nothing is not sending "normal". */
         imagineResolution: 'best',
+        /* How long a clip runs, in seconds as a string, when the card does
+         * not say. Clamped to whatever the chosen model actually takes — the
+         * lists differ wildly (ltx-2.3 does 6/8/10, wan-2.2 is fixed at 4,
+         * seedance-2.5 takes any second from 4 to 30) and an unlisted value
+         * is silently swapped for the model's own floor. '' means whatever
+         * the model does on its own, which is what every clip got before
+         * this existed. */
+        imagineDuration: '',
+        /* Render quality, separate from resolution because they are separate
+         * questions: max quality at 1K is a perfectly sensible pair, and
+         * before this it could not be asked for. '' follows the resolution
+         * policy, which is what it used to do unconditionally. */
+        imagineQuality: '',
         /* Whether the organization travels in the file. It is not a secret
          * and a team shares one, so it saves everybody a step — but a board
          * can travel further than the team that made it. */
@@ -895,6 +913,8 @@
     if (typeof s.imagineAspect !== 'string') s.imagineAspect = '16:9';
     if (s.originals !== 'webp' && s.originals !== 'source') s.originals = 'webp';
     if (['best', '1080p', 'default'].indexOf(s.imagineResolution) < 0) s.imagineResolution = 'best';
+    if (typeof s.imagineDuration !== 'string') s.imagineDuration = '';
+    if (typeof s.imagineQuality !== 'string') s.imagineQuality = '';
     if (typeof s.imagineShareOrg !== 'boolean') s.imagineShareOrg = true;
     if (s.imagine && typeof s.imagine !== 'object') s.imagine = null;
     /* belt and braces: a board that has been through a version of this app
@@ -956,6 +976,7 @@
            did: every lane falls back to the description it already had. */
         sh.imageDescription = sh.imageDescription || '';
         sh.videoDescription = sh.videoDescription || '';
+        if (!sh.shoot || typeof sh.shoot !== 'object') sh.shoot = {};
         sh.fields = (sh.fields && typeof sh.fields === 'object') ? sh.fields : {};
         sh.comments = Array.isArray(sh.comments) ? sh.comments : [];
         sh.prompts = sh.prompts || {};
@@ -1310,7 +1331,7 @@
 
   const CONTENT_KEYS = [
     'type', 'color', 'image', 'annotation', 'description',
-    'imageDescription', 'videoDescription',
+    'imageDescription', 'videoDescription', 'shoot',
     'fields', 'prompts', 'personaIds', 'castEnters', 'comments', 'render', 'video'
   ];
 

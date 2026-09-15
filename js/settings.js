@@ -973,6 +973,29 @@
       if ((p.settings.imagineResolution || 'best') === o[0]) el.selected = true;
       imRes.appendChild(el);
     });
+    /* How long a clip runs when a card does not say. Not a per-model list
+       here — the board does not know which model a given card will use — so
+       it is a plain number, clamped to that model's own list at push time
+       and shown struck through on any card that cannot honour it. */
+    const imDur = document.createElement('select');
+    [['', 'Whatever each model does on its own'], ['3', '3 seconds'], ['4', '4 seconds'],
+     ['5', '5 seconds'], ['6', '6 seconds'], ['8', '8 seconds'], ['10', '10 seconds'],
+     ['12', '12 seconds'], ['15', '15 seconds']].forEach(function (o) {
+      const el = document.createElement('option');
+      el.value = o[0]; el.textContent = o[1];
+      if ((p.settings.imagineDuration || '') === o[0]) el.selected = true;
+      imDur.appendChild(el);
+    });
+
+    const imQual = document.createElement('select');
+    [['', 'Follow the resolution setting'], ['low', 'low'], ['medium', 'medium'],
+     ['high', 'high'], ['xhigh', 'xhigh'], ['max', 'max']].forEach(function (o) {
+      const el = document.createElement('option');
+      el.value = o[0]; el.textContent = o[1];
+      if ((p.settings.imagineQuality || '') === o[0]) el.selected = true;
+      imQual.appendChild(el);
+    });
+
     const imResF = field('Resolution asked for', imRes);
     imResF.style.marginTop = '14px';
     panels.imagine.appendChild(imResF);
@@ -981,6 +1004,20 @@
       'FIRST resolution on its own list, which is its floor. Seedance makes 480p that way, ' +
       'Veo 720p, the stills 1K, and GPT Image at low quality. Asked for the best it has, ' +
       'LTX gives 2160p.'));
+
+    panels.imagine.appendChild(field('Clip length', imDur));
+    panels.imagine.appendChild(SB.el('div', 'pp-note',
+      'Every clip this app made before this setting existed ran at the model\u2019s own ' +
+      'default \u2014 six seconds on LTX, four on most of the rest \u2014 because no length ' +
+      'was ever sent. Each model takes its own set: a length it does not offer is quietly ' +
+      'swapped for its shortest, so a card whose model cannot do this one says so and shows ' +
+      'what it will actually send. Any card can ask for its own.'));
+
+    panels.imagine.appendChild(field('Quality asked for', imQual));
+    panels.imagine.appendChild(SB.el('div', 'pp-note',
+      'Separate from resolution, because they are separate questions \u2014 the best work ' +
+      'the model can do at a small size is a sensible thing to ask for. Only the GPT Image ' +
+      'models take it; the 2.5 ones go up to xhigh and max.'));
 
     const imShare = document.createElement('input');
     imShare.type = 'checkbox';
@@ -1390,6 +1427,8 @@
             SB.Store.setOoba({ url: oUrl.value, model: oobaModel, key: oKey.value });
             p.settings.imagineAspect = imAspect.value || '16:9';
             p.settings.imagineResolution = imRes.value || 'best';
+            p.settings.imagineDuration = imDur.value || '';
+            p.settings.imagineQuality = imQual.value || '';
             p.settings.imagineShareOrg = imShare.checked;
             if (IM) IM.publishToBoard(p);
             if (IM) {

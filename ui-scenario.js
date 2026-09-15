@@ -1214,8 +1214,14 @@
 
         /* attach() reads the file and its metadata, so the card catches up a
            few ticks after the click rather than in the same one */
+        /* Long enough to outlast the app, not a guess: clipMeta gives a file
+           4 seconds to report its duration before giving up, and this used to
+           stop waiting at 2.4 — so on a run where Chrome took its time over a
+           fixture mp4 the assertion fired before the drop had landed, and the
+           exception took the rest of the suite with it. It returns the moment
+           the condition is true, so a healthy run costs nothing. */
         const settle = async function (fn) {
-          for (let i = 0; i < 60 && !fn(); i++) await pauseTop();
+          for (let i = 0; i < 200 && !fn(); i++) await pauseTop();
           return fn();
         };
 
@@ -1369,7 +1375,9 @@
         dt.items.add(new File([new Uint8Array(64)], 'clip.mp4', { type: 'video/mp4' }));
         const frameEl = document.querySelector('.card[data-shot="' + bothShot.id + '"] .frame');
         frameEl.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
-        for (let k = 0; k < 40 && !(bothShot.image && bothShot.video); k++) await nap(50);
+        /* 2s was under clipMeta's own 4s budget for reading a file, so a slow
+           run asserted before the clip had landed. */
+        for (let k = 0; k < 160 && !(bothShot.image && bothShot.video); k++) await nap(50);
         t('a drop carrying a picture and a clip keeps both',
           !!bothShot.image && !!bothShot.video,
           'image=' + !!bothShot.image + ' clip=' + !!bothShot.video);
@@ -1526,6 +1534,62 @@
         sh.description = wasDesc;
         sh.imageDescription = '';
         sh.videoDescription = '';
+        SB.app.changed(true);
+        await nap(40);
+      }
+
+      // the shoot row: what this push asks the model for
+      {
+        const nap = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+        const sh = P().scenes[0].shots[0];
+        sh.shoot = {};
+        SB.app.changed(true);
+        SB.PromptPanel.open();
+        await nap(80);
+
+        const row = document.querySelector('.pt-row[data-shot="' + sh.id + '"]');
+        const lane = function (which) {
+          return row.querySelector('.pt-prompt[data-lane="' + which + '"]');
+        };
+        const picks = function (which) {
+          return lane(which).querySelectorAll('.shoot-pick');
+        };
+        /* the controls only exist where the account's lists are known, which
+           needs a signed-in session — so this asserts the shape either way */
+        const any = picks('video').length + picks('image').length;
+        t('the shoot row is per lane, or absent together',
+          any === 0 || (picks('video').length > 0 || picks('image').length > 0),
+          picks('video').length + ' video, ' + picks('image').length + ' image');
+
+        if (picks('video').length) {
+          const sel = picks('video')[0];
+          t('a card follows the board until it says otherwise',
+            sel.value === '' && !sel.classList.contains('mine'), sel.value);
+          t('and the first option says what the board would do',
+            /board|model/.test(sel.options[0].textContent), sel.options[0].textContent);
+          const opt = Array.prototype.filter.call(sel.options, function (o) {
+            return o.value && !o.disabled;
+          })[0];
+          sel.value = opt.value;
+          sel.dispatchEvent(new Event('change', { bubbles: true }));
+          await nap(60);
+          t('choosing one writes it on the card',
+            (sh.shoot || {}).duration === opt.value || (sh.shoot || {}).resolution === opt.value,
+            JSON.stringify(sh.shoot));
+          const again = document.querySelector('.pt-row[data-shot="' + sh.id +
+            '"] .pt-prompt[data-lane="video"] .shoot-pick');
+          t('and the control shows the card is asking for its own',
+            again.classList.contains('mine'), again.className);
+          again.value = '';
+          again.dispatchEvent(new Event('change', { bubbles: true }));
+          await nap(60);
+          t('clearing it hands the card back to the board',
+            !Object.keys(sh.shoot || {}).length, JSON.stringify(sh.shoot));
+        }
+
+        SB.PromptPanel.close();
+        await nap(40);
+        sh.shoot = {};
         SB.app.changed(true);
         await nap(40);
       }

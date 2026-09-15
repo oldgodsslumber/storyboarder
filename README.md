@@ -704,6 +704,17 @@ description reads as though someone is elsewhere, the picture wins*, and *do not
 again — knowing what is in the frame is not licence to describe it*. A card with no frame gets
 no block, because there is nothing to be faithful to.
 
+**What a push asks for is a board default and a per-card override.** Beside each lane's
+button sits the row that describes it — `8s ▾ 2160p ▾` on a clip, `4K ▾ max ▾` on a still.
+Every menu is **that model's own list**, read from the account, because a value a model does
+not offer is silently swapped for its floor: an impossible choice must not be choosable. The
+first entry is what the board would do, so a card follows the board until it says otherwise
+and an overridden one is drawn in the accent — a board's worth of rows can be scanned for the
+ones that differ. A board default the chosen model cannot honour is shown struck through with
+the nearest value it does take. **Clip length** and **quality** join the aspect and resolution
+dials in Settings → ImagineArt; before they existed every clip ran at the model's own default,
+six seconds on LTX, because no length was ever sent.
+
 Video prompts get the same house style plus motion rules — wardrobe and location must not
 change mid-shot, and **the camera is locked off**. No push, pan, tilt, dolly, zoom, orbit or
 handheld drift is written unless the shot description asks for one *in words* ("push in",

@@ -631,6 +631,90 @@
    */
   function roleOf(field) { return field === 'imagePrompt' ? 'image' : 'video'; }
 
+  /* ---------------------------------------------------------- the shoot row
+   *
+   * What this push will ask the model for, beside the button that sends it.
+   * Every menu is the model's OWN list — an unlisted value is swapped for the
+   * model's floor without a word, so it must not be possible to choose one.
+   *
+   * A card says nothing until it does: the first entry is the board's answer,
+   * and a card that has overridden it is drawn in the accent so a board's
+   * worth of rows can be scanned for the ones that differ.
+   */
+  const SHOOT = {
+    duration: { label: 's', title: 'How long this clip runs' },
+    resolution: { label: '', title: 'What size this is asked for' },
+    quality: { label: '', title: 'How hard the model is asked to work' }
+  };
+
+  function shootPick(sh, slug, kind, what) {
+    const IM = SB.Imagine;
+    const one = IM.settleOne(P(), sh, slug, kind, what);
+    if (!one.allowed.length) return null;          // the model takes none
+    const mine = (sh.shoot || {})[what] || '';
+    const sel = document.createElement('select');
+    sel.className = 'shoot-pick' + (mine ? ' mine' : '') + (one.fell ? ' fell' : '');
+
+    /* what happens when this card says nothing */
+    const board = IM.settleOne(P(), { shoot: {} }, slug, kind, what);
+    const first = document.createElement('option');
+    first.value = '';
+    first.textContent = board.value
+      ? board.value + (what === 'duration' ? 's' : '') + ' · board'
+      : 'model\u2019s own';
+    sel.appendChild(first);
+
+    one.allowed.forEach(function (v) {
+      const o = document.createElement('option');
+      o.value = v;
+      o.textContent = v + (what === 'duration' ? 's' : '');
+      if (v === mine) o.selected = true;
+      sel.appendChild(o);
+    });
+
+    /* A request this model cannot honour is shown rather than swallowed. */
+    if (one.fell && one.asked) {
+      const bad = document.createElement('option');
+      bad.value = '';
+      bad.disabled = true;
+      bad.textContent = one.asked + (what === 'duration' ? 's' : '') +
+        ' \u2014 not on ' + slug;
+      sel.insertBefore(bad, sel.firstChild);
+    }
+
+    sel.title = SHOOT[what].title + '.\n' +
+      (mine ? 'This card asks for ' + mine + '.' : 'Following the board.') +
+      '\nThis model takes: ' + one.allowed.join(', ') + '.' +
+      (one.fell ? '\n' + one.asked + ' is not among them \u2014 ' + one.value +
+        ' is what would be sent.' : '');
+
+    sel.onchange = function () {
+      sh.shoot = sh.shoot || {};
+      if (sel.value) sh.shoot[what] = sel.value; else delete sh.shoot[what];
+      SB.app.changed(false);
+      render();
+    };
+    return sel;
+  }
+
+  function shootRow(sh, m, field) {
+    const IM = SB.Imagine;
+    if (!IM || !IM.settleOne || !m || sh.noShot) return null;
+    const slug = IM.slugOf(m);
+    if (!slug) return null;
+    const kind = roleOf(field);
+    const wrap = SB.el('div', 'shoot-row');
+    const want = kind === 'video' ? ['duration', 'resolution'] : ['resolution', 'quality'];
+    let any = false;
+    want.forEach(function (what) {
+      const pick = shootPick(sh, slug, kind, what);
+      if (!pick) return;
+      any = true;
+      wrap.appendChild(pick);
+    });
+    return any ? wrap : null;
+  }
+
   function pushBtn(sh, m, field, note) {
     const IM = SB.Imagine;
     if (!IM) return null;
@@ -701,18 +785,22 @@
      real generation; a published one is ImagineArt's base price, and a floor
      for anything longer or larger. Kept apart, because they are not the same
      claim. */
-  function priceOf(m, role) {
+  function priceOf(m, role, sh) {
     if (!SB.Imagine || !m) return null;
     const slug = SB.Imagine.slugOf(m);
     if (!slug) return null;
-    const res = SB.Imagine.resolutionFor(P(), slug, role);
-    const c = SB.Imagine.costFor(slug, '', res);
+    const res = SB.Imagine.resolutionFor(P(), slug, role, sh);
+    /* costFor has been keyed on duration since it was written and has only
+       ever been handed '' — a clip that runs twice as long costs accordingly,
+       so this is the key finally carrying something. */
+    const dur = role === 'video' ? SB.Imagine.durationFor(P(), sh, slug) : '';
+    const c = SB.Imagine.costFor(slug, dur, res);
     if (!c) return { res: res };
     return { res: res, credits: c.credits, from: c.from, note: c.note };
   }
 
-  function priceLine(m, role) {
-    const pr = priceOf(m, role);
+  function priceLine(m, role, sh) {
+    const pr = priceOf(m, role, sh);
     if (!pr) return '';
     const bits = [];
     if (pr.res) bits.push('at ' + pr.res);
@@ -760,9 +848,9 @@
     } else if (role === 'video') {
       b.title = (sh.render || sh.image
         ? 'Animate this shot’s own frame with the prompt above.'
-        : 'No frame on this card yet, so this is text-to-video.') + priceLine(m, role);
+        : 'No frame on this card yet, so this is text-to-video.') + priceLine(m, role, sh);
     } else {
-      b.title = 'Make this frame on ImagineArt and put it on the card.' + priceLine(m, role);
+      b.title = 'Make this frame on ImagineArt and put it on the card.' + priceLine(m, role, sh);
     }
   }
 
@@ -942,6 +1030,9 @@
       play.onclick = function () { SB.Clip.open(P(), sh); };
       foot.appendChild(play);
     }
+
+    const shoot = shootRow(sh, m, field);
+    if (shoot) foot.appendChild(shoot);
 
     foot.appendChild(SB.el('span', 'spacer'));
 

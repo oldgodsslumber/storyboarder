@@ -708,6 +708,87 @@ section('the clip animates the frame, and only the frame');
     JSON.stringify(SB.Imagine.whyNot(p9, sh, vm, 'video')));
 }
 
+section('what a card asks the model for');
+{
+  const pS = SB.Model.newProject();
+  sandbox.SB.app = { project: pS, changed() { } };
+  /* the allow-lists live in the tool descriptions, so the real ones have to
+     be in the module the way a session would have loaded them */
+  sandbox.fetch = function (url, init) {
+    const msg = JSON.parse(init.body);
+    const result = msg.method === 'initialize'
+      ? { serverInfo: { name: 'imagine', version: '1' } }
+      : (msg.method === 'tools/list' ? { tools: REAL_TOOLS } : {});
+    return Promise.resolve({
+      ok: true, status: 200, headers: { get: () => null },
+      text: () => Promise.resolve(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: result }))
+    });
+  };
+  SB.Imagine.setTransport('oauth');
+  store.set('sb.imagine.tokens', JSON.stringify({
+    access_token: 'tok', refresh_token: 'r', expires_at: Date.now() + 3600000, email: 's@t'
+  }));
+  await SB.Imagine.toolList(true);
+  const sc = pS.scenes[0] || SB.Model.addScene(pS, 0);
+  const sh = SB.Model.addShot(pS, sc.id, {});
+  const D = (slug) => SB.Imagine.settleOne(pS, sh, slug || 'ltx-2.3', 'video', 'duration');
+
+  /* every clip this app ever made went out at the model's own default,
+     because the key was hard-coded to null */
+  t('nothing asked for sends nothing, which is the model\u2019s own length',
+    D().value === '' && D().fell === false, JSON.stringify(D()));
+
+  pS.settings.imagineDuration = '8';
+  t('a board length is used where the model takes it', D().value === '8', D().value);
+
+  sh.shoot = { duration: '10' };
+  t('and a card outranks the board', D().value === '10', D().value);
+
+  /* the whole reason the menus are the model's own list */
+  sh.shoot = { duration: '9' };
+  t('a length the model does not take falls to the nearest it does',
+    D().value === '8' && D().fell === true, JSON.stringify(D()));
+  t('and says what was asked for, so it can be shown rather than swallowed',
+    D().asked === '9', D().asked);
+
+  sh.shoot = { duration: '22' };
+  t('a model that takes a whole range takes any second in it',
+    D('seedance-2.5').value === '22', D('seedance-2.5').value);
+  t('a model that publishes no lengths at all is sent none',
+    D('wan-2.2').value === '' && D('wan-2.2').allowed.length === 0,
+    JSON.stringify(D('wan-2.2')));
+
+  /* resolution and quality answer to the card too */
+  sh.shoot = { resolution: '1080p' };
+  t('a card can ask for its own resolution',
+    SB.Imagine.resolutionFor(pS, 'ltx-2.3', 'video', sh) === '1080p',
+    SB.Imagine.resolutionFor(pS, 'ltx-2.3', 'video', sh));
+  t('while the board still answers for every other card',
+    SB.Imagine.resolutionFor(pS, 'ltx-2.3', 'video', { shoot: {} }) === '2160p',
+    SB.Imagine.resolutionFor(pS, 'ltx-2.3', 'video', { shoot: {} }));
+  sh.shoot = { resolution: '4096p' };
+  t('and a resolution the model does not have is ignored, not sent',
+    SB.Imagine.resolutionFor(pS, 'ltx-2.3', 'video', sh) === '2160p',
+    SB.Imagine.resolutionFor(pS, 'ltx-2.3', 'video', sh));
+
+  sh.shoot = { quality: 'max' };
+  t('a card can ask GPT Image for its best work',
+    SB.Imagine.qualityFor(pS, 'gpt-image-2.5-flare', sh) === 'max',
+    SB.Imagine.qualityFor(pS, 'gpt-image-2.5-flare', sh));
+  t('but not from a model that has never heard of it',
+    SB.Imagine.qualityFor(pS, 'gpt-image-2', sh) === 'high',
+    SB.Imagine.qualityFor(pS, 'gpt-image-2', sh));
+
+  /* the price key that has only ever been handed an empty string */
+  sh.shoot = {};
+  pS.settings.imagineDuration = '';
+  t('the duration reaches the cost key', SB.Imagine.durationFor(pS, sh, 'ltx-2.3') === '',
+    SB.Imagine.durationFor(pS, sh, 'ltx-2.3'));
+  sh.shoot = { duration: '10' };
+  t('and changes with the card', SB.Imagine.durationFor(pS, sh, 'ltx-2.3') === '10',
+    SB.Imagine.durationFor(pS, sh, 'ltx-2.3'));
+}
+
 section('a slug that worked outranks every published list');
 
 {
