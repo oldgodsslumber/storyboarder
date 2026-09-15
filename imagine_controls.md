@@ -90,28 +90,93 @@ the single most valuable control we are not using.
    is a `select_folder` tool referenced in these descriptions that we have
    never called.
 
-## Is asking the MCP the best way? Yes — for one specific reason
+## What the account actually publishes — the 2026-09-15 capture
 
-Not for the parameters. The two generator tools document themselves completely
-and we have them.
+The dump came back with **96 tools**, not six, and with real `inputSchema`
+objects, `outputSchema`, `annotations`, `icons` and `title` on every one. The
+six we knew about were the six this app calls.
 
-It is worth asking because **our captured copy has only six tools**, and the
-descriptions in it reference a `select_folder` tool that is not among them. So
-there are tools on the account we have never seen — plausibly folder
-management, and quite possibly editing, upscaling, background removal or
-lip-sync, which are products ImagineArt ships. We would be guessing to list
-them.
+### Three things that were broken and are now fixed
 
-The model lists also move: this capture has FLUX nowhere and `nano-banana-pro`
-as the image default, which will not be true for long.
+1. **The image model list had silently stopped parsing.** Two models were added
+   (`gpt-image-2.5-flare`, `gpt-image-2.5-sunburst`) and the sentence rewrapped,
+   so `"xAI-grok-imagine". Pass the model name…` became `"xAI-grok-imagine".⏎
+   Pass the model name…`. The regex wanted one space, found a newline, matched
+   nothing — and the account's own model list became empty, dropping the app
+   back to the year-old REST catalog **without a word**. One `\s+` .
+2. **"Best quality" was asking for third best.** `quality` used to be a
+   sentence about `gpt-image-2` alone (`low, medium, high`); it is now a table,
+   and the 2.5 models go `auto, low, medium, high, xhigh, max`. The chooser had
+   `['high','medium','low']` hard-coded, so a board set to *best* asked for
+   `high` where `max` was on offer.
+3. **One model writes its durations as a range.** `seedance-2.5: 4 through 30
+   (any whole second)` was read as a single option whose label was that
+   sentence. It spreads to 4…30 now.
 
-**The mechanism to build:** a *Copy the raw tool list* button in Settings →
-ImagineArt, beside the existing connection report. The app already performs
-`tools/list` over the same transport; this just dumps the untouched JSON to the
-clipboard. One click produces the exact current contract, with no RTF and no
-retyping — and it doubles as the thing to paste when a model stops working.
+All three were invisible against the old fixture, which was this app's *digest*
+of six tools with no `inputSchema` at all — fed to the tests where a raw
+`tools/list` belongs. The fixture is now twelve real tool records, schemas and
+all, and the model-count assertion is derived from the account's own list
+rather than typed in, because a hard number fails for being out of date rather
+than for being wrong.
 
-Second, smaller ask: whether `fetch_status` returns the credits a job actually
-cost. The app measures cost by diffing `get_balance` around a generation, which
-only works when one job is in the air. If the status payload carries the number,
-the whole measured-price mechanism becomes exact.
+### Two image controls we never knew existed
+
+- **`background`** — `auto`, `transparent`, `opaque` on the 2.5 models. A
+  cut-out first frame, straight from the generator.
+- **`mask_url`** — inpainting mask for image-to-image on the same two models.
+  Fix one corner of a frame instead of rerolling it.
+
+### The tools beyond the six
+
+Worth having, in order:
+
+| tool | what it is |
+|---|---|
+| `select_folder` | the folder picker the generators' `folder_id` refers to |
+| `edit_photo` | an edit described in plain language, applied to an asset |
+| `enhance_image` | upscale and sharpen — a board copy made printable |
+| `remove_background` | cut-out, as a separate operation |
+| `list_assets` / `list_user_creations` / `show_assets` | what this org already holds |
+| `request_image_upload` | an upload without base64 in the payload |
+| `generate_video_captions`, `generate_music` | out of scope, but there |
+
+The rest — about sixty of the ninety-six — are **fashion, ad, product and
+avatar flows** (`create_fashion_*`, `generate_ad`, `composite_shoot`,
+`generate_drone_video`, `generate_interior_design`…). They are guided widget
+flows with their own pickers, and nothing in a storyboard wants them.
+
+### Two catalog tools that look relevant and are not
+
+`list_camera_movements` and `list_camera_angles` return ImagineArt's own
+vocabulary — *Pan Left, Push In, Pull Out, Orbit, Dolly Zoom, Whip Pan, FPV
+Drone*; *Wide Shot, Close-Up, Over The Shoulder, Ground Level*. Tempting, given
+what the camera rider and the shot types already deal in. But both say **"used
+internally by the ImagineArt widgets"**, and their ids go to
+`animate_fashion_image` and `composite_shoot` — not to `generate_video`. They
+are not a control surface for the calls this app makes.
+
+Similarly `list_durations`, `list_resolutions` and `list_aspect_ratios` are
+titled **"List Ad …"** and their descriptions say to call them before
+`generate_ad`. The parameter descriptions on `generate_image` / `generate_video`
+do point at them, so there is a contradiction in their own docs — but the
+per-model allow-lists in the generator descriptions are complete, and we
+already parse them. Not worth a call until something proves otherwise.
+
+### Does `fetch_status` return what a job cost?
+
+No. Its `outputSchema` is `heading, prompt, tags, assets, shoot_type,
+footerLabel, notice, hasMore, nextFrom, nextFromId` — no credits field. The
+balance-diff measurement stays the only way to price a generation, and it stays
+only valid when one job is in the air.
+
+## Still to build, in order
+
+1. **Duration.** Unchanged from above and now confirmed against the live
+   contract: `generate_video.duration` is required-but-nullable, we send
+   `null`, and every clip is the model's default.
+2. **Reference-to-video** — `image_url` as the array it is.
+3. **`folder_id` + `select_folder`** — a board's output in its own folder.
+4. **`background: transparent`** on a first frame, where the model supports it.
+5. **`count`** — variations of a frame in one press.
+6. **`enhance_image`** on a board copy that has no original.

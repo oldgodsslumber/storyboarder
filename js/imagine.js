@@ -777,7 +777,7 @@
   function modelsFromTool(name) {
     const t = toolNamed(name);
     const d = (t && t.description) || '';
-    const m = /model \(optional\)[^:]*:([\s\S]*?)\. Pass the/.exec(d);
+    const m = /model \(optional\)[^:]*:([\s\S]*?)\.\s+Pass the/.exec(d);
     if (!m) return [];
     const out = [];
     const re = /"([^"]+)"/g;
@@ -805,8 +805,7 @@
       const line = new RegExp('-\\s*' + esc + ':\\s*([^\n]+)').exec(sect[1]);
       if (line) {
         if (/\(none/.test(line[1])) return [];
-        return line[1].split(',').map(function (x) { return x.trim(); })
-          .filter(function (x) { return x && !/^\(/.test(x); });
+        return spread(line[1]);
       }
       /* named on a shared line: "- kling-2.6-pro, kling-o3, wan-2.2: (none ...)" */
       const shared = new RegExp('-\\s*[^\n]*\\b' + esc + '\\b[^\n]*:\\s*([^\n]+)').exec(sect[1]);
@@ -827,6 +826,23 @@
       if (vals.length) return vals;
     }
     return null;
+  }
+
+  /* One model writes its durations as a range — "4 through 30 (any whole
+   * second)" — where the rest write them out. Read as a list that is one
+   * entry long, it offered a picker with a sentence in it. */
+  function spread(text) {
+    const range = /^\s*(\d+)\s*(?:through|to|\u2013|\u2014|-)\s*(\d+)/.exec(text);
+    if (range) {
+      const a = parseInt(range[1], 10), b = parseInt(range[2], 10);
+      if (isFinite(a) && isFinite(b) && b > a && b - a <= 200) {
+        const out = [];
+        for (let i = a; i <= b; i++) out.push(String(i));
+        return out;
+      }
+    }
+    return text.split(',').map(function (x) { return x.trim(); })
+      .filter(function (x) { return x && !/^\(/.test(x); });
   }
 
   /* ---------------- resolution ----------------
@@ -878,8 +894,15 @@
     if (policy(p) === 'default') return '';
     const list = allowFor(TOOL.image, slug, 'quality');
     if (!list || !list.length) return '';
-    const best = ['high', 'medium', 'low'].filter(function (q) { return list.indexOf(q) >= 0; })[0];
-    return best || '';
+    /* The ladder gained rungs: gpt-image-2 does low/medium/high, and the 2.5
+     * models do auto/low/medium/high/xhigh/max. A fixed preference of "high"
+     * asked the better models for third best while the board said best.
+     * "auto" is the model choosing for itself, which is what the default
+     * policy already means, so it is not a rung. */
+    const LADDER = ['low', 'medium', 'high', 'xhigh', 'max'];
+    let best = '';
+    LADDER.forEach(function (q) { if (list.indexOf(q) >= 0) best = q; });
+    return best;
   }
 
   /* ---------------- what it costs ----------------

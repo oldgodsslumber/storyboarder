@@ -258,12 +258,12 @@ t('a new board has an aspect ratio to ask for', p.settings.imagineAspect === '16
    same models something else entirely. */
 const REAL_VIDEO = (function () {
   const d = REAL_TOOLS.filter(t => t.name === 'generate_video')[0].description;
-  const m = /model \(optional\)[^:]*:([\s\S]*?)\. Pass the/.exec(d);
+  const m = /model \(optional\)[^:]*:([\s\S]*?)\.\s+Pass the/.exec(d);
   return (m[1].match(/"([^"]+)"/g) || []).map(x => x.replace(/"/g, ''));
 })();
 const REAL_IMAGE = (function () {
   const d = REAL_TOOLS.filter(t => t.name === 'generate_image')[0].description;
-  const m = /model \(optional\)[^:]*:([\s\S]*?)\. Pass the/.exec(d);
+  const m = /model \(optional\)[^:]*:([\s\S]*?)\.\s+Pass the/.exec(d);
   return (m[1].match(/"([^"]+)"/g) || []).map(x => x.replace(/"/g, ''));
 })();
 t('a new board opens on GPT Image and LTX 2.3',
@@ -1131,9 +1131,29 @@ section('the tools ImagineArt actually publishes');
   t('and the two do not mix',
     SB.Imagine.catalog('image').indexOf('kling-3.0-pro') < 0 &&
     SB.Imagine.catalog('video').indexOf('nano-banana-pro') < 0, '');
-  t('fifteen video models, ten image ones — the account\u2019s own numbers',
-    SB.Imagine.catalog('video').length === 15 && SB.Imagine.catalog('image').length === 10,
-    SB.Imagine.catalog('video').length + ' / ' + SB.Imagine.catalog('image').length);
+  /* Counted off the account's own description rather than typed in here: two
+     image models appeared between one capture and the next, and a hard number
+     would have failed for being out of date rather than for being wrong. */
+  t('every model the account lists, and no others',
+    SB.Imagine.catalog('video').length === REAL_VIDEO.length &&
+    SB.Imagine.catalog('image').length === REAL_IMAGE.length,
+    SB.Imagine.catalog('video').length + '/' + REAL_VIDEO.length + ' video, ' +
+    SB.Imagine.catalog('image').length + '/' + REAL_IMAGE.length + ' image');
+  /* Three things the real tool list broke that the digest never could. */
+  t('a model list that wraps mid-sentence still parses',
+    SB.Imagine.catalog('image').indexOf('gpt-image-2.5-flare') >= 0,
+    SB.Imagine.catalog('image').slice(0, 4).join(', '));
+  t('the newest image models are seen at all',
+    SB.Imagine.catalog('image').indexOf('gpt-image-2.5-sunburst') >= 0, '');
+  t('a duration written as a range is a list of seconds, not a sentence',
+    (SB.Imagine.allowFor('generate_video', 'seedance-2.5', 'duration') || []).length === 27,
+    JSON.stringify((SB.Imagine.allowFor('generate_video', 'seedance-2.5', 'duration') || []).slice(0, 3)));
+  t('and it starts and ends where the account says',
+    (function () {
+      const d = SB.Imagine.allowFor('generate_video', 'seedance-2.5', 'duration') || [];
+      return d[0] === '4' && d[d.length - 1] === '30';
+    })(), '');
+
   t('what each model will accept is readable too',
     (SB.Imagine.allowFor('generate_video', 'kling-3.0-pro', 'aspect_ratio') || []).join(',') ===
       '16:9,9:16,1:1',

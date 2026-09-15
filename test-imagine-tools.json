@@ -1,275 +1,1870 @@
 [
  {
+  "_meta": {
+   "ui": {
+    "resourceUri": "ui://imagine-mcp/asset-generation"
+   }
+  },
+  "annotations": {
+   "destructiveHint": false,
+   "idempotentHint": false,
+   "openWorldHint": false,
+   "readOnlyHint": false
+  },
+  "description": "Generate an image using the ImagineArt API. Returns immediately with a uuid and a widget\n\t\tthat mounts in the queued state — the widget itself polls fetch_status and updates in place as\n\t\tthe generation progresses (queued → generating → complete).\n\n\t\tArguments:\n\t\t  • org_id (required) — the organization id the user selected via select_organization. The same org_id applies for the whole chat.\n\t\t  • folder_id (optional) — a folder id the user picked via select_folder, to create the image inside\n\t\t    that folder. Omit to create it at the workspace root. Reuse the same folder_id for the whole chat.\n\t\t  • prompt (required) — the text prompt.\n\t\t  • image_url (optional) — a reference image to run image-to-image (edit / variation) mode instead of\n\t\t    text-to-image. If the user attaches an image, first call user_upload with it and pass the returned\n\t\t    url here; if the user gives an image URL directly, pass it as-is. Omit for plain text-to-image.\n\t\t    When set, the request automatically switches to the img2img variation (models that don't support\n\t\t    img2img silently fall back to text-to-image).\n\t\t  • model (optional) — one of: \"nano-banana-pro\" (default), \"imagine-art-2.0\", \"nano-banana-2\",\n\t\t    \"gpt-image-2\", \"gpt-image-2.5-flare\", \"gpt-image-2.5-sunburst\", \"imagine-art-1.5\",\n\t\t    \"imagine-art-1.5-pro\", \"recraft-v4.1\", \"ideogram-v4\", \"seedream-v5-lite\", \"xAI-grok-imagine\".\n\t\t    Pass the model name exactly as written. Omit unless the user asks for a specific model.\n\t\t  • aspect_ratio (optional) — pass when the user specifies one. Defaults to \"1:1\".\n\t\t    Per-model allow-lists:\n\t\t      - nano-banana-pro:        21:9, 16:9, 3:2, 4:3, 5:4, 1:1, 4:5, 3:4, 2:3, 9:16\n\t\t      - imagine-art-2.0:        1:1, 9:16, 16:9, 4:3, 3:4, 2:3, 3:2, 21:9, 4:5, 5:4\n\t\t      - nano-banana-2:          21:9, 16:9, 3:2, 4:3, 5:4, 1:1, 4:5, 3:4, 2:3, 9:16\n\t\t      - gpt-image-2:            1:1, 4:3, 3:4, 3:2, 16:9, 9:16, 21:9, 2:3\n\t\t      - gpt-image-2.5-flare:    1:1, 4:3, 3:4, 3:2, 16:9, 9:16, 21:9, 2:3, 4:5\n\t\t      - gpt-image-2.5-sunburst: 1:1, 4:3, 3:4, 3:2, 16:9, 9:16, 21:9, 2:3, 4:5\n\t\t      - imagine-art-1.5:        1:1, 9:16, 16:9, 4:3, 3:4, 1:3, 3:1, 2:3, 3:2\n\t\t      - imagine-art-1.5-pro:    1:1, 9:16, 16:9, 4:3, 3:4, 1:3, 3:1, 2:3, 3:2\n\t\t      - recraft-v4.1:           1:1, 4:3, 3:4, 16:9, 9:16\n\t\t      - ideogram-v4:            1:1, 4:3, 3:4, 16:9, 9:16\n\t\t      - seedream-v5-lite:       1:1, 2:3, 3:2, 4:3, 3:4, 16:9, 9:16\n\t\t      - xAI-grok-imagine:       2:1, 20:9, 19.5:9, 16:9, 4:3, 3:2, 1:1, 2:3, 3:4, 9:16, 9:19.5, 9:20, 1:2\n\t\t    An aspect_ratio that isn't in the chosen model's list silently falls back to 1:1; the\n\t\t    request will still succeed.\n\t\t  • resolution (optional) — only some models support it; pass only when the user asks for one.\n\t\t    Per-model allow-lists (first value is the default the model uses when omitted):\n\t\t      - nano-banana-pro:        1K, 2K, 4K\n\t\t      - nano-banana-2:          1K, 2K, 4K\n\t\t      - gpt-image-2:            1K, 2K, 4K\n\t\t      - gpt-image-2.5-flare:    2K, 1K, 4K\n\t\t      - gpt-image-2.5-sunburst: 2K, 1K, 4K\n\t\t      - seedream-v5-lite:       2K, 4K\n\t\t    Other models ignore resolution entirely. A value not in the chosen model's list silently\n\t\t    falls back to that model's default.\n\t\t  • quality (optional) — per-model allow-lists (first value is the default when omitted):\n\t\t      - gpt-image-2:            low, medium, high\n\t\t      - gpt-image-2.5-flare:    auto, low, medium, high, xhigh, max\n\t\t      - gpt-image-2.5-sunburst: auto, low, medium, high, xhigh, max\n\t\t    Other models ignore quality. A value not in the model's list silently falls back to the\n\t\t    model's default.\n\t\t  • background (optional) — only gpt-image-2.5-flare and gpt-image-2.5-sunburst support it: \"auto\"\n\t\t    (default when omitted), \"transparent\", \"opaque\". Pass \"transparent\" when the user asks for a\n\t\t    transparent / cut-out / no-background image on one of these models. Other models ignore it.\n\t\t  • mask_url (optional) — an inpainting mask for image-to-image edits on gpt-image-2.5-flare and\n\t\t    gpt-image-2.5-sunburst; only used together with image_url. If the user attaches a mask image,\n\t\t    first call user_upload with it and pass the returned url here. Other models ignore it.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "prompt": {
+     "type": "string",
+     "description": "Text description of the image to generate."
+    },
+    "aspect_ratio": {
+     "type": [
+      "null",
+      "string"
+     ],
+     "description": "Output aspect ratio, e.g. 1:1, 16:9, 9:16. Per-model allow-list; call list_aspect_ratios for the valid values. Unset falls back to the model's default."
+    },
+    "model": {
+     "type": [
+      "null",
+      "string"
+     ],
+     "description": "Image model id. Unset uses the default model."
+    },
+    "duration": {
+     "type": [
+      "null",
+      "string"
+     ],
+     "description": "Clip length in seconds as a string; video generation only. Some models accept \"auto\". Per-model allow-list; call list_durations for valid values. Leave unset for images."
+    },
+    "quality": {
+     "type": [
+      "null",
+      "string"
+     ],
+     "description": "Render quality; image generation only. Optional per-model enum, e.g. low, medium, high. Unset or unrecognised uses the model's first listed quality; models without a quality allow-list ignore it."
+    },
+    "resolution": {
+     "type": [
+      "null",
+      "string"
+     ],
+     "description": "Output resolution. Optional per-model enum: 1K, 2K, 4K for images; 720p, 1080p, 4k for video. Call list_resolutions for valid values. Unset or unrecognised uses the model's first listed resolution; models without a resolution allow-list ignore it."
+    },
+    "background": {
+     "type": [
+      "null",
+      "string"
+     ],
+     "description": "Output background; image generation only. Optional per-model enum: auto, transparent, opaque. Unset or unrecognised uses the model's first listed value; models without a background allow-list ignore it."
+    },
+    "mask_url": {
+     "type": [
+      "null",
+      "string"
+     ],
+     "description": "Optional inpainting mask URL for image-to-image edits; only models that support masks use it, and only alongside image_url. Upload a user-attached mask via user_upload first."
+    },
+    "org_id": {
+     "type": "string",
+     "description": "Organization the asset belongs to. Obtain it from select_organization; required on every call."
+    },
+    "folder_id": {
+     "type": [
+      "null",
+      "string"
+     ],
+     "description": "Folder to save the asset into, from select_folder. Unset saves it at the workspace root."
+    },
+    "image_url": {
+     "type": [
+      "null",
+      "string"
+     ],
+     "description": "Optional reference image URL. When set, the generation runs image-to-image instead of text-to-image. Pass a URL the user supplied, or upload a user-attached image via user_upload first."
+    },
+    "count": {
+     "type": [
+      "null",
+      "integer"
+     ],
+     "description": "How many images to generate in one call. Unset or less than 1 means 1."
+    }
+   },
+   "required": [
+    "prompt",
+    "aspect_ratio",
+    "model",
+    "duration",
+    "org_id"
+   ],
+   "additionalProperties": false
+  },
   "name": "generate_image",
-  "description": "Generate an image using the ImagineArt API. Returns immediately with a uuid and a widget\n\t\tthat mounts in the queued state \u2014 the widget itself polls fetch_status and updates in place as\n\t\tthe generation progresses (queued \u2192 generating \u2192 complete).\n\n\t\tArguments:\n\t\t  \u2022 org_id (required) \u2014 the organization id the user selected via select_organization. The same org_id applies for the whole chat.\n\t\t  \u2022 folder_id (optional) \u2014 a folder id the user picked via select_folder, to create the image inside\n\t\t    that folder. Omit to create it at the workspace root. Reuse the same folder_id for the whole chat.\n\t\t  \u2022 prompt (required) \u2014 the text prompt.\n\t\t  \u2022 image_url (optional) \u2014 a reference image to run image-to-image (edit / variation) mode instead of\n\t\t    text-to-image. If the user attaches an image, first call user_upload with it and pass the returned\n\t\t    url here; if the user gives an image URL directly, pass it as-is. Omit for plain text-to-image.\n\t\t    When set, the request automatically switches to the img2img variation (models that don't support\n\t\t    img2img silently fall back to text-to-image).\n\t\t  \u2022 model (optional) \u2014 one of: \"nano-banana-pro\" (default), \"imagine-art-2.0\", \"nano-banana-2\",\n\t\t    \"gpt-image-2\", \"imagine-art-1.5\", \"imagine-art-1.5-pro\", \"recraft-v4.1\", \"ideogram-v4\",\n\t\t    \"seedream-v5-lite\", \"xAI-grok-imagine\". Pass the model name exactly as written. Omit unless the\n\t\t    user asks for a specific model.\n\t\t  \u2022 aspect_ratio (optional) \u2014 pass when the user specifies one. Defaults to \"1:1\".\n\t\t    Per-model allow-lists:\n\t\t      - nano-banana-pro:     21:9, 16:9, 3:2, 4:3, 5:4, 1:1, 4:5, 3:4, 2:3, 9:16\n\t\t      - imagine-art-2.0:     1:1, 9:16, 16:9, 4:3, 3:4, 2:3, 3:2, 21:9, 4:5, 5:4\n\t\t      - nano-banana-2:       21:9, 16:9, 3:2, 4:3, 5:4, 1:1, 4:5, 3:4, 2:3, 9:16\n\t\t      - gpt-image-2:         1:1, 4:3, 3:4, 3:2, 16:9, 9:16, 21:9, 2:3\n\t\t      - imagine-art-1.5:     1:1, 9:16, 16:9, 4:3, 3:4, 1:3, 3:1, 2:3, 3:2\n\t\t      - imagine-art-1.5-pro: 1:1, 9:16, 16:9, 4:3, 3:4, 1:3, 3:1, 2:3, 3:2\n\t\t      - recraft-v4.1:        1:1, 4:3, 3:4, 16:9, 9:16\n\t\t      - ideogram-v4:         1:1, 4:3, 3:4, 16:9, 9:16\n\t\t      - seedream-v5-lite:    1:1, 2:3, 3:2, 4:3, 3:4, 16:9, 9:16\n\t\t      - xAI-grok-imagine:    2:1, 20:9, 19.5:9, 16:9, 4:3, 3:2, 1:1, 2:3, 3:4, 9:16, 9:19.5, 9:20, 1:2\n\t\t    An aspect_ratio that isn't in the chosen model's list silently falls back to 1:1; the\n\t\t    request will still succeed.\n\t\t  \u2022 resolution (optional) \u2014 only some models support it; pass only when the user asks for one.\n\t\t    Per-model allow-lists (first value is the default the model uses when omitted):\n\t\t      - nano-banana-pro:  1K, 2K, 4K\n\t\t      - nano-banana-2:    1K, 2K, 4K\n\t\t      - gpt-image-2:      1K, 2K, 4K\n\t\t      - seedream-v5-lite: 2K, 4K\n\t\t    Other models ignore resolution entirely. A value not in the chosen model's list silently\n\t\t    falls back to that model's default.\n\t\t  \u2022 quality (optional) \u2014 only gpt-image-2 supports it: \"low\", \"medium\", \"high\" (first value is\n\t\t    the default when omitted). Other models ignore quality. A value not in the model's list\n\t\t    silently falls back to the model's default.",
-  "takesImage": true,
-  "params": [
-   {
-    "name": "prompt",
-    "type": "string",
-    "required": true,
-    "enum": null,
-    "isModel": false
+  "outputSchema": {
+   "type": "object",
+   "properties": {
+    "heading": {
+     "type": "string"
+    },
+    "prompt": {
+     "type": [
+      "null",
+      "object"
+     ],
+     "properties": {
+      "text": {
+       "type": "string"
+      },
+      "truncatable": {
+       "type": "boolean"
+      }
+     },
+     "required": [
+      "text"
+     ],
+     "additionalProperties": false
+    },
+    "tags": {
+     "type": [
+      "null",
+      "array"
+     ],
+     "items": {
+      "type": "object",
+      "properties": {
+       "type": {
+        "type": "string"
+       },
+       "label": {
+        "type": "string"
+       },
+       "iconHint": {
+        "type": "string"
+       },
+       "iconUri": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "type",
+       "label"
+      ],
+      "additionalProperties": false
+     }
+    },
+    "assets": {
+     "type": [
+      "null",
+      "array"
+     ],
+     "items": {
+      "type": "object",
+      "properties": {
+       "id": {
+        "type": "string"
+       },
+       "type": {
+        "type": "string"
+       },
+       "status": {
+        "type": "string"
+       },
+       "mediaUrl": {
+        "type": "string"
+       },
+       "thumbnailUrl": {
+        "type": "string"
+       },
+       "duration": {
+        "type": [
+         "null",
+         "integer"
+        ]
+       },
+       "actions": {
+        "type": [
+         "null",
+         "array"
+        ],
+        "items": {
+         "type": "object",
+         "properties": {
+          "id": {
+           "type": "string"
+          },
+          "label": {
+           "type": "string"
+          },
+          "iconHint": {
+           "type": "string"
+          }
+         },
+         "required": [
+          "id",
+          "label"
+         ],
+         "additionalProperties": false
+        }
+       },
+       "canDownload": {
+        "type": "boolean"
+       },
+       "canFullView": {
+        "type": "boolean"
+       },
+       "canUse": {
+        "type": "boolean"
+       },
+       "errorMessage": {
+        "type": "string"
+       },
+       "metadata": {
+        "type": "object",
+        "additionalProperties": true
+       },
+       "bytedanceId": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "id",
+       "type",
+       "status",
+       "canDownload",
+       "canFullView",
+       "canUse"
+      ],
+      "additionalProperties": false
+     }
+    },
+    "shoot_type": {
+     "type": "string"
+    },
+    "footerLabel": {
+     "type": "string"
+    },
+    "notice": {
+     "type": "string"
+    },
+    "hasMore": {
+     "type": "boolean"
+    },
+    "nextFrom": {
+     "type": "string"
+    },
+    "nextFromId": {
+     "type": "string"
+    }
    },
+   "additionalProperties": false
+  },
+  "title": "Generate Image",
+  "icons": [
    {
-    "name": "aspect_ratio",
-    "type": [
-     "null",
-     "string"
-    ],
-    "required": true,
-    "enum": null,
-    "isModel": false
-   },
-   {
-    "name": "model",
-    "type": [
-     "null",
-     "string"
-    ],
-    "required": true,
-    "enum": null,
-    "isModel": true
-   },
-   {
-    "name": "duration",
-    "type": [
-     "null",
-     "string"
-    ],
-    "required": true,
-    "enum": null,
-    "isModel": false
-   },
-   {
-    "name": "quality",
-    "type": [
-     "null",
-     "string"
-    ],
-    "required": false,
-    "enum": null,
-    "isModel": false
-   },
-   {
-    "name": "resolution",
-    "type": [
-     "null",
-     "string"
-    ],
-    "required": false,
-    "enum": null,
-    "isModel": false
-   },
-   {
-    "name": "org_id",
-    "type": "string",
-    "required": true,
-    "enum": null,
-    "isModel": false
-   },
-   {
-    "name": "folder_id",
-    "type": [
-     "null",
-     "string"
-    ],
-    "required": false,
-    "enum": null,
-    "isModel": false
-   },
-   {
-    "name": "image_url",
-    "type": [
-     "null",
-     "string"
-    ],
-    "required": false,
-    "enum": null,
-    "isModel": false
-   },
-   {
-    "name": "count",
-    "type": [
-     "null",
-     "integer"
-    ],
-    "required": false,
-    "enum": null,
-    "isModel": false
+    "src": "https://cdn.web.imagine.art/logo-imagine.svg",
+    "mimeType": "image/svg+xml"
    }
   ]
  },
  {
+  "_meta": {
+   "ui": {
+    "resourceUri": "ui://imagine-mcp/asset-generation"
+   }
+  },
+  "annotations": {
+   "destructiveHint": false,
+   "idempotentHint": false,
+   "openWorldHint": false,
+   "readOnlyHint": false
+  },
+  "description": "Generate a video using the ImagineArt API. Returns immediately with a uuid and a widget\n\t\tthat mounts in the queued state — the widget itself polls fetch_status and updates in place as\n\t\tthe generation progresses (queued → generating → complete).\n\n\t\tArguments:\n\t\t  • org_id (required) — the organization id the user selected via select_organization. The same org_id applies for the whole chat.\n\t\t  • folder_id (optional) — a folder id the user picked via select_folder, to create the video inside\n\t\t    that folder. Omit to create it at the workspace root. Reuse the same folder_id for the whole chat.\n\t\t  • prompt (required) — the text prompt.\n\t\t  • image_url (optional) — an ARRAY of reference image URLs. For each image, if the user attaches it,\n\t\t    first call user_upload and pass the returned url; if the user gives a URL directly, pass it as-is.\n\t\t    Omit for plain text-to-video. Behaviour by count:\n\t\t      - exactly one image and no video_url/audio_url => image-to-video (animate a single still).\n\t\t      - two or more images, or any video_url/audio_url => reference-to-video (see below).\n\t\t  • video_url (optional) — an ARRAY of reference video URLs. Forwarded only for reference-to-video.\n\t\t  • audio_url (optional) — an ARRAY of reference audio URLs. Forwarded only for reference-to-video.\n\n\t\t  Reference-to-video is supported only by these models: seedance-2.5, seedance-2.0, seedance-2.0-fast,\n\t\t  happy_horse, wan-2.6, veo-3.1. Each accepts a different media set; passing media a model doesn't\n\t\t  accept is ignored:\n\t\t      - seedance-2.5, seedance-2.0, seedance-2.0-fast: image_url, video_url, audio_url (all optional)\n\t\t      - happy_horse: image_url (at least one REQUIRED)\n\t\t      - wan-2.6: video_url (at least one REQUIRED)\n\t\t      - veo-3.1: image_url (optional)\n\t\t    If a model's required reference media is missing the call fails with an \"Unable to\" error naming\n\t\t    what's required; relay it. Sending reference media to any other model falls back to image-to-video\n\t\t    (first image) or text-to-video.\n\t\t  • model (optional) — one of: \"ltx-2.3\" (default), \"seedance-2.5\", \"seedance-2.0-fast\", \"veo-3.1-fast\",\n\t\t    \"happy_horse\", \"seedance-2.0\", \"wan-2.6\", \"seedance-1.5-pro\", \"seedance-pro-fast\",\n\t\t    \"kling-2.6-pro\", \"kling-o3\", \"kling-3.0-pro\", \"pixverse-v6\", \"veo-3.1\", \"wan-2.2\". Pass the\n\t\t    model name exactly as written. Omit unless the user asks for a specific model.\n\t\t  • aspect_ratio (optional) — pass when the user specifies one. Defaults to \"16:9\".\n\t\t    Per-model allow-lists:\n\t\t      - seedance-2.5:       16:9, 4:3, 1:1, 3:4, 9:16, 21:9, adaptive\n\t\t                            (image-to-video always uses \"adaptive\" — any ratio you pass is overridden)\n\t\t      - seedance-2.0-fast:  21:9, 16:9, 9:16, 3:4, 4:3, 1:1, auto\n\t\t      - veo-3.1-fast:       16:9, 9:16\n\t\t      - happy_horse:        16:9, 9:16, 1:1, 4:3, 3:4\n\t\t      - seedance-2.0:       21:9, 16:9, 9:16, 3:4, 4:3, 1:1, auto\n\t\t      - ltx-2.3:            16:9, 9:16\n\t\t      - wan-2.6:            16:9, 9:16, 1:1, 4:3, 3:4\n\t\t      - seedance-1.5-pro:   21:9, 16:9, 9:16, 3:4, 4:3, 1:1\n\t\t      - seedance-pro-fast:  16:9, 4:3, 1:1, 9:16, 21:9, 3:4\n\t\t      - kling-2.6-pro:      16:9, 9:16, 1:1\n\t\t      - kling-o3:           16:9, 9:16, 1:1\n\t\t      - kling-3.0-pro:      16:9, 9:16, 1:1\n\t\t      - pixverse-v6:        16:9, 9:16, 4:3, 3:4, 1:1, 2:3, 3:2, 21:9\n\t\t      - veo-3.1:            16:9, 9:16\n\t\t      - wan-2.2:            (none — always uses 16:9)\n\t\t    An aspect_ratio that isn't in the chosen model's list silently falls back to 16:9 (or the\n\t\t    model's first listed ratio if it doesn't allow 16:9); the request will still succeed.\n\t\t  • duration (optional) — pass as a string (seconds, or \"auto\" where supported). Defaults to \"4\".\n\t\t    Per-model allow-lists:\n\t\t      - seedance-2.5:       4 through 30 (any whole second)\n\t\t      - seedance-2.0-fast:  auto, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15\n\t\t      - veo-3.1-fast:       4, 6, 8\n\t\t      - happy_horse:        3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15\n\t\t      - seedance-2.0:       auto, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15\n\t\t      - ltx-2.3:            6, 8, 10\n\t\t      - wan-2.6:            5, 10, 15\n\t\t      - seedance-1.5-pro:   4, 5, 6, 7, 8, 9, 10, 11, 12\n\t\t      - seedance-pro-fast:  3, 4, 5, 6, 7, 8, 9, 10, 11, 12\n\t\t      - kling-2.6-pro:      5, 10\n\t\t      - kling-o3:           3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15\n\t\t      - kling-3.0-pro:      3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15\n\t\t      - pixverse-v6:        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15\n\t\t      - veo-3.1:            4, 6, 8\n\t\t      - wan-2.2:            (none — always uses 4)\n\t\t    A duration that isn't in the chosen model's list silently falls back to \"4\" (or the model's\n\t\t    first listed duration if it doesn't allow \"4\", e.g. \"6\" for the default ltx-2.3); the request\n\t\t    will still succeed.\n\t\t  • resolution (optional) — only some models support it; pass only when the user asks for one.\n\t\t    Per-model allow-lists (first value is the default the model uses when omitted):\n\t\t      - seedance-2.5:       480p, 720p\n\t\t      - seedance-2.0-fast:  480p, 720p\n\t\t      - veo-3.1-fast:       720p, 1080p, 4k\n\t\t      - happy_horse:        720p, 1080p\n\t\t      - seedance-2.0:       480p, 720p, 1080p\n\t\t      - ltx-2.3:            1080p, 1440p, 2160p\n\t\t      - wan-2.6:            720p, 1080p\n\t\t      - seedance-1.5-pro:   480p, 720p\n\t\t      - seedance-pro-fast:  480p, 720p, 1080p\n\t\t      - pixverse-v6:        360p, 540p, 720p, 1080p\n\t\t      - veo-3.1:            720p, 1080p, 4k\n\t\t      - kling-2.6-pro, kling-o3, kling-3.0-pro, wan-2.2: (none — resolution is ignored)\n\t\t    A resolution that isn't in the chosen model's list silently falls back to that model's\n\t\t    default.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "prompt": {
+     "type": "string",
+     "description": "Text description of the video to generate."
+    },
+    "aspect_ratio": {
+     "type": [
+      "null",
+      "string"
+     ],
+     "description": "Output aspect ratio, e.g. 16:9, 9:16, 1:1. Per-model allow-list; call list_aspect_ratios for valid values. Unset falls back to the model's default."
+    },
+    "model": {
+     "type": [
+      "null",
+      "string"
+     ],
+     "description": "Video model id. Unset uses the default model."
+    },
+    "duration": {
+     "type": [
+      "null",
+      "string"
+     ],
+     "description": "Clip length in seconds as a string. Some models accept \"auto\". Per-model allow-list; call list_durations for valid values."
+    },
+    "resolution": {
+     "type": [
+      "null",
+      "string"
+     ],
+     "description": "Output resolution, e.g. 720p, 1080p, 4k. Per-model allow-list; call list_resolutions for valid values. Unset uses the model's first listed resolution."
+    },
+    "org_id": {
+     "type": "string",
+     "description": "Organization the video belongs to. Obtain it from select_organization; required on every call."
+    },
+    "folder_id": {
+     "type": [
+      "null",
+      "string"
+     ],
+     "description": "Folder to save the video into, from select_folder. Unset saves it at the workspace root."
+    },
+    "image_url": {
+     "type": [
+      "null",
+      "array"
+     ],
+     "items": {
+      "type": "string"
+     },
+     "description": "Reference image URLs. Exactly one entry animates that still (image-to-video); two or more switch to reference-to-video on models that support it. Unset means text-to-video."
+    },
+    "video_url": {
+     "type": [
+      "null",
+      "array"
+     ],
+     "items": {
+      "type": "string"
+     },
+     "description": "Reference video URLs for reference-to-video. Accepted only by models whose route supports it; ignored otherwise."
+    },
+    "audio_url": {
+     "type": [
+      "null",
+      "array"
+     ],
+     "items": {
+      "type": "string"
+     },
+     "description": "Reference audio track URLs for reference-to-video. Accepted only by models whose route supports it; ignored otherwise."
+    }
+   },
+   "required": [
+    "prompt",
+    "aspect_ratio",
+    "model",
+    "duration",
+    "org_id"
+   ],
+   "additionalProperties": false
+  },
   "name": "generate_video",
-  "description": "Generate a video using the ImagineArt API. Returns immediately with a uuid and a widget\n\t\tthat mounts in the queued state \u2014 the widget itself polls fetch_status and updates in place as\n\t\tthe generation progresses (queued \u2192 generating \u2192 complete).\n\n\t\tArguments:\n\t\t  \u2022 org_id (required) \u2014 the organization id the user selected via select_organization. The same org_id applies for the whole chat.\n\t\t  \u2022 folder_id (optional) \u2014 a folder id the user picked via select_folder, to create the video inside\n\t\t    that folder. Omit to create it at the workspace root. Reuse the same folder_id for the whole chat.\n\t\t  \u2022 prompt (required) \u2014 the text prompt.\n\t\t  \u2022 image_url (optional) \u2014 an ARRAY of reference image URLs. For each image, if the user attaches it,\n\t\t    first call user_upload and pass the returned url; if the user gives a URL directly, pass it as-is.\n\t\t    Omit for plain text-to-video. Behaviour by count:\n\t\t      - exactly one image and no video_url/audio_url => image-to-video (animate a single still).\n\t\t      - two or more images, or any video_url/audio_url => reference-to-video (see below).\n\t\t  \u2022 video_url (optional) \u2014 an ARRAY of reference video URLs. Forwarded only for reference-to-video.\n\t\t  \u2022 audio_url (optional) \u2014 an ARRAY of reference audio URLs. Forwarded only for reference-to-video.\n\n\t\t  Reference-to-video is supported only by these models: seedance-2.5, seedance-2.0, seedance-2.0-fast,\n\t\t  happy_horse, wan-2.6, veo-3.1. Each accepts a different media set; passing media a model doesn't\n\t\t  accept is ignored:\n\t\t      - seedance-2.5, seedance-2.0, seedance-2.0-fast: image_url, video_url, audio_url (all optional)\n\t\t      - happy_horse: image_url (at least one REQUIRED)\n\t\t      - wan-2.6: video_url (at least one REQUIRED)\n\t\t      - veo-3.1: image_url (optional)\n\t\t    If a model's required reference media is missing the call fails with an \"Unable to\" error naming\n\t\t    what's required; relay it. Sending reference media to any other model falls back to image-to-video\n\t\t    (first image) or text-to-video.\n\t\t  \u2022 model (optional) \u2014 one of: \"ltx-2.3\" (default), \"seedance-2.5\", \"seedance-2.0-fast\", \"veo-3.1-fast\",\n\t\t    \"happy_horse\", \"seedance-2.0\", \"wan-2.6\", \"seedance-1.5-pro\", \"seedance-pro-fast\",\n\t\t    \"kling-2.6-pro\", \"kling-o3\", \"kling-3.0-pro\", \"pixverse-v6\", \"veo-3.1\", \"wan-2.2\". Pass the\n\t\t    model name exactly as written. Omit unless the user asks for a specific model.\n\t\t  \u2022 aspect_ratio (optional) \u2014 pass when the user specifies one. Defaults to \"16:9\".\n\t\t    Per-model allow-lists:\n\t\t      - seedance-2.5:       16:9, 4:3, 1:1, 3:4, 9:16, 21:9, adaptive\n\t\t                            (image-to-video always uses \"adaptive\" \u2014 any ratio you pass is overridden)\n\t\t      - seedance-2.0-fast:  21:9, 16:9, 9:16, 3:4, 4:3, 1:1, auto\n\t\t      - veo-3.1-fast:       16:9, 9:16\n\t\t      - happy_horse:        16:9, 9:16, 1:1, 4:3, 3:4\n\t\t      - seedance-2.0:       21:9, 16:9, 9:16, 3:4, 4:3, 1:1, auto\n\t\t      - ltx-2.3:            16:9, 9:16\n\t\t      - wan-2.6:            16:9, 9:16, 1:1, 4:3, 3:4\n\t\t      - seedance-1.5-pro:   21:9, 16:9, 9:16, 3:4, 4:3, 1:1\n\t\t      - seedance-pro-fast:  16:9, 4:3, 1:1, 9:16, 21:9, 3:4\n\t\t      - kling-2.6-pro:      16:9, 9:16, 1:1\n\t\t      - kling-o3:           16:9, 9:16, 1:1\n\t\t      - kling-3.0-pro:      16:9, 9:16, 1:1\n\t\t      - pixverse-v6:        16:9, 9:16, 4:3, 3:4, 1:1, 2:3, 3:2, 21:9\n\t\t      - veo-3.1:            16:9, 9:16\n\t\t      - wan-2.2:            (none \u2014 always uses 16:9)\n\t\t    An aspect_ratio that isn't in the chosen model's list silently falls back to 16:9 (or the\n\t\t    model's first listed ratio if it doesn't allow 16:9); the request will still succeed.\n\t\t  \u2022 duration (optional) \u2014 pass as a string (seconds, or \"auto\" where supported). Defaults to \"4\".\n\t\t    Per-model allow-lists:\n\t\t      - seedance-2.5:       4 through 30 (any whole second)\n\t\t      - seedance-2.0-fast:  auto, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15\n\t\t      - veo-3.1-fast:       4, 6, 8\n\t\t      - happy_horse:        3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15\n\t\t      - seedance-2.0:       auto, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15\n\t\t      - ltx-2.3:            6, 8, 10\n\t\t      - wan-2.6:            5, 10, 15\n\t\t      - seedance-1.5-pro:   4, 5, 6, 7, 8, 9, 10, 11, 12\n\t\t      - seedance-pro-fast:  3, 4, 5, 6, 7, 8, 9, 10, 11, 12\n\t\t      - kling-2.6-pro:      5, 10\n\t\t      - kling-o3:           3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15\n\t\t      - kling-3.0-pro:      3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15\n\t\t      - pixverse-v6:        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15\n\t\t      - veo-3.1:            4, 6, 8\n\t\t      - wan-2.2:            (none \u2014 always uses 4)\n\t\t    A duration that isn't in the chosen model's list silently falls back to \"4\" (or the model's\n\t\t    first listed duration if it doesn't allow \"4\", e.g. \"6\" for the default ltx-2.3); the request\n\t\t    will still succeed.\n\t\t  \u2022 resolution (optional) \u2014 only some models support it; pass only when the user asks for one.\n\t\t    Per-model allow-lists (first value is the default the model uses when omitted):\n\t\t      - seedance-2.5:       480p, 720p\n\t\t      - seedance-2.0-fast:  480p, 720p\n\t\t      - veo-3.1-fast:       720p, 1080p, 4k\n\t\t      - happy_horse:        720p, 1080p\n\t\t      - seedance-2.0:       480p, 720p, 1080p\n\t\t      - ltx-2.3:            1080p, 1440p, 2160p\n\t\t      - wan-2.6:            720p, 1080p\n\t\t      - seedance-1.5-pro:   480p, 720p\n\t\t      - seedance-pro-fast:  480p, 720p, 1080p\n\t\t      - pixverse-v6:        360p, 540p, 720p, 1080p\n\t\t      - veo-3.1:            720p, 1080p, 4k\n\t\t      - kling-2.6-pro, kling-o3, kling-3.0-pro, wan-2.2: (none \u2014 resolution is ignored)\n\t\t    A resolution that isn't in the chosen model's list silently falls back to that model's\n\t\t    default.",
-  "takesImage": true,
-  "params": [
-   {
-    "name": "prompt",
-    "type": "string",
-    "required": true,
-    "enum": null,
-    "isModel": false
+  "outputSchema": {
+   "type": "object",
+   "properties": {
+    "heading": {
+     "type": "string"
+    },
+    "prompt": {
+     "type": [
+      "null",
+      "object"
+     ],
+     "properties": {
+      "text": {
+       "type": "string"
+      },
+      "truncatable": {
+       "type": "boolean"
+      }
+     },
+     "required": [
+      "text"
+     ],
+     "additionalProperties": false
+    },
+    "tags": {
+     "type": [
+      "null",
+      "array"
+     ],
+     "items": {
+      "type": "object",
+      "properties": {
+       "type": {
+        "type": "string"
+       },
+       "label": {
+        "type": "string"
+       },
+       "iconHint": {
+        "type": "string"
+       },
+       "iconUri": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "type",
+       "label"
+      ],
+      "additionalProperties": false
+     }
+    },
+    "assets": {
+     "type": [
+      "null",
+      "array"
+     ],
+     "items": {
+      "type": "object",
+      "properties": {
+       "id": {
+        "type": "string"
+       },
+       "type": {
+        "type": "string"
+       },
+       "status": {
+        "type": "string"
+       },
+       "mediaUrl": {
+        "type": "string"
+       },
+       "thumbnailUrl": {
+        "type": "string"
+       },
+       "duration": {
+        "type": [
+         "null",
+         "integer"
+        ]
+       },
+       "actions": {
+        "type": [
+         "null",
+         "array"
+        ],
+        "items": {
+         "type": "object",
+         "properties": {
+          "id": {
+           "type": "string"
+          },
+          "label": {
+           "type": "string"
+          },
+          "iconHint": {
+           "type": "string"
+          }
+         },
+         "required": [
+          "id",
+          "label"
+         ],
+         "additionalProperties": false
+        }
+       },
+       "canDownload": {
+        "type": "boolean"
+       },
+       "canFullView": {
+        "type": "boolean"
+       },
+       "canUse": {
+        "type": "boolean"
+       },
+       "errorMessage": {
+        "type": "string"
+       },
+       "metadata": {
+        "type": "object",
+        "additionalProperties": true
+       },
+       "bytedanceId": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "id",
+       "type",
+       "status",
+       "canDownload",
+       "canFullView",
+       "canUse"
+      ],
+      "additionalProperties": false
+     }
+    },
+    "shoot_type": {
+     "type": "string"
+    },
+    "footerLabel": {
+     "type": "string"
+    },
+    "notice": {
+     "type": "string"
+    },
+    "hasMore": {
+     "type": "boolean"
+    },
+    "nextFrom": {
+     "type": "string"
+    },
+    "nextFromId": {
+     "type": "string"
+    }
    },
+   "additionalProperties": false
+  },
+  "title": "Generate Video",
+  "icons": [
    {
-    "name": "aspect_ratio",
-    "type": [
-     "null",
-     "string"
-    ],
-    "required": true,
-    "enum": null,
-    "isModel": false
-   },
-   {
-    "name": "model",
-    "type": [
-     "null",
-     "string"
-    ],
-    "required": true,
-    "enum": null,
-    "isModel": true
-   },
-   {
-    "name": "duration",
-    "type": [
-     "null",
-     "string"
-    ],
-    "required": true,
-    "enum": null,
-    "isModel": false
-   },
-   {
-    "name": "resolution",
-    "type": [
-     "null",
-     "string"
-    ],
-    "required": false,
-    "enum": null,
-    "isModel": false
-   },
-   {
-    "name": "org_id",
-    "type": "string",
-    "required": true,
-    "enum": null,
-    "isModel": false
-   },
-   {
-    "name": "folder_id",
-    "type": [
-     "null",
-     "string"
-    ],
-    "required": false,
-    "enum": null,
-    "isModel": false
-   },
-   {
-    "name": "image_url",
-    "type": [
-     "null",
-     "array"
-    ],
-    "required": false,
-    "enum": null,
-    "isModel": false
-   },
-   {
-    "name": "video_url",
-    "type": [
-     "null",
-     "array"
-    ],
-    "required": false,
-    "enum": null,
-    "isModel": false
-   },
-   {
-    "name": "audio_url",
-    "type": [
-     "null",
-     "array"
-    ],
-    "required": false,
-    "enum": null,
-    "isModel": false
+    "src": "https://cdn.web.imagine.art/logo-imagine.svg",
+    "mimeType": "image/svg+xml"
    }
   ]
  },
  {
+  "annotations": {
+   "destructiveHint": false,
+   "idempotentHint": false,
+   "openWorldHint": false,
+   "readOnlyHint": true
+  },
+  "description": "Status fetcher for queued image or video generations (the asset type is derived from\n\t\tthe generation, not fixed). The widget polls this silently via the callServerTool backchannel during\n\t\tthe queued → generating → complete transition. In\n\t\ttext-only contexts, pass sync:true to wait server-side for completion (bounded ~45s). Without sync\n\t\t(default), it's a single point-in-time check.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "description": "Identifier returned by the generation tool whose progress you are checking."
+    },
+    "sync": {
+     "type": "boolean",
+     "description": "When true, wait until the generation finishes or fails, up to about 90 seconds, instead of returning the status as it stands right now."
+    },
+    "org_id": {
+     "type": [
+      "null",
+      "string"
+     ],
+     "description": "Organization to scope the lookup to. Optional; the identifier alone is enough."
+    }
+   },
+   "required": [
+    "id"
+   ],
+   "additionalProperties": false
+  },
   "name": "fetch_status",
-  "description": "Status fetcher for queued image or video generations (the asset type is derived from\n\t\tthe generation, not fixed). The widget polls this silently via the callServerTool backchannel during\n\t\tthe queued \u2192 generating \u2192 complete transition. In\n\t\ttext-only contexts, pass sync:true to wait server-side for completion (bounded ~45s). Without sync\n\t\t(default), it's a single point-in-time check.",
-  "takesImage": false,
-  "params": [
-   {
-    "name": "id",
-    "type": "string",
-    "required": true,
-    "enum": null,
-    "isModel": false
+  "outputSchema": {
+   "type": "object",
+   "properties": {
+    "heading": {
+     "type": "string"
+    },
+    "prompt": {
+     "type": [
+      "null",
+      "object"
+     ],
+     "properties": {
+      "text": {
+       "type": "string"
+      },
+      "truncatable": {
+       "type": "boolean"
+      }
+     },
+     "required": [
+      "text"
+     ],
+     "additionalProperties": false
+    },
+    "tags": {
+     "type": [
+      "null",
+      "array"
+     ],
+     "items": {
+      "type": "object",
+      "properties": {
+       "type": {
+        "type": "string"
+       },
+       "label": {
+        "type": "string"
+       },
+       "iconHint": {
+        "type": "string"
+       },
+       "iconUri": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "type",
+       "label"
+      ],
+      "additionalProperties": false
+     }
+    },
+    "assets": {
+     "type": [
+      "null",
+      "array"
+     ],
+     "items": {
+      "type": "object",
+      "properties": {
+       "id": {
+        "type": "string"
+       },
+       "type": {
+        "type": "string"
+       },
+       "status": {
+        "type": "string"
+       },
+       "mediaUrl": {
+        "type": "string"
+       },
+       "thumbnailUrl": {
+        "type": "string"
+       },
+       "duration": {
+        "type": [
+         "null",
+         "integer"
+        ]
+       },
+       "actions": {
+        "type": [
+         "null",
+         "array"
+        ],
+        "items": {
+         "type": "object",
+         "properties": {
+          "id": {
+           "type": "string"
+          },
+          "label": {
+           "type": "string"
+          },
+          "iconHint": {
+           "type": "string"
+          }
+         },
+         "required": [
+          "id",
+          "label"
+         ],
+         "additionalProperties": false
+        }
+       },
+       "canDownload": {
+        "type": "boolean"
+       },
+       "canFullView": {
+        "type": "boolean"
+       },
+       "canUse": {
+        "type": "boolean"
+       },
+       "errorMessage": {
+        "type": "string"
+       },
+       "metadata": {
+        "type": "object",
+        "additionalProperties": true
+       },
+       "bytedanceId": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "id",
+       "type",
+       "status",
+       "canDownload",
+       "canFullView",
+       "canUse"
+      ],
+      "additionalProperties": false
+     }
+    },
+    "shoot_type": {
+     "type": "string"
+    },
+    "footerLabel": {
+     "type": "string"
+    },
+    "notice": {
+     "type": "string"
+    },
+    "hasMore": {
+     "type": "boolean"
+    },
+    "nextFrom": {
+     "type": "string"
+    },
+    "nextFromId": {
+     "type": "string"
+    }
    },
+   "additionalProperties": false
+  },
+  "title": "Fetch Status",
+  "icons": [
    {
-    "name": "sync",
-    "type": "boolean",
-    "required": false,
-    "enum": null,
-    "isModel": false
-   },
-   {
-    "name": "org_id",
-    "type": [
-     "null",
-     "string"
-    ],
-    "required": false,
-    "enum": null,
-    "isModel": false
+    "src": "https://cdn.web.imagine.art/logo-imagine.svg",
+    "mimeType": "image/svg+xml"
    }
   ]
  },
  {
-  "name": "user_upload",
+  "annotations": {
+   "destructiveHint": false,
+   "idempotentHint": false,
+   "openWorldHint": false,
+   "readOnlyHint": false
+  },
   "description": "Used internally by the request_image_upload widget.\n\t\trequest_image_upload is how a user supplies their own image: native client attachments are not handed to this server, so one cannot be read and passed here as base64.",
-  "takesImage": true,
-  "params": [
-   {
-    "name": "file",
-    "type": "string",
-    "required": true,
-    "enum": null,
-    "isModel": false
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "file": {
+     "type": "string",
+     "description": "The file to upload, base64-encoded, optionally with a data: prefix."
+    },
+    "org_id": {
+     "type": "string",
+     "description": "Organization the upload belongs to. Obtain it from select_organization; required on every call."
+    }
    },
+   "required": [
+    "file",
+    "org_id"
+   ],
+   "additionalProperties": false
+  },
+  "name": "user_upload",
+  "title": "User Upload",
+  "icons": [
    {
-    "name": "org_id",
-    "type": "string",
-    "required": true,
-    "enum": null,
-    "isModel": false
+    "src": "https://cdn.web.imagine.art/logo-imagine.svg",
+    "mimeType": "image/svg+xml"
    }
   ]
  },
  {
-  "name": "select_organization",
+  "_meta": {
+   "ui": {
+    "resourceUri": "ui://imagine-mcp/organization-selection"
+   }
+  },
+  "annotations": {
+   "destructiveHint": false,
+   "idempotentHint": false,
+   "openWorldHint": false,
+   "readOnlyHint": true
+  },
   "description": "Fetch the user's ImagineArt organizations and present them for selection. In a widget-capable client this renders a picker. In other clients the result is marked NO WIDGET RENDERED and carries the list as structured text.\n\n\t\tUse this at the start of a chat, before any generation. ImagineArt users can belong to multiple organizations, and every generation is attributed to one. The user picks an organization\n\t\tin the widget; their pick is surfaced back into the chat as a message containing the chosen org_id.\n\t\tCapture that org_id and pass it as the org_id argument on every subsequent generation tool call\n\t\t(generate_image, generate_video, generate_music, enhance_image, remove_background) for the rest of\n\t\tthe chat. If the user hasn't selected one yet and you need to generate, call this tool and ask them\n\t\tto choose. The server is stateless and does not retain the selection; the same org_id is passed on each later call.",
-  "takesImage": false,
-  "params": []
+  "inputSchema": {
+   "type": "object",
+   "additionalProperties": false
+  },
+  "name": "select_organization",
+  "outputSchema": {
+   "type": "object",
+   "properties": {
+    "heading": {
+     "type": "string"
+    },
+    "error_msg": {
+     "type": "string"
+    },
+    "organizations": {
+     "type": [
+      "null",
+      "array"
+     ],
+     "items": {
+      "type": "object",
+      "properties": {
+       "id": {
+        "type": "string"
+       },
+       "name": {
+        "type": "string"
+       },
+       "role": {
+        "type": "string"
+       },
+       "isPrimary": {
+        "type": "boolean"
+       },
+       "imageUrl": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "id",
+       "name"
+      ],
+      "additionalProperties": false
+     }
+    }
+   },
+   "additionalProperties": false
+  },
+  "title": "Select Organization",
+  "icons": [
+   {
+    "src": "https://cdn.web.imagine.art/logo-imagine.svg",
+    "mimeType": "image/svg+xml"
+   }
+  ]
  },
  {
+  "_meta": {
+   "ui": {
+    "resourceUri": "ui://get-balance/balance"
+   }
+  },
+  "annotations": {
+   "destructiveHint": false,
+   "idempotentHint": false,
+   "openWorldHint": false,
+   "readOnlyHint": true
+  },
+  "description": "Get the user's ImagineArt credit balance for an organization and render it in a widget.\n\n\t\torg_id (required) — the organization the user selected via select_organization; balance is per-organization. The same org_id applies for the whole chat.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "org_id": {
+     "type": "string",
+     "description": "Organization whose credit balance to read. Obtain it from select_organization; required on every call."
+    }
+   },
+   "required": [
+    "org_id"
+   ],
+   "additionalProperties": false
+  },
   "name": "get_balance",
-  "description": "Get the user's ImagineArt credit balance for an organization and render it in a widget.\n\n\t\torg_id (required) \u2014 the organization the user selected via select_organization; balance is per-organization. The same org_id applies for the whole chat.",
-  "takesImage": false,
-  "params": [
+  "outputSchema": {
+   "type": "object",
+   "properties": {
+    "heading": {
+     "type": "string"
+    },
+    "current": {
+     "type": "integer"
+    },
+    "total": {
+     "type": [
+      "null",
+      "integer"
+     ]
+    },
+    "unit": {
+     "type": "string"
+    },
+    "badges": {
+     "type": [
+      "null",
+      "array"
+     ],
+     "items": {
+      "type": "object",
+      "properties": {
+       "label": {
+        "type": "string"
+       },
+       "iconHint": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "label"
+      ],
+      "additionalProperties": false
+     }
+    }
+   },
+   "required": [
+    "current"
+   ],
+   "additionalProperties": false
+  },
+  "title": "Get Balance",
+  "icons": [
    {
-    "name": "org_id",
-    "type": "string",
-    "required": true,
-    "enum": null,
-    "isModel": false
+    "src": "https://cdn.web.imagine.art/logo-imagine.svg",
+    "mimeType": "image/svg+xml"
+   }
+  ]
+ },
+ {
+  "_meta": {
+   "ui": {
+    "resourceUri": "ui://imagine-mcp/folder-selection"
+   }
+  },
+  "annotations": {
+   "destructiveHint": false,
+   "idempotentHint": false,
+   "openWorldHint": false,
+   "readOnlyHint": true
+  },
+  "description": "Fetch the folders in the selected organization (across its private and public workspaces)\n\t\tand present them for selection. In a widget-capable client this renders a picker. In other clients the result is marked NO WIDGET RENDERED and carries the list as structured text.\n\n\t\tCall this when the user wants to organize generated assets into a specific folder/directory. It is\n\t\tOPTIONAL — if the user doesn't pick a folder, generations are created at the workspace root. Requires org_id, from select_organization.\n\n\t\tThe user picks a folder in the widget; their pick is surfaced back into the chat as a message containing\n\t\tthe chosen folder_id. Capture that folder_id and pass it as the optional folder_id argument on every\n\t\tsubsequent generation tool call (generate_image, generate_video, generate_music, enhance_image,\n\t\tremove_background) for the rest of the chat. The server is stateless and does not retain the selection; the same folder_id is passed on each later call.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "org_id": {
+     "type": "string",
+     "description": "Organization whose folders the picker should offer. Obtain it from select_organization; required on every call."
+    }
+   },
+   "required": [
+    "org_id"
+   ],
+   "additionalProperties": false
+  },
+  "name": "select_folder",
+  "outputSchema": {
+   "type": "object",
+   "properties": {
+    "heading": {
+     "type": "string"
+    },
+    "error_msg": {
+     "type": "string"
+    },
+    "folders": {
+     "type": [
+      "null",
+      "array"
+     ],
+     "items": {
+      "type": "object",
+      "properties": {
+       "id": {
+        "type": "string"
+       },
+       "name": {
+        "type": "string"
+       },
+       "workspace": {
+        "type": "string"
+       },
+       "objectsCount": {
+        "type": "integer"
+       }
+      },
+      "required": [
+       "id",
+       "name"
+      ],
+      "additionalProperties": false
+     }
+    }
+   },
+   "additionalProperties": false
+  },
+  "title": "Select Folder",
+  "icons": [
+   {
+    "src": "https://cdn.web.imagine.art/logo-imagine.svg",
+    "mimeType": "image/svg+xml"
+   }
+  ]
+ },
+ {
+  "annotations": {
+   "destructiveHint": false,
+   "idempotentHint": false,
+   "openWorldHint": false,
+   "readOnlyHint": false
+  },
+  "description": "Used internally by the ImagineArt widgets: apply a photo edit to an existing generation. It runs a two-step\n\t\tworkflow — analyze the source image to engineer edit prompt(s), then image-to-image generate one\n\t\tvariant per prompt (each effect returns a 4-shot set). It recovers the source asset's\n\t\tframing, resolution, and (for fashion assets) project + composition and preserves them on the edit.\n\t\tReturns immediately with the queued variant uuids; where a widget is rendered it polls fetch_status and updates in place. In a text-only context, poll fetch_status\n\t\t(id=<uuid>, sync:true) on each uuid until status is \"complete\" or \"error\", then use the returned urls.\n\n\t\tRequires an active subscription (paid organizations only).\n\n\t\tArguments:\n\t\t  • effect (required) — which edit to apply; each produces a 4-shot set anchored on the source. One of:\n\t\t      Editorial (narrative/creative coverage of the same look):\n\t\t      editorial_pose_variation — different poses, gestures, and expressions; look, location, and mood held.\n\t\t      editorial_angle_coverage — cinematic camera setups (low, overhead, profile, dutch, over-the-shoulder).\n\t\t      editorial_mood_lighting_shift — same outfit and location under different lighting/atmosphere.\n\t\t      editorial_location_jump — same look carried across different environments; wardrobe and model held.\n\t\t      editorial_time_season_shift — same scene progressed through times of day or seasons.\n\t\t      editorial_story_progression — sequential narrative beats within the same scene (a film-still arc).\n\t\t      Catalog (e-commerce product coverage):\n\t\t      catalog_standard_angle_coverage — the canonical front/back/3-4-left/3-4-right/side set.\n\t\t      catalog_pose_variation — clean catalog poses keeping the garment fully visible and silhouette readable.\n\t\t      catalog_colorway_swap — recolor the hero garment across color variants at full styling parity.\n\t\t      catalog_detail_feature — close-up inserts (collar, cuffs, hem, hardware, stitching, labels, trims).\n\t\t      catalog_styling_combinations — the same hero piece restyled with different complementary garments.\n\t\t      catalog_model_fit_coverage — the same garment on a range of body types, heights, or sizes.\n\t\t  • asset_id (required) — the uuid of the existing generation to edit (an ImagineArt asset the user\n\t\t    selected or that a prior tool produced).\n\t\t  • org_id (required) — the organization the user selected via select_organization.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "effect": {
+     "type": "string",
+     "description": "The edit to apply, described in plain language."
+    },
+    "asset_id": {
+     "type": "string",
+     "description": "Identifier of an existing asset hosted by this server, from list_assets."
+    },
+    "org_id": {
+     "type": "string",
+     "description": "Organization the asset belongs to. Obtain it from select_organization; required on every call."
+    }
+   },
+   "required": [
+    "effect",
+    "asset_id",
+    "org_id"
+   ],
+   "additionalProperties": false
+  },
+  "name": "edit_photo",
+  "outputSchema": {
+   "type": "object",
+   "properties": {
+    "heading": {
+     "type": "string"
+    },
+    "prompt": {
+     "type": [
+      "null",
+      "object"
+     ],
+     "properties": {
+      "text": {
+       "type": "string"
+      },
+      "truncatable": {
+       "type": "boolean"
+      }
+     },
+     "required": [
+      "text"
+     ],
+     "additionalProperties": false
+    },
+    "tags": {
+     "type": [
+      "null",
+      "array"
+     ],
+     "items": {
+      "type": "object",
+      "properties": {
+       "type": {
+        "type": "string"
+       },
+       "label": {
+        "type": "string"
+       },
+       "iconHint": {
+        "type": "string"
+       },
+       "iconUri": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "type",
+       "label"
+      ],
+      "additionalProperties": false
+     }
+    },
+    "assets": {
+     "type": [
+      "null",
+      "array"
+     ],
+     "items": {
+      "type": "object",
+      "properties": {
+       "id": {
+        "type": "string"
+       },
+       "type": {
+        "type": "string"
+       },
+       "status": {
+        "type": "string"
+       },
+       "mediaUrl": {
+        "type": "string"
+       },
+       "thumbnailUrl": {
+        "type": "string"
+       },
+       "duration": {
+        "type": [
+         "null",
+         "integer"
+        ]
+       },
+       "actions": {
+        "type": [
+         "null",
+         "array"
+        ],
+        "items": {
+         "type": "object",
+         "properties": {
+          "id": {
+           "type": "string"
+          },
+          "label": {
+           "type": "string"
+          },
+          "iconHint": {
+           "type": "string"
+          }
+         },
+         "required": [
+          "id",
+          "label"
+         ],
+         "additionalProperties": false
+        }
+       },
+       "canDownload": {
+        "type": "boolean"
+       },
+       "canFullView": {
+        "type": "boolean"
+       },
+       "canUse": {
+        "type": "boolean"
+       },
+       "errorMessage": {
+        "type": "string"
+       },
+       "metadata": {
+        "type": "object",
+        "additionalProperties": true
+       },
+       "bytedanceId": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "id",
+       "type",
+       "status",
+       "canDownload",
+       "canFullView",
+       "canUse"
+      ],
+      "additionalProperties": false
+     }
+    },
+    "shoot_type": {
+     "type": "string"
+    },
+    "footerLabel": {
+     "type": "string"
+    },
+    "notice": {
+     "type": "string"
+    },
+    "hasMore": {
+     "type": "boolean"
+    },
+    "nextFrom": {
+     "type": "string"
+    },
+    "nextFromId": {
+     "type": "string"
+    }
+   },
+   "additionalProperties": false
+  },
+  "title": "Edit Photo",
+  "icons": [
+   {
+    "src": "https://cdn.web.imagine.art/logo-imagine.svg",
+    "mimeType": "image/svg+xml"
+   }
+  ]
+ },
+ {
+  "_meta": {
+   "ui": {
+    "resourceUri": "ui://imagine-mcp/asset-generation"
+   }
+  },
+  "annotations": {
+   "destructiveHint": false,
+   "idempotentHint": false,
+   "openWorldHint": false,
+   "readOnlyHint": false
+  },
+  "description": "Enhance an image using the ImagineArt API. Pass org_id (required) — the organization id the user selected via select_organization. Optionally pass\n\t\tfolder_id (a folder the user picked via select_folder) to create the result inside that folder; omit it\n\t\tto use the workspace root. Pass image_url — if\n\t\tthe user selected an existing\n\t\tgeneration, pass its url; for a non-ImagineArt asset, first call user_upload and pass the resulting url.\n\t\tReturns immediately with a uuid and a widget that mounts in the queued state; the widget polls\n\t\tfetch_status and updates in place. The widget handles the polling.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "image_url": {
+     "type": "string",
+     "description": "URL of the image to upscale and sharpen."
+    },
+    "org_id": {
+     "type": "string",
+     "description": "Organization the image belongs to. Obtain it from select_organization; required on every call."
+    },
+    "folder_id": {
+     "type": [
+      "null",
+      "string"
+     ],
+     "description": "Folder to save the result into, from select_folder. Unset saves it at the workspace root."
+    }
+   },
+   "required": [
+    "image_url",
+    "org_id"
+   ],
+   "additionalProperties": false
+  },
+  "name": "enhance_image",
+  "outputSchema": {
+   "type": "object",
+   "properties": {
+    "heading": {
+     "type": "string"
+    },
+    "prompt": {
+     "type": [
+      "null",
+      "object"
+     ],
+     "properties": {
+      "text": {
+       "type": "string"
+      },
+      "truncatable": {
+       "type": "boolean"
+      }
+     },
+     "required": [
+      "text"
+     ],
+     "additionalProperties": false
+    },
+    "tags": {
+     "type": [
+      "null",
+      "array"
+     ],
+     "items": {
+      "type": "object",
+      "properties": {
+       "type": {
+        "type": "string"
+       },
+       "label": {
+        "type": "string"
+       },
+       "iconHint": {
+        "type": "string"
+       },
+       "iconUri": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "type",
+       "label"
+      ],
+      "additionalProperties": false
+     }
+    },
+    "assets": {
+     "type": [
+      "null",
+      "array"
+     ],
+     "items": {
+      "type": "object",
+      "properties": {
+       "id": {
+        "type": "string"
+       },
+       "type": {
+        "type": "string"
+       },
+       "status": {
+        "type": "string"
+       },
+       "mediaUrl": {
+        "type": "string"
+       },
+       "thumbnailUrl": {
+        "type": "string"
+       },
+       "duration": {
+        "type": [
+         "null",
+         "integer"
+        ]
+       },
+       "actions": {
+        "type": [
+         "null",
+         "array"
+        ],
+        "items": {
+         "type": "object",
+         "properties": {
+          "id": {
+           "type": "string"
+          },
+          "label": {
+           "type": "string"
+          },
+          "iconHint": {
+           "type": "string"
+          }
+         },
+         "required": [
+          "id",
+          "label"
+         ],
+         "additionalProperties": false
+        }
+       },
+       "canDownload": {
+        "type": "boolean"
+       },
+       "canFullView": {
+        "type": "boolean"
+       },
+       "canUse": {
+        "type": "boolean"
+       },
+       "errorMessage": {
+        "type": "string"
+       },
+       "metadata": {
+        "type": "object",
+        "additionalProperties": true
+       },
+       "bytedanceId": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "id",
+       "type",
+       "status",
+       "canDownload",
+       "canFullView",
+       "canUse"
+      ],
+      "additionalProperties": false
+     }
+    },
+    "shoot_type": {
+     "type": "string"
+    },
+    "footerLabel": {
+     "type": "string"
+    },
+    "notice": {
+     "type": "string"
+    },
+    "hasMore": {
+     "type": "boolean"
+    },
+    "nextFrom": {
+     "type": "string"
+    },
+    "nextFromId": {
+     "type": "string"
+    }
+   },
+   "additionalProperties": false
+  },
+  "title": "Enhance Image",
+  "icons": [
+   {
+    "src": "https://cdn.web.imagine.art/logo-imagine.svg",
+    "mimeType": "image/svg+xml"
+   }
+  ]
+ },
+ {
+  "_meta": {
+   "ui": {
+    "resourceUri": "ui://imagine-mcp/asset-generation"
+   }
+  },
+  "annotations": {
+   "destructiveHint": false,
+   "idempotentHint": false,
+   "openWorldHint": false,
+   "readOnlyHint": false
+  },
+  "description": "Remove the background of an image using the ImagineArt API. Pass org_id (required) — the organization id the user selected via select_organization.\n\t\tOptionally pass folder_id (a folder the user picked via select_folder) to create the result inside that\n\t\tfolder; omit it to use the workspace root.\n\t\tPass image_url — if the user\n\t\tselected an existing generation, pass its url; for a non-ImagineArt asset, first call user_upload and\n\t\tpass the resulting url. Returns immediately with a uuid and a widget that mounts in the queued state;\n\t\tthe widget polls fetch_status and updates in place. The widget handles the polling.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "image_url": {
+     "type": "string",
+     "description": "URL of the image to cut the background out of."
+    },
+    "org_id": {
+     "type": "string",
+     "description": "Organization the image belongs to. Obtain it from select_organization; required on every call."
+    },
+    "folder_id": {
+     "type": [
+      "null",
+      "string"
+     ],
+     "description": "Folder to save the result into, from select_folder. Unset saves it at the workspace root."
+    }
+   },
+   "required": [
+    "image_url",
+    "org_id"
+   ],
+   "additionalProperties": false
+  },
+  "name": "remove_background",
+  "outputSchema": {
+   "type": "object",
+   "properties": {
+    "heading": {
+     "type": "string"
+    },
+    "prompt": {
+     "type": [
+      "null",
+      "object"
+     ],
+     "properties": {
+      "text": {
+       "type": "string"
+      },
+      "truncatable": {
+       "type": "boolean"
+      }
+     },
+     "required": [
+      "text"
+     ],
+     "additionalProperties": false
+    },
+    "tags": {
+     "type": [
+      "null",
+      "array"
+     ],
+     "items": {
+      "type": "object",
+      "properties": {
+       "type": {
+        "type": "string"
+       },
+       "label": {
+        "type": "string"
+       },
+       "iconHint": {
+        "type": "string"
+       },
+       "iconUri": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "type",
+       "label"
+      ],
+      "additionalProperties": false
+     }
+    },
+    "assets": {
+     "type": [
+      "null",
+      "array"
+     ],
+     "items": {
+      "type": "object",
+      "properties": {
+       "id": {
+        "type": "string"
+       },
+       "type": {
+        "type": "string"
+       },
+       "status": {
+        "type": "string"
+       },
+       "mediaUrl": {
+        "type": "string"
+       },
+       "thumbnailUrl": {
+        "type": "string"
+       },
+       "duration": {
+        "type": [
+         "null",
+         "integer"
+        ]
+       },
+       "actions": {
+        "type": [
+         "null",
+         "array"
+        ],
+        "items": {
+         "type": "object",
+         "properties": {
+          "id": {
+           "type": "string"
+          },
+          "label": {
+           "type": "string"
+          },
+          "iconHint": {
+           "type": "string"
+          }
+         },
+         "required": [
+          "id",
+          "label"
+         ],
+         "additionalProperties": false
+        }
+       },
+       "canDownload": {
+        "type": "boolean"
+       },
+       "canFullView": {
+        "type": "boolean"
+       },
+       "canUse": {
+        "type": "boolean"
+       },
+       "errorMessage": {
+        "type": "string"
+       },
+       "metadata": {
+        "type": "object",
+        "additionalProperties": true
+       },
+       "bytedanceId": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "id",
+       "type",
+       "status",
+       "canDownload",
+       "canFullView",
+       "canUse"
+      ],
+      "additionalProperties": false
+     }
+    },
+    "shoot_type": {
+     "type": "string"
+    },
+    "footerLabel": {
+     "type": "string"
+    },
+    "notice": {
+     "type": "string"
+    },
+    "hasMore": {
+     "type": "boolean"
+    },
+    "nextFrom": {
+     "type": "string"
+    },
+    "nextFromId": {
+     "type": "string"
+    }
+   },
+   "additionalProperties": false
+  },
+  "title": "Remove Background",
+  "icons": [
+   {
+    "src": "https://cdn.web.imagine.art/logo-imagine.svg",
+    "mimeType": "image/svg+xml"
+   }
+  ]
+ },
+ {
+  "annotations": {
+   "destructiveHint": false,
+   "idempotentHint": false,
+   "openWorldHint": false,
+   "readOnlyHint": true
+  },
+  "description": "Used internally by the ImagineArt widgets: list the organization's assets (newest first) as an internal listing,\n\t\te.g. to pass a returned id to another tool. Renders no widget — the show_assets widget drives this. show_assets covers requests to see assets.\n\n\t\torg_id (required) — the organization the user selected via select_organization. The same org_id applies for the whole chat.\n\n\t\tservice (optional) — comma-separated upstream services to return: \"user\" for the user's uploads,\n\t\t\"image,video\" for generations. Omitting it returns every service, which includes uploads, music, and\n\t\tassets belonging to fashion or ad projects.\n\n\t\tlimit (optional) — page size, defaults to 50.\n\t\tfrom / from_id (optional) — keyset pagination cursor for loading more. Leave both unset for the first call.\n\t\tWhen more is needed, call again with the same org_id plus the from / from_id values from the previous\n\t\tresult's text. Both are required together.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "org_id": {
+     "type": "string",
+     "description": "Organization whose assets to list. Obtain it from select_organization; required on every call."
+    },
+    "limit": {
+     "type": [
+      "null",
+      "integer"
+     ],
+     "description": "Maximum assets to return, newest first. Defaults to 50."
+    },
+    "from": {
+     "type": [
+      "null",
+      "string"
+     ],
+     "description": "Paging cursor: the previous page's last asset creation timestamp. Must be sent together with from_id. Omit for the first page."
+    },
+    "from_id": {
+     "type": [
+      "null",
+      "string"
+     ],
+     "description": "Paging cursor: the previous page's last asset identifier. Must be sent together with from. Omit for the first page."
+    },
+    "service": {
+     "type": "string",
+     "description": "Filter by kind: user for uploads, or image,video for generations. Unset returns everything."
+    }
+   },
+   "required": [
+    "org_id"
+   ],
+   "additionalProperties": false
+  },
+  "name": "list_assets",
+  "outputSchema": {
+   "type": "object",
+   "properties": {
+    "heading": {
+     "type": "string"
+    },
+    "prompt": {
+     "type": [
+      "null",
+      "object"
+     ],
+     "properties": {
+      "text": {
+       "type": "string"
+      },
+      "truncatable": {
+       "type": "boolean"
+      }
+     },
+     "required": [
+      "text"
+     ],
+     "additionalProperties": false
+    },
+    "tags": {
+     "type": [
+      "null",
+      "array"
+     ],
+     "items": {
+      "type": "object",
+      "properties": {
+       "type": {
+        "type": "string"
+       },
+       "label": {
+        "type": "string"
+       },
+       "iconHint": {
+        "type": "string"
+       },
+       "iconUri": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "type",
+       "label"
+      ],
+      "additionalProperties": false
+     }
+    },
+    "assets": {
+     "type": [
+      "null",
+      "array"
+     ],
+     "items": {
+      "type": "object",
+      "properties": {
+       "id": {
+        "type": "string"
+       },
+       "type": {
+        "type": "string"
+       },
+       "status": {
+        "type": "string"
+       },
+       "mediaUrl": {
+        "type": "string"
+       },
+       "thumbnailUrl": {
+        "type": "string"
+       },
+       "duration": {
+        "type": [
+         "null",
+         "integer"
+        ]
+       },
+       "actions": {
+        "type": [
+         "null",
+         "array"
+        ],
+        "items": {
+         "type": "object",
+         "properties": {
+          "id": {
+           "type": "string"
+          },
+          "label": {
+           "type": "string"
+          },
+          "iconHint": {
+           "type": "string"
+          }
+         },
+         "required": [
+          "id",
+          "label"
+         ],
+         "additionalProperties": false
+        }
+       },
+       "canDownload": {
+        "type": "boolean"
+       },
+       "canFullView": {
+        "type": "boolean"
+       },
+       "canUse": {
+        "type": "boolean"
+       },
+       "errorMessage": {
+        "type": "string"
+       },
+       "metadata": {
+        "type": "object",
+        "additionalProperties": true
+       },
+       "bytedanceId": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "id",
+       "type",
+       "status",
+       "canDownload",
+       "canFullView",
+       "canUse"
+      ],
+      "additionalProperties": false
+     }
+    },
+    "shoot_type": {
+     "type": "string"
+    },
+    "footerLabel": {
+     "type": "string"
+    },
+    "notice": {
+     "type": "string"
+    },
+    "hasMore": {
+     "type": "boolean"
+    },
+    "nextFrom": {
+     "type": "string"
+    },
+    "nextFromId": {
+     "type": "string"
+    }
+   },
+   "additionalProperties": false
+  },
+  "title": "List Assets",
+  "icons": [
+   {
+    "src": "https://cdn.web.imagine.art/logo-imagine.svg",
+    "mimeType": "image/svg+xml"
+   }
+  ]
+ },
+ {
+  "_meta": {
+   "ui": {
+    "resourceUri": "ui://imagine-mcp/user-upload"
+   }
+  },
+  "annotations": {
+   "destructiveHint": false,
+   "idempotentHint": false,
+   "openWorldHint": false,
+   "readOnlyHint": true
+  },
+  "description": "Render an upload widget so the user can attach reference image(s) for generation. This is the upload path for any user-supplied image. Whenever the user wants to provide their own image as a reference\n\t\t(e.g. \"use this photo\", \"make a variation of this\", an image edit / img2img request, or they attached a file) and no usable image URL is available. Native client attachments are not handed to this server, so an attached file cannot be read directly, and base64 upload is deprecated. This widget is how a user supplies their own image.\n\n\t\tRequires org_id, from select_organization. Reuse the same org_id for the whole chat.\n\n\t\tThe user picks/drops image(s) in the widget; each is uploaded to ImagineArt and the resulting asset\n\t\tURL(s) are placed into your context automatically (no chat message). Use those URL(s) as the image_url\n\t\targument on generation/editing tools (generate_image, enhance_image, remove_background). Treat the URLs.",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "org_id": {
+     "type": "string",
+     "description": "Organization the upload belongs to. Obtain it from select_organization; required on every call."
+    }
+   },
+   "required": [
+    "org_id"
+   ],
+   "additionalProperties": false
+  },
+  "name": "request_image_upload",
+  "outputSchema": {
+   "type": "object",
+   "properties": {
+    "orgId": {
+     "type": "string"
+    },
+    "heading": {
+     "type": "string"
+    },
+    "maxSizeMb": {
+     "type": "integer"
+    }
+   },
+   "required": [
+    "orgId"
+   ],
+   "additionalProperties": false
+  },
+  "title": "Request Image Upload",
+  "icons": [
+   {
+    "src": "https://cdn.web.imagine.art/logo-imagine.svg",
+    "mimeType": "image/svg+xml"
    }
   ]
  }
