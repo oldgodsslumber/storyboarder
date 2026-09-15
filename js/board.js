@@ -1266,7 +1266,12 @@
     { role: 'image', key: 'imageDescription', label: 'first frame',
       hint: 'Only what is true as the shot opens. @ anything the FIRST FRAME should be shown.' },
     { role: 'video', key: 'videoDescription', label: 'motion',
-      hint: 'What moves, in what order, how it ends. @ anything the CLIP should be shown.' }
+      /* NOT "@ anything the clip should be shown": a clip is shown the frame
+         and nothing else. An @ here names somebody so the writer uses their
+         name — it sends no picture, and following the old wording was how a
+         person put a face into the still by writing about the clip. */
+      hint: 'What moves, in what order, how it ends. @ someone to name them \u2014 ' +
+        'the clip is handed the frame, not their photo.' }
   ];
 
   function laneOpen(sh, lane) {
@@ -1335,7 +1340,17 @@
   function feedRow(sh) {
     const row = SB.el('div', 'feed-row');
     row.dataset.feed = sh.id;
+    /* Everything this card touches, so nothing written anywhere on it goes
+       unseen — but NUMBERED off the first frame's lane, because those numbers
+       are the promise: they are what the prompt's mapping cites, what the
+       refs/ folder is named by, what the printed page lists and what "copy
+       image set" writes. The strip is where a person reads the order off,
+       and it was counting a third set nobody else used. */
     const list = SB.Refs.feed(P(), sh);
+    const laneN = {};
+    SB.Refs.images(P(), sh, 'image').forEach(function (e) {
+      laneN[e.id] = (laneN[e.id] || []).concat([e.n]);
+    });
     /* A name in the text that is not a mark feeds nothing — the exact mistake
        this feature exists to stop. It is most likely on a card with NO feed at
        all, so it is worked out before the empty case, not after it. */
@@ -1370,10 +1385,16 @@
         (e.kind === 'dead' ? ' dead' : '') +
         (e.kind === 'shot' ? ' is-shot' : '') +
         (e.images.length ? '' : ' empty'));
-      const n = e.numbers.length
-        ? (e.numbers.length === 1 ? e.numbers[0] : e.numbers[0] + '–' + e.numbers[e.numbers.length - 1])
-        : '–';
-      cell.appendChild(SB.el('span', 'feed-n', String(n)));
+      /* The first frame's numbers, which are the ones the prompt cites, the
+         refs/ folder is named by and "copy image set" writes. A mark that
+         only the clip's words know about gets a dot: it is in no folder and
+         no mapping, and numbering it was inventing a third order. */
+      const mine = laneN[e.id] || [];
+      const n = mine.length
+        ? (mine.length === 1 ? String(mine[0])
+          : mine[0] + '\u2013' + mine[mine.length - 1])
+        : (e.images.length ? '\u00b7' : '\u2013');
+      cell.appendChild(SB.el('span', 'feed-n' + (mine.length ? '' : ' aside'), String(n)));
 
       if (e.images.length) {
         const t = SB.el('span', 'feed-thumb');

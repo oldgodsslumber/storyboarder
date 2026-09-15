@@ -330,10 +330,32 @@
    * missing from the picture: whoever arrives after it.
    */
   function videoCastBlock(p, shot, cast) {
+    /* Who is in the picture is a question about the PICTURE, and the picture
+     * was built from the first-frame lane. Asking the video lane produced the
+     * inversion: somebody marked only in the motion box — which is how you
+     * write a person who walks in halfway — was announced as standing in the
+     * frame, while the one the frame was actually built around went unnamed.
+     * The same request then carried the frame's own description saying the
+     * opposite. */
+    const framed = [];
+    const inFrame = {};
+    (SB.Refs ? SB.Refs.feed(p, shot, 'image') : []).forEach(function (e) {
+      if (e.kind !== 'subject' || !e.subject) return;
+      inFrame[e.id] = 1;
+      framed.push(e.subject);
+    });
     const late = arriving(p, shot);
     const isLate = {};
     late.forEach(function (x) { isLate[x.id] = 1; });
-    const present = cast.filter(function (x) { return !isLate[x.id]; });
+    /* Named for the clip and not in the picture it opens on: that is what
+     * writing somebody into the motion box MEANS. They arrive. */
+    cast.forEach(function (x) {
+      if (!inFrame[x.id] && !isLate[x.id]) { isLate[x.id] = 1; late.push(x); }
+    });
+    /* And everyone the frame was built around is in it, whether or not the
+     * clip's own words happen to mention them — the writer needs their names
+     * to say what they DO. */
+    const present = framed.filter(function (x) { return !isLate[x.id]; });
     const lines = [];
 
     if (present.length) {
@@ -389,11 +411,17 @@
      * empty cast then sent the files with no mapping at all, so the prompt said
      * nothing about images the person was about to hand over. */
     if (!cast.length && !numbered.length) return '';
-    /* Frame-only video takes the short block above: no mapping, because this
-     * call is shown no reference images, and no appearance, because the frame
-     * carries it. A full-reference model keeps the long one — there the
-     * appearance lines are the format, binding each label to a picture. */
-    if (role === 'video' && SB.Model.videoInherits(model)) {
+    /* EVERY video job takes the short block: a clip is handed this card's
+     * frame and nothing else, so there is no mapping to write and no
+     * appearance to bind — the frame carries it.
+     *
+     * This used to ask whether the model was a full-reference one, and a
+     * board pointed at MiniMax H3 then got the long block: "image 1 = Bob,
+     * image 2 = Nat, reference images are supplied in the numbered order
+     * above", in the same request as an H3 label table saying neither
+     * subject has a reference image, for a call that carries the frame
+     * alone. Three answers, no two alike. */
+    if (role === 'video') {
       return videoCastBlock(p, shot, cast);
     }
     /* One reference per subject, so one number — the ranges this used to
@@ -438,9 +466,29 @@
          frame is a reference like any other, and the numbers have to agree
          with the strip on the card and with the files the person is about to
          drop in. */
-      SB.Refs.images(p, shot, role).forEach(function (e) {
+      const mapped = SB.Refs.images(p, shot, role);
+      mapped.forEach(function (e) {
         lines.push('  image ' + e.n + ' = ' + e.label + (e.role ? ' (' + e.role + ')' : ''));
       });
+      /* A still push uploads ONE picture. The mapping above says all of them
+         "are supplied in the numbered order", which is true of the folder a
+         person hand-feeds and false of the call this app makes — so the
+         writer was told to match faces against images that were never
+         there. Say which one travels; the rest are description. */
+      /* One picture travels, unless the door in use carries none. Asked of
+         imagine.js where it is loaded; where it is not, one is the answer
+         every door but the API-key one gives. */
+      const sent = (SB.Imagine && SB.Imagine.refsFor)
+        ? SB.Imagine.refsFor(p, shot, role) : { carries: 1, first: mapped[0] || null };
+      if (mapped.length > 1) {
+        const first = sent.first;
+        lines.push(sent.carries
+          ? 'Only image ' + ((first && first.n) || 1) + ' is actually uploaded with this call. ' +
+            'The others are described above and are NOT in front of you — write them from ' +
+            'the words, and do not claim to be matching a picture of them.'
+          : 'None of these is uploaded with this call — every one of them is description ' +
+            'only. Write them from the words above.');
+      }
     }
     /* The shot description may itself name a wardrobe — older boards baked the
      * subject into every description, and that copy went stale the moment the

@@ -215,9 +215,24 @@
       });
     });
 
-    /* cast, but nobody said to show it */
+    /* Cast, but nobody said to show it — so it joins every lane, because
+     * being on the card is not a statement about one half of it.
+     *
+     * Unless they were named in the OTHER lane. Typing @Beta in the motion
+     * box casts Beta, and casting used to drop her into the first frame's
+     * feed as well: her photograph uploaded with the still, named image 1 in
+     * its prompt, shipped into the shot's refs/ folder — for a frame the
+     * description says is an empty corridor. Marking somebody for the clip
+     * must not put their face in the picture. */
+    const elsewhere = {};
+    if (role) {
+      const here = {};
+      marked(p, shot, role).forEach(function (m) { here[m.id] = 1; });
+      marked(p, shot).forEach(function (m) { if (!here[m.id]) elsewhere[m.id] = 1; });
+    }
     SB.Personas.forShot(p, shot).forEach(function (per) {
       if (seen[per.id]) return;
+      if (elsewhere[per.id]) return;
       seen[per.id] = 1;
       const imgs = SB.Personas.imagesOf(per);
       out.push({

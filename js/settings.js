@@ -854,7 +854,8 @@
         box.appendChild(SB.el('div', 'pp-note',
           tools.length + ' tool' + (tools.length === 1 ? '' : 's') + '. ' +
           (named.length
-            ? named.length + ' of them let a model be named, so the slug column in Models & ' +
+            ? named.length + (named.length === 1 ? ' of them lets' : ' of them let') +
+              ' a model be named, so the slug column in Models & ' +
               'templates applies here and the list below is what your account accepts.'
             : 'None of them takes a model, so ImagineArt chooses for itself on this ' +
               'transport and the slug column only applies to the API-key one.')));
@@ -932,7 +933,10 @@
       }).catch(function (e) {
         box.appendChild(SB.el('div', 'pp-note warn', e.message || String(e)));
       }).then(function () {
-        imWhat.textContent = 'What my account can do';
+        /* The label said ready while the button was still disabled until the
+           modal closed, so it read as a press that does nothing. Its onClose
+           restores both together. */
+        if (!imWhat.disabled) imWhat.textContent = 'What my account can do';
       });
     };
 

@@ -579,7 +579,8 @@
     imagePrompt: { role: 'image', key: 'imageDescription', label: 'first frame',
       hint: 'Only what is true as the shot opens. @ anything the first frame should see.' },
     videoPrompt: { role: 'video', key: 'videoDescription', label: 'motion',
-      hint: 'What moves, in what order, how it ends. @ anything the clip should see.' }
+      hint: 'What moves, in what order, how it ends. @ someone to name them \u2014 ' +
+        'the clip is handed the frame, not their photo.' }
   };
 
   function laneDesc(sh, field, r) {
@@ -1137,7 +1138,8 @@
        be said — they are numbered nowhere and feed nothing */
     list.forEach(function (e) {
       if (e.images.length) return;
-      const it = SB.el('div', 'pt-fe' + (e.kind === 'dead' ? ' dead' : ' empty'));
+      const it = SB.el('div', 'pt-fe' + (e.kind === 'dead' ? ' dead' : ' empty') +
+        (notSent ? ' not-sent' : ''));
       it.appendChild(SB.el('span', 'feed-n', '–'));
       it.appendChild(SB.el('span', 'feed-thumb none', '?'));
       it.appendChild(SB.el('span', 'feed-file none', e.kind === 'dead' ? 'gone' : 'no picture'));

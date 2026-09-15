@@ -43,6 +43,11 @@
    *
    * Empty on a card with no frame yet: there is nothing to be faithful to. */
   function frameShows(shot) {
+    /* Words about a picture that is not being sent are worse than silence:
+     * the block tells the writer the model can see all this, and on a
+     * frameless card the model sees nothing. Three riders already assume a
+     * picture; this one at least knows whether there is one. */
+    if (!(shot.render || shot.image)) return '';
     const bits = [];
     const own = SB.Refs.plain(P(), shot.imageDescription || '').trim();
     if (own) bits.push(own);

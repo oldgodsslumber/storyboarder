@@ -789,6 +789,10 @@
   /* Which aspect ratios and durations a given model will accept, off the same
    * description — so a board asking for 21:9 on a model that only does 16:9
    * can be told rather than silently downgraded. */
+  /* A sentinel the aspect guard compares against — no board ever sets it, so
+   * a model that publishes no ratio list always trips the notice once. */
+  const FIXED_RATIO_NOTE = '\u0000fixed';
+
   function allowFor(name, model, what) {
     const t = toolNamed(name);
     const d = (t && t.description) || '';
@@ -807,12 +811,22 @@
         if (/\(none/.test(line[1])) return [];
         return spread(line[1]);
       }
-      /* named on a shared line: "- kling-2.6-pro, kling-o3, wan-2.2: (none ...)" */
-      const shared = new RegExp('-\\s*[^\n]*\\b' + esc + '\\b[^\n]*:\\s*([^\n]+)').exec(sect[1]);
+      /* Named on a shared line: "- kling-2.6-pro, kling-o3, wan-2.2: (none ...)".
+       *
+       * The label list runs to the FIRST colon on the line and the values
+       * follow it. Matching to the last colon instead ate everything up to
+       * the final "16:9" and handed back ["1"] — which then failed the
+       * aspect guard and refused the push outright, on a ratio the model
+       * does in fact offer. Only the resolution row is written this way
+       * today, and only with "(none)", which is why nothing has blown up
+       * yet. The filter that followed was broken independently: it read as
+       * `x && /^[a-z0-9_.-]+$/.test(x)`, which drops every value shaped like
+       * a ratio. */
+      const shared = new RegExp('-\\s*([^:\n]*\\b' + esc + '\\b[^:\n]*):\\s*([^\n]+)')
+        .exec(sect[1]);
       if (shared) {
-        if (/\(none/.test(shared[1])) return [];
-        return shared[1].split(',').map(function (x) { return x.trim(); })
-          .filter(function (x) { return x && !/^\(/.test(x) && !/^[a-z0-9_.-]+$/.test(x) === false ? true : false; });
+        if (/\(none/.test(shared[2])) return [];
+        return spread(shared[2]);
       }
       return null;
     }
@@ -1589,8 +1603,26 @@
        * not look as though it can. */
       return 'No ImagineArt organization chosen — Settings → ImagineArt.';
     }
-    if (!slugOf(model)) {
+    const slug = slugOf(model);
+    if (!slug) {
       return 'This model has no ImagineArt model set — Settings → Models & templates.';
+    }
+    /* A board model with no mapping for THIS door falls back to the other
+     * door's name, and the call then goes out carrying a model the account
+     * has never heard of — refused, and quietly dropped to the REST door
+     * with a different model than the one on the card. MiniMax H3 does this:
+     * the account's fifteen video models do not include it at all. */
+    if (transport() !== 'key') {
+      /* The ACCOUNT's own list, not the layered catalog — that one falls back
+       * to the year-old REST names, and before the tools have been read it is
+       * all there is. An empty list here means "not known yet", which is not
+       * the same as "not offered", so the check simply does not run. */
+      const known = modelsFromTool(model.kind === 'image' ? TOOL.image : TOOL.video);
+      if (known && known.length && known.indexOf(slug) < 0) {
+        return '“' + slug + '” is not one of the models your ImagineArt account takes. ' +
+          'Pick one it does in Settings → Models & templates — the account\u2019s own list ' +
+          'is under “What my account can do”.';
+      }
     }
     return '';
   }
@@ -1720,6 +1752,14 @@
       });
     }
     return firstOf(viaMcp, function () {
+      /* The REST door cannot carry a reference at all. Falling through to it
+       * renders a prompt that says "keep their face exactly as in image 1"
+       * against no image — the same failure the upload guard above is written
+       * for, arriving by a different route. Refusing here makes firstOf
+       * re-throw what the tools actually said, which is the useful message. */
+      if (opts.refBlob) {
+        return Promise.reject(new Error('the REST door carries no reference picture'));
+      }
       return viaRest().then(function (r) {
         if (!r) throw new Error('Neither your account\u2019s tools nor the REST API made that ' +
           'picture. Settings → ImagineArt → what my account can do says what it offers.');
@@ -1983,6 +2023,17 @@
       const slugNow = slugOf(model);
       const allowed = transport() === 'key'
         ? null : allowFor(role === 'image' ? TOOL.image : TOOL.video, slugNow, 'aspect_ratio');
+      /* An empty list is not "no rules": it is the model saying it takes no
+       * ratio at all and uses its own — wan-2.2 publishes "(none — always
+       * uses 16:9)". Read as unknown, a 9:16 board paid for landscape clips
+       * and was told nothing, which is the same paid-for lie the guard below
+       * exists to stop. */
+      if (allowed && !allowed.length && aspect && aspect !== FIXED_RATIO_NOTE) {
+        return Promise.reject(new Error('“' + slugNow + '” takes no aspect ratio at all — ' +
+          'it always makes the one shape it makes, whatever the board asks for. Point this ' +
+          'model somewhere that offers ' + aspect + ', or accept its own shape by choosing ' +
+          'that model deliberately.'));
+      }
       if (allowed && allowed.length && allowed.indexOf(aspect) < 0) {
         /* The tool takes an unlisted ratio and silently makes 16:9 of it, so
          * four of the six shapes on the board's list were paid-for lies. */
@@ -2022,6 +2073,12 @@
 
       const work = role === 'image'
         ? before.then(function () { return firstRef(p, shot); }).then(function (ref) {
+          /* Stamped provisionally and corrected below from the door that
+             answered: the API-key door sends no reference at all, and a
+             record that says "sent with Nat" when nothing was sent makes
+             "it ignored the reference" and "it was never given one" look
+             identical again — which is the one thing this field exists to
+             tell apart. */
           made.reference = ref ? { label: ref.label, n: ref.n, of: ref.of } : null;
           return image({
             prompt: text, slug: slugNow, restSlug: slugOf(model, 'key'),
@@ -2032,6 +2089,8 @@
         }).then(function (got) {
           made.slug = got.usedSlug || made.slug;
           made.via = got.via || made.via;
+          /* the REST door carries neither, whatever was asked for */
+          if (made.via === 'rest') { made.reference = null; made.resolution = ''; }
           return land(ticket, got).then(function (out) {
             out.usedSlug = got.usedSlug;
             return out;
@@ -2047,6 +2106,7 @@
         }).then(function (got) {
           made.slug = got.usedSlug || made.slug;
           made.via = got.via || made.via;
+          if (made.via === 'rest') made.resolution = '';
           return land(ticket, got).then(function (out) {
             out.usedSlug = got.usedSlug;
             return out;
@@ -2109,7 +2169,14 @@
   function firstRef(p, shot) {
     /* the still's own lane: the picture a first frame is matched against */
     const feed = SB.Refs.images(p, shot, 'image');
-    const e = feed[0];
+    /* A card that @s another shot is an EDIT of that shot's frame — the cast
+     * block says so in as many words, and the house style is deliberately
+     * withheld because the source frame already carries it. Sending the first
+     * mark instead handed the model a headshot and no style at all, whenever
+     * the source shot happened not to be written first in the sentence. The
+     * source frame is the picture that call is about; it goes. */
+    const source = feed.filter(function (x) { return x.kind === 'shot'; })[0];
+    const e = source || feed[0];
     if (!e) return Promise.resolve(null);
     const name = 'ref1-' + (SB.Renders.slug(e.label) || 'ref') + '.png';
     return SB.Renders.file(p, e.render).then(function (f) {

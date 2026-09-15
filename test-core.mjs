@@ -505,6 +505,85 @@ console.log('\n— every box, not just the first one —');
   eq(/trolley parked/.test(vsys), false, 'and not their first-frame-only words');
 }
 
+console.log('\n— a prompt describes the call that is made —');
+{
+  const M = SB.Model, R = SB.Refs, Per = SB.Personas;
+  const p = M.newProject();
+  const sc = p.scenes[0] || M.addScene(p, 0);
+  const nat = Per.add(p, { name: 'Nat', description: 'Tall, red coat.' });
+  nat.image = SB.Blobs.image(p, 'data:image/gif;base64,R0lGODlhAQABAAAAACw=', 4, 3);
+  const bob = Per.add(p, { name: 'Bob', description: 'Short, grey suit.' });
+  bob.image = SB.Blobs.image(p, 'data:image/gif;base64,R0lGODlhAQABAAAAACx=', 4, 3);
+
+  /* a clip is shown no photographs, whatever the model would accept */
+  const sh = M.addShot(p, sc.id, {});
+  sh.description = R.mark(nat.id, 'Nat') + ' and ' + R.mark(bob.id, 'Bob') + ' at the desk.';
+  const h3 = { name: 'MiniMax H3 (Hailuo)', kind: 'video', videoRefs: M.FULL_REFERENCE };
+  const vb = Per.block(p, sh, h3, 'video');
+  eq(/image \d+ = /.test(vb), false,
+    'a full-reference video model is promised no numbered photographs');
+  eq(/Nat/.test(vb) && /Bob/.test(vb), true, 'but is still told who is in the frame');
+
+  /* the still names which of its pictures actually travels */
+  const ib = Per.block(p, sh, { id: 'm1', name: 'GPT Image', kind: 'image' }, 'image');
+  eq(/image 1 = Nat/.test(ib) && /image 2 = Bob/.test(ib), true,
+    'the still still maps every picture it describes');
+  eq(/is actually uploaded with this call/.test(ib) ||
+    /None of these is uploaded/.test(ib), true,
+    'and says which one of them is in front of the model');
+}
+
+console.log('\n— the lanes do not leak into each other —');
+{
+  const M = SB.Model, R = SB.Refs, Per = SB.Personas;
+  const p = M.newProject();
+  const sc = p.scenes[0] || M.addScene(p, 0);
+  const pic = function (n) {
+    return SB.Blobs.image(p, 'data:image/gif;base64,R0lGODlhAQABAAAAAC' + n, 4, 3);
+  };
+  const alpha = Per.add(p, { name: 'Alpha' }); alpha.image = pic('w');
+  const beta = Per.add(p, { name: 'Beta' }); beta.image = pic('x');
+  const delta = Per.add(p, { name: 'Delta' }); delta.image = pic('z');
+
+  const sh = M.addShot(p, sc.id, {});
+  sh.description = 'A corridor.';
+  sh.imageDescription = 'It opens on ' + R.mark(alpha.id, 'Alpha') + ' at the far door.';
+  sh.videoDescription = 'Halfway through, ' + R.mark(beta.id, 'Beta') + ' comes in behind her.';
+  /* picking either from the @ list casts them — that is what mentions.js does */
+  sh.personaIds = [alpha.id, beta.id];
+  sh.image = pic('y');
+
+  /* marking somebody for the CLIP must not put their face in the STILL */
+  eq(R.feed(p, sh, 'image').map(function (e) { return e.label; }).join(','), 'Alpha',
+    'a subject named only in the motion box stays out of the first frame\u2019s feed');
+  eq(R.images(p, sh, 'image').length, 1,
+    'so the still uploads one picture, not two');
+  eq(R.feed(p, sh, 'video').map(function (e) { return e.label; }).join(','), 'Beta',
+    'and the clip\u2019s own lane still knows who it named');
+
+  /* who is in the picture is a question about the picture */
+  const vb = Per.block(p, sh, { id: 'v', name: 'LTX', kind: 'video' }, 'video');
+  const framedAt = vb.indexOf('IN THE SUPPLIED FRAME');
+  const lateAt = vb.indexOf('NOT IN THE SUPPLIED FRAME');
+  eq(framedAt >= 0 && vb.indexOf('Alpha') > framedAt && vb.indexOf('Alpha') < lateAt, true,
+    'the one the frame was built around is named as being in it');
+  eq(lateAt >= 0 && vb.indexOf('Beta') > lateAt, true,
+    'and the one named only for the clip is told to arrive during it');
+
+  /* somebody merely cast, mentioned nowhere, is on the card and in both */
+  sh.personaIds = sh.personaIds.concat([delta.id]);
+  eq(R.feed(p, sh, 'image').map(function (e) { return e.label; }).join(','), 'Alpha,Delta',
+    'a subject cast but written nowhere is still on every lane');
+  eq(R.feed(p, sh, 'video').map(function (e) { return e.label; }).join(','), 'Beta,Delta',
+    'both of them');
+
+  /* and the strip numbers what the folder and the mapping number */
+  const laneNums = R.images(p, sh, 'image')
+    .map(function (e) { return e.n + '=' + e.label; }).join(' ');
+  eq(laneNums, '1=Alpha 2=Delta',
+    'the first frame numbers Alpha 1 and Delta 2 — what refs/ and the mapping say');
+}
+
 console.log('\n— brand style —');
 {
   const B = SB.Brand;
@@ -822,10 +901,16 @@ console.log('\n— a first frame is one instant —');
      fed, which is the still and a full-reference video model. */
   eq(/image \d+ = /.test(b), false,
     'the frame-only video job carries no mapping — it is shown no reference images');
+  /* Not even a full-reference model: a clip is handed this card's frame and
+     nothing else, whatever the model would accept. Pointing a board at H3
+     used to produce a numbered mapping for two photographs, inside the same
+     request as an H3 label table saying neither subject had one. */
   const h3m = { name: 'MiniMax H3 (Hailuo)', videoRefs: SB.Model.FULL_REFERENCE };
   const c = Per.block(p, sh, h3m, 'video');
-  eq(/image 1 = Writer/.test(c) && /image 2 = Colleague/.test(c), true,
-    'a full-reference video job numbers them identically to the still');
+  eq(/image \d+ = /.test(c), false,
+    'and neither does a full-reference one — the clip is shown no photographs either');
+  eq(/Writer/.test(c) && /Colleague/.test(c), true,
+    'though it is still told who is in the frame');
 
   /* the mark is a subset of the cast, and nothing else */
   Per.toggleOnShot(p, sh, her.id);
@@ -3003,6 +3088,20 @@ console.log('\n— the reference sheets —');
     one.imageDescription = wasImg;
     one.videoDescription = wasVid;
     p.personas = p.personas.filter(function (x) { return x.id !== thing.id; });
+  }
+
+  /* the dialog counts pages that are actually printed */
+  {
+    const count = function (o) {
+      return (SB.Pdf.html(Object.assign({ silent: true }, o)).match(/class="page"/g) || []).length;
+    };
+    const lay = function (o) { return SB.Pdf.layout(o); };
+    eq(count({ doc: 'refs', refFeeds: false }), lay({ doc: 'refs', refFeeds: false }).sheets,
+      'the reference document prints the number of sheets it claims');
+    eq(count({ doc: 'refs', refFeeds: true }), lay({ doc: 'refs', refFeeds: true }).sheets,
+      'with the mapping page counted only when there is one');
+    eq(count({ doc: 'both', refFeeds: true }), lay({ doc: 'both', refFeeds: true }).sheets,
+      'and both documents together add up');
   }
 
   /* both documents in one file, each with its own paper and its own grid */

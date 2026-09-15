@@ -91,6 +91,9 @@
         sh.description = 'At the desk, the lamp on.';
         sh.imageDescription = 'The cup is still full.';
         sh.videoDescription = 'She lifts it and drinks.';
+        /* the frame block only exists where there is a frame to be faithful to */
+        sh.image = sh.image ||
+          SB.Blobs.image(P(), 'data:image/gif;base64,R0lGODlhAQABAAAAACw=', 16, 9);
         sh.personaIds = [];
         P().settings.videoModelId = P().settings.models.filter(function (m) {
           return m.kind === 'video';
@@ -180,8 +183,14 @@
         window.__calls = [];
         await SB.Prompts.generateFor(sh, { video: true });
         const vSys = window.__calls[0].body.systemInstruction.parts[0].text;
-        t('and the video call maps only its own',
-          /Nat/.test(vSys) && !/Rig/.test(vSys), vSys.slice(0, 260));
+        /* The clip is handed no photographs, so it carries no mapping at all.
+           It IS told the rig is in the frame — the frame was built around it
+           and the writer needs the name to say what moves past it. */
+        t('the video call carries no numbered mapping',
+          !/image \d+ = /.test(vSys), vSys.slice(0, 200));
+        t('but is told who and what the frame it animates contains',
+          /WHO AND WHAT IS IN THE SUPPLIED FRAME/.test(vSys) && /Rig/.test(vSys),
+          vSys.slice(0, 260));
 
         /* a card with nothing in the shared box is still writable */
         const lone = SB.Model.addShot(P(), P().scenes[0].id, {});
@@ -738,17 +747,20 @@
         t('and the old look-restating rider line is gone',
           sys.indexOf('Hold the natural-light look') < 0, '');
 
-        /* the half that must NOT change: a full-reference model still gets the
-           appearance, because binding a label to a picture is its format */
+        /* A full-reference model is handed the frame like every other clip,
+           so it gets the same short block: who is in the picture, by name,
+           and no mapping to photographs that do not travel. */
         const h3b = P().settings.models.filter(function (m) {
           return m.name === 'MiniMax H3 (Hailuo)'; })[0];
         P().settings.videoModelId = h3b.id;
         const h3sys = [SB.Brand.systemFor(P(), shots.a, 'video'),
           SB.Personas.block(P(), shots.a, h3b, 'video')].join('  ');
-        t('a full-reference model still gets the house style and the descriptions',
-          h3sys.indexOf('Navy suit') > 0 && h3sys.indexOf('muted professional grade') > 0, '');
-        t('and is no longer told not to use image numbers',
-          h3sys.indexOf('must not refer to image numbers') < 0, '');
+        t('a full-reference model is told who is in the frame, when anyone is',
+          !SB.Personas.forShot(P(), shots.a).length ||
+          /WHO AND WHAT IS IN THE SUPPLIED FRAME/.test(h3sys),
+          SB.Personas.forShot(P(), shots.a).length + ' cast');
+        t('and is promised no numbered photographs, because none are sent',
+          !/image \d+ = /.test(h3sys), h3sys.slice(0, 200));
 
         /* the migration that brings an existing board onto the new wording */
         const proj = { name: 'old', master: SB.Doc.make(''), scenes: [],

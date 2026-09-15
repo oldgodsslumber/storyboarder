@@ -1335,7 +1335,7 @@ body.comment-mode .frame{cursor:crosshair}
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-09-15 17:30 · aa97e24+";</script>
+<script>window.SB_BUILD = "2026-09-15 17:48 · f7d5f87+";</script>
 
 <div id="app">
 
@@ -5440,6 +5440,10 @@ window.SB = window.SB || {};
   /* Which aspect ratios and durations a given model will accept, off the same
    * description — so a board asking for 21:9 on a model that only does 16:9
    * can be told rather than silently downgraded. */
+  /* A sentinel the aspect guard compares against — no board ever sets it, so
+   * a model that publishes no ratio list always trips the notice once. */
+  const FIXED_RATIO_NOTE = '\u0000fixed';
+
   function allowFor(name, model, what) {
     const t = toolNamed(name);
     const d = (t && t.description) || '';
@@ -5458,12 +5462,22 @@ window.SB = window.SB || {};
         if (/\(none/.test(line[1])) return [];
         return spread(line[1]);
       }
-      /* named on a shared line: "- kling-2.6-pro, kling-o3, wan-2.2: (none ...)" */
-      const shared = new RegExp('-\\s*[^\n]*\\b' + esc + '\\b[^\n]*:\\s*([^\n]+)').exec(sect[1]);
+      /* Named on a shared line: "- kling-2.6-pro, kling-o3, wan-2.2: (none ...)".
+       *
+       * The label list runs to the FIRST colon on the line and the values
+       * follow it. Matching to the last colon instead ate everything up to
+       * the final "16:9" and handed back ["1"] — which then failed the
+       * aspect guard and refused the push outright, on a ratio the model
+       * does in fact offer. Only the resolution row is written this way
+       * today, and only with "(none)", which is why nothing has blown up
+       * yet. The filter that followed was broken independently: it read as
+       * `x && /^[a-z0-9_.-]+$/.test(x)`, which drops every value shaped like
+       * a ratio. */
+      const shared = new RegExp('-\\s*([^:\n]*\\b' + esc + '\\b[^:\n]*):\\s*([^\n]+)')
+        .exec(sect[1]);
       if (shared) {
-        if (/\(none/.test(shared[1])) return [];
-        return shared[1].split(',').map(function (x) { return x.trim(); })
-          .filter(function (x) { return x && !/^\(/.test(x) && !/^[a-z0-9_.-]+$/.test(x) === false ? true : false; });
+        if (/\(none/.test(shared[2])) return [];
+        return spread(shared[2]);
       }
       return null;
     }
@@ -6240,8 +6254,26 @@ window.SB = window.SB || {};
        * not look as though it can. */
       return 'No ImagineArt organization chosen — Settings → ImagineArt.';
     }
-    if (!slugOf(model)) {
+    const slug = slugOf(model);
+    if (!slug) {
       return 'This model has no ImagineArt model set — Settings → Models & templates.';
+    }
+    /* A board model with no mapping for THIS door falls back to the other
+     * door's name, and the call then goes out carrying a model the account
+     * has never heard of — refused, and quietly dropped to the REST door
+     * with a different model than the one on the card. MiniMax H3 does this:
+     * the account's fifteen video models do not include it at all. */
+    if (transport() !== 'key') {
+      /* The ACCOUNT's own list, not the layered catalog — that one falls back
+       * to the year-old REST names, and before the tools have been read it is
+       * all there is. An empty list here means "not known yet", which is not
+       * the same as "not offered", so the check simply does not run. */
+      const known = modelsFromTool(model.kind === 'image' ? TOOL.image : TOOL.video);
+      if (known && known.length && known.indexOf(slug) < 0) {
+        return '“' + slug + '” is not one of the models your ImagineArt account takes. ' +
+          'Pick one it does in Settings → Models & templates — the account\u2019s own list ' +
+          'is under “What my account can do”.';
+      }
     }
     return '';
   }
@@ -6371,6 +6403,14 @@ window.SB = window.SB || {};
       });
     }
     return firstOf(viaMcp, function () {
+      /* The REST door cannot carry a reference at all. Falling through to it
+       * renders a prompt that says "keep their face exactly as in image 1"
+       * against no image — the same failure the upload guard above is written
+       * for, arriving by a different route. Refusing here makes firstOf
+       * re-throw what the tools actually said, which is the useful message. */
+      if (opts.refBlob) {
+        return Promise.reject(new Error('the REST door carries no reference picture'));
+      }
       return viaRest().then(function (r) {
         if (!r) throw new Error('Neither your account\u2019s tools nor the REST API made that ' +
           'picture. Settings → ImagineArt → what my account can do says what it offers.');
@@ -6634,6 +6674,17 @@ window.SB = window.SB || {};
       const slugNow = slugOf(model);
       const allowed = transport() === 'key'
         ? null : allowFor(role === 'image' ? TOOL.image : TOOL.video, slugNow, 'aspect_ratio');
+      /* An empty list is not "no rules": it is the model saying it takes no
+       * ratio at all and uses its own — wan-2.2 publishes "(none — always
+       * uses 16:9)". Read as unknown, a 9:16 board paid for landscape clips
+       * and was told nothing, which is the same paid-for lie the guard below
+       * exists to stop. */
+      if (allowed && !allowed.length && aspect && aspect !== FIXED_RATIO_NOTE) {
+        return Promise.reject(new Error('“' + slugNow + '” takes no aspect ratio at all — ' +
+          'it always makes the one shape it makes, whatever the board asks for. Point this ' +
+          'model somewhere that offers ' + aspect + ', or accept its own shape by choosing ' +
+          'that model deliberately.'));
+      }
       if (allowed && allowed.length && allowed.indexOf(aspect) < 0) {
         /* The tool takes an unlisted ratio and silently makes 16:9 of it, so
          * four of the six shapes on the board's list were paid-for lies. */
@@ -6673,6 +6724,12 @@ window.SB = window.SB || {};
 
       const work = role === 'image'
         ? before.then(function () { return firstRef(p, shot); }).then(function (ref) {
+          /* Stamped provisionally and corrected below from the door that
+             answered: the API-key door sends no reference at all, and a
+             record that says "sent with Nat" when nothing was sent makes
+             "it ignored the reference" and "it was never given one" look
+             identical again — which is the one thing this field exists to
+             tell apart. */
           made.reference = ref ? { label: ref.label, n: ref.n, of: ref.of } : null;
           return image({
             prompt: text, slug: slugNow, restSlug: slugOf(model, 'key'),
@@ -6683,6 +6740,8 @@ window.SB = window.SB || {};
         }).then(function (got) {
           made.slug = got.usedSlug || made.slug;
           made.via = got.via || made.via;
+          /* the REST door carries neither, whatever was asked for */
+          if (made.via === 'rest') { made.reference = null; made.resolution = ''; }
           return land(ticket, got).then(function (out) {
             out.usedSlug = got.usedSlug;
             return out;
@@ -6698,6 +6757,7 @@ window.SB = window.SB || {};
         }).then(function (got) {
           made.slug = got.usedSlug || made.slug;
           made.via = got.via || made.via;
+          if (made.via === 'rest') made.resolution = '';
           return land(ticket, got).then(function (out) {
             out.usedSlug = got.usedSlug;
             return out;
@@ -6760,7 +6820,14 @@ window.SB = window.SB || {};
   function firstRef(p, shot) {
     /* the still's own lane: the picture a first frame is matched against */
     const feed = SB.Refs.images(p, shot, 'image');
-    const e = feed[0];
+    /* A card that @s another shot is an EDIT of that shot's frame — the cast
+     * block says so in as many words, and the house style is deliberately
+     * withheld because the source frame already carries it. Sending the first
+     * mark instead handed the model a headshot and no style at all, whenever
+     * the source shot happened not to be written first in the sentence. The
+     * source frame is the picture that call is about; it goes. */
+    const source = feed.filter(function (x) { return x.kind === 'shot'; })[0];
+    const e = source || feed[0];
     if (!e) return Promise.resolve(null);
     const name = 'ref1-' + (SB.Renders.slug(e.label) || 'ref') + '.png';
     return SB.Renders.file(p, e.render).then(function (f) {
@@ -8050,9 +8117,24 @@ window.SB = window.SB || {};
       });
     });
 
-    /* cast, but nobody said to show it */
+    /* Cast, but nobody said to show it — so it joins every lane, because
+     * being on the card is not a statement about one half of it.
+     *
+     * Unless they were named in the OTHER lane. Typing @Beta in the motion
+     * box casts Beta, and casting used to drop her into the first frame's
+     * feed as well: her photograph uploaded with the still, named image 1 in
+     * its prompt, shipped into the shot's refs/ folder — for a frame the
+     * description says is an empty corridor. Marking somebody for the clip
+     * must not put their face in the picture. */
+    const elsewhere = {};
+    if (role) {
+      const here = {};
+      marked(p, shot, role).forEach(function (m) { here[m.id] = 1; });
+      marked(p, shot).forEach(function (m) { if (!here[m.id]) elsewhere[m.id] = 1; });
+    }
     SB.Personas.forShot(p, shot).forEach(function (per) {
       if (seen[per.id]) return;
+      if (elsewhere[per.id]) return;
       seen[per.id] = 1;
       const imgs = SB.Personas.imagesOf(per);
       out.push({
@@ -8556,10 +8638,32 @@ window.SB = window.SB || {};
    * missing from the picture: whoever arrives after it.
    */
   function videoCastBlock(p, shot, cast) {
+    /* Who is in the picture is a question about the PICTURE, and the picture
+     * was built from the first-frame lane. Asking the video lane produced the
+     * inversion: somebody marked only in the motion box — which is how you
+     * write a person who walks in halfway — was announced as standing in the
+     * frame, while the one the frame was actually built around went unnamed.
+     * The same request then carried the frame's own description saying the
+     * opposite. */
+    const framed = [];
+    const inFrame = {};
+    (SB.Refs ? SB.Refs.feed(p, shot, 'image') : []).forEach(function (e) {
+      if (e.kind !== 'subject' || !e.subject) return;
+      inFrame[e.id] = 1;
+      framed.push(e.subject);
+    });
     const late = arriving(p, shot);
     const isLate = {};
     late.forEach(function (x) { isLate[x.id] = 1; });
-    const present = cast.filter(function (x) { return !isLate[x.id]; });
+    /* Named for the clip and not in the picture it opens on: that is what
+     * writing somebody into the motion box MEANS. They arrive. */
+    cast.forEach(function (x) {
+      if (!inFrame[x.id] && !isLate[x.id]) { isLate[x.id] = 1; late.push(x); }
+    });
+    /* And everyone the frame was built around is in it, whether or not the
+     * clip's own words happen to mention them — the writer needs their names
+     * to say what they DO. */
+    const present = framed.filter(function (x) { return !isLate[x.id]; });
     const lines = [];
 
     if (present.length) {
@@ -8615,11 +8719,17 @@ window.SB = window.SB || {};
      * empty cast then sent the files with no mapping at all, so the prompt said
      * nothing about images the person was about to hand over. */
     if (!cast.length && !numbered.length) return '';
-    /* Frame-only video takes the short block above: no mapping, because this
-     * call is shown no reference images, and no appearance, because the frame
-     * carries it. A full-reference model keeps the long one — there the
-     * appearance lines are the format, binding each label to a picture. */
-    if (role === 'video' && SB.Model.videoInherits(model)) {
+    /* EVERY video job takes the short block: a clip is handed this card's
+     * frame and nothing else, so there is no mapping to write and no
+     * appearance to bind — the frame carries it.
+     *
+     * This used to ask whether the model was a full-reference one, and a
+     * board pointed at MiniMax H3 then got the long block: "image 1 = Bob,
+     * image 2 = Nat, reference images are supplied in the numbered order
+     * above", in the same request as an H3 label table saying neither
+     * subject has a reference image, for a call that carries the frame
+     * alone. Three answers, no two alike. */
+    if (role === 'video') {
       return videoCastBlock(p, shot, cast);
     }
     /* One reference per subject, so one number — the ranges this used to
@@ -8664,9 +8774,29 @@ window.SB = window.SB || {};
          frame is a reference like any other, and the numbers have to agree
          with the strip on the card and with the files the person is about to
          drop in. */
-      SB.Refs.images(p, shot, role).forEach(function (e) {
+      const mapped = SB.Refs.images(p, shot, role);
+      mapped.forEach(function (e) {
         lines.push('  image ' + e.n + ' = ' + e.label + (e.role ? ' (' + e.role + ')' : ''));
       });
+      /* A still push uploads ONE picture. The mapping above says all of them
+         "are supplied in the numbered order", which is true of the folder a
+         person hand-feeds and false of the call this app makes — so the
+         writer was told to match faces against images that were never
+         there. Say which one travels; the rest are description. */
+      /* One picture travels, unless the door in use carries none. Asked of
+         imagine.js where it is loaded; where it is not, one is the answer
+         every door but the API-key one gives. */
+      const sent = (SB.Imagine && SB.Imagine.refsFor)
+        ? SB.Imagine.refsFor(p, shot, role) : { carries: 1, first: mapped[0] || null };
+      if (mapped.length > 1) {
+        const first = sent.first;
+        lines.push(sent.carries
+          ? 'Only image ' + ((first && first.n) || 1) + ' is actually uploaded with this call. ' +
+            'The others are described above and are NOT in front of you — write them from ' +
+            'the words, and do not claim to be matching a picture of them.'
+          : 'None of these is uploaded with this call — every one of them is description ' +
+            'only. Write them from the words above.');
+      }
     }
     /* The shot description may itself name a wardrobe — older boards baked the
      * subject into every description, and that copy went stale the moment the
@@ -13208,7 +13338,12 @@ window.SB = window.SB || {};
     { role: 'image', key: 'imageDescription', label: 'first frame',
       hint: 'Only what is true as the shot opens. @ anything the FIRST FRAME should be shown.' },
     { role: 'video', key: 'videoDescription', label: 'motion',
-      hint: 'What moves, in what order, how it ends. @ anything the CLIP should be shown.' }
+      /* NOT "@ anything the clip should be shown": a clip is shown the frame
+         and nothing else. An @ here names somebody so the writer uses their
+         name — it sends no picture, and following the old wording was how a
+         person put a face into the still by writing about the clip. */
+      hint: 'What moves, in what order, how it ends. @ someone to name them \u2014 ' +
+        'the clip is handed the frame, not their photo.' }
   ];
 
   function laneOpen(sh, lane) {
@@ -13277,7 +13412,17 @@ window.SB = window.SB || {};
   function feedRow(sh) {
     const row = SB.el('div', 'feed-row');
     row.dataset.feed = sh.id;
+    /* Everything this card touches, so nothing written anywhere on it goes
+       unseen — but NUMBERED off the first frame's lane, because those numbers
+       are the promise: they are what the prompt's mapping cites, what the
+       refs/ folder is named by, what the printed page lists and what "copy
+       image set" writes. The strip is where a person reads the order off,
+       and it was counting a third set nobody else used. */
     const list = SB.Refs.feed(P(), sh);
+    const laneN = {};
+    SB.Refs.images(P(), sh, 'image').forEach(function (e) {
+      laneN[e.id] = (laneN[e.id] || []).concat([e.n]);
+    });
     /* A name in the text that is not a mark feeds nothing — the exact mistake
        this feature exists to stop. It is most likely on a card with NO feed at
        all, so it is worked out before the empty case, not after it. */
@@ -13312,10 +13457,16 @@ window.SB = window.SB || {};
         (e.kind === 'dead' ? ' dead' : '') +
         (e.kind === 'shot' ? ' is-shot' : '') +
         (e.images.length ? '' : ' empty'));
-      const n = e.numbers.length
-        ? (e.numbers.length === 1 ? e.numbers[0] : e.numbers[0] + '–' + e.numbers[e.numbers.length - 1])
-        : '–';
-      cell.appendChild(SB.el('span', 'feed-n', String(n)));
+      /* The first frame's numbers, which are the ones the prompt cites, the
+         refs/ folder is named by and "copy image set" writes. A mark that
+         only the clip's words know about gets a dot: it is in no folder and
+         no mapping, and numbering it was inventing a third order. */
+      const mine = laneN[e.id] || [];
+      const n = mine.length
+        ? (mine.length === 1 ? String(mine[0])
+          : mine[0] + '\u2013' + mine[mine.length - 1])
+        : (e.images.length ? '\u00b7' : '\u2013');
+      cell.appendChild(SB.el('span', 'feed-n' + (mine.length ? '' : ' aside'), String(n)));
 
       if (e.images.length) {
         const t = SB.el('span', 'feed-thumb');
@@ -14777,6 +14928,11 @@ window.SB = window.SB || {};
    *
    * Empty on a card with no frame yet: there is nothing to be faithful to. */
   function frameShows(shot) {
+    /* Words about a picture that is not being sent are worse than silence:
+     * the block tells the writer the model can see all this, and on a
+     * frameless card the model sees nothing. Three riders already assume a
+     * picture; this one at least knows whether there is one. */
+    if (!(shot.render || shot.image)) return '';
     const bits = [];
     const own = SB.Refs.plain(P(), shot.imageDescription || '').trim();
     if (own) bits.push(own);
@@ -16753,7 +16909,8 @@ window.SB = window.SB || {};
     imagePrompt: { role: 'image', key: 'imageDescription', label: 'first frame',
       hint: 'Only what is true as the shot opens. @ anything the first frame should see.' },
     videoPrompt: { role: 'video', key: 'videoDescription', label: 'motion',
-      hint: 'What moves, in what order, how it ends. @ anything the clip should see.' }
+      hint: 'What moves, in what order, how it ends. @ someone to name them \u2014 ' +
+        'the clip is handed the frame, not their photo.' }
   };
 
   function laneDesc(sh, field, r) {
@@ -17311,7 +17468,8 @@ window.SB = window.SB || {};
        be said — they are numbered nowhere and feed nothing */
     list.forEach(function (e) {
       if (e.images.length) return;
-      const it = SB.el('div', 'pt-fe' + (e.kind === 'dead' ? ' dead' : ' empty'));
+      const it = SB.el('div', 'pt-fe' + (e.kind === 'dead' ? ' dead' : ' empty') +
+        (notSent ? ' not-sent' : ''));
       it.appendChild(SB.el('span', 'feed-n', '–'));
       it.appendChild(SB.el('span', 'feed-thumb none', '?'));
       it.appendChild(SB.el('span', 'feed-file none', e.kind === 'dead' ? 'gone' : 'no picture'));
@@ -19665,7 +19823,8 @@ window.SB = window.SB || {};
         box.appendChild(SB.el('div', 'pp-note',
           tools.length + ' tool' + (tools.length === 1 ? '' : 's') + '. ' +
           (named.length
-            ? named.length + ' of them let a model be named, so the slug column in Models & ' +
+            ? named.length + (named.length === 1 ? ' of them lets' : ' of them let') +
+              ' a model be named, so the slug column in Models & ' +
               'templates applies here and the list below is what your account accepts.'
             : 'None of them takes a model, so ImagineArt chooses for itself on this ' +
               'transport and the slug column only applies to the API-key one.')));
@@ -19743,7 +19902,10 @@ window.SB = window.SB || {};
       }).catch(function (e) {
         box.appendChild(SB.el('div', 'pp-note warn', e.message || String(e)));
       }).then(function () {
-        imWhat.textContent = 'What my account can do';
+        /* The label said ready while the button was still disabled until the
+           modal closed, so it read as a press that does nothing. Its onClose
+           restores both together. */
+        if (!imWhat.disabled) imWhat.textContent = 'What my account can do';
       });
     };
 
@@ -20870,9 +21032,14 @@ window.SB = window.SB || {};
       paper: PAPER[shown.orient],
       shots: list.length,
       refs: refs ? refs.count : 0,
-      sheets: board + (refs ? refs.sheets + (o.refFeeds ? 1 : 0) : 0),
+      /* feedHTML() returns nothing when no card feeds the still, and
+         refPages() prints one "no references yet" sheet while reporting zero
+         — so the dialog promised sheets nobody was going to print. */
+      sheets: board + (refs ? Math.max(refs.sheets, 1) +
+        (o.refFeeds && feedRows().length ? 1 : 0) : 0),
       boardSheets: board,
-      refSheets: refs ? refs.sheets + (o.refFeeds ? 1 : 0) : 0
+      refSheets: refs ? Math.max(refs.sheets, 1) +
+        (o.refFeeds && feedRows().length ? 1 : 0) : 0
     };
   }
 

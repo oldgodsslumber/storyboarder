@@ -464,9 +464,14 @@
       paper: PAPER[shown.orient],
       shots: list.length,
       refs: refs ? refs.count : 0,
-      sheets: board + (refs ? refs.sheets + (o.refFeeds ? 1 : 0) : 0),
+      /* feedHTML() returns nothing when no card feeds the still, and
+         refPages() prints one "no references yet" sheet while reporting zero
+         — so the dialog promised sheets nobody was going to print. */
+      sheets: board + (refs ? Math.max(refs.sheets, 1) +
+        (o.refFeeds && feedRows().length ? 1 : 0) : 0),
       boardSheets: board,
-      refSheets: refs ? refs.sheets + (o.refFeeds ? 1 : 0) : 0
+      refSheets: refs ? Math.max(refs.sheets, 1) +
+        (o.refFeeds && feedRows().length ? 1 : 0) : 0
     };
   }
 
