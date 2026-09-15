@@ -1552,12 +1552,14 @@
         const vbox = card().querySelector('.lane-box.lane-video');
         type(vbox, 'She lets go.');
         await nap(40);
-        const before = document.querySelectorAll('.toast').length;
+        /* Counting toasts raced their own dismissal timer — one expiring in
+           the same 60ms window made the count stand still. Read what it says. */
         card().querySelectorAll('.lane-chip')[1].click();
-        await nap(60);
+        await nap(80);
+        const said = Array.prototype.map.call(document.querySelectorAll('.toast'),
+          function (x) { return x.textContent; }).join(' | ');
         t('clicking the chip of a box that now has words says why it stays',
-          document.querySelectorAll('.toast').length > before,
-          document.querySelectorAll('.toast').length + ' vs ' + before);
+          /clear the motion box/i.test(said), said || '(no toast)');
         t('and the box is still there',
           card().querySelectorAll('.lane-box.lane-video').length === 1, '');
 

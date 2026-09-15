@@ -1802,10 +1802,17 @@
 
   function frame(sh) {
     const f = SB.el('div', 'frame');
-    if (sh.image) {
+    /* The board copy is what this draws, and where there is none the ORIGINAL
+     * is — a card carrying a picture must never look empty. Boards written
+     * before Remove was fixed hold exactly that state: an original with no
+     * proxy, exported and fed to clips while the frame offered a file picker
+     * and the picture was reachable from nowhere. */
+    const shown = sh.image ? SB.Blobs.src(P(), sh.image)
+      : (sh.render ? SB.Renders.dataUrl(P(), sh.render) : '');
+    if (shown) {
       const img = document.createElement('img');
       img.className = 'shot-img';
-      img.src = SB.Blobs.src(P(), sh.image);
+      img.src = shown;
       f.appendChild(img);
       if (sh.annotation) {
         const a = document.createElement('img');
@@ -1854,7 +1861,7 @@
         tools.appendChild(cl);
       }
     }
-    if (sh.image) {
+    if (sh.image || sh.render) {
       const rm = SB.el('button', 'mini danger', '✕');
       rm.title = 'Remove image';
       rm.onclick = function (ev) {
@@ -1870,7 +1877,9 @@
          480p frame was the same gesture as replacing it. Now it opens the
          picture; an empty frame still picks, because there is nothing to
          look at and "click to load" is all it has. */
-      if (!sh.image) {
+      /* Either one counts, the same way the frame draws either one — a
+         picture the card is holding must be openable. */
+      if (!sh.image && !sh.render) {
         SB.pickImageFile().then(function (file) { if (file) setImage(sh, file); });
         return;
       }
