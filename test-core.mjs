@@ -528,9 +528,12 @@ console.log('\n— a prompt describes the call that is made —');
   const ib = Per.block(p, sh, { id: 'm1', name: 'GPT Image', kind: 'image' }, 'image');
   eq(/image 1 = Nat/.test(ib) && /image 2 = Bob/.test(ib), true,
     'the still still maps every picture it describes');
-  eq(/is actually uploaded with this call/.test(ib) ||
+  /* All of them travel now — the product takes several references and the
+     app sends them — so the mapping says so rather than naming one. */
+  eq(/All 2 are uploaded with this call/.test(ib) ||
+    /is actually uploaded with this call/.test(ib) ||
     /None of these is uploaded/.test(ib), true,
-    'and says which one of them is in front of the model');
+    'and says how many of them are in front of the model');
 }
 
 console.log('\n— the lanes do not leak into each other —');

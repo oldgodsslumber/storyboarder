@@ -512,15 +512,20 @@
          imagine.js where it is loaded; where it is not, one is the answer
          every door but the API-key one gives. */
       const sent = (SB.Imagine && SB.Imagine.refsFor)
-        ? SB.Imagine.refsFor(p, shot, role) : { carries: 1, first: mapped[0] || null };
+        ? SB.Imagine.refsFor(p, shot, role)
+        : { carries: mapped.length, first: mapped[0] || null };
       if (mapped.length > 1) {
         const first = sent.first;
-        lines.push(sent.carries
-          ? 'Only image ' + ((first && first.n) || 1) + ' is actually uploaded with this call. ' +
-            'The others are described above and are NOT in front of you — write them from ' +
-            'the words, and do not claim to be matching a picture of them.'
-          : 'None of these is uploaded with this call — every one of them is description ' +
-            'only. Write them from the words above.');
+        lines.push(sent.carries >= mapped.length
+          ? 'All ' + mapped.length + ' are uploaded with this call, in that order. Match each ' +
+            'subject to its own picture exactly — the whole point of sending them is that ' +
+            'these people and places look the same on every card.'
+          : sent.carries
+            ? 'Only image ' + ((first && first.n) || 1) + ' is actually uploaded with this ' +
+              'call. The others are described above and are NOT in front of you — write them ' +
+              'from the words, and do not claim to be matching a picture of them.'
+            : 'None of these is uploaded with this call — every one of them is description ' +
+              'only. Write them from the words above.');
       }
     }
     /* The shot description may itself name a wardrobe — older boards baked the

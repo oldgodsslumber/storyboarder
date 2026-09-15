@@ -76,6 +76,10 @@
   const K_CAT = 'sb.imagine.catalog';      // what the account offers, per account
   const K_DOOR = 'sb.imagine.lastDoor';    // 'mcp' | 'rest' — which one last worked
   const K_WORKED = 'sb.imagine.worked';    // slugs that have actually produced something
+  /* '' unknown | 'many' the tool took an array | 'one' it refused and wants a
+     single url. Asked once per account, by trying, because the published
+     schema and the product disagree and only the tool can settle it. */
+  const K_MULTI = 'sb.imagine.imageRefs';
   const K_ORG = 'sb.imagine.org';          // every generation is billed to one
   const K_COST = 'sb.imagine.cost';        // what a configuration actually cost, measured
 
@@ -1839,6 +1843,8 @@
     const canon = {
       prompt: opts.prompt, slug: opts.slug, restSlug: opts.restSlug || '',
       aspect: opts.aspect, resolution: opts.resolution || '', quality: opts.quality || '',
+      /* every picture the card names, in the order the prompt's mapping does */
+      refs: opts.refs || (opts.refBlob ? [{ blob: opts.refBlob, label: '' }] : []),
       onState: opts.onState
     };
     const viaMcp = function () {
@@ -1852,23 +1858,37 @@
        * render the prompt's "keep their face exactly as in that image" against
        * no image, which is the whole bug this is here to fix -- so the failure
        * is marked as final and says what it was. */
-      return (opts.refBlob ? uploadForUrl(opts.refBlob) : Promise.resolve(''))
-        .catch(function (e) {
-          const err = new Error('The reference picture could not be uploaded, so the ' +
-            'still was not made: ' + (e.message || e) + '. Nothing was charged.');
-          err.submitted = true;
-          throw err;
-        })
-        .then(function (refUrl) {
+      let chain = Promise.resolve([]);
+      canon.refs.forEach(function (r) {
+        chain = chain.then(function (acc) {
+          return uploadForUrl(r.blob).then(function (u) {
+            return acc.concat(u ? [u] : []);
+          }, function (e) {
+            const err = new Error('The reference picture' +
+              (r.label ? ' \u201c' + r.label + '\u201d' : '') + ' could not be uploaded, so ' +
+              'the still was not made: ' + (e.message || e) + '. Nothing was charged.');
+            err.submitted = true;
+            throw err;
+          });
+        });
+      });
+      return chain
+        .then(function (urls) {
+          if (!urls.length && opts.imageUrl) urls = [opts.imageUrl];
           /* aspect_ratio, model and duration are required-but-nullable on this
-           * tool, so the keys travel even when there is nothing to put in them. */
+           * tool, so the keys travel even when there is nothing to put in them.
+           *
+           * image_url: the product takes several, the published schema says
+           * one, and only the tool can settle it. Several go unless it has
+           * already refused them on this account. */
+          const many = urls.length > 1 && multiState() !== 'one';
           const args = {
             org_id: orgId(),
             prompt: canon.prompt,
             model: canon.slug || null,
             aspect_ratio: canon.aspect || null,
             duration: null,
-            image_url: refUrl || opts.imageUrl || null
+            image_url: many ? urls : (urls[0] || null)
           };
           if (canon.resolution) args.resolution = canon.resolution;
           if (canon.quality) args.quality = canon.quality;
@@ -1877,7 +1897,21 @@
            * has already cost something — never a reason to try the other
            * door. A rejection from callRaw itself is the tools refusing the
            * job, which is the one case the fallback is for. */
-          return callRaw(TOOL.image, args).then(function (got) {
+          /* A refusal of the SHAPE happens at the tool boundary, before
+             anything is generated, so it costs nothing and is worth trying
+             once. The answer is remembered per account. */
+          const send = function (a, second) {
+            return callRaw(TOOL.image, a).then(function (r) {
+              if (many && !second) noteMulti('many');
+              return r;
+            }, function (e) {
+              if (!many || second || !isShapeRefusal(e)) throw e;
+              noteMulti('one');
+              const one = Object.assign({}, a, { image_url: urls[0] || null });
+              return send(one, true);
+            });
+          };
+          return send(args, false).then(function (got) {
             const id = assetId(got);
             const settled = (got.url && !id)
               ? Promise.resolve(got) : waitForAsset(id || got.text, canon.onState);
@@ -2264,18 +2298,21 @@
       const before = alone ? balanceNow() : Promise.resolve(null);
 
       const work = role === 'image'
-        ? before.then(function () { return firstRef(p, shot); }).then(function (ref) {
+        ? before.then(function () { return refBlobs(p, shot); }).then(function (refs) {
           /* Stamped provisionally and corrected below from the door that
              answered: the API-key door sends no reference at all, and a
              record that says "sent with Nat" when nothing was sent makes
              "it ignored the reference" and "it was never given one" look
              identical again — which is the one thing this field exists to
              tell apart. */
-          made.reference = ref ? { label: ref.label, n: ref.n, of: ref.of } : null;
+          made.reference = refs.length
+            ? { label: refs[0].label, n: 1, of: refs.length,
+              all: refs.map(function (r) { return r.label; }) }
+            : null;
           return image({
             prompt: text, slug: slugNow, restSlug: slugOf(model, 'key'),
             aspect: aspect, resolution: res, quality: qual,
-            refBlob: ref && ref.blob,
+            refs: refs,
             onState: function () { state('waiting'); }
           });
         }).then(function (got) {
@@ -2377,6 +2414,87 @@
    *
    * The original where the board has one, the proxy where it does not: a
    * reference is there to be matched, and 480p is a poor thing to match. */
+  /* ---------------- how many references a still may carry ----------------
+   *
+   * ImagineArt's own interface hands GPT Image three separate reference
+   * pictures — two people and the place they are in — exactly as it does for
+   * video. The MCP tool declares `image_url` as one string; generate_video
+   * declares the same-named parameter on the same backend as an array. A
+   * published schema can be behind the thing it describes, and this one
+   * demonstrably is somewhere, so the app asks the only authority there is:
+   * it sends the array.
+   *
+   * A refusal costs nothing — the tool rejects the shape before it generates
+   * — and the answer is kept, so the question is asked once per account.
+   */
+  /* lsStr, not lsGet: lsPut writes the raw string and lsGet JSON-parses, so
+     the pair never agreed and the answer was thrown away on every read —
+     which meant the array was retried on every single push. */
+  function multiState() { return lsStr(K_MULTI); }
+  function noteMulti(v) { lsPut(K_MULTI, v); }
+
+  /* Does this read like the tool refusing the SHAPE rather than the job? */
+  function isShapeRefusal(e) {
+    const m = String((e && e.message) || e || '').toLowerCase();
+    return /image_url|invalid type|expected string|not of type|must be a string|array/.test(m);
+  }
+
+  /* Every picture this card's first frame should be built from, in the order
+   * the prompt's mapping names them. */
+  function imageRefs(p, shot) {
+    return SB.Refs.images(p, shot, 'image');
+  }
+
+  /* Their blobs, uploaded in order. One that cannot be uploaded stops the
+   * push rather than sending fewer pictures than the prompt promises. */
+  function uploadRefs(p, list) {
+    let chain = Promise.resolve([]);
+    list.forEach(function (e) {
+      chain = chain.then(function (acc) {
+        return SB.Renders.file(p, e.render).then(function (f) {
+          if (f) return f;
+          const src = e.img ? SB.Blobs.src(p, e.img) : '';
+          return src ? dataUrlToBlob(src) : null;
+        }).then(function (blob) {
+          if (!blob) return acc;
+          return uploadForUrl(blob).then(function (u) {
+            return acc.concat(u ? [u] : []);
+          }, function (err) {
+            const bad = new Error('“' + e.label + '” could not be uploaded, so the frame was ' +
+              'not made: ' + (err.message || err) + '. Nothing was charged.');
+            bad.submitted = true;
+            throw bad;
+          });
+        });
+      });
+    });
+    return chain;
+  }
+
+  /* Every reference this card's first frame is built from, as blobs, in the
+   * order the prompt's mapping names them — the full-size original where the
+   * file holds one, the board's copy where it does not. */
+  function refBlobs(p, shot) {
+    const list = imageRefs(p, shot);
+    if (!list.length) return Promise.resolve([]);
+    let chain = Promise.resolve([]);
+    list.forEach(function (e) {
+      chain = chain.then(function (acc) {
+        return SB.Renders.file(p, e.render).then(function (f) {
+          if (f) return { blob: f, name: f.name, label: e.label, n: e.n };
+          const src = e.img ? SB.Blobs.src(p, e.img) : '';
+          if (!src) return null;
+          return dataUrlToBlob(src).then(function (b) {
+            return { blob: b, name: 'ref' + e.n + '.png', label: e.label, n: e.n };
+          });
+        }).then(function (one) {
+          return one ? acc.concat([one]) : acc;
+        }, function () { return acc; });
+      });
+    });
+    return chain;
+  }
+
   function firstRef(p, shot) {
     /* the still's own lane: the picture a first frame is matched against */
     const feed = SB.Refs.images(p, shot, 'image');
@@ -2975,12 +3093,16 @@
       };
     }
 
-    const carries = transport() === 'key' ? 0 : 1;
+    /* All of them, unless the API-key door is in use (which carries none) or
+     * the tools have already refused an array on this account. */
+    const many = transport() !== 'key' && multiState() !== 'one';
+    const carries = transport() === 'key' ? 0 : (many ? feed.length : Math.min(1, feed.length));
     return {
       role: 'image',
       feed: feed.length,
       wordsOnly: wordsOnly,
-      carries: Math.min(carries, feed.length),
+      carries: carries,
+      many: many,
       first: feed[0] || null,
       byKey: transport() === 'key'
     };

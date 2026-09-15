@@ -860,6 +860,103 @@ section('the one picture a clip carries besides its frame');
     !/picture 1 is Nat/i.test(sent), sent.slice(0, 160));
 }
 
+section('a still carries every reference the card names');
+{
+  const pM = SB.Model.newProject();
+  sandbox.SB.app = { project: pM, changed() { } };
+  const sc = pM.scenes[0] || SB.Model.addScene(pM, 0);
+  const pic = (n) => SB.Blobs.image(pM, 'data:image/gif;base64,R0lGODlhAQABAAAAAC' + n, 4, 3);
+  const nat = SB.Personas.add(pM, { name: 'Nat' }); nat.image = pic('w');
+  const bob = SB.Personas.add(pM, { name: 'Bob' }); bob.image = pic('x');
+  const bay = SB.Personas.add(pM, { kind: 'place', name: 'The bay' }); bay.image = pic('y');
+  const sh = SB.Model.addShot(pM, sc.id, {});
+  sh.description = SB.Refs.mark(nat.id, 'Nat') + ' and ' + SB.Refs.mark(bob.id, 'Bob') +
+    ' at ' + SB.Refs.mark(bay.id, 'The bay') + '.';
+  sh.prompts = {};
+  const im = SB.Model.imageModel(pM);
+  sh.prompts[im.id] = { imagePrompt: 'A wide of the bay.', videoPrompt: '', modelName: im.name };
+
+  const calls = [];
+  let refuse = false;
+  sandbox.fetch = function (url, init) {
+    /* the module turns its own data: URLs into blobs through fetch */
+    if (typeof url === 'string' && url.indexOf('data:') === 0) {
+      return Promise.resolve({ ok: true, status: 200, headers: { get: () => null },
+        blob: () => Promise.resolve({
+          size: 8, type: 'image/gif', name: 'ref.gif',
+          arrayBuffer: () => Promise.resolve(new Uint8Array([71, 73, 70, 56, 57, 97, 1, 0]).buffer)
+        }) });
+    }
+    const msg = JSON.parse(init.body);
+    let result = {};
+    if (msg.method === 'initialize') result = { serverInfo: { name: 'i', version: '1' } };
+    else if (msg.method === 'tools/list') result = { tools: REAL_TOOLS };
+    else if (msg.method === 'tools/call') {
+      const n = msg.params.name;
+      calls.push({ name: n, args: msg.params.arguments });
+      if (n === 'user_upload') {
+        result = { content: [{ type: 'text', text: 'https://cdn/u' + calls.length + '.png' }] };
+      } else if (n === 'get_balance') {
+        result = { content: [{ type: 'text', text: '{"credits":500}' }] };
+      } else if (n === 'generate_image') {
+        if (refuse && Array.isArray(msg.params.arguments.image_url)) {
+          return Promise.resolve({ ok: true, status: 200, headers: { get: () => null },
+            text: () => Promise.resolve(JSON.stringify({ jsonrpc: '2.0', id: msg.id,
+              result: { isError: true,
+                content: [{ type: 'text', text: 'image_url: expected string, received array' }] } }))
+          });
+        }
+        result = { content: [{ type: 'text', text: '{"url":"https://cdn/out.png"}' }] };
+      } else result = { content: [{ type: 'text', text: '{}' }] };
+    }
+    return Promise.resolve({ ok: true, status: 200, headers: { get: () => null },
+      text: () => Promise.resolve(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: result })) });
+  };
+  SB.Imagine.setTransport('oauth');
+  store.set('sb.imagine.tokens', JSON.stringify({
+    access_token: 'tok', refresh_token: 'r', expires_at: Date.now() + 3600000, email: 'm@r' }));
+  store.delete('sb.imagine.imageRefs');
+  await SB.Imagine.toolList(true);
+  SB.Imagine.setOrg({ id: 'org1', name: 'Org' });
+
+  /* the card names three pictures, so three go */
+  const r = SB.Imagine.refsFor(pM, sh, 'image');
+  t('the card is counted as feeding three', r.feed === 3, r.feed);
+  t('and all three are reported as travelling', r.carries === 3, r.carries);
+
+  let ranErr = null;
+  await SB.Imagine.run(sh, 'image').catch((e) => { ranErr = e && e.message; });
+  const gen = calls.filter(c => c.name === 'generate_image')[0];
+  t('generate_image is called', !!gen,
+    JSON.stringify(calls.map(c => c.name)) + ' err=' + ranErr);
+  t('and image_url is an ARRAY of every reference',
+    Array.isArray(gen.args.image_url) && gen.args.image_url.length === 3,
+    JSON.stringify(gen.args.image_url));
+  t('one upload per reference, in order',
+    calls.filter(c => c.name === 'user_upload').length === 3,
+    calls.filter(c => c.name === 'user_upload').length);
+
+  /* and if the tool turns out to want one, it says so once and is believed */
+  refuse = true;
+  calls.length = 0;
+  store.delete('sb.imagine.imageRefs');
+  await SB.Imagine.run(sh, 'image').catch(() => null);
+  const tries = calls.filter(c => c.name === 'generate_image');
+  t('a refusal of the shape is retried once as a single url',
+    tries.length === 2 && Array.isArray(tries[0].args.image_url) &&
+    typeof tries[1].args.image_url === 'string',
+    JSON.stringify(tries.map(x => Array.isArray(x.args.image_url) ? 'array' : typeof x.args.image_url)));
+
+  calls.length = 0;
+  await SB.Imagine.run(sh, 'image').catch(() => null);
+  const after = calls.filter(c => c.name === 'generate_image');
+  t('and the answer is remembered, so it is asked once',
+    after.length === 1 && typeof after[0].args.image_url === 'string',
+    JSON.stringify(after.map(x => Array.isArray(x.args.image_url) ? 'array' : typeof x.args.image_url)));
+
+  store.delete('sb.imagine.imageRefs');
+}
+
 section('a slug that worked outranks every published list');
 
 {

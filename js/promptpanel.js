@@ -1143,6 +1143,15 @@
             ' no reference frame, so nothing is sent and the model works from the words alone. ' +
             'Give them a reference in the References panel if they have to look the same every time.'
           : 'Nothing is marked on this card, so the push carries the prompt and nothing else.';
+      } else if (refs.many && refs.carries > 1 && refs.carries >= refs.feed) {
+        text = 'sends ' + refs.carries + ' refs'; warn = false;
+        why = 'All ' + refs.carries + ' reference pictures on this card are uploaded with ' +
+          'this push, in the order the prompt names them, so every subject is matched to ' +
+          'its own picture.' +
+          (refs.wordsOnly ? ' ' + refs.wordsOnly + ' other subject' +
+            (refs.wordsOnly === 1 ? ' has' : 's have') + ' no reference frame, so ' +
+            (refs.wordsOnly === 1 ? 'it reaches' : 'they reach') + ' the model as words only.'
+            : '');
       } else if (refs.feed > refs.carries) {
         text = '1 of ' + refs.feed + ' refs'; warn = true;
         why = 'This card feeds ' + refs.feed + ' reference pictures and a still push carries one \u2014 ' +
