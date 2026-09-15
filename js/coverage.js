@@ -94,10 +94,11 @@
   }
 
   function existingShots(p, sc) {
-    return sc.shots.filter(function (sh) { return (sh.description || '').trim(); })
-      .map(function (sh) {
-        return '- ' + (sh.type || 'shot') + ': ' +
-          SB.Refs.plain(p, sh.description).replace(/\s+/g, ' ').trim().slice(0, 200);
+    return sc.shots.map(function (sh) { return { sh: sh, t: SB.Refs.text(p, sh) }; })
+      .filter(function (x) { return x.t.trim(); })
+      .map(function (x) {
+        return '- ' + (x.sh.type || 'shot') + ': ' +
+          x.t.replace(/\s+/g, ' ').trim().slice(0, 200);
       });
   }
 
@@ -369,7 +370,9 @@
 
   /* A card nobody has touched yet — the one every new scene starts with. */
   function isBlank(p, sh) {
-    if ((sh.description || '').trim()) return false;
+    /* Every box, or the generator reuses a card somebody has written the
+       first-frame words on and overwrites it with an unrelated beat. */
+    if (SB.Model.described(sh)) return false;
     if (sh.image || sh.link || (sh.personaIds || []).length) return false;
     if (Object.keys(sh.prompts || {}).length) return false;
     if (Object.keys(sh.fields || {}).some(function (k) { return (sh.fields[k] || '').trim(); })) return false;
@@ -575,17 +578,38 @@
   /* Only a card that HAS cast can be carrying it redundantly. With nobody
    * attached the wardrobe in the text is the only record there is, and taking
    * it out would lose the shot. */
-  function carriesWardrobe(p, sh) {
-    if (!(sh.description || '').trim()) return null;
-    /* People only. A location or an object cast on the card says nothing about
-     * whose clothes the description is describing, and a "vest" in a shot with
-     * only a room attached is somebody's prose, not a stale copy. */
-    const people = SB.Personas.forShot(p, sh).filter(function (per) {
+  /* People only. A location or an object cast on the card says nothing about
+   * whose clothes the description is describing, and a "vest" in a shot with
+   * only a room attached is somebody's prose, not a stale copy. */
+  function peopleOn(p, sh) {
+    return SB.Personas.forShot(p, sh).filter(function (per) {
       return SB.Personas.kindOf(per).id === 'person';
     });
-    if (!people.length) return null;
-    const terms = wardrobeTerms(SB.Refs.plain(p, sh.description));
-    return terms.length ? terms : null;
+  }
+
+  /* Which boxes on this card carry a frozen copy of somebody's appearance.
+   * Appearance is exactly what the first-frame box is for, so looking only at
+   * the shared one made the commonest case invisible — and unrepairable. */
+  function wardrobeBoxes(p, sh) {
+    if (!peopleOn(p, sh).length) return [];
+    return SB.Refs.KEYS.map(function (k) {
+      const terms = wardrobeTerms(SB.Refs.plain(p, sh[k] || ''));
+      return terms.length ? { key: k, terms: terms } : null;
+    }).filter(Boolean);
+  }
+
+  function carriesWardrobe(p, sh) {
+    const boxes = wardrobeBoxes(p, sh);
+    if (!boxes.length) return null;
+    const seen = {}, terms = [];
+    boxes.forEach(function (b) {
+      b.terms.forEach(function (t) {
+        if (seen[t]) return;
+        seen[t] = 1;
+        terms.push(t);
+      });
+    });
+    return terms;
   }
 
   function shotsCarryingWardrobe(p) {
@@ -644,7 +668,9 @@
     required: ['description']
   };
 
-  function cleanPrompt(p, sh, cast) {
+  function cleanPrompt(p, sh, cast, key) {
+    /* the box being repaired, which is not always the shared one */
+    const src = sh[key || 'description'] || '';
     const names = cast.map(function (per) { return per.name || 'unnamed'; });
     return [
       'Rewrite the shot description below so it no longer describes what anybody LOOKS LIKE.',
@@ -665,7 +691,7 @@
           return '- ' + (per.name || 'unnamed') + ': ' +
             (per.description || '').replace(/\s+/g, ' ').trim();
         }).join('\n') + '\n' : '',
-      'DESCRIPTION:\n' + SB.Refs.plain(p, sh.description).trim()
+      'DESCRIPTION:\n' + SB.Refs.plain(p, src).trim()
     ].filter(Boolean).join('\n');
   }
 
@@ -677,24 +703,34 @@
    * Resolves { cleaned, stripped, asked, failed, changes: [{id, from, to}] } */
   function cleanWardrobe(p, shots, opts) {
     opts = opts || {};
-    const list = (shots || []).filter(function (sh) { return !!carriesWardrobe(p, sh); });
+    /* One entry per BOX that carries wardrobe, not per card: the same card can
+       hold a frozen copy in the shared box and another in the first-frame box,
+       and repairing only one of them leaves the card still drifting. */
+    const list = [];
+    (shots || []).forEach(function (sh) {
+      wardrobeBoxes(p, sh).forEach(function (b) {
+        list.push({ shot: sh, key: b.key });
+      });
+    });
     const changes = [];
     let stripped = 0;
 
     const queue = [];
-    list.forEach(function (sh) {
+    list.forEach(function (job) {
+      const sh = job.shot;
+      const was = sh[job.key] || '';
       const cast = SB.Personas.forShot(p, sh);
-      const cut = stripCast(SB.Refs.plain(p, sh.description), cast);
-      if (cut !== SB.Refs.plain(p, sh.description).trim() && !wardrobeTerms(cut).length) {
+      const cut = stripCast(SB.Refs.plain(p, was), cast);
+      if (cut !== SB.Refs.plain(p, was).trim() && !wardrobeTerms(cut).length) {
         /* relink, not linkAll: only what was marked before is marked again.
            linkAll knew nothing about shot codes, so an earlier frame dropped
            out of the feed, and it linked names the writer had deliberately
            left as prose. */
-        changes.push({ id: sh.id, from: sh.description, to: SB.Refs.relink(p, cut, sh.description) });
+        changes.push({ id: sh.id, key: job.key, from: was, to: SB.Refs.relink(p, cut, was) });
         stripped++;
         return;
       }
-      queue.push({ shot: sh, cast: cast, seed: cut });
+      queue.push({ shot: sh, key: job.key, cast: cast, seed: cut });
     });
 
     const total = list.length;
@@ -705,7 +741,7 @@
       if (!opts.dryRun) {
         changes.forEach(function (ch) {
           const f = SB.Model.findShot(p, ch.id);
-          if (f) f.shot.description = ch.to;
+          if (f) f.shot[ch.key] = ch.to;
         });
         if (changes.length) p.updatedAt = Date.now();
       }
@@ -736,14 +772,15 @@
     function worker() {
       const j = pending.shift();
       if (!j) return Promise.resolve();
-      return SB.Prompts.raw(cleanPrompt(p, j.shot, j.cast), CLEAN_SCHEMA, system)
+      return SB.Prompts.raw(cleanPrompt(p, j.shot, j.cast, j.key), CLEAN_SCHEMA, system)
         .then(function (out) {
           const next = String((out && out.description) || '').trim();
           if (next) {
+            const was = j.shot[j.key] || '';
             changes.push({
-              id: j.shot.id, from: j.shot.description,
+              id: j.shot.id, key: j.key, from: was,
               /* it came back as prose — put back the marks it flattened */
-              to: SB.Refs.relink(p, deprompt(next), j.shot.description)
+              to: SB.Refs.relink(p, deprompt(next), was)
             });
           }
           else failed++;

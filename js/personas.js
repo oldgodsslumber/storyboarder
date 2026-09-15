@@ -613,7 +613,8 @@
     const script = (p.master.text || '').trim();
     const descs = [];
     SB.Model.eachShot(p, function (sh) {
-      if (sh.description) descs.push(SB.Refs.plain(p, sh.description));
+      const t = SB.Refs.text(p, sh);
+      if (t) descs.push(t);
     });
     if (!script && !descs.length) {
       return Promise.reject(new Error('Nothing to work from yet — write some script or shot descriptions first.'));

@@ -441,6 +441,70 @@ console.log('\n— two lanes, one board —');
     'and every lane reads the description it already had');
 }
 
+console.log('\n— every box, not just the first one —');
+{
+  const M = SB.Model, R = SB.Refs, Per = SB.Personas, C = SB.Coverage, B = SB.Brand;
+  const p = M.newProject();
+  const sc = p.scenes[0] || M.addScene(p, 0);
+  const nat = Per.add(p, { name: 'Nat', description: 'A woman in a charcoal knit.' });
+  nat.image = SB.Blobs.image(p, 'data:image/gif;base64,R0lGODlhAQABAAAAACw=', 4, 3);
+  const rig = Per.add(p, { kind: 'thing', name: 'Rig' });
+  rig.image = SB.Blobs.image(p, 'data:image/gif;base64,R0lGODlhAQABAAAAACx=', 4, 3);
+
+  /* a repair that says it worked has to have worked */
+  const sh = M.addShot(p, sc.id, {});
+  sh.description = 'At the desk.';
+  sh.videoDescription = 'Nat walks out.';
+  eq(R.rewrite(sh, function (t) { return R.linkAll(p, t); }), 1,
+    'linking loose names rewrites the box the name is actually in');
+  eq(/@\{/.test(sh.videoDescription), true, 'so the motion box ends up carrying the mark');
+  eq(R.unlinked(p, sh.videoDescription).length, 0, 'and the name is no longer loose');
+
+  const dead = M.addShot(p, sc.id, {});
+  dead.imageDescription = 'A poster of ' + R.mark('per_gone', 'Ghost') + ' on the wall.';
+  eq(R.rewrite(dead, function (t) { return R.unmark(p, t, 'per_gone'); }), 1,
+    'and unmarking a dead reference reaches the box it is in');
+  eq(/@\{/.test(dead.imageDescription), false, 'leaving the name as plain prose');
+
+  /* the blank-card test, which decides whether the generator overwrites you */
+  const written = M.addShot(p, sc.id, {});
+  written.imageDescription = 'A wide of the empty office at dawn.';
+  eq(C.isBlank(p, written), false,
+    'a card written only in the first-frame box is not a blank card to overwrite');
+  eq(C.isBlank(p, M.addShot(p, sc.id, {})), true, 'a truly empty one still is');
+
+  /* wardrobe drifts wherever it is written, so it is detected wherever it is */
+  const ward = M.addShot(p, sc.id, {});
+  ward.personaIds = [nat.id];
+  ward.imageDescription = 'Nat, wearing a charcoal knit, is already seated.';
+  eq(!!C.carriesWardrobe(p, ward), true,
+    'wardrobe in the first-frame box is found — it is where appearance gets written');
+  eq(C.carriesWardrobe(p, ward).indexOf('wearing') >= 0, true, 'and the term is named');
+
+  /* one numbered set is only the truth while both calls get the same files */
+  const split = M.addShot(p, sc.id, {});
+  split.description = 'At the desk with ' + R.mark(nat.id, 'Nat') + '.';
+  eq(R.lanesAgree(p, split), true, 'a card that says everything in the shared box agrees');
+  split.imageDescription = 'The ' + R.mark(rig.id, 'Rig') + ' is set up.';
+  eq(R.lanesAgree(p, split), false, 'and stops agreeing the moment a lane has its own picture');
+  eq(R.images(p, split, 'image').length, 2, 'the image lane sends two');
+  eq(R.images(p, split, 'video').length, 1, 'the video lane sends one');
+
+  /* the gate the generate button reads */
+  const lone = M.addShot(p, sc.id, {});
+  lone.videoDescription = 'The door swings shut.';
+  eq(M.described(lone), true, 'a card written only in the motion box is described');
+
+  /* what the model is told about the neighbouring beats stays in its lane */
+  const other = M.addShot(p, sc.id, {});
+  other.description = 'The corridor.';
+  other.imageDescription = 'A trolley parked against the wall.';
+  other.videoDescription = 'Someone wheels it away.';
+  const vsys = B.systemFor(p, lone, 'video');
+  eq(/wheels it away/.test(vsys), true, 'the video job hears the other beats\u2019 motion');
+  eq(/trolley parked/.test(vsys), false, 'and not their first-frame-only words');
+}
+
 console.log('\n— brand style —');
 {
   const B = SB.Brand;

@@ -232,33 +232,42 @@
        * own. The numbers are the promise the prompt's mapping makes, so they
        * lead the filename. */
       if (o.refsets && !o.madeOnly) {
-        const feed = SB.Refs.images(p, sh);
-        if (feed.length) {
-          const dir = 'refs/' + (SB.Renders.slug(r.code) || 'shot');
-          feed.forEach(function (e) {
-            const orig = SB.Renders.dataUrl(p, e.render);
-            const data = orig || SB.Blobs.src(p, e.img);
-            if (!data) return;
-            /* Falling back to the board copy is fine; doing it silently is
-               not. The plan for this panel named this exact failure: an
-               export that shipped 854×480 where 4K was promised. */
-            if (!orig && e.render) missing++;
-            const ext = extOfUrl(data);
-            items.push({
-              name: e.n + '_' + (SB.Renders.slug(e.label) || 'ref') +
-                (e.role ? '_' + SB.Renders.slug(e.role) : '') + '.' + ext,
-              sub: dir, kind: orig ? 'reference' : 'reference (board copy)',
-              data: data, bytes: bytesOf(data),
-              code: r.code, scene: r.sceneName, shot: sh,
-              rec: orig ? e.render : null,
-              /* the manifest asks this to decide boardCopy, and a fallback
-                 IS the board copy — it said false beside a kind that said
-                 otherwise */
-              isProxy: !orig,
-              made: (orig && e.render && e.render.made) || null
+        /* The number leads the filename because it is the number that lane's
+           prompt names. While both calls are handed the same files that is one
+           folder; when they are not, one folder each — a single set would put
+           2_Bob.png in front of a video mapping that calls 2 somebody else. */
+        const agree = SB.Refs.lanesAgree(p, sh);
+        (agree ? [{ role: undefined, sub: '' }]
+          : [{ role: 'image', sub: '/first-frame' }, { role: 'video', sub: '/video' }]
+        ).forEach(function (set) {
+          const feed = SB.Refs.images(p, sh, set.role);
+          if (feed.length) {
+            const dir = 'refs/' + (SB.Renders.slug(r.code) || 'shot') + set.sub;
+            feed.forEach(function (e) {
+              const orig = SB.Renders.dataUrl(p, e.render);
+              const data = orig || SB.Blobs.src(p, e.img);
+              if (!data) return;
+              /* Falling back to the board copy is fine; doing it silently is
+                 not. The plan for this panel named this exact failure: an
+                 export that shipped 854×480 where 4K was promised. */
+              if (!orig && e.render) missing++;
+              const ext = extOfUrl(data);
+              items.push({
+                name: e.n + '_' + (SB.Renders.slug(e.label) || 'ref') +
+                  (e.role ? '_' + SB.Renders.slug(e.role) : '') + '.' + ext,
+                sub: dir, kind: orig ? 'reference' : 'reference (board copy)',
+                data: data, bytes: bytesOf(data),
+                code: r.code, scene: r.sceneName, shot: sh,
+                rec: orig ? e.render : null,
+                /* the manifest asks this to decide boardCopy, and a fallback
+                   IS the board copy — it said false beside a kind that said
+                   otherwise */
+                isProxy: !orig,
+                made: (orig && e.render && e.render.made) || null
+              });
             });
-          });
-        }
+          }
+        });
       }
     });
 
@@ -352,7 +361,8 @@
       lines.push([
         r.sceneName || (r.scene && r.scene.heading) || '', r.code,
         sh.noShot ? 'no shot' : (sh.type || ''),
-        SB.Refs.plain(p, sh.description || ''), ip, vp,
+        /* every box: a card written only in a lane box exported an empty cell */
+        SB.Refs.text(p, sh), ip, vp,
         /* the name actually written, not the serial one — a shot list that
            hands an editor filenames that are not in the folder is worse than
            no shot list */

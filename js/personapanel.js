@@ -778,7 +778,10 @@
        inside one would rewrite the token's own fallback. */
     const hits = [];
     SB.Model.eachShot(P(), function (sh) {
-      if (SB.Refs.proseHits(P(), sh.description, was).length) hits.push(sh);
+      const any = SB.Refs.KEYS.some(function (k) {
+        return SB.Refs.proseHits(P(), sh[k], was).length > 0;
+      });
+      if (any) hits.push(sh);
     });
     if (!hits.length) { pendingRename = null; return null; }
 
@@ -790,13 +793,15 @@
       ' to “' + now + '”');
     b.onclick = function () {
       hits.forEach(function (sh) {
-        /* back to front, so each rewrite leaves the earlier offsets alone */
-        const spots = SB.Refs.proseHits(P(), sh.description, was);
-        let text = sh.description || '';
-        for (let i = spots.length - 1; i >= 0; i--) {
-          text = text.slice(0, spots[i].from) + now + text.slice(spots[i].to);
-        }
-        sh.description = text;
+        SB.Refs.rewrite(sh, function (was2) {
+          /* back to front, so each rewrite leaves the earlier offsets alone */
+          const spots = SB.Refs.proseHits(P(), was2, was);
+          let text = was2 || '';
+          for (let i = spots.length - 1; i >= 0; i--) {
+            text = text.slice(0, spots[i].from) + now + text.slice(spots[i].to);
+          }
+          return text;
+        });
       });
       pendingRename = null;
       SB.app.changed(true);
@@ -999,7 +1004,10 @@
   function markedIn(id) {
     let n = 0;
     SB.Model.eachShot(P(), function (sh) {
-      if (SB.Refs.parse(P(), sh.description).some(function (m) { return m.id === id; })) n++;
+      const any = SB.Refs.KEYS.some(function (k) {
+        return SB.Refs.parse(P(), sh[k]).some(function (m) { return m.id === id; });
+      });
+      if (any) n++;
     });
     return n;
   }

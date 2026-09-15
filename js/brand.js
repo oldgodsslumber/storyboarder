@@ -475,7 +475,10 @@
       lines.push('The other beats in this scene, in order:');
       beats.forEach(function (s, i) {
         const sf = SB.Model.findShot(p, s.id);
-        const d = SB.Refs.plain(p, s.description).replace(/\s+/g, ' ').trim();
+        /* This lane's words for every beat. The union leaked the first-frame
+           box into the video job through the back door, which is the one
+           thing splitting the boxes was for. */
+        const d = SB.Refs.text(p, s, role).replace(/\s+/g, ' ').trim();
         lines.push('  ' + (i + 1) + '. [' + (sf ? sf.code : '?') + '] ' + (s.type || 'shot') + ' — ' +
           (d ? (d.length > 160 ? d.slice(0, 157) + '…' : d) : '(no description yet)') +
           (s.id === shot.id ? '   <-- the frame you are writing' : ''));

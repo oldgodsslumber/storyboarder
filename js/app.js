@@ -151,6 +151,7 @@
   function setProject(p) {
     app.project = p;
     SB.History.reset();
+    SB.Board.forgetOpenBoxes();
     app.selectedShotId = null;
     app.selectedSceneId = p.scenes[0] ? p.scenes[0].id : null;
     SB.Board.render();

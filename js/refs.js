@@ -136,6 +136,32 @@
     return out;
   }
 
+  /* The three boxes by name, for the two things a caller can want: to READ
+   * all of them as one piece of prose, or to REWRITE every one of them the
+   * same way. Both existed as `shot.description` before the split, and every
+   * bug the first QA pass found was a call site that still said that. */
+  const KEYS = ['description', 'imageDescription', 'videoDescription'];
+
+  /* What this card says, as prose, for one lane or for all of it. */
+  function text(p, shot, role) {
+    return boxes(shot, role)
+      .map(function (t) { return plain(p, t || '').trim(); })
+      .filter(Boolean).join('\n\n');
+  }
+
+  /* Run a repair over every box. Returns how many it changed — a repair that
+   * reports success without touching the box the mark was in is worse than
+   * one that does nothing, because the toast says it worked. */
+  function rewrite(shot, fn) {
+    let n = 0;
+    KEYS.forEach(function (k) {
+      const was = shot[k] || '';
+      const now = fn(was, k);
+      if (typeof now === 'string' && now !== was) { shot[k] = now; n++; }
+    });
+    return n;
+  }
+
   function marked(p, shot, role) {
     let out = [];
     boxes(shot, role).forEach(function (t) { out = out.concat(parse(p, t)); });
@@ -209,6 +235,24 @@
       e.numbers = e.images.map(function () { return ++n; });
     });
     return out;
+  }
+
+  /* Do the two lanes hand over the same pictures, in the same order?
+   *
+   * Nearly always yes — most cards say everything in the shared box — and
+   * while they do, one numbered set is the truth for both calls and nothing
+   * about the exports needs to change. When they differ, a single numbered
+   * set is a promise NEITHER prompt makes: image 2 means one file to the
+   * still and another to the clip, and some third file is named by no mapping
+   * at all. Everything that writes numbered reference files asks this first. */
+  function lanesAgree(p, shot) {
+    const a = images(p, shot, 'image');
+    const b = images(p, shot, 'video');
+    if (a.length !== b.length) return false;
+    return a.every(function (e, i) {
+      return e.id === b[i].id &&
+        ((e.img && e.img.ref) || '') === ((b[i].img && b[i].img.ref) || '');
+    });
   }
 
   /* Just the pictures, in order — what "copy the image set" hands over. */
@@ -353,6 +397,7 @@
   SB.Refs = {
     mark: mark, parse: parse, plain: plain, target: target, unmark: unmark,
     feed: feed, images: images, insert: insert, boxes: boxes, marked: marked,
+    KEYS: KEYS, text: text, rewrite: rewrite, lanesAgree: lanesAgree,
     unlinked: unlinked, linkAll: linkAll, proseHits: proseHits,
     relink: relink, lostIn: lostIn
   };

@@ -1460,6 +1460,76 @@
         await nap(40);
       }
 
+      // what the QA pass on the lanes found
+      {
+        const nap = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+        /* type the way the app does: write the text, place the caret, fire input */
+        const type = function (box, text) {
+          SB.RefBox.write(box, P(), text);
+          SB.RefBox.setCaret(box, text.length);
+          box.dispatchEvent(new InputEvent('input', { bubbles: true }));
+        };
+        const sh = P().scenes[0].shots[0];
+        const wasDesc = sh.description;
+        sh.description = '';
+        sh.imageDescription = 'A wide of the empty office at dawn.';
+        sh.videoDescription = '';
+        SB.app.changed(true);
+        await nap(60);
+
+        /* the button that starts the whole workflow */
+        SB.PromptPanel.open();
+        await nap(80);
+        const row = document.querySelector('.pt-row[data-shot="' + sh.id + '"]');
+        const gens = Array.prototype.filter.call(row.querySelectorAll('button'),
+          function (b) { return /generate/.test(b.textContent); });
+        t('generate is live on a card written only in a lane box',
+          gens.length > 0 && gens.every(function (b) { return !b.disabled; }),
+          gens.map(function (b) { return b.disabled; }).join(','));
+
+        /* the dashed "using the description" state is live, not set once */
+        const lanes = row.querySelectorAll('.pt-lane');
+        t('the filled lane is not marked as using the description',
+          !lanes[0].classList.contains('using-shared'), lanes[0].className);
+        t('while the empty one is', lanes[1].classList.contains('using-shared'),
+          lanes[1].className);
+        const box = lanes[1].querySelector('.pt-lane-desc');
+        type(box, 'She lets go.');
+        await nap(40);
+        t('and it stops saying so the moment words are typed into it',
+          !lanes[1].classList.contains('using-shared'), lanes[1].className);
+        SB.PromptPanel.close();
+        await nap(40);
+
+        /* the chip reads the box, not what the box said when it was drawn */
+        const card = function () {
+          return document.querySelector('.card[data-shot="' + sh.id + '"]');
+        };
+        sh.videoDescription = '';
+        SB.app.changed(true);
+        await nap(60);
+        const chip = card().querySelectorAll('.lane-chip')[1];
+        chip.click();                       // open it
+        await nap(60);
+        const vbox = card().querySelector('.lane-box.lane-video');
+        type(vbox, 'She lets go.');
+        await nap(40);
+        const before = document.querySelectorAll('.toast').length;
+        card().querySelectorAll('.lane-chip')[1].click();
+        await nap(60);
+        t('clicking the chip of a box that now has words says why it stays',
+          document.querySelectorAll('.toast').length > before,
+          document.querySelectorAll('.toast').length + ' vs ' + before);
+        t('and the box is still there',
+          card().querySelectorAll('.lane-box.lane-video').length === 1, '');
+
+        sh.description = wasDesc;
+        sh.imageDescription = '';
+        sh.videoDescription = '';
+        SB.app.changed(true);
+        await nap(40);
+      }
+
       // moving cards and scenes, especially to the two ends
       {
         const nap = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };

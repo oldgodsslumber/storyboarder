@@ -596,6 +596,10 @@
         SB.Board.refreshCastRows();
         refreshFeedCell(sh.id);
         paintGens();
+        /* The dashed, dimmed state is the panel's only sign of which lane is
+           overridden. Set once at render, it went on saying "empty" about a
+           box you had just filled, until something else forced a redraw. */
+        wrap.classList.toggle('using-shared', !(sh[lane.key] || '').trim());
       },
       placeholder: lane.hint,
       ctx: { shot: sh, code: r.code }
@@ -810,7 +814,9 @@
       return;
     }
     b.textContent = '\u2726 generate';
-    const hasDesc = !!(sh.description || '').trim();
+    /* Any of the three boxes — the same gate generateFor uses. This one said
+       "write a description first" at a card that had already been written. */
+    const hasDesc = SB.Model.described(sh);
     b.disabled = !!sh.noShot || !hasDesc;
     const m = field === 'imagePrompt' ? SB.Model.imageModel(P()) : SB.Model.videoModel(P());
     const already = m && ((sh.prompts || {})[m.id] || {})[field];

@@ -153,6 +153,11 @@
 
   /* ---------------- scene navigator ---------------- */
 
+  /* Which lane boxes somebody has opened is about the board on screen. A new
+   * board has opened none, and the keys of the old one would otherwise sit in
+   * memory for the life of the session. */
+  function forgetOpenBoxes() { B.openBox = {}; }
+
   function renderSceneList() {
     const host = document.getElementById('sceneList');
     host.innerHTML = '';
@@ -1273,14 +1278,18 @@
     const wrap = SB.el('div', 'lanes');
     const chips = SB.el('div', 'lane-chips');
     LANES.forEach(function (lane) {
-      const has = !!(sh[lane.key] || '').trim();
       const open = laneOpen(sh, lane);
+      const has = !!(sh[lane.key] || '').trim();
       const chip = SB.el('button', 'lane-chip' + (has ? ' has' : '') + (open ? ' open' : ''),
         (has ? '\u25cf ' : '\u2295 ') + lane.label);
       chip.title = lane.hint + (has ? '' : '\nEmpty — this lane uses the description above.');
       chip.onclick = function () {
         const k = sh.id + ':' + lane.role;
-        if (has) {
+        /* Read live: typing in the box does not re-render the card, so the
+           value captured when the chip was drawn is a lie by the time anyone
+           clicks it — and the chip then silently cleared the open flag
+           instead of saying why it would not close. */
+        if ((sh[lane.key] || '').trim()) {
           /* a filled box is never hidden — emptying it is how you close it */
           SB.toast('Clear the ' + lane.label + ' box to put it away');
           return;
@@ -1332,9 +1341,15 @@
        all, so it is worked out before the empty case, not after it. */
     /* Every box that can hold a mark — a name typed into the motion box
        without an @ is the same mistake in a different place. */
+    const seenLoose = {};
     const loose = SB.Refs.boxes(sh).reduce(function (acc, t) {
       return acc.concat(SB.Refs.unlinked(P(), t || ''));
-    }, []);
+    }, []).filter(function (x) {
+      /* the same name in two boxes is one name to link, not two */
+      if (seenLoose[x.id]) return false;
+      seenLoose[x.id] = 1;
+      return true;
+    });
 
     if (!list.length && !loose.length) {
       /* Only worth saying on a card that has something to say it about. */
@@ -1428,7 +1443,9 @@
         /* Nothing to open — what it needs is the mark taken out, leaving the
            name it had as ordinary prose. */
         if (e.kind === 'dead') {
-          sh.description = SB.Refs.unmark(P(), sh.description, e.id);
+          /* The strip is the union of all three boxes, so the dead mark being
+           clicked is not necessarily in the shared one. */
+        SB.Refs.rewrite(sh, function (t) { return SB.Refs.unmark(P(), t, e.id); });
           SB.app.changed(true);
           SB.toast('“' + e.label + '” is plain text now');
           return;
@@ -1472,7 +1489,7 @@
       return SB.Personas.kindOf(x).id === 'person';
     });
     if (people.length > 1 && !SB.Personas.arriving(P(), sh).length &&
-        SB.Personas.readsAsArrival(SB.Refs.plain(P(), sh.description))) {
+        SB.Personas.readsAsArrival(SB.Refs.text(P(), sh))) {
       const nudge = SB.el('button', 'mini feed-late', 'someone arrives?');
       nudge.title = 'This description reads as somebody turning up partway through, but ' +
         'everyone here is marked as being present when it opens — so they will all be drawn ' +
@@ -1484,10 +1501,19 @@
       row.appendChild(nudge);
     }
 
+    const agree = SB.Refs.lanesAgree(P(), sh);
     const imgs = SB.Refs.images(P(), sh);
-    /* The advice is about references being averaged together. A frame this shot
-       is derived from is not one of those — it is the picture being edited. */
-    const refCount = imgs.filter(function (e) { return e.kind !== 'shot'; }).length;
+    /* A frame this shot is derived from is not one of these: it is the
+       picture being edited, not a reference averaged in with others.
+       The advice is about references averaged together in ONE call, so the
+       union overstates it the moment the lanes differ - no single call sees
+       all of them. The heavier lane is what counts. */
+    const notShot = function (l) {
+      return l.filter(function (e) { return e.kind !== 'shot'; }).length;
+    };
+    const refCount = agree ? notShot(imgs)
+      : Math.max(notShot(SB.Refs.images(P(), sh, 'image')),
+        notShot(SB.Refs.images(P(), sh, 'video')));
     if (refCount > SB.Personas.IMAGE_ADVICE) {
       const warn = SB.el('span', 'feed-warn', refCount + ' references');
       warn.title = 'Past ' + SB.Personas.IMAGE_ADVICE + ' references most image models start ' +
@@ -1495,28 +1521,39 @@
         'of these subjects.';
       row.appendChild(warn);
     }
-    if (imgs.length) {
-      const full = imgs.filter(function (e) { return SB.Renders.has(P(), e.render); }).length;
-      const copy = SB.el('button', 'mini feed-copy', 'copy image set');
+    /* One button while both calls are handed the same files; one per lane the
+       moment they are not, because the number in a filename is the number in
+       that lane's mapping and in no other. */
+    (agree ? [{ role: undefined, label: 'copy image set', of: '' }]
+      : [{ role: 'image', label: 'copy set \u00b7 first frame', of: ' for the first frame' },
+        { role: 'video', label: 'copy set \u00b7 video', of: ' for the clip' }]
+    ).forEach(function (set) {
+      const list = SB.Refs.images(P(), sh, set.role);
+      if (!list.length) return;
+      const full = list.filter(function (e) { return SB.Renders.has(P(), e.render); }).length;
+      const copy = SB.el('button', 'mini feed-copy', set.label);
       /* H3 opens on the shot's own frame, so its prompt calls that <Picture 1>
-         and these references start at 2 — say so where the numbers are. */
+         and these references start at 2 - say so where the numbers are. Not on
+         the first-frame set: that one is never fed to H3. */
       const h3 = SB.H3.stock(SB.Model.videoModel(P()));
-      copy.title = 'Write all ' + imgs.length + ' reference images out, numbered in feed order, ' +
-        'so they go into the model in the order the prompt promises.' +
-        (h3 ? '\nFor MiniMax H3 the first frame of this card is <Picture 1>, so these are ' +
-          '<Picture 2>–<Picture ' + (imgs.length + 1) + '> — feed the frame first.' : '') +
+      copy.title = 'Write all ' + list.length + ' reference images out, numbered in the order ' +
+        'the prompt' + set.of + ' names them.' +
+        (h3 && set.role !== 'image'
+          ? '\nFor MiniMax H3 the first frame of this card is <Picture 1>, so these are ' +
+            '<Picture 2>\u2013<Picture ' + (list.length + 1) + '> \u2014 feed the frame first.'
+          : '') +
         (full ? '\n' + full + ' of them full-size.'
-              : '\nAll of them are the board’s 854×480 copies — they were filed when originals ' +
-                'lived in a folder. Drop them in again to bring the originals with them.');
+              : '\nAll of them are the board\u2019s 854\u00d7480 copies \u2014 they were filed when ' +
+                'originals lived in a folder. Drop them in again to bring the originals with them.');
       copy.onclick = function (ev) {
         ev.stopPropagation();
         /* the code is looked up rather than closed over: feedRow is rebuilt on
            its own by refreshFeed, which has no scene/shot indices to hand */
         const f = SB.Model.findShot(P(), sh.id);
-        saveFeed(sh, imgs, f ? f.code : 'shot');
+        saveFeed(sh, list, f ? f.code : 'shot');
       };
       row.appendChild(copy);
-    }
+    });
 
     if (loose.length) {
       const fix = SB.el('button', 'mini feed-fix',
@@ -1528,7 +1565,10 @@
         (loose.length === 1 ? 'it' : 'them') + '.';
       fix.onclick = function (ev) {
         ev.stopPropagation();
-        sh.description = SB.Refs.linkAll(P(), sh.description);
+        /* Every box. The count above already reads all three, so linking only
+           the shared one left the button sitting there after a toast saying
+           the job was done. */
+        SB.Refs.rewrite(sh, function (t) { return SB.Refs.linkAll(P(), t); });
         /* and cast them, as picking from the popover does — a marked subject
            that is not cast was numbered in the manifest with no description
            above it to say what it looks like. */
@@ -1708,7 +1748,10 @@
    * "insert" in the middle of a sentence is a word as often as it is a framing,
    * and a dropdown that moves on its own is worse than one that is wrong. */
   function framingWanted(sh) {
-    const want = SB.Model.guessFraming(P(), SB.Refs.plain(P(), sh.description || ''));
+    /* Framing is about the still, so it reads the still's lane: "extreme
+       close-up on her hands" typed in the first-frame box is exactly where
+       this badge is worth having. */
+    const want = SB.Model.guessFraming(P(), SB.Refs.text(P(), sh, 'image'));
     return (want && want !== sh.type) ? want : '';
   }
 
@@ -2107,7 +2150,7 @@
     syncSceneFields: syncSceneFields,
     syncSceneAi: syncSceneAi,
     forgetScene: function (id) { delete AI[id]; },
-    renderSceneList: renderSceneList,
+    renderSceneList: renderSceneList, forgetOpenBoxes: forgetOpenBoxes,
     renderScriptWindows: renderScriptWindows,
     refreshCast: refreshCast,
     refreshCastRows: refreshCastRows, refreshPromptStale: refreshPromptStale,

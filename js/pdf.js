@@ -168,7 +168,9 @@
           color: sh.color || SB.Model.CARD_COLORS[0],
           img: sh.image ? SB.Blobs.src(p, sh.image) : null,
           script: SB.Doc.renderHTML(w.doc, w.from, w.to, null),
-          desc: SB.Refs.plain(p, sh.description)
+          /* every box: a card written only in a lane box printed as
+             "(no description yet)" on the deliverable */
+          desc: SB.Refs.text(p, sh)
         });
         first = false;
       });
@@ -240,13 +242,21 @@
     p.scenes.forEach(function (sc, si) {
       sc.shots.forEach(function (sh, sj) {
         if (sh.noShot) return;
-        const list = SB.Refs.images(p, sh);
-        if (!list.length) return;
-        out.push({
-          code: SB.Model.code(si, sj),
-          items: list.map(function (e) {
-            return { n: e.n, label: e.label, role: e.role || '', kind: e.kind };
-          })
+        /* One row while both calls are handed the same pictures; a row each
+           when they are not, because the number printed here is the number
+           one prompt names and the other does not. */
+        const agree = SB.Refs.lanesAgree(p, sh);
+        (agree ? [{ role: undefined, lane: '' }]
+          : [{ role: 'image', lane: 'first frame' }, { role: 'video', lane: 'video' }]
+        ).forEach(function (set) {
+          const list = SB.Refs.images(p, sh, set.role);
+          if (!list.length) return;
+          out.push({
+            code: SB.Model.code(si, sj), lane: set.lane,
+            items: list.map(function (e) {
+              return { n: e.n, label: e.label, role: e.role || '', kind: e.kind };
+            })
+          });
         });
       });
     });
@@ -337,7 +347,8 @@
   function feedHTML(rows) {
     if (!rows.length) return '';
     const body = rows.map(function (r) {
-      return '<tr><td class="c">' + SB.esc(r.code) + '</td><td>' +
+      return '<tr><td class="c">' + SB.esc(r.code) +
+        (r.lane ? '<i class="lane">' + SB.esc(r.lane) + '</i>' : '') + '</td><td>' +
         r.items.map(function (i) {
           return '<span class="fi"><b>' + i.n + '</b> ' + SB.esc(i.label) +
             (i.role ? ' <i>(' + SB.esc(i.role) + ')</i>' : '') + '</span>';

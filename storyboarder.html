@@ -1328,7 +1328,7 @@ body.comment-mode .frame{cursor:crosshair}
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-09-15 14:43 · a0d8302+";</script>
+<script>window.SB_BUILD = "2026-09-15 14:57 · 469082e+";</script>
 
 <div id="app">
 
@@ -3758,7 +3758,10 @@ window.SB = window.SB || {};
       lines.push('The other beats in this scene, in order:');
       beats.forEach(function (s, i) {
         const sf = SB.Model.findShot(p, s.id);
-        const d = SB.Refs.plain(p, s.description).replace(/\s+/g, ' ').trim();
+        /* This lane's words for every beat. The union leaked the first-frame
+           box into the video job through the back door, which is the one
+           thing splitting the boxes was for. */
+        const d = SB.Refs.text(p, s, role).replace(/\s+/g, ' ').trim();
         lines.push('  ' + (i + 1) + '. [' + (sf ? sf.code : '?') + '] ' + (s.type || 'shot') + ' — ' +
           (d ? (d.length > 160 ? d.slice(0, 157) + '…' : d) : '(no description yet)') +
           (s.id === shot.id ? '   <-- the frame you are writing' : ''));
@@ -7878,6 +7881,32 @@ window.SB = window.SB || {};
     return out;
   }
 
+  /* The three boxes by name, for the two things a caller can want: to READ
+   * all of them as one piece of prose, or to REWRITE every one of them the
+   * same way. Both existed as `shot.description` before the split, and every
+   * bug the first QA pass found was a call site that still said that. */
+  const KEYS = ['description', 'imageDescription', 'videoDescription'];
+
+  /* What this card says, as prose, for one lane or for all of it. */
+  function text(p, shot, role) {
+    return boxes(shot, role)
+      .map(function (t) { return plain(p, t || '').trim(); })
+      .filter(Boolean).join('\n\n');
+  }
+
+  /* Run a repair over every box. Returns how many it changed — a repair that
+   * reports success without touching the box the mark was in is worse than
+   * one that does nothing, because the toast says it worked. */
+  function rewrite(shot, fn) {
+    let n = 0;
+    KEYS.forEach(function (k) {
+      const was = shot[k] || '';
+      const now = fn(was, k);
+      if (typeof now === 'string' && now !== was) { shot[k] = now; n++; }
+    });
+    return n;
+  }
+
   function marked(p, shot, role) {
     let out = [];
     boxes(shot, role).forEach(function (t) { out = out.concat(parse(p, t)); });
@@ -7951,6 +7980,24 @@ window.SB = window.SB || {};
       e.numbers = e.images.map(function () { return ++n; });
     });
     return out;
+  }
+
+  /* Do the two lanes hand over the same pictures, in the same order?
+   *
+   * Nearly always yes — most cards say everything in the shared box — and
+   * while they do, one numbered set is the truth for both calls and nothing
+   * about the exports needs to change. When they differ, a single numbered
+   * set is a promise NEITHER prompt makes: image 2 means one file to the
+   * still and another to the clip, and some third file is named by no mapping
+   * at all. Everything that writes numbered reference files asks this first. */
+  function lanesAgree(p, shot) {
+    const a = images(p, shot, 'image');
+    const b = images(p, shot, 'video');
+    if (a.length !== b.length) return false;
+    return a.every(function (e, i) {
+      return e.id === b[i].id &&
+        ((e.img && e.img.ref) || '') === ((b[i].img && b[i].img.ref) || '');
+    });
   }
 
   /* Just the pictures, in order — what "copy the image set" hands over. */
@@ -8095,6 +8142,7 @@ window.SB = window.SB || {};
   SB.Refs = {
     mark: mark, parse: parse, plain: plain, target: target, unmark: unmark,
     feed: feed, images: images, insert: insert, boxes: boxes, marked: marked,
+    KEYS: KEYS, text: text, rewrite: rewrite, lanesAgree: lanesAgree,
     unlinked: unlinked, linkAll: linkAll, proseHits: proseHits,
     relink: relink, lostIn: lostIn
   };
@@ -8719,7 +8767,8 @@ window.SB = window.SB || {};
     const script = (p.master.text || '').trim();
     const descs = [];
     SB.Model.eachShot(p, function (sh) {
-      if (sh.description) descs.push(SB.Refs.plain(p, sh.description));
+      const t = SB.Refs.text(p, sh);
+      if (t) descs.push(t);
     });
     if (!script && !descs.length) {
       return Promise.reject(new Error('Nothing to work from yet — write some script or shot descriptions first.'));
@@ -11979,6 +12028,11 @@ window.SB = window.SB || {};
 
   /* ---------------- scene navigator ---------------- */
 
+  /* Which lane boxes somebody has opened is about the board on screen. A new
+   * board has opened none, and the keys of the old one would otherwise sit in
+   * memory for the life of the session. */
+  function forgetOpenBoxes() { B.openBox = {}; }
+
   function renderSceneList() {
     const host = document.getElementById('sceneList');
     host.innerHTML = '';
@@ -13099,14 +13153,18 @@ window.SB = window.SB || {};
     const wrap = SB.el('div', 'lanes');
     const chips = SB.el('div', 'lane-chips');
     LANES.forEach(function (lane) {
-      const has = !!(sh[lane.key] || '').trim();
       const open = laneOpen(sh, lane);
+      const has = !!(sh[lane.key] || '').trim();
       const chip = SB.el('button', 'lane-chip' + (has ? ' has' : '') + (open ? ' open' : ''),
         (has ? '\u25cf ' : '\u2295 ') + lane.label);
       chip.title = lane.hint + (has ? '' : '\nEmpty — this lane uses the description above.');
       chip.onclick = function () {
         const k = sh.id + ':' + lane.role;
-        if (has) {
+        /* Read live: typing in the box does not re-render the card, so the
+           value captured when the chip was drawn is a lie by the time anyone
+           clicks it — and the chip then silently cleared the open flag
+           instead of saying why it would not close. */
+        if ((sh[lane.key] || '').trim()) {
           /* a filled box is never hidden — emptying it is how you close it */
           SB.toast('Clear the ' + lane.label + ' box to put it away');
           return;
@@ -13158,9 +13216,15 @@ window.SB = window.SB || {};
        all, so it is worked out before the empty case, not after it. */
     /* Every box that can hold a mark — a name typed into the motion box
        without an @ is the same mistake in a different place. */
+    const seenLoose = {};
     const loose = SB.Refs.boxes(sh).reduce(function (acc, t) {
       return acc.concat(SB.Refs.unlinked(P(), t || ''));
-    }, []);
+    }, []).filter(function (x) {
+      /* the same name in two boxes is one name to link, not two */
+      if (seenLoose[x.id]) return false;
+      seenLoose[x.id] = 1;
+      return true;
+    });
 
     if (!list.length && !loose.length) {
       /* Only worth saying on a card that has something to say it about. */
@@ -13254,7 +13318,9 @@ window.SB = window.SB || {};
         /* Nothing to open — what it needs is the mark taken out, leaving the
            name it had as ordinary prose. */
         if (e.kind === 'dead') {
-          sh.description = SB.Refs.unmark(P(), sh.description, e.id);
+          /* The strip is the union of all three boxes, so the dead mark being
+           clicked is not necessarily in the shared one. */
+        SB.Refs.rewrite(sh, function (t) { return SB.Refs.unmark(P(), t, e.id); });
           SB.app.changed(true);
           SB.toast('“' + e.label + '” is plain text now');
           return;
@@ -13298,7 +13364,7 @@ window.SB = window.SB || {};
       return SB.Personas.kindOf(x).id === 'person';
     });
     if (people.length > 1 && !SB.Personas.arriving(P(), sh).length &&
-        SB.Personas.readsAsArrival(SB.Refs.plain(P(), sh.description))) {
+        SB.Personas.readsAsArrival(SB.Refs.text(P(), sh))) {
       const nudge = SB.el('button', 'mini feed-late', 'someone arrives?');
       nudge.title = 'This description reads as somebody turning up partway through, but ' +
         'everyone here is marked as being present when it opens — so they will all be drawn ' +
@@ -13310,10 +13376,19 @@ window.SB = window.SB || {};
       row.appendChild(nudge);
     }
 
+    const agree = SB.Refs.lanesAgree(P(), sh);
     const imgs = SB.Refs.images(P(), sh);
-    /* The advice is about references being averaged together. A frame this shot
-       is derived from is not one of those — it is the picture being edited. */
-    const refCount = imgs.filter(function (e) { return e.kind !== 'shot'; }).length;
+    /* A frame this shot is derived from is not one of these: it is the
+       picture being edited, not a reference averaged in with others.
+       The advice is about references averaged together in ONE call, so the
+       union overstates it the moment the lanes differ - no single call sees
+       all of them. The heavier lane is what counts. */
+    const notShot = function (l) {
+      return l.filter(function (e) { return e.kind !== 'shot'; }).length;
+    };
+    const refCount = agree ? notShot(imgs)
+      : Math.max(notShot(SB.Refs.images(P(), sh, 'image')),
+        notShot(SB.Refs.images(P(), sh, 'video')));
     if (refCount > SB.Personas.IMAGE_ADVICE) {
       const warn = SB.el('span', 'feed-warn', refCount + ' references');
       warn.title = 'Past ' + SB.Personas.IMAGE_ADVICE + ' references most image models start ' +
@@ -13321,28 +13396,39 @@ window.SB = window.SB || {};
         'of these subjects.';
       row.appendChild(warn);
     }
-    if (imgs.length) {
-      const full = imgs.filter(function (e) { return SB.Renders.has(P(), e.render); }).length;
-      const copy = SB.el('button', 'mini feed-copy', 'copy image set');
+    /* One button while both calls are handed the same files; one per lane the
+       moment they are not, because the number in a filename is the number in
+       that lane's mapping and in no other. */
+    (agree ? [{ role: undefined, label: 'copy image set', of: '' }]
+      : [{ role: 'image', label: 'copy set \u00b7 first frame', of: ' for the first frame' },
+        { role: 'video', label: 'copy set \u00b7 video', of: ' for the clip' }]
+    ).forEach(function (set) {
+      const list = SB.Refs.images(P(), sh, set.role);
+      if (!list.length) return;
+      const full = list.filter(function (e) { return SB.Renders.has(P(), e.render); }).length;
+      const copy = SB.el('button', 'mini feed-copy', set.label);
       /* H3 opens on the shot's own frame, so its prompt calls that <Picture 1>
-         and these references start at 2 — say so where the numbers are. */
+         and these references start at 2 - say so where the numbers are. Not on
+         the first-frame set: that one is never fed to H3. */
       const h3 = SB.H3.stock(SB.Model.videoModel(P()));
-      copy.title = 'Write all ' + imgs.length + ' reference images out, numbered in feed order, ' +
-        'so they go into the model in the order the prompt promises.' +
-        (h3 ? '\nFor MiniMax H3 the first frame of this card is <Picture 1>, so these are ' +
-          '<Picture 2>–<Picture ' + (imgs.length + 1) + '> — feed the frame first.' : '') +
+      copy.title = 'Write all ' + list.length + ' reference images out, numbered in the order ' +
+        'the prompt' + set.of + ' names them.' +
+        (h3 && set.role !== 'image'
+          ? '\nFor MiniMax H3 the first frame of this card is <Picture 1>, so these are ' +
+            '<Picture 2>\u2013<Picture ' + (list.length + 1) + '> \u2014 feed the frame first.'
+          : '') +
         (full ? '\n' + full + ' of them full-size.'
-              : '\nAll of them are the board’s 854×480 copies — they were filed when originals ' +
-                'lived in a folder. Drop them in again to bring the originals with them.');
+              : '\nAll of them are the board\u2019s 854\u00d7480 copies \u2014 they were filed when ' +
+                'originals lived in a folder. Drop them in again to bring the originals with them.');
       copy.onclick = function (ev) {
         ev.stopPropagation();
         /* the code is looked up rather than closed over: feedRow is rebuilt on
            its own by refreshFeed, which has no scene/shot indices to hand */
         const f = SB.Model.findShot(P(), sh.id);
-        saveFeed(sh, imgs, f ? f.code : 'shot');
+        saveFeed(sh, list, f ? f.code : 'shot');
       };
       row.appendChild(copy);
-    }
+    });
 
     if (loose.length) {
       const fix = SB.el('button', 'mini feed-fix',
@@ -13354,7 +13440,10 @@ window.SB = window.SB || {};
         (loose.length === 1 ? 'it' : 'them') + '.';
       fix.onclick = function (ev) {
         ev.stopPropagation();
-        sh.description = SB.Refs.linkAll(P(), sh.description);
+        /* Every box. The count above already reads all three, so linking only
+           the shared one left the button sitting there after a toast saying
+           the job was done. */
+        SB.Refs.rewrite(sh, function (t) { return SB.Refs.linkAll(P(), t); });
         /* and cast them, as picking from the popover does — a marked subject
            that is not cast was numbered in the manifest with no description
            above it to say what it looks like. */
@@ -13534,7 +13623,10 @@ window.SB = window.SB || {};
    * "insert" in the middle of a sentence is a word as often as it is a framing,
    * and a dropdown that moves on its own is worse than one that is wrong. */
   function framingWanted(sh) {
-    const want = SB.Model.guessFraming(P(), SB.Refs.plain(P(), sh.description || ''));
+    /* Framing is about the still, so it reads the still's lane: "extreme
+       close-up on her hands" typed in the first-frame box is exactly where
+       this badge is worth having. */
+    const want = SB.Model.guessFraming(P(), SB.Refs.text(P(), sh, 'image'));
     return (want && want !== sh.type) ? want : '';
   }
 
@@ -13933,7 +14025,7 @@ window.SB = window.SB || {};
     syncSceneFields: syncSceneFields,
     syncSceneAi: syncSceneAi,
     forgetScene: function (id) { delete AI[id]; },
-    renderSceneList: renderSceneList,
+    renderSceneList: renderSceneList, forgetOpenBoxes: forgetOpenBoxes,
     renderScriptWindows: renderScriptWindows,
     refreshCast: refreshCast,
     refreshCastRows: refreshCastRows, refreshPromptStale: refreshPromptStale,
@@ -15215,10 +15307,11 @@ window.SB = window.SB || {};
   }
 
   function existingShots(p, sc) {
-    return sc.shots.filter(function (sh) { return (sh.description || '').trim(); })
-      .map(function (sh) {
-        return '- ' + (sh.type || 'shot') + ': ' +
-          SB.Refs.plain(p, sh.description).replace(/\s+/g, ' ').trim().slice(0, 200);
+    return sc.shots.map(function (sh) { return { sh: sh, t: SB.Refs.text(p, sh) }; })
+      .filter(function (x) { return x.t.trim(); })
+      .map(function (x) {
+        return '- ' + (x.sh.type || 'shot') + ': ' +
+          x.t.replace(/\s+/g, ' ').trim().slice(0, 200);
       });
   }
 
@@ -15490,7 +15583,9 @@ window.SB = window.SB || {};
 
   /* A card nobody has touched yet — the one every new scene starts with. */
   function isBlank(p, sh) {
-    if ((sh.description || '').trim()) return false;
+    /* Every box, or the generator reuses a card somebody has written the
+       first-frame words on and overwrites it with an unrelated beat. */
+    if (SB.Model.described(sh)) return false;
     if (sh.image || sh.link || (sh.personaIds || []).length) return false;
     if (Object.keys(sh.prompts || {}).length) return false;
     if (Object.keys(sh.fields || {}).some(function (k) { return (sh.fields[k] || '').trim(); })) return false;
@@ -15696,17 +15791,38 @@ window.SB = window.SB || {};
   /* Only a card that HAS cast can be carrying it redundantly. With nobody
    * attached the wardrobe in the text is the only record there is, and taking
    * it out would lose the shot. */
-  function carriesWardrobe(p, sh) {
-    if (!(sh.description || '').trim()) return null;
-    /* People only. A location or an object cast on the card says nothing about
-     * whose clothes the description is describing, and a "vest" in a shot with
-     * only a room attached is somebody's prose, not a stale copy. */
-    const people = SB.Personas.forShot(p, sh).filter(function (per) {
+  /* People only. A location or an object cast on the card says nothing about
+   * whose clothes the description is describing, and a "vest" in a shot with
+   * only a room attached is somebody's prose, not a stale copy. */
+  function peopleOn(p, sh) {
+    return SB.Personas.forShot(p, sh).filter(function (per) {
       return SB.Personas.kindOf(per).id === 'person';
     });
-    if (!people.length) return null;
-    const terms = wardrobeTerms(SB.Refs.plain(p, sh.description));
-    return terms.length ? terms : null;
+  }
+
+  /* Which boxes on this card carry a frozen copy of somebody's appearance.
+   * Appearance is exactly what the first-frame box is for, so looking only at
+   * the shared one made the commonest case invisible — and unrepairable. */
+  function wardrobeBoxes(p, sh) {
+    if (!peopleOn(p, sh).length) return [];
+    return SB.Refs.KEYS.map(function (k) {
+      const terms = wardrobeTerms(SB.Refs.plain(p, sh[k] || ''));
+      return terms.length ? { key: k, terms: terms } : null;
+    }).filter(Boolean);
+  }
+
+  function carriesWardrobe(p, sh) {
+    const boxes = wardrobeBoxes(p, sh);
+    if (!boxes.length) return null;
+    const seen = {}, terms = [];
+    boxes.forEach(function (b) {
+      b.terms.forEach(function (t) {
+        if (seen[t]) return;
+        seen[t] = 1;
+        terms.push(t);
+      });
+    });
+    return terms;
   }
 
   function shotsCarryingWardrobe(p) {
@@ -15765,7 +15881,9 @@ window.SB = window.SB || {};
     required: ['description']
   };
 
-  function cleanPrompt(p, sh, cast) {
+  function cleanPrompt(p, sh, cast, key) {
+    /* the box being repaired, which is not always the shared one */
+    const src = sh[key || 'description'] || '';
     const names = cast.map(function (per) { return per.name || 'unnamed'; });
     return [
       'Rewrite the shot description below so it no longer describes what anybody LOOKS LIKE.',
@@ -15786,7 +15904,7 @@ window.SB = window.SB || {};
           return '- ' + (per.name || 'unnamed') + ': ' +
             (per.description || '').replace(/\s+/g, ' ').trim();
         }).join('\n') + '\n' : '',
-      'DESCRIPTION:\n' + SB.Refs.plain(p, sh.description).trim()
+      'DESCRIPTION:\n' + SB.Refs.plain(p, src).trim()
     ].filter(Boolean).join('\n');
   }
 
@@ -15798,24 +15916,34 @@ window.SB = window.SB || {};
    * Resolves { cleaned, stripped, asked, failed, changes: [{id, from, to}] } */
   function cleanWardrobe(p, shots, opts) {
     opts = opts || {};
-    const list = (shots || []).filter(function (sh) { return !!carriesWardrobe(p, sh); });
+    /* One entry per BOX that carries wardrobe, not per card: the same card can
+       hold a frozen copy in the shared box and another in the first-frame box,
+       and repairing only one of them leaves the card still drifting. */
+    const list = [];
+    (shots || []).forEach(function (sh) {
+      wardrobeBoxes(p, sh).forEach(function (b) {
+        list.push({ shot: sh, key: b.key });
+      });
+    });
     const changes = [];
     let stripped = 0;
 
     const queue = [];
-    list.forEach(function (sh) {
+    list.forEach(function (job) {
+      const sh = job.shot;
+      const was = sh[job.key] || '';
       const cast = SB.Personas.forShot(p, sh);
-      const cut = stripCast(SB.Refs.plain(p, sh.description), cast);
-      if (cut !== SB.Refs.plain(p, sh.description).trim() && !wardrobeTerms(cut).length) {
+      const cut = stripCast(SB.Refs.plain(p, was), cast);
+      if (cut !== SB.Refs.plain(p, was).trim() && !wardrobeTerms(cut).length) {
         /* relink, not linkAll: only what was marked before is marked again.
            linkAll knew nothing about shot codes, so an earlier frame dropped
            out of the feed, and it linked names the writer had deliberately
            left as prose. */
-        changes.push({ id: sh.id, from: sh.description, to: SB.Refs.relink(p, cut, sh.description) });
+        changes.push({ id: sh.id, key: job.key, from: was, to: SB.Refs.relink(p, cut, was) });
         stripped++;
         return;
       }
-      queue.push({ shot: sh, cast: cast, seed: cut });
+      queue.push({ shot: sh, key: job.key, cast: cast, seed: cut });
     });
 
     const total = list.length;
@@ -15826,7 +15954,7 @@ window.SB = window.SB || {};
       if (!opts.dryRun) {
         changes.forEach(function (ch) {
           const f = SB.Model.findShot(p, ch.id);
-          if (f) f.shot.description = ch.to;
+          if (f) f.shot[ch.key] = ch.to;
         });
         if (changes.length) p.updatedAt = Date.now();
       }
@@ -15857,14 +15985,15 @@ window.SB = window.SB || {};
     function worker() {
       const j = pending.shift();
       if (!j) return Promise.resolve();
-      return SB.Prompts.raw(cleanPrompt(p, j.shot, j.cast), CLEAN_SCHEMA, system)
+      return SB.Prompts.raw(cleanPrompt(p, j.shot, j.cast, j.key), CLEAN_SCHEMA, system)
         .then(function (out) {
           const next = String((out && out.description) || '').trim();
           if (next) {
+            const was = j.shot[j.key] || '';
             changes.push({
-              id: j.shot.id, from: j.shot.description,
+              id: j.shot.id, key: j.key, from: was,
               /* it came back as prose — put back the marks it flattened */
-              to: SB.Refs.relink(p, deprompt(next), j.shot.description)
+              to: SB.Refs.relink(p, deprompt(next), was)
             });
           }
           else failed++;
@@ -16552,6 +16681,10 @@ window.SB = window.SB || {};
         SB.Board.refreshCastRows();
         refreshFeedCell(sh.id);
         paintGens();
+        /* The dashed, dimmed state is the panel's only sign of which lane is
+           overridden. Set once at render, it went on saying "empty" about a
+           box you had just filled, until something else forced a redraw. */
+        wrap.classList.toggle('using-shared', !(sh[lane.key] || '').trim());
       },
       placeholder: lane.hint,
       ctx: { shot: sh, code: r.code }
@@ -16766,7 +16899,9 @@ window.SB = window.SB || {};
       return;
     }
     b.textContent = '\u2726 generate';
-    const hasDesc = !!(sh.description || '').trim();
+    /* Any of the three boxes — the same gate generateFor uses. This one said
+       "write a description first" at a card that had already been written. */
+    const hasDesc = SB.Model.described(sh);
     b.disabled = !!sh.noShot || !hasDesc;
     const m = field === 'imagePrompt' ? SB.Model.imageModel(P()) : SB.Model.videoModel(P());
     const already = m && ((sh.prompts || {})[m.id] || {})[field];
@@ -17880,7 +18015,10 @@ window.SB = window.SB || {};
        inside one would rewrite the token's own fallback. */
     const hits = [];
     SB.Model.eachShot(P(), function (sh) {
-      if (SB.Refs.proseHits(P(), sh.description, was).length) hits.push(sh);
+      const any = SB.Refs.KEYS.some(function (k) {
+        return SB.Refs.proseHits(P(), sh[k], was).length > 0;
+      });
+      if (any) hits.push(sh);
     });
     if (!hits.length) { pendingRename = null; return null; }
 
@@ -17892,13 +18030,15 @@ window.SB = window.SB || {};
       ' to “' + now + '”');
     b.onclick = function () {
       hits.forEach(function (sh) {
-        /* back to front, so each rewrite leaves the earlier offsets alone */
-        const spots = SB.Refs.proseHits(P(), sh.description, was);
-        let text = sh.description || '';
-        for (let i = spots.length - 1; i >= 0; i--) {
-          text = text.slice(0, spots[i].from) + now + text.slice(spots[i].to);
-        }
-        sh.description = text;
+        SB.Refs.rewrite(sh, function (was2) {
+          /* back to front, so each rewrite leaves the earlier offsets alone */
+          const spots = SB.Refs.proseHits(P(), was2, was);
+          let text = was2 || '';
+          for (let i = spots.length - 1; i >= 0; i--) {
+            text = text.slice(0, spots[i].from) + now + text.slice(spots[i].to);
+          }
+          return text;
+        });
       });
       pendingRename = null;
       SB.app.changed(true);
@@ -18101,7 +18241,10 @@ window.SB = window.SB || {};
   function markedIn(id) {
     let n = 0;
     SB.Model.eachShot(P(), function (sh) {
-      if (SB.Refs.parse(P(), sh.description).some(function (m) { return m.id === id; })) n++;
+      const any = SB.Refs.KEYS.some(function (k) {
+        return SB.Refs.parse(P(), sh[k]).some(function (m) { return m.id === id; });
+      });
+      if (any) n++;
     });
     return n;
   }
@@ -18280,7 +18423,7 @@ window.SB = window.SB || {};
     SB.Model.eachShot(p, function (sh, sc, si, sj) {
       if (ctx && ctx.shot && sh.id === ctx.shot.id) return;
       const code = SB.Model.code(si, sj);
-      const full = SB.Refs.plain(p, sh.description).replace(/\s+/g, ' ').trim();
+      const full = SB.Refs.text(p, sh).replace(/\s+/g, ' ').trim();
       const desc = full.length > 48 ? full.slice(0, 48) + '\u2026' : full;
       const hay = (code + ' ' + (sh.type || '') + ' ' + full).toLowerCase();
       if (t && hay.indexOf(t) < 0) return;
@@ -20232,7 +20375,9 @@ window.SB = window.SB || {};
           color: sh.color || SB.Model.CARD_COLORS[0],
           img: sh.image ? SB.Blobs.src(p, sh.image) : null,
           script: SB.Doc.renderHTML(w.doc, w.from, w.to, null),
-          desc: SB.Refs.plain(p, sh.description)
+          /* every box: a card written only in a lane box printed as
+             "(no description yet)" on the deliverable */
+          desc: SB.Refs.text(p, sh)
         });
         first = false;
       });
@@ -20304,13 +20449,21 @@ window.SB = window.SB || {};
     p.scenes.forEach(function (sc, si) {
       sc.shots.forEach(function (sh, sj) {
         if (sh.noShot) return;
-        const list = SB.Refs.images(p, sh);
-        if (!list.length) return;
-        out.push({
-          code: SB.Model.code(si, sj),
-          items: list.map(function (e) {
-            return { n: e.n, label: e.label, role: e.role || '', kind: e.kind };
-          })
+        /* One row while both calls are handed the same pictures; a row each
+           when they are not, because the number printed here is the number
+           one prompt names and the other does not. */
+        const agree = SB.Refs.lanesAgree(p, sh);
+        (agree ? [{ role: undefined, lane: '' }]
+          : [{ role: 'image', lane: 'first frame' }, { role: 'video', lane: 'video' }]
+        ).forEach(function (set) {
+          const list = SB.Refs.images(p, sh, set.role);
+          if (!list.length) return;
+          out.push({
+            code: SB.Model.code(si, sj), lane: set.lane,
+            items: list.map(function (e) {
+              return { n: e.n, label: e.label, role: e.role || '', kind: e.kind };
+            })
+          });
         });
       });
     });
@@ -20401,7 +20554,8 @@ window.SB = window.SB || {};
   function feedHTML(rows) {
     if (!rows.length) return '';
     const body = rows.map(function (r) {
-      return '<tr><td class="c">' + SB.esc(r.code) + '</td><td>' +
+      return '<tr><td class="c">' + SB.esc(r.code) +
+        (r.lane ? '<i class="lane">' + SB.esc(r.lane) + '</i>' : '') + '</td><td>' +
         r.items.map(function (i) {
           return '<span class="fi"><b>' + i.n + '</b> ' + SB.esc(i.label) +
             (i.role ? ' <i>(' + SB.esc(i.role) + ')</i>' : '') + '</span>';
@@ -21226,33 +21380,42 @@ window.SB = window.SB || {};
        * own. The numbers are the promise the prompt's mapping makes, so they
        * lead the filename. */
       if (o.refsets && !o.madeOnly) {
-        const feed = SB.Refs.images(p, sh);
-        if (feed.length) {
-          const dir = 'refs/' + (SB.Renders.slug(r.code) || 'shot');
-          feed.forEach(function (e) {
-            const orig = SB.Renders.dataUrl(p, e.render);
-            const data = orig || SB.Blobs.src(p, e.img);
-            if (!data) return;
-            /* Falling back to the board copy is fine; doing it silently is
-               not. The plan for this panel named this exact failure: an
-               export that shipped 854×480 where 4K was promised. */
-            if (!orig && e.render) missing++;
-            const ext = extOfUrl(data);
-            items.push({
-              name: e.n + '_' + (SB.Renders.slug(e.label) || 'ref') +
-                (e.role ? '_' + SB.Renders.slug(e.role) : '') + '.' + ext,
-              sub: dir, kind: orig ? 'reference' : 'reference (board copy)',
-              data: data, bytes: bytesOf(data),
-              code: r.code, scene: r.sceneName, shot: sh,
-              rec: orig ? e.render : null,
-              /* the manifest asks this to decide boardCopy, and a fallback
-                 IS the board copy — it said false beside a kind that said
-                 otherwise */
-              isProxy: !orig,
-              made: (orig && e.render && e.render.made) || null
+        /* The number leads the filename because it is the number that lane's
+           prompt names. While both calls are handed the same files that is one
+           folder; when they are not, one folder each — a single set would put
+           2_Bob.png in front of a video mapping that calls 2 somebody else. */
+        const agree = SB.Refs.lanesAgree(p, sh);
+        (agree ? [{ role: undefined, sub: '' }]
+          : [{ role: 'image', sub: '/first-frame' }, { role: 'video', sub: '/video' }]
+        ).forEach(function (set) {
+          const feed = SB.Refs.images(p, sh, set.role);
+          if (feed.length) {
+            const dir = 'refs/' + (SB.Renders.slug(r.code) || 'shot') + set.sub;
+            feed.forEach(function (e) {
+              const orig = SB.Renders.dataUrl(p, e.render);
+              const data = orig || SB.Blobs.src(p, e.img);
+              if (!data) return;
+              /* Falling back to the board copy is fine; doing it silently is
+                 not. The plan for this panel named this exact failure: an
+                 export that shipped 854×480 where 4K was promised. */
+              if (!orig && e.render) missing++;
+              const ext = extOfUrl(data);
+              items.push({
+                name: e.n + '_' + (SB.Renders.slug(e.label) || 'ref') +
+                  (e.role ? '_' + SB.Renders.slug(e.role) : '') + '.' + ext,
+                sub: dir, kind: orig ? 'reference' : 'reference (board copy)',
+                data: data, bytes: bytesOf(data),
+                code: r.code, scene: r.sceneName, shot: sh,
+                rec: orig ? e.render : null,
+                /* the manifest asks this to decide boardCopy, and a fallback
+                   IS the board copy — it said false beside a kind that said
+                   otherwise */
+                isProxy: !orig,
+                made: (orig && e.render && e.render.made) || null
+              });
             });
-          });
-        }
+          }
+        });
       }
     });
 
@@ -21346,7 +21509,8 @@ window.SB = window.SB || {};
       lines.push([
         r.sceneName || (r.scene && r.scene.heading) || '', r.code,
         sh.noShot ? 'no shot' : (sh.type || ''),
-        SB.Refs.plain(p, sh.description || ''), ip, vp,
+        /* every box: a card written only in a lane box exported an empty cell */
+        SB.Refs.text(p, sh), ip, vp,
         /* the name actually written, not the serial one — a shot list that
            hands an editor filenames that are not in the folder is worse than
            no shot list */
@@ -21969,6 +22133,7 @@ window.SB = window.SB || {};
   function setProject(p) {
     app.project = p;
     SB.History.reset();
+    SB.Board.forgetOpenBoxes();
     app.selectedShotId = null;
     app.selectedSceneId = p.scenes[0] ? p.scenes[0].id : null;
     SB.Board.render();

@@ -141,7 +141,7 @@
     SB.Model.eachShot(p, function (sh, sc, si, sj) {
       if (ctx && ctx.shot && sh.id === ctx.shot.id) return;
       const code = SB.Model.code(si, sj);
-      const full = SB.Refs.plain(p, sh.description).replace(/\s+/g, ' ').trim();
+      const full = SB.Refs.text(p, sh).replace(/\s+/g, ' ').trim();
       const desc = full.length > 48 ? full.slice(0, 48) + '\u2026' : full;
       const hay = (code + ' ' + (sh.type || '') + ' ' + full).toLowerCase();
       if (t && hay.indexOf(t) < 0) return;
