@@ -2716,18 +2716,10 @@
     if (shot.noShot) {
       return { short: 'no shot', long: 'A \u201cno shot\u201d card is never generated.' };
     }
-    /* A clip is made FROM the first frame. With no frame there is nothing to
-     * animate, and the call does not fail — it quietly becomes text-to-video
-     * and invents the shot over again, which is a wasted charge and the one
-     * thing this pipeline exists to prevent. */
-    if (role === 'video' && !(shot.render || shot.image)) {
-      return {
-        short: 'no frame',
-        long: 'A clip animates this card\u2019s first frame, and this card has none yet. ' +
-          'Without one the model invents the shot from the words instead of moving the ' +
-          'picture you approved. Render or drop in the first frame, then push the clip.'
-      };
-    }
+    /* A clip with no frame to animate quietly becomes text-to-video - the
+     * shot invented over again rather than moved. Worth SAYING, and the badge
+     * on the lane says it in as many words, but not worth stopping: it is the
+     * pusher's own credits and their own call. */
 
     const gate = blocker(model);
     const gateNote = gate ? {

@@ -242,21 +242,16 @@
     p.scenes.forEach(function (sc, si) {
       sc.shots.forEach(function (sh, sj) {
         if (sh.noShot) return;
-        /* One row while both calls are handed the same pictures; a row each
-           when they are not, because the number printed here is the number
-           one prompt names and the other does not. */
-        const agree = SB.Refs.lanesAgree(p, sh);
-        (agree ? [{ role: undefined, lane: '' }]
-          : [{ role: 'image', lane: 'first frame' }, { role: 'video', lane: 'video' }]
-        ).forEach(function (set) {
-          const list = SB.Refs.images(p, sh, set.role);
-          if (!list.length) return;
-          out.push({
-            code: SB.Model.code(si, sj), lane: set.lane,
-            items: list.map(function (e) {
-              return { n: e.n, label: e.label, role: e.role || '', kind: e.kind };
-            })
-          });
+        /* The still's references, which is the only numbered set anybody
+           hands to a model. A clip has none: it animates this card's own
+           frame, exported with the shot. */
+        const list = SB.Refs.images(p, sh, 'image');
+        if (!list.length) return;
+        out.push({
+          code: SB.Model.code(si, sj),
+          items: list.map(function (e) {
+            return { n: e.n, label: e.label, role: e.role || '', kind: e.kind };
+          })
         });
       });
     });
@@ -347,8 +342,7 @@
   function feedHTML(rows) {
     if (!rows.length) return '';
     const body = rows.map(function (r) {
-      return '<tr><td class="c">' + SB.esc(r.code) +
-        (r.lane ? '<i class="lane">' + SB.esc(r.lane) + '</i>' : '') + '</td><td>' +
+      return '<tr><td class="c">' + SB.esc(r.code) + '</td><td>' +
         r.items.map(function (i) {
           return '<span class="fi"><b>' + i.n + '</b> ' + SB.esc(i.label) +
             (i.role ? ' <i>(' + SB.esc(i.role) + ')</i>' : '') + '</span>';
@@ -356,8 +350,10 @@
     }).join('');
     return '<section class="page"><div class="feedwrap">' +
       '<h2>What each card hands over</h2>' +
-      '<p class="lead">In this order. The number is the position the prompt names, ' +
-      'so a model fed them out of order is being told about different pictures.</p>' +
+      '<p class="lead">The references for the <b>first frame</b>, in this order. The number is ' +
+      'the position the prompt names, so a model fed them out of order is being told about ' +
+      'different pictures. A clip is not on this list: it animates the card\u2019s own finished ' +
+      'frame and is handed nothing else.</p>' +
       '<table class="feed"><thead><tr><th>Shot</th><th>References, in order</th></tr></thead>' +
       '<tbody>' + body + '</tbody></table></div></section>';
   }

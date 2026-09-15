@@ -677,13 +677,11 @@ section('the clip animates the frame, and only the frame');
   sh.prompts[im.id] = sh.prompts[im.id] ||
     { imagePrompt: 'A desk.', videoPrompt: '', modelName: im.name };
 
-  /* with no frame there is nothing to animate, and the call would quietly
-     become text-to-video: the shot invented over again */
+  /* With no frame the call quietly becomes text-to-video: the shot invented
+     over again. The lane says so; it does not stand in the way. */
   const no = SB.Imagine.whyNot(p9, sh, vm, 'video');
-  t('a clip is refused on a card with no first frame',
-    !!no && no.short === 'no frame', no ? no.short : 'allowed');
-  t('and the reason says what would otherwise happen',
-    !!no && /invents the shot from the words/.test(no.long), no ? no.long.slice(0, 80) : '');
+  t('a clip with no frame is warned about, not blocked',
+    !no || no.short !== 'no frame', no ? no.short : 'allowed');
 
   const vr = SB.Imagine.refsFor(p9, sh, 'video');
   t('the clip lane carries nothing while there is no frame', vr.carries === 0, vr.carries);

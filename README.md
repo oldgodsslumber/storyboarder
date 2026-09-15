@@ -545,12 +545,13 @@ what was written, act on it.*
 | **Shot** | code, the serial its render is filed under, a thumbnail, the type. Click the thumbnail to jump to that card. |
 | **Description** | what we see. The same reference box as the card, so marks stay live links and `@` works. **Both** prompts read it. |
 | **First frame** | the shot's **first-frame** box, then the references *that* lane hands over, then the image prompt with its ✦ generate, its badges and its push |
-| **Video** | the shot's **motion** box, the references the clip hands over, then the image→video prompt, the same again |
+| **Video** | the shot's **motion** box, then **the card's own frame** — the clip's one reference — then the image→video prompt, the same again |
 
 There used to be a fifth **Feed** column showing one list of references for the whole row —
-which was a quiet lie on any card whose two calls are handed different things. Each lane now
-carries the list it will actually send, numbered the way its own prompt cites it, with its own
-**copy image set**. A lane that feeds nothing shows nothing.
+which was a quiet lie, because the two calls are not handed the same thing at all. Each lane
+now shows what it actually sends: the first-frame lane its numbered references, with **copy
+image set**; the video lane the card's finished frame, and everything marked on it dimmed and
+unnumbered, because none of that travels.
 
 **The clip's reference is this card's own frame — always, and nothing else.** That is the
 whole pipeline: the still is made, looked at and approved, and the video call is handed *it*.
@@ -558,9 +559,10 @@ The pictures marked on the video lane are context the prompt was **written** aga
 files the clip carries — sending those too would ask the model to build the shot again out of
 references instead of moving the one it was given, which is the failure the two lanes exist to
 prevent. So the video lane lists the frame as its one reference and shows everything else
-dimmed, and there is no "copy image set" on that lane, because a clip has no set. A card with
-**no frame** refuses the push and says why: without one the call silently becomes
-text-to-video and invents the shot over again.
+dimmed, and there is no "copy image set" on that lane, because a clip has no set. The printed
+reference mapping and the exported `refs/` folder are the first frame's too, for the same
+reason. A card with **no frame** is warned about rather than stopped — the badge says the call
+would become text-to-video and invent the shot over again, and then gets out of the way.
 
 A lane box left empty is the shared description doing the work — the common case — and it says
 so rather than looking blank. On a narrow window the two lanes stack instead of hiding behind

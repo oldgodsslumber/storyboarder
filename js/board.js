@@ -1501,19 +1501,13 @@
       row.appendChild(nudge);
     }
 
-    const agree = SB.Refs.lanesAgree(P(), sh);
-    const imgs = SB.Refs.images(P(), sh);
+    /* The references this card hands a model are the FIRST FRAME's. A clip is
+       handed the finished frame and nothing else, so there is no second set
+       and never was one to copy. */
+    const imgs = SB.Refs.images(P(), sh, 'image');
     /* A frame this shot is derived from is not one of these: it is the
-       picture being edited, not a reference averaged in with others.
-       The advice is about references averaged together in ONE call, so the
-       union overstates it the moment the lanes differ - no single call sees
-       all of them. The heavier lane is what counts. */
-    const notShot = function (l) {
-      return l.filter(function (e) { return e.kind !== 'shot'; }).length;
-    };
-    const refCount = agree ? notShot(imgs)
-      : Math.max(notShot(SB.Refs.images(P(), sh, 'image')),
-        notShot(SB.Refs.images(P(), sh, 'video')));
+       picture being edited, not a reference averaged in with others. */
+    const refCount = imgs.filter(function (e) { return e.kind !== 'shot'; }).length;
     if (refCount > SB.Personas.IMAGE_ADVICE) {
       const warn = SB.el('span', 'feed-warn', refCount + ' references');
       warn.title = 'Past ' + SB.Personas.IMAGE_ADVICE + ' references most image models start ' +
@@ -1521,27 +1515,11 @@
         'of these subjects.';
       row.appendChild(warn);
     }
-    /* One button while both calls are handed the same files; one per lane the
-       moment they are not, because the number in a filename is the number in
-       that lane's mapping and in no other. */
-    (agree ? [{ role: undefined, label: 'copy image set', of: '' }]
-      : [{ role: 'image', label: 'copy set \u00b7 first frame', of: ' for the first frame' },
-        { role: 'video', label: 'copy set \u00b7 video', of: ' for the clip' }]
-    ).forEach(function (set) {
-      const list = SB.Refs.images(P(), sh, set.role);
-      if (!list.length) return;
-      const full = list.filter(function (e) { return SB.Renders.has(P(), e.render); }).length;
-      const copy = SB.el('button', 'mini feed-copy', set.label);
-      /* H3 opens on the shot's own frame, so its prompt calls that <Picture 1>
-         and these references start at 2 - say so where the numbers are. Not on
-         the first-frame set: that one is never fed to H3. */
-      const h3 = SB.H3.stock(SB.Model.videoModel(P()));
-      copy.title = 'Write all ' + list.length + ' reference images out, numbered in the order ' +
-        'the prompt' + set.of + ' names them.' +
-        (h3 && set.role !== 'image'
-          ? '\nFor MiniMax H3 the first frame of this card is <Picture 1>, so these are ' +
-            '<Picture 2>\u2013<Picture ' + (list.length + 1) + '> \u2014 feed the frame first.'
-          : '') +
+    if (imgs.length) {
+      const full = imgs.filter(function (e) { return SB.Renders.has(P(), e.render); }).length;
+      const copy = SB.el('button', 'mini feed-copy', 'copy image set');
+      copy.title = 'Write all ' + imgs.length + ' reference images out, numbered in the order ' +
+        'the first-frame prompt names them.' +
         (full ? '\n' + full + ' of them full-size.'
               : '\nAll of them are the board\u2019s 854\u00d7480 copies \u2014 they were filed when ' +
                 'originals lived in a folder. Drop them in again to bring the originals with them.');
@@ -1550,10 +1528,10 @@
         /* the code is looked up rather than closed over: feedRow is rebuilt on
            its own by refreshFeed, which has no scene/shot indices to hand */
         const f = SB.Model.findShot(P(), sh.id);
-        saveFeed(sh, list, f ? f.code : 'shot');
+        saveFeed(sh, imgs, f ? f.code : 'shot');
       };
       row.appendChild(copy);
-    });
+    }
 
     if (loose.length) {
       const fix = SB.el('button', 'mini feed-fix',

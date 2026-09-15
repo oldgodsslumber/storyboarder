@@ -562,18 +562,24 @@
         const sc = SB.H3.scaffold(P(), shots.a);
         t('the first frame is <Picture 1>', /<Picture 1> is the first frame/.test(sc.definitions),
           sc.definitions.split('\n')[0]);
-        t('each subject gets one label and one picture',
-          sc.subjects.length === 2 && sc.subjects[0].pictures.length === 1,
-          JSON.stringify(sc.subjects.map(function (x) { return x.pictures.length; })));
-        t('and cites the picture that defines it',
-          /<Subject 1> is Ops lead, seen in <Picture 2>: Charcoal knit/.test(sc.definitions),
-          sc.definitions);
+        /* One picture is sent — the frame — so one picture is named. Binding
+           a subject to a <Picture 2> that never arrives is the format's most
+           explicit way of asking a model to rebuild the shot from references
+           instead of moving the frame it was handed. */
+        t('the frame is the only picture named',
+          sc.anchors.length === 1 && sc.anchors[0].kind === 'frame',
+          JSON.stringify(sc.anchors.map(function (x) { return x.kind; })));
+        t('each subject is still labelled and described',
+          sc.subjects.length === 2 && /Charcoal knit/.test(sc.definitions),
+          sc.subjects.length + ' subjects');
+        t('but none is bound to a picture the call does not carry',
+          !/<Picture 2>/.test(sc.definitions), sc.definitions.slice(0, 200));
         t('retention_analysis is written from the board, not asked for',
           /<Subject 1> \(appears in \[Shot 1\]\): fully_preserved/.test(sc.retention) &&
           /<Picture 1> \(appears in \[Shot 1\]\): fully_preserved/.test(sc.retention),
           sc.retention);
-        t('the task type is computed from what is actually supplied',
-          sc.taskTypes.join(' + ') === 'keyframe completion + reference generation',
+        t('the task type is what the call actually does — animate a frame',
+          sc.taskTypes.join(' + ') === 'keyframe completion',
           sc.taskTypes.join(' + '));
         t('somebody arriving mid-shot is marked in the label table',
           /<Subject 2> = Technician[\s\S]*ARRIVES DURING THE SHOT/.test(sc.labels), sc.labels);
@@ -583,7 +589,7 @@
         window.__reply = function () {
           return { ok: true, status: 200, text: JSON.stringify({
             candidates: [{ content: { parts: [{ text: JSON.stringify({
-              summary: '[keyframe completion + reference generation] <Subject 1> walks toward ' +
+              summary: '[keyframe completion] <Subject 1> walks toward ' +
                 'camera as <Subject 2> arrives.',
               detailed_description: 'Documentary realism, warm daylight. [Shot 1] The shot ' +
                 'begins from <Picture 1>. ' + 'word '.repeat(200) }) }] } }] }) };
@@ -625,7 +631,7 @@
           nth++;
           return { ok: true, status: 200, text: JSON.stringify({
             candidates: [{ content: { parts: [{ text: JSON.stringify({
-              summary: '[keyframe completion + reference generation] a summary.',
+              summary: '[keyframe completion] a summary.',
               detailed_description: 'Style sentence. [Shot 1] The shot begins from <Picture 1>. ' +
                 (nth === 1 ? '<Subject 7> appears. ' : '<Subject 2> appears. ') +
                 'word '.repeat(200) }) }] } }] }) };

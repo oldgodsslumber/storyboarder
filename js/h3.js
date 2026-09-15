@@ -52,17 +52,16 @@
    * images keep the feed's order underneath it, shifted by one.
    */
   function pictures(p, shot) {
+    /* One picture, because one picture is what is sent: this card's frame.
+     * The marked references built the still and were approved in it; naming
+     * them here as <Picture 2>… bound subjects to photographs the call never
+     * carries, and invited the model to rebuild the shot from them instead of
+     * moving the frame it was handed. The subjects are still named and still
+     * described — in words, which is what a clip needs. */
     const out = [];
-    let n = 0;
     if (shot.image) {
-      out.push({ n: ++n, kind: 'frame', label: 'the first frame of this shot', feedN: null });
+      out.push({ n: 1, kind: 'frame', label: 'the first frame of this shot', feedN: null });
     }
-    SB.Refs.images(p, shot, 'video').forEach(function (e) {
-      out.push({
-        n: ++n, kind: e.kind, label: e.label, role: e.role || '',
-        id: e.id, feedN: e.n
-      });
-    });
     return out;
   }
 
@@ -165,13 +164,9 @@
   function taskTypes(p, shot) {
     const types = [];
     if (shot.image) types.push('keyframe completion');
-    const refs = SB.Refs.feed(p, shot, 'video').some(function (e) {
-      return e.kind === 'subject' && e.images.length;
-    });
-    const riff = SB.Refs.feed(p, shot, 'video').some(function (e) {
-      return e.kind === 'shot' && e.images.length;
-    });
-    if (refs || riff) types.push('reference generation');
+    /* "reference generation" claimed the call was given reference photographs.
+       It is given the first frame and nothing else, so the only task type a
+       clip from this app performs is keyframe completion. */
     return types;
   }
 

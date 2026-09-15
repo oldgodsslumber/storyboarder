@@ -237,24 +237,6 @@
     return out;
   }
 
-  /* Do the two lanes hand over the same pictures, in the same order?
-   *
-   * Nearly always yes — most cards say everything in the shared box — and
-   * while they do, one numbered set is the truth for both calls and nothing
-   * about the exports needs to change. When they differ, a single numbered
-   * set is a promise NEITHER prompt makes: image 2 means one file to the
-   * still and another to the clip, and some third file is named by no mapping
-   * at all. Everything that writes numbered reference files asks this first. */
-  function lanesAgree(p, shot) {
-    const a = images(p, shot, 'image');
-    const b = images(p, shot, 'video');
-    if (a.length !== b.length) return false;
-    return a.every(function (e, i) {
-      return e.id === b[i].id &&
-        ((e.img && e.img.ref) || '') === ((b[i].img && b[i].img.ref) || '');
-    });
-  }
-
   /* Just the pictures, in order — what "copy the image set" hands over. */
   function images(p, shot, role) {
     const list = [];
@@ -397,7 +379,7 @@
   SB.Refs = {
     mark: mark, parse: parse, plain: plain, target: target, unmark: unmark,
     feed: feed, images: images, insert: insert, boxes: boxes, marked: marked,
-    KEYS: KEYS, text: text, rewrite: rewrite, lanesAgree: lanesAgree,
+    KEYS: KEYS, text: text, rewrite: rewrite,
     unlinked: unlinked, linkAll: linkAll, proseHits: proseHits,
     relink: relink, lostIn: lostIn
   };

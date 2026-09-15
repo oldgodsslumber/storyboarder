@@ -1335,7 +1335,7 @@ body.comment-mode .frame{cursor:crosshair}
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-09-15 17:16 · a040806+";</script>
+<script>window.SB_BUILD = "2026-09-15 17:23 · 749402a+";</script>
 
 <div id="app">
 
@@ -7361,18 +7361,10 @@ window.SB = window.SB || {};
     if (shot.noShot) {
       return { short: 'no shot', long: 'A \u201cno shot\u201d card is never generated.' };
     }
-    /* A clip is made FROM the first frame. With no frame there is nothing to
-     * animate, and the call does not fail — it quietly becomes text-to-video
-     * and invents the shot over again, which is a wasted charge and the one
-     * thing this pipeline exists to prevent. */
-    if (role === 'video' && !(shot.render || shot.image)) {
-      return {
-        short: 'no frame',
-        long: 'A clip animates this card\u2019s first frame, and this card has none yet. ' +
-          'Without one the model invents the shot from the words instead of moving the ' +
-          'picture you approved. Render or drop in the first frame, then push the clip.'
-      };
-    }
+    /* A clip with no frame to animate quietly becomes text-to-video - the
+     * shot invented over again rather than moved. Worth SAYING, and the badge
+     * on the lane says it in as many words, but not worth stopping: it is the
+     * pusher's own credits and their own call. */
 
     const gate = blocker(model);
     const gateNote = gate ? {
@@ -8074,24 +8066,6 @@ window.SB = window.SB || {};
     return out;
   }
 
-  /* Do the two lanes hand over the same pictures, in the same order?
-   *
-   * Nearly always yes — most cards say everything in the shared box — and
-   * while they do, one numbered set is the truth for both calls and nothing
-   * about the exports needs to change. When they differ, a single numbered
-   * set is a promise NEITHER prompt makes: image 2 means one file to the
-   * still and another to the clip, and some third file is named by no mapping
-   * at all. Everything that writes numbered reference files asks this first. */
-  function lanesAgree(p, shot) {
-    const a = images(p, shot, 'image');
-    const b = images(p, shot, 'video');
-    if (a.length !== b.length) return false;
-    return a.every(function (e, i) {
-      return e.id === b[i].id &&
-        ((e.img && e.img.ref) || '') === ((b[i].img && b[i].img.ref) || '');
-    });
-  }
-
   /* Just the pictures, in order — what "copy the image set" hands over. */
   function images(p, shot, role) {
     const list = [];
@@ -8234,7 +8208,7 @@ window.SB = window.SB || {};
   SB.Refs = {
     mark: mark, parse: parse, plain: plain, target: target, unmark: unmark,
     feed: feed, images: images, insert: insert, boxes: boxes, marked: marked,
-    KEYS: KEYS, text: text, rewrite: rewrite, lanesAgree: lanesAgree,
+    KEYS: KEYS, text: text, rewrite: rewrite,
     unlinked: unlinked, linkAll: linkAll, proseHits: proseHits,
     relink: relink, lostIn: lostIn
   };
@@ -10578,17 +10552,16 @@ window.SB = window.SB || {};
    * images keep the feed's order underneath it, shifted by one.
    */
   function pictures(p, shot) {
+    /* One picture, because one picture is what is sent: this card's frame.
+     * The marked references built the still and were approved in it; naming
+     * them here as <Picture 2>… bound subjects to photographs the call never
+     * carries, and invited the model to rebuild the shot from them instead of
+     * moving the frame it was handed. The subjects are still named and still
+     * described — in words, which is what a clip needs. */
     const out = [];
-    let n = 0;
     if (shot.image) {
-      out.push({ n: ++n, kind: 'frame', label: 'the first frame of this shot', feedN: null });
+      out.push({ n: 1, kind: 'frame', label: 'the first frame of this shot', feedN: null });
     }
-    SB.Refs.images(p, shot, 'video').forEach(function (e) {
-      out.push({
-        n: ++n, kind: e.kind, label: e.label, role: e.role || '',
-        id: e.id, feedN: e.n
-      });
-    });
     return out;
   }
 
@@ -10691,13 +10664,9 @@ window.SB = window.SB || {};
   function taskTypes(p, shot) {
     const types = [];
     if (shot.image) types.push('keyframe completion');
-    const refs = SB.Refs.feed(p, shot, 'video').some(function (e) {
-      return e.kind === 'subject' && e.images.length;
-    });
-    const riff = SB.Refs.feed(p, shot, 'video').some(function (e) {
-      return e.kind === 'shot' && e.images.length;
-    });
-    if (refs || riff) types.push('reference generation');
+    /* "reference generation" claimed the call was given reference photographs.
+       It is given the first frame and nothing else, so the only task type a
+       clip from this app performs is keyframe completion. */
     return types;
   }
 
@@ -13468,19 +13437,13 @@ window.SB = window.SB || {};
       row.appendChild(nudge);
     }
 
-    const agree = SB.Refs.lanesAgree(P(), sh);
-    const imgs = SB.Refs.images(P(), sh);
+    /* The references this card hands a model are the FIRST FRAME's. A clip is
+       handed the finished frame and nothing else, so there is no second set
+       and never was one to copy. */
+    const imgs = SB.Refs.images(P(), sh, 'image');
     /* A frame this shot is derived from is not one of these: it is the
-       picture being edited, not a reference averaged in with others.
-       The advice is about references averaged together in ONE call, so the
-       union overstates it the moment the lanes differ - no single call sees
-       all of them. The heavier lane is what counts. */
-    const notShot = function (l) {
-      return l.filter(function (e) { return e.kind !== 'shot'; }).length;
-    };
-    const refCount = agree ? notShot(imgs)
-      : Math.max(notShot(SB.Refs.images(P(), sh, 'image')),
-        notShot(SB.Refs.images(P(), sh, 'video')));
+       picture being edited, not a reference averaged in with others. */
+    const refCount = imgs.filter(function (e) { return e.kind !== 'shot'; }).length;
     if (refCount > SB.Personas.IMAGE_ADVICE) {
       const warn = SB.el('span', 'feed-warn', refCount + ' references');
       warn.title = 'Past ' + SB.Personas.IMAGE_ADVICE + ' references most image models start ' +
@@ -13488,27 +13451,11 @@ window.SB = window.SB || {};
         'of these subjects.';
       row.appendChild(warn);
     }
-    /* One button while both calls are handed the same files; one per lane the
-       moment they are not, because the number in a filename is the number in
-       that lane's mapping and in no other. */
-    (agree ? [{ role: undefined, label: 'copy image set', of: '' }]
-      : [{ role: 'image', label: 'copy set \u00b7 first frame', of: ' for the first frame' },
-        { role: 'video', label: 'copy set \u00b7 video', of: ' for the clip' }]
-    ).forEach(function (set) {
-      const list = SB.Refs.images(P(), sh, set.role);
-      if (!list.length) return;
-      const full = list.filter(function (e) { return SB.Renders.has(P(), e.render); }).length;
-      const copy = SB.el('button', 'mini feed-copy', set.label);
-      /* H3 opens on the shot's own frame, so its prompt calls that <Picture 1>
-         and these references start at 2 - say so where the numbers are. Not on
-         the first-frame set: that one is never fed to H3. */
-      const h3 = SB.H3.stock(SB.Model.videoModel(P()));
-      copy.title = 'Write all ' + list.length + ' reference images out, numbered in the order ' +
-        'the prompt' + set.of + ' names them.' +
-        (h3 && set.role !== 'image'
-          ? '\nFor MiniMax H3 the first frame of this card is <Picture 1>, so these are ' +
-            '<Picture 2>\u2013<Picture ' + (list.length + 1) + '> \u2014 feed the frame first.'
-          : '') +
+    if (imgs.length) {
+      const full = imgs.filter(function (e) { return SB.Renders.has(P(), e.render); }).length;
+      const copy = SB.el('button', 'mini feed-copy', 'copy image set');
+      copy.title = 'Write all ' + imgs.length + ' reference images out, numbered in the order ' +
+        'the first-frame prompt names them.' +
         (full ? '\n' + full + ' of them full-size.'
               : '\nAll of them are the board\u2019s 854\u00d7480 copies \u2014 they were filed when ' +
                 'originals lived in a folder. Drop them in again to bring the originals with them.');
@@ -13517,10 +13464,10 @@ window.SB = window.SB || {};
         /* the code is looked up rather than closed over: feedRow is rebuilt on
            its own by refreshFeed, which has no scene/shot indices to hand */
         const f = SB.Model.findShot(P(), sh.id);
-        saveFeed(sh, list, f ? f.code : 'shot');
+        saveFeed(sh, imgs, f ? f.code : 'shot');
       };
       row.appendChild(copy);
-    });
+    }
 
     if (loose.length) {
       const fix = SB.el('button', 'mini feed-fix',
@@ -20651,21 +20598,16 @@ window.SB = window.SB || {};
     p.scenes.forEach(function (sc, si) {
       sc.shots.forEach(function (sh, sj) {
         if (sh.noShot) return;
-        /* One row while both calls are handed the same pictures; a row each
-           when they are not, because the number printed here is the number
-           one prompt names and the other does not. */
-        const agree = SB.Refs.lanesAgree(p, sh);
-        (agree ? [{ role: undefined, lane: '' }]
-          : [{ role: 'image', lane: 'first frame' }, { role: 'video', lane: 'video' }]
-        ).forEach(function (set) {
-          const list = SB.Refs.images(p, sh, set.role);
-          if (!list.length) return;
-          out.push({
-            code: SB.Model.code(si, sj), lane: set.lane,
-            items: list.map(function (e) {
-              return { n: e.n, label: e.label, role: e.role || '', kind: e.kind };
-            })
-          });
+        /* The still's references, which is the only numbered set anybody
+           hands to a model. A clip has none: it animates this card's own
+           frame, exported with the shot. */
+        const list = SB.Refs.images(p, sh, 'image');
+        if (!list.length) return;
+        out.push({
+          code: SB.Model.code(si, sj),
+          items: list.map(function (e) {
+            return { n: e.n, label: e.label, role: e.role || '', kind: e.kind };
+          })
         });
       });
     });
@@ -20756,8 +20698,7 @@ window.SB = window.SB || {};
   function feedHTML(rows) {
     if (!rows.length) return '';
     const body = rows.map(function (r) {
-      return '<tr><td class="c">' + SB.esc(r.code) +
-        (r.lane ? '<i class="lane">' + SB.esc(r.lane) + '</i>' : '') + '</td><td>' +
+      return '<tr><td class="c">' + SB.esc(r.code) + '</td><td>' +
         r.items.map(function (i) {
           return '<span class="fi"><b>' + i.n + '</b> ' + SB.esc(i.label) +
             (i.role ? ' <i>(' + SB.esc(i.role) + ')</i>' : '') + '</span>';
@@ -20765,8 +20706,10 @@ window.SB = window.SB || {};
     }).join('');
     return '<section class="page"><div class="feedwrap">' +
       '<h2>What each card hands over</h2>' +
-      '<p class="lead">In this order. The number is the position the prompt names, ' +
-      'so a model fed them out of order is being told about different pictures.</p>' +
+      '<p class="lead">The references for the <b>first frame</b>, in this order. The number is ' +
+      'the position the prompt names, so a model fed them out of order is being told about ' +
+      'different pictures. A clip is not on this list: it animates the card\u2019s own finished ' +
+      'frame and is handed nothing else.</p>' +
       '<table class="feed"><thead><tr><th>Shot</th><th>References, in order</th></tr></thead>' +
       '<tbody>' + body + '</tbody></table></div></section>';
   }
@@ -21586,14 +21529,11 @@ window.SB = window.SB || {};
        * own. The numbers are the promise the prompt's mapping makes, so they
        * lead the filename. */
       if (o.refsets && !o.madeOnly) {
-        /* The number leads the filename because it is the number that lane's
-           prompt names. While both calls are handed the same files that is one
-           folder; when they are not, one folder each — a single set would put
-           2_Bob.png in front of a video mapping that calls 2 somebody else. */
-        const agree = SB.Refs.lanesAgree(p, sh);
-        (agree ? [{ role: undefined, sub: '' }]
-          : [{ role: 'image', sub: '/first-frame' }, { role: 'video', sub: '/video' }]
-        ).forEach(function (set) {
+        /* The number leads the filename because it is the number the prompt
+           names. This is the FIRST FRAME's set and the only one there is —
+           a clip animates the card's own finished frame, which ships with the
+           shot, and is handed no references at all. */
+        [{ role: 'image', sub: '' }].forEach(function (set) {
           const feed = SB.Refs.images(p, sh, set.role);
           if (feed.length) {
             const dir = 'refs/' + (SB.Renders.slug(r.code) || 'shot') + set.sub;

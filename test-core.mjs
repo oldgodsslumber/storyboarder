@@ -481,14 +481,14 @@ console.log('\n— every box, not just the first one —');
     'wardrobe in the first-frame box is found — it is where appearance gets written');
   eq(C.carriesWardrobe(p, ward).indexOf('wearing') >= 0, true, 'and the term is named');
 
-  /* one numbered set is only the truth while both calls get the same files */
+  /* the two lanes number their own pictures, and only the still's set is ever
+     handed to a model — a clip animates the card's finished frame */
   const split = M.addShot(p, sc.id, {});
   split.description = 'At the desk with ' + R.mark(nat.id, 'Nat') + '.';
-  eq(R.lanesAgree(p, split), true, 'a card that says everything in the shared box agrees');
   split.imageDescription = 'The ' + R.mark(rig.id, 'Rig') + ' is set up.';
-  eq(R.lanesAgree(p, split), false, 'and stops agreeing the moment a lane has its own picture');
-  eq(R.images(p, split, 'image').length, 2, 'the image lane sends two');
-  eq(R.images(p, split, 'video').length, 1, 'the video lane sends one');
+  eq(R.images(p, split, 'image').length, 2, 'the still is built from two pictures');
+  eq(R.images(p, split, 'video').length, 1,
+    'the video lane knows its own marks, whatever is done with them');
 
   /* the gate the generate button reads */
   const lone = M.addShot(p, sc.id, {});
@@ -2983,25 +2983,26 @@ console.log('\n— the reference sheets —');
   eq(rows[0].code, '1A', 'by code');
   eq(rows[0].items.map(function (i) { return i.n; }), [1], 'numbered the way the prompt names them');
 
-  /* A split card hands the two calls different files, so one numbered row
-     would be a promise neither prompt makes. */
+  /* The printed mapping is the FIRST FRAME's references. A clip has no set:
+     it animates the card's own finished frame. */
   {
     const one = p.scenes[0].shots[0];
     const thing = SB.Personas.add(p, { kind: 'thing', name: 'Rig' });
     thing.image = SB.Blobs.image(p, 'data:image/gif;base64,R0lGODlhAQABAAAAACx=', 4, 3);
-    const wasImg = one.imageDescription;
+    const wasImg = one.imageDescription, wasVid = one.videoDescription;
     one.imageDescription = 'The ' + SB.Refs.mark(thing.id, 'Rig') + ' is set up.';
-    const split = SB.Pdf.feedRows();
-    eq(split.length, 2, 'a card whose lanes differ prints a row each');
-    eq(split.map(function (r) { return r.lane; }), ['first frame', 'video'],
-      'each saying which call it is the mapping for');
-    eq(split[0].items.length, 2, 'the first-frame row lists what that call is sent');
-    eq(split[1].items.length, 1, 'and the video row what its own is');
+    one.videoDescription = 'Nobody marked here matters to the clip.';
+    const rows2 = SB.Pdf.feedRows();
+    eq(rows2.length, 1, 'one row per card, whatever the lanes say');
+    eq(rows2[0].items.length, 2, 'listing what the first frame is sent');
+    eq(rows2[0].items.map(function (i) { return i.label; }).indexOf('Rig') >= 0, true,
+      'including a reference marked only on the first-frame lane');
     const printed = SB.Pdf.html({ doc: 'refs', refFeeds: true, silent: true });
-    eq(/class="lane">first frame</.test(printed), true, 'and the printed page says so');
+    eq(/animates the card/.test(printed), true,
+      'and the page says a clip is not on the list');
     one.imageDescription = wasImg;
+    one.videoDescription = wasVid;
     p.personas = p.personas.filter(function (x) { return x.id !== thing.id; });
-    eq(SB.Pdf.feedRows().length, 1, 'while a card that says it all in one box prints one row');
   }
 
   /* both documents in one file, each with its own paper and its own grid */

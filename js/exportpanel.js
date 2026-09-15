@@ -232,14 +232,11 @@
        * own. The numbers are the promise the prompt's mapping makes, so they
        * lead the filename. */
       if (o.refsets && !o.madeOnly) {
-        /* The number leads the filename because it is the number that lane's
-           prompt names. While both calls are handed the same files that is one
-           folder; when they are not, one folder each — a single set would put
-           2_Bob.png in front of a video mapping that calls 2 somebody else. */
-        const agree = SB.Refs.lanesAgree(p, sh);
-        (agree ? [{ role: undefined, sub: '' }]
-          : [{ role: 'image', sub: '/first-frame' }, { role: 'video', sub: '/video' }]
-        ).forEach(function (set) {
+        /* The number leads the filename because it is the number the prompt
+           names. This is the FIRST FRAME's set and the only one there is —
+           a clip animates the card's own finished frame, which ships with the
+           shot, and is handed no references at all. */
+        [{ role: 'image', sub: '' }].forEach(function (set) {
           const feed = SB.Refs.images(p, sh, set.role);
           if (feed.length) {
             const dir = 'refs/' + (SB.Renders.slug(r.code) || 'shot') + set.sub;
