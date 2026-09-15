@@ -116,7 +116,14 @@ one generation — nothing is batched, nothing fires on its own.
   parses them from there — 10 image models and 15 video ones on this account, with each
   model's allowed aspect ratios and durations read from the same place. The older v2 REST API
   stays as the fallback, and Settings says which door carried the last generation. **What my
-  account can do** prints the tools, their parameters and those lists verbatim.
+  account can do** prints the tools, their parameters and those lists verbatim — and
+  **Copy the raw tool list**, in the same report, hands over what ImagineArt actually sent:
+  every tool, every word of every description, and what the server said about itself at the
+  handshake, as JSON to the clipboard or a file. The cards above it are *this app's* reading
+  of that list, and a reading is lossy — anything the service sends that the app does not
+  model yet is dropped on the way through, which is exactly the part worth looking at when a
+  model stops working or a new one appears. No credential is in the dump: the token travels
+  in a header and never in a payload.
 - **API key** — a key from [platform.imagine.art](https://platform.imagine.art/), billed
   against a separate metered API balance.
 

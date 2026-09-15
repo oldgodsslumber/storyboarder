@@ -605,7 +605,7 @@
    * either as a JSON body or as an SSE stream carrying the same object. Both
    * are handled here so nothing above this cares.
    */
-  const mcp = { session: null, ready: null, tools: null, id: 0 };
+  const mcp = { session: null, ready: null, tools: null, server: null, id: 0 };
 
   /* ---- the headers a browser is actually allowed to send ----
    *
@@ -709,6 +709,11 @@
     }).then(function (r) {
       /* The notification is fire-and-forget; a server that does not want it
        * answers 202 or 404 and neither is worth failing over. */
+      /* What the server said it is and what it says it can do. Thrown away
+         before now, and it is half the answer to "what else is on this
+         account" — a server that advertises resources or prompts has more
+         than tools on it. */
+      mcp.server = r || null;
       return mcpPost({ jsonrpc: '2.0', method: 'notifications/initialized', params: {} })
         .catch(function () { return null; })
         .then(function () { return r; });
@@ -2577,6 +2582,32 @@
    * and whether it can even be asked for one — is answered by this and
    * nothing else, and it cannot be answered from outside an account at all.
    * So it is one button rather than a support thread. */
+  /* The tool list exactly as the server sent it.
+   *
+   * `capabilities()` below is the app's own digest — name, description, and
+   * the parameters it knows how to model — and a digest is lossy by design:
+   * anything the server sends that this app does not model yet is dropped on
+   * the way through, which is precisely the part worth reading when something
+   * new appears. So this returns the untouched array, with what the handshake
+   * said wrapped around it, ready to hand to somebody.
+   *
+   * Nothing here is a credential: the token is in the Authorization header,
+   * never in a payload, and the dump is built from the response bodies. */
+  function rawTools(force) {
+    return toolList(force !== false).then(function (tools) {
+      return {
+        captured: new Date().toISOString(),
+        client: { name: CLIENT_NAME, version: String(window.SB_BUILD || 'dev') },
+        endpoint: RESOURCE,
+        protocolVersion: MCP_PROTOCOL,
+        transport: transport(),
+        server: mcp.server || null,
+        toolCount: (tools || []).length,
+        tools: tools || []
+      };
+    });
+  }
+
   function capabilities() {
     return toolList(true).then(function (tools) {
       return (tools || []).map(function (t) {
@@ -3070,7 +3101,7 @@
     account: account, whoAmI: whoAmI, balance: balance,
     /* discovery, for the Settings readout */
     discover: discover, toolList: toolList, tools: function () { return mcp.tools || []; },
-    capabilities: capabilities, report: report, door: door,
+    capabilities: capabilities, rawTools: rawTools, report: report, door: door,
     restVerdict: function () { return lsStr(K_REST); },
     catalog: catalog, catalogAll: catalogAll, catalogSource: catalogSource,
     worked: worked, noteWorked: noteWorked,

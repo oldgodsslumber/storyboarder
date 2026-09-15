@@ -713,6 +713,32 @@ section('asking for a resolution instead of taking the floor');
   }));
   await SB.Imagine.toolList(true);
 
+  /* the dump that gets handed to somebody else */
+  {
+    const dump = await SB.Imagine.rawTools();
+    t('the raw list is every tool the server sent, untouched',
+      dump.tools.length === REAL_TOOLS.length &&
+      JSON.stringify(dump.tools) === JSON.stringify(REAL_TOOLS),
+      dump.tools.length + ' of ' + REAL_TOOLS.length);
+    t('with the whole of each description, not the app\u2019s reading of it',
+      dump.tools.every(function (x, i) { return x.description === REAL_TOOLS[i].description; }),
+      '');
+    t('and what the server said about itself at the handshake',
+      !!dump.server && !!dump.server.serverInfo, JSON.stringify(dump.server));
+    t('it says when it was taken and what asked for it',
+      /^\d{4}-\d\d-\d\dT/.test(dump.captured) && dump.client.name === 'Storyboarder',
+      dump.captured + ' ' + JSON.stringify(dump.client));
+    t('and which door it came through',
+      dump.transport === 'oauth' && /mcp\.imagine\.art/.test(dump.endpoint),
+      dump.transport + ' ' + dump.endpoint);
+    /* the one thing that must never be in a file somebody forwards */
+    const text = JSON.stringify(dump);
+    t('no token is anywhere in it',
+      text.indexOf('tok') < 0 && !/access_token|Bearer/i.test(text),
+      text.slice(0, 120));
+    t('the count agrees with the list', dump.toolCount === dump.tools.length, dump.toolCount);
+  }
+
   t('a board asks for the best by default', p4.settings.imagineResolution === 'best',
     p4.settings.imagineResolution);
 

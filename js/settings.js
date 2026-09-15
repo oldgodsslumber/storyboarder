@@ -876,14 +876,58 @@
           });
           box.appendChild(card);
         });
-        const copy = SB.el('button', 'tb', 'Copy as JSON');
-        copy.onclick = function () {
-          navigator.clipboard.writeText(JSON.stringify(tools, null, 2))
-            .then(function () { SB.toast('Copied'); })
-            .catch(function () { SB.toast('Could not copy', true); });
-        };
+        /* What is on screen above is this app's digest of the tool list —
+           the parameters it knows how to model. Anything ImagineArt sends
+           that it does not model yet is dropped on the way through, and that
+           is exactly the part worth reading when something new appears. So
+           what leaves here is the untouched payload. */
         const acts = SB.el('div', 'pp-actions');
+        const rawNote = SB.el('div', 'pp-note',
+          'The cards above are this app\u2019s reading of the list. The buttons below hand ' +
+          'over what ImagineArt actually sent \u2014 every tool, every word of every ' +
+          'description, and what the server said about itself at the handshake. That is ' +
+          'the thing to send on when a model stops working or a new one appears. No ' +
+          'credential is in it: the token travels in a header, never in a payload.');
+        box.appendChild(rawNote);
+
+        const withRaw = function (then) {
+          return IM.rawTools().then(then, function (e) {
+            SB.toast(e.message || String(e), true);
+          });
+        };
+
+        const copy = SB.el('button', 'tb', 'Copy the raw tool list');
+        copy.onclick = function () {
+          withRaw(function (dump) {
+            const text = JSON.stringify(dump, null, 2);
+            return navigator.clipboard.writeText(text).then(function () {
+              SB.toast('Copied ' + dump.toolCount + ' tool' +
+                (dump.toolCount === 1 ? '' : 's') + ' \u2014 ' +
+                Math.round(text.length / 1024) + ' KB');
+            }, function () {
+              /* a long payload and a browser that will not take it is the
+                 common case for this button, so it has somewhere else to go */
+              SB.toast('Could not reach the clipboard \u2014 use Save instead', true);
+            });
+          });
+        };
         acts.appendChild(copy);
+
+        const save = SB.el('button', 'tb', 'Save it as a file');
+        save.onclick = function () {
+          withRaw(function (dump) {
+            const text = JSON.stringify(dump, null, 2);
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+            a.download = 'imagine-tools-' + dump.captured.slice(0, 10) + '.json';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
+            SB.toast('Saved ' + a.download);
+          });
+        };
+        acts.appendChild(save);
         box.appendChild(acts);
       }).catch(function (e) {
         box.appendChild(SB.el('div', 'pp-note warn', e.message || String(e)));
