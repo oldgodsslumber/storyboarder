@@ -1738,6 +1738,52 @@
         await nap(40);
       }
 
+      // three references, one picture
+      {
+        const nap = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+        const px = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+        const room = SB.Personas.add(P(), { kind: 'place', name: 'Living room' });
+        room.image = SB.Blobs.image(P(), px, 16, 9);
+        const her = SB.Personas.add(P(), { name: 'Woman' });
+        her.image = SB.Blobs.image(P(), px, 3, 4);
+        const sh = P().scenes[0].shots[0];
+        const wasDesc = sh.description;
+        const wasCast = (sh.personaIds || []).slice();
+        /* exactly two references, so the panel names are the two-up pair —
+           a card carrying cast as well is the 2x2 case */
+        sh.personaIds = [];
+        sh.description = 'In ' + SB.Refs.mark(room.id, 'Living room') + ' with ' +
+          SB.Refs.mark(her.id, 'Woman') + '.';
+        SB.app.changed(true);
+        await nap(60);
+
+        const plan = SB.Imagine.sheetPlan(P(), sh, 'image');
+        t('two references plan a two-panel sheet',
+          plan.length === 2 && plan[0].panel === 'left' && plan[1].panel === 'right',
+          JSON.stringify(plan.map(function (x) { return x.panel + '=' + x.label; })));
+
+        /* the real thing, drawn on a real canvas */
+        const blob = await SB.Imagine._buildSheet(P(), plan);
+        t('and it renders to one picture', !!blob && blob.size > 0,
+          blob ? blob.type + ' ' + blob.size + 'b' : 'null');
+
+        const dims = await new Promise(function (res) {
+          const im = new Image();
+          im.onload = function () { res(im.naturalWidth + 'x' + im.naturalHeight); };
+          im.onerror = function () { res('failed'); };
+          im.src = URL.createObjectURL(blob);
+        });
+        t('two panels side by side, not a stack', dims === '1536x768', dims);
+
+        sh.description = wasDesc;
+        sh.personaIds = wasCast;
+        P().personas = P().personas.filter(function (x) {
+          return x.id !== room.id && x.id !== her.id;
+        });
+        SB.app.changed(true);
+        await nap(40);
+      }
+
       // a click shows the picture; replacing is something you say
       {
         const nap = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };

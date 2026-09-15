@@ -919,40 +919,45 @@ section('a still carries every reference the card names');
   await SB.Imagine.toolList(true);
   SB.Imagine.setOrg({ id: 'org1', name: 'Org' });
 
-  /* the card names three pictures, so three go */
+  /* Three pictures, one slot. The array was ACCEPTED and ignored — the room
+     came through and the woman in the second reference was invented — so the
+     three travel as one sheet and the prompt names the panels. */
+  const plan = SB.Imagine.sheetPlan(pM, sh, 'image');
+  t('a card with three references plans a sheet of three', plan.length === 3,
+    plan.length);
+  t('each panel is named, in the order the references were marked',
+    plan.map(x => x.panel).join(',') === 'top-left,top-right,bottom-left',
+    plan.map(x => x.panel + '=' + x.label).join(' '));
+  t('and a card with one reference plans no sheet at all',
+    SB.Imagine.sheetPlan(pM, SB.Model.addShot(pM, sc.id, {}), 'image').length === 0, '');
+
   const r = SB.Imagine.refsFor(pM, sh, 'image');
   t('the card is counted as feeding three', r.feed === 3, r.feed);
-  t('and all three are reported as travelling', r.carries === 3, r.carries);
+  t('all three are in front of the model, in one picture',
+    r.carries === 3 && !!r.sheet, r.carries + ' sheet=' + !!r.sheet);
 
-  let ranErr = null;
-  await SB.Imagine.run(sh, 'image').catch((e) => { ranErr = e && e.message; });
+  /* the mapping describes the picture that is actually sent */
+  const block = SB.Personas.block(pM, sh, im, 'image');
+  t('the mapping says one picture is supplied and it is a sheet',
+    /ONE picture is supplied and it is a REFERENCE SHEET/.test(block), block.slice(0, 200));
+  t('and names which panel is which subject',
+    /the top-left panel is Nat/.test(block) && /the bottom-left panel is The bay/.test(block),
+    block.slice(0, 400));
+  t('and forbids reproducing the grid, which is the obvious failure',
+    /Do NOT reproduce the grid/.test(block), '');
+  t('no numbered image list survives beside it',
+    !/image 2 = /.test(block), block.slice(0, 300));
+
+  /* without a canvas — any headless caller — it degrades to one picture
+     rather than uploading three and sending one */
+  await SB.Imagine.run(sh, 'image').catch(() => null);
   const gen = calls.filter(c => c.name === 'generate_image')[0];
-  t('generate_image is called', !!gen,
-    JSON.stringify(calls.map(c => c.name)) + ' err=' + ranErr);
-  t('and image_url is an ARRAY of every reference',
-    Array.isArray(gen.args.image_url) && gen.args.image_url.length === 3,
-    JSON.stringify(gen.args.image_url));
-  t('one upload per reference, in order',
-    calls.filter(c => c.name === 'user_upload').length === 3,
+  t('generate_image is called', !!gen, JSON.stringify(calls.map(c => c.name)));
+  t('with exactly one image_url, never an array',
+    typeof gen.args.image_url === 'string', JSON.stringify(gen.args.image_url));
+  t('and only the picture that travels is uploaded',
+    calls.filter(c => c.name === 'user_upload').length === 1,
     calls.filter(c => c.name === 'user_upload').length);
-
-  /* and if the tool turns out to want one, it says so once and is believed */
-  refuse = true;
-  calls.length = 0;
-  store.delete('sb.imagine.imageRefs');
-  await SB.Imagine.run(sh, 'image').catch(() => null);
-  const tries = calls.filter(c => c.name === 'generate_image');
-  t('a refusal of the shape is retried once as a single url',
-    tries.length === 2 && Array.isArray(tries[0].args.image_url) &&
-    typeof tries[1].args.image_url === 'string',
-    JSON.stringify(tries.map(x => Array.isArray(x.args.image_url) ? 'array' : typeof x.args.image_url)));
-
-  calls.length = 0;
-  await SB.Imagine.run(sh, 'image').catch(() => null);
-  const after = calls.filter(c => c.name === 'generate_image');
-  t('and the answer is remembered, so it is asked once',
-    after.length === 1 && typeof after[0].args.image_url === 'string',
-    JSON.stringify(after.map(x => Array.isArray(x.args.image_url) ? 'array' : typeof x.args.image_url)));
 
   store.delete('sb.imagine.imageRefs');
 }

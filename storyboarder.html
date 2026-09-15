@@ -1371,7 +1371,7 @@ body.comment-mode .frame{cursor:crosshair}
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-09-15 21:05 · 866ed07+";</script>
+<script>window.SB_BUILD = "2026-09-15 21:53 · 5064cee+";</script>
 
 <div id="app">
 
@@ -6572,14 +6572,17 @@ window.SB = window.SB || {};
            * image_url: the product takes several, the published schema says
            * one, and only the tool can settle it. Several go unless it has
            * already refused them on this account. */
-          const many = urls.length > 1 && multiState() !== 'one';
+          /* One url. An array was ACCEPTED and then ignored — the first
+             picture came through and the subject of the second was invented
+             — which is the one failure a fallback cannot catch, because
+             nothing errors. Several references travel as one sheet instead. */
           const args = {
             org_id: orgId(),
             prompt: canon.prompt,
             model: canon.slug || null,
             aspect_ratio: canon.aspect || null,
             duration: null,
-            image_url: many ? urls : (urls[0] || null)
+            image_url: urls[0] || null
           };
           if (canon.resolution) args.resolution = canon.resolution;
           if (canon.quality) args.quality = canon.quality;
@@ -6588,21 +6591,7 @@ window.SB = window.SB || {};
            * has already cost something — never a reason to try the other
            * door. A rejection from callRaw itself is the tools refusing the
            * job, which is the one case the fallback is for. */
-          /* A refusal of the SHAPE happens at the tool boundary, before
-             anything is generated, so it costs nothing and is worth trying
-             once. The answer is remembered per account. */
-          const send = function (a, second) {
-            return callRaw(TOOL.image, a).then(function (r) {
-              if (many && !second) noteMulti('many');
-              return r;
-            }, function (e) {
-              if (!many || second || !isShapeRefusal(e)) throw e;
-              noteMulti('one');
-              const one = Object.assign({}, a, { image_url: urls[0] || null });
-              return send(one, true);
-            });
-          };
-          return send(args, false).then(function (got) {
+          return callRaw(TOOL.image, args).then(function (got) {
             const id = assetId(got);
             const settled = (got.url && !id)
               ? Promise.resolve(got) : waitForAsset(id || got.text, canon.onState);
@@ -7105,6 +7094,89 @@ window.SB = window.SB || {};
    *
    * The original where the board has one, the proxy where it does not: a
    * reference is there to be matched, and 480p is a poor thing to match. */
+  /* ---------------- the reference sheet ----------------
+   *
+   * generate_image honours ONE picture. Not one because it refuses more —
+   * it accepted an array of three and used the first, inventing the subject
+   * the second one was of — which is the failure mode that cannot be caught
+   * from the outside. So the several become one.
+   *
+   * Four at most: past that each face is too small to hold an identity, and
+   * the advice limit already says most models start averaging references
+   * rather than reading them.
+   */
+  const SHEET_MAX = 4;
+  const SHEET_PLAN = {
+    2: { cols: 2, rows: 1, names: ['left', 'right'] },
+    3: { cols: 2, rows: 2, names: ['top-left', 'top-right', 'bottom-left'] },
+    4: { cols: 2, rows: 2, names: ['top-left', 'top-right', 'bottom-left', 'bottom-right'] }
+  };
+
+  /* What a sheet WOULD hold, without building it — so the prompt that names
+   * the panels and the canvas that draws them cannot disagree. */
+  function sheetPlan(p, shot, role) {
+    const list = SB.Refs.images(p, shot, role || 'image').slice(0, SHEET_MAX);
+    if (list.length < 2) return [];
+    const plan = SHEET_PLAN[list.length];
+    return list.map(function (e, i) {
+      return { n: i + 1, label: e.label, role: e.role || '', panel: plan.names[i], e: e };
+    });
+  }
+
+  function canDraw() {
+    try {
+      const c = document.createElement('canvas');
+      return !!(c && c.getContext && c.getContext('2d'));
+    } catch (e) { return false; }
+  }
+
+  /* The sheet itself: each reference at the best size the file holds, letter-
+   * boxed rather than cropped — a face cropped to fit a square is a different
+   * face — on a flat grey ground so an empty corner reads as nothing. */
+  function buildSheet(p, cells) {
+    const plan = SHEET_PLAN[cells.length];
+    if (!plan || !canDraw()) return Promise.resolve(null);
+    const CELL = 768;
+    const cv = document.createElement('canvas');
+    cv.width = plan.cols * CELL;
+    cv.height = plan.rows * CELL;
+    const ctx = cv.getContext('2d');
+    ctx.fillStyle = '#808080';
+    ctx.fillRect(0, 0, cv.width, cv.height);
+
+    const load = function (src) {
+      return new Promise(function (resolve) {
+        const im = new Image();
+        im.onload = function () { resolve(im); };
+        im.onerror = function () { resolve(null); };
+        im.src = src;
+      });
+    };
+
+    return Promise.all(cells.map(function (c, i) {
+      const e = c.e;
+      const src = (e.render && SB.Renders.dataUrl(p, e.render)) ||
+        (e.img ? SB.Blobs.src(p, e.img) : '');
+      return src ? load(src).then(function (im) { return { im: im, i: i }; })
+        : Promise.resolve({ im: null, i: i });
+    })).then(function (loaded) {
+      let drew = 0;
+      loaded.forEach(function (x) {
+        if (!x.im || !x.im.naturalWidth) return;
+        drew++;
+        const col = x.i % plan.cols, row = Math.floor(x.i / plan.cols);
+        const r = Math.min(CELL / x.im.naturalWidth, CELL / x.im.naturalHeight);
+        const w = Math.round(x.im.naturalWidth * r), h = Math.round(x.im.naturalHeight * r);
+        ctx.drawImage(x.im, col * CELL + (CELL - w) / 2, row * CELL + (CELL - h) / 2, w, h);
+      });
+      if (!drew) return null;
+      return new Promise(function (resolve) {
+        if (cv.toBlob) cv.toBlob(function (b) { resolve(b); }, 'image/png');
+        else dataUrlToBlob(cv.toDataURL('image/png')).then(resolve, function () { resolve(null); });
+      });
+    }).catch(function () { return null; });
+  }
+
   /* ---------------- how many references a still may carry ----------------
    *
    * ImagineArt's own interface hands GPT Image three separate reference
@@ -7168,8 +7240,29 @@ window.SB = window.SB || {};
   function refBlobs(p, shot) {
     const list = imageRefs(p, shot);
     if (!list.length) return Promise.resolve([]);
+    /* More than one, and they travel as one picture — because one picture is
+       all that is honoured, and the alternative is the second subject being
+       invented. */
+    const plan = sheetPlan(p, shot, 'image');
+    if (plan.length > 1) {
+      return buildSheet(p, plan).then(function (b) {
+        if (b) {
+          return [{ blob: b, name: 'refsheet.png', label: 'reference sheet', n: 1,
+            sheet: plan.map(function (c) {
+              return { n: c.n, label: c.label, role: c.role, panel: c.panel };
+            }) }];
+        }
+        return single(p, list);       // no canvas: the first, as before
+      });
+    }
+    return single(p, list);
+  }
+
+  /* One picture: the only one the call will carry. Uploading the others pays
+   * for pictures that are thrown away. */
+  function single(p, list) {
     let chain = Promise.resolve([]);
-    list.forEach(function (e) {
+    list.slice(0, 1).forEach(function (e) {
       chain = chain.then(function (acc) {
         return SB.Renders.file(p, e.render).then(function (f) {
           if (f) return { blob: f, name: f.name, label: e.label, n: e.n };
@@ -7784,16 +7877,18 @@ window.SB = window.SB || {};
       };
     }
 
-    /* All of them, unless the API-key door is in use (which carries none) or
-     * the tools have already refused an array on this account. */
-    const many = transport() !== 'key' && multiState() !== 'one';
-    const carries = transport() === 'key' ? 0 : (many ? feed.length : Math.min(1, feed.length));
+    /* Several references travel as one sheet, so all of them are in front of
+     * the model even though one picture is uploaded. */
+    const plan = sheetPlan(p, shot, 'image');
+    const sheet = plan.length > 1;
+    const carries = transport() === 'key' ? 0
+      : (sheet ? plan.length : Math.min(1, feed.length));
     return {
       role: 'image',
       feed: feed.length,
       wordsOnly: wordsOnly,
       carries: carries,
-      many: many,
+      sheet: sheet ? plan : null,
       first: feed[0] || null,
       byKey: transport() === 'key'
     };
@@ -8245,7 +8340,8 @@ window.SB = window.SB || {};
     discover: discover, toolList: toolList, tools: function () { return mcp.tools || []; },
     capabilities: capabilities, rawTools: rawTools,
     durationFor: durationFor, settleOne: settleOne, settle: settle,
-    shootKey: shootKey, takesRefs: takesRefs, arrivalRefs: arrivalRefs, report: report, door: door,
+    shootKey: shootKey, takesRefs: takesRefs, arrivalRefs: arrivalRefs,
+    sheetPlan: sheetPlan, _buildSheet: buildSheet, report: report, door: door,
     restVerdict: function () { return lsStr(K_REST); },
     catalog: catalog, catalogAll: catalogAll, catalogSource: catalogSource,
     worked: worked, noteWorked: noteWorked,
@@ -9188,9 +9284,29 @@ window.SB = window.SB || {};
          with the strip on the card and with the files the person is about to
          drop in. */
       const mapped = SB.Refs.images(p, shot, role);
-      mapped.forEach(function (e) {
-        lines.push('  image ' + e.n + ' = ' + e.label + (e.role ? ' (' + e.role + ')' : ''));
-      });
+      /* More than one reference travels as ONE picture — a sheet, each
+         subject in its own panel — because the tool honours one picture and
+         quietly invents the subject of any it ignores. The mapping has to
+         describe that picture, or the model is told to look for images that
+         do not exist. */
+      const sheet = (SB.Imagine && SB.Imagine.sheetPlan && role !== 'video')
+        ? SB.Imagine.sheetPlan(p, shot, role) : [];
+      if (sheet.length > 1) {
+        lines.push('  ONE picture is supplied and it is a REFERENCE SHEET: ' + sheet.length +
+          ' panels on a grey ground, not a scene.');
+        sheet.forEach(function (c) {
+          lines.push('    the ' + c.panel + ' panel is ' + c.label +
+            (c.role ? ' (' + c.role + ')' : ''));
+        });
+        lines.push('  Take each subject\u2019s appearance from its own panel and nothing else ' +
+          'from the sheet. Do NOT reproduce the grid, the panels, the grey ground or a ' +
+          'collage: the picture you are asked for is the shot described below, with these ' +
+          'people and places in it looking exactly as they do in their panels.');
+      } else {
+        mapped.forEach(function (e) {
+          lines.push('  image ' + e.n + ' = ' + e.label + (e.role ? ' (' + e.role + ')' : ''));
+        });
+      }
       /* A still push uploads ONE picture. The mapping above says all of them
          "are supplied in the numbered order", which is true of the folder a
          person hand-feeds and false of the call this app makes — so the
@@ -9202,7 +9318,8 @@ window.SB = window.SB || {};
       const sent = (SB.Imagine && SB.Imagine.refsFor)
         ? SB.Imagine.refsFor(p, shot, role)
         : { carries: mapped.length, first: mapped[0] || null };
-      if (mapped.length > 1) {
+      if (sheet.length > 1) { /* the sheet lines above already said it */ }
+      else if (mapped.length > 1) {
         const first = sent.first;
         lines.push(sent.carries >= mapped.length
           ? 'All ' + mapped.length + ' are uploaded with this call, in that order. Match each ' +

@@ -500,9 +500,29 @@
          with the strip on the card and with the files the person is about to
          drop in. */
       const mapped = SB.Refs.images(p, shot, role);
-      mapped.forEach(function (e) {
-        lines.push('  image ' + e.n + ' = ' + e.label + (e.role ? ' (' + e.role + ')' : ''));
-      });
+      /* More than one reference travels as ONE picture — a sheet, each
+         subject in its own panel — because the tool honours one picture and
+         quietly invents the subject of any it ignores. The mapping has to
+         describe that picture, or the model is told to look for images that
+         do not exist. */
+      const sheet = (SB.Imagine && SB.Imagine.sheetPlan && role !== 'video')
+        ? SB.Imagine.sheetPlan(p, shot, role) : [];
+      if (sheet.length > 1) {
+        lines.push('  ONE picture is supplied and it is a REFERENCE SHEET: ' + sheet.length +
+          ' panels on a grey ground, not a scene.');
+        sheet.forEach(function (c) {
+          lines.push('    the ' + c.panel + ' panel is ' + c.label +
+            (c.role ? ' (' + c.role + ')' : ''));
+        });
+        lines.push('  Take each subject\u2019s appearance from its own panel and nothing else ' +
+          'from the sheet. Do NOT reproduce the grid, the panels, the grey ground or a ' +
+          'collage: the picture you are asked for is the shot described below, with these ' +
+          'people and places in it looking exactly as they do in their panels.');
+      } else {
+        mapped.forEach(function (e) {
+          lines.push('  image ' + e.n + ' = ' + e.label + (e.role ? ' (' + e.role + ')' : ''));
+        });
+      }
       /* A still push uploads ONE picture. The mapping above says all of them
          "are supplied in the numbered order", which is true of the folder a
          person hand-feeds and false of the call this app makes — so the
@@ -514,7 +534,8 @@
       const sent = (SB.Imagine && SB.Imagine.refsFor)
         ? SB.Imagine.refsFor(p, shot, role)
         : { carries: mapped.length, first: mapped[0] || null };
-      if (mapped.length > 1) {
+      if (sheet.length > 1) { /* the sheet lines above already said it */ }
+      else if (mapped.length > 1) {
         const first = sent.first;
         lines.push(sent.carries >= mapped.length
           ? 'All ' + mapped.length + ' are uploaded with this call, in that order. Match each ' +
