@@ -789,6 +789,77 @@ section('what a card asks the model for');
     SB.Imagine.durationFor(pS, sh, 'ltx-2.3'));
 }
 
+section('the one picture a clip carries besides its frame');
+{
+  const pA = SB.Model.newProject();
+  sandbox.SB.app = { project: pA, changed() { } };
+  /* the model lists live in the tool descriptions, so they have to be in the
+     module the way a session would have loaded them */
+  sandbox.fetch = function (url, init) {
+    const msg = JSON.parse(init.body);
+    const result = msg.method === 'initialize'
+      ? { serverInfo: { name: 'imagine', version: '1' } }
+      : (msg.method === 'tools/list' ? { tools: REAL_TOOLS } : {});
+    return Promise.resolve({
+      ok: true, status: 200, headers: { get: () => null },
+      text: () => Promise.resolve(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: result }))
+    });
+  };
+  SB.Imagine.setTransport('oauth');
+  store.set('sb.imagine.tokens', JSON.stringify({
+    access_token: 'tok', refresh_token: 'r', expires_at: Date.now() + 3600000, email: 'a@r'
+  }));
+  await SB.Imagine.toolList(true);
+  const sc = pA.scenes[0] || SB.Model.addScene(pA, 0);
+  const nat = SB.Personas.add(pA, { name: 'Nat' });
+  nat.image = SB.Blobs.image(pA, 'data:image/gif;base64,R0lGODlhAQABAAAAACw=', 4, 3);
+  const ghost = SB.Personas.add(pA, { name: 'Ghost' });   // arrives, no picture
+  const sh = SB.Model.addShot(pA, sc.id, {});
+  sh.image = SB.Blobs.image(pA, 'data:image/gif;base64,R0lGODlhAQABAAAAACx=', 16, 9);
+  sh.personaIds = [nat.id, ghost.id];
+
+  /* the account's own list, read off the tool description */
+  t('the five that take reference pictures are known',
+    SB.Imagine.takesRefs('seedance-2.5') && SB.Imagine.takesRefs('veo-3.1'),
+    'seedance-2.5/veo-3.1');
+  t('and the board default is not one of them',
+    !SB.Imagine.takesRefs('ltx-2.3'), 'ltx-2.3 takesRefs');
+
+  const A = (slug) => SB.Imagine.arrivalRefs(pA, sh, slug || 'seedance-2.5');
+
+  t('nobody arriving means nothing to send', A().people.length === 0, A().why);
+
+  SB.Personas.setEnters(sh, nat.id, true);
+  SB.Personas.setEnters(sh, ghost.id, true);
+  t('whoever arrives and has a reference frame is the candidate',
+    A().people.length === 1 && A().people[0].label === 'Nat',
+    JSON.stringify(A().people.map(x => x.label)));
+  t('and somebody arriving with no picture is not, because there is none',
+    /no reference frame|nobody arrives/.test(A().why) || A().people.length === 1, A().why);
+
+  t('it is off until the card asks', A().on === false, String(A().on));
+  sh.shoot = { sendArrivals: true };
+  t('and on once it does', A().on === true, String(A().on));
+
+  t('a model that takes no reference pictures cannot, whatever the card says',
+    A('ltx-2.3').can === false, A('ltx-2.3').why);
+  t('and says why, naming the model', /ltx-2\.3 takes no reference/.test(A('ltx-2.3').why),
+    A('ltx-2.3').why);
+
+  /* the prompt says what the call carries, and only that */
+  const vm5 = { id: 'v5', name: 'Seedance', kind: 'video', imagineSlug: 'seedance-2.5' };
+  const vmL = { id: 'vl', name: 'LTX (LTXV 2.3)', kind: 'video', imagineSlug: 'ltx-2.3' };
+  const sent = SB.Personas.block(pA, sh, vm5, 'video');
+  const notSent = SB.Personas.block(pA, sh, vmL, 'video');
+  t('where the picture travels the prompt binds it',
+    /picture 2 is Nat/.test(sent), sent.slice(0, 220));
+  t('where it does not, the words are still the only record',
+    !/picture 2 is Nat/.test(notSent) && /only record of what they look like/.test(notSent),
+    notSent.slice(0, 200));
+  t('and the frame is picture 1 either way, never a subject',
+    !/picture 1 is Nat/i.test(sent), sent.slice(0, 160));
+}
+
 section('a slug that worked outranks every published list');
 
 {

@@ -700,6 +700,53 @@
     return sel;
   }
 
+  /* The one picture a clip may carry besides its frame.
+   *
+   * Offered only where it can work: five of the fifteen video models take
+   * reference pictures at all, and the board default is not one of them — a
+   * second picture sent anywhere else is dropped without a word. And it is
+   * never on by default, because a second picture stops the call animating
+   * the approved frame and starts it building from both. */
+  function arrivalPick(sh, m, field) {
+    const IM = SB.Imagine;
+    if (!IM || !IM.arrivalRefs || field !== 'videoPrompt' || !m || sh.noShot) return null;
+    const slug = IM.slugOf(m);
+    if (!slug) return null;
+    const a = IM.arrivalRefs(P(), sh, slug);
+    if (!a.people.length) return null;             // nobody to send
+
+    const who = a.people.map(function (x) { return x.label; }).join(', ');
+    if (!a.can) {
+      const no = SB.el('span', 'badge refs warn', 'arrives · not on ' + slug);
+      no.title = who + ' arrive' + (a.people.length === 1 ? 's' : '') +
+        ' during this shot and ' + (a.people.length === 1 ? 'is' : 'are') + ' in no frame, so ' +
+        'only the words describe ' + (a.people.length === 1 ? 'them' : 'them') + '. ' +
+        slug + ' takes no reference pictures — sending one is dropped without a word. ' +
+        'The models that do: seedance-2.5, seedance-2.0, seedance-2.0-fast, veo-3.1, ' +
+        'happy_horse.';
+      return no;
+    }
+
+    const on = a.on;
+    const b = SB.el('button', 'mini' + (on ? ' primary' : ''),
+      (on ? '\u2713 ' : '') + 'send ' + who);
+    b.title = on
+      ? who + '\u2019s picture goes with the clip, after the frame. That makes this a ' +
+        'reference-to-video call rather than an animation of your frame: the model builds ' +
+        'from both pictures. Press to stop sending it.'
+      : who + ' arrive' + (a.people.length === 1 ? 's' : '') + ' during this shot, so ' +
+        (a.people.length === 1 ? 'their' : 'their') + ' appearance reaches the model as words ' +
+        'only. Press to send the reference picture too — but note it stops the call animating ' +
+        'your frame and starts it building from both pictures.';
+    b.onclick = function () {
+      sh.shoot = sh.shoot || {};
+      if (on) delete sh.shoot.sendArrivals; else sh.shoot.sendArrivals = true;
+      SB.app.changed(false);
+      render();
+    };
+    return b;
+  }
+
   function shootRow(sh, m, field) {
     const IM = SB.Imagine;
     if (!IM || !IM.settleOne || !m || sh.noShot) return null;
@@ -1033,6 +1080,9 @@
       play.onclick = function () { SB.Clip.open(P(), sh); };
       foot.appendChild(play);
     }
+
+    const arr = arrivalPick(sh, m, field);
+    if (arr) foot.appendChild(arr);
 
     const shoot = shootRow(sh, m, field);
     if (shoot) foot.appendChild(shoot);

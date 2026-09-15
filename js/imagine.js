@@ -893,6 +893,69 @@
     return (v === '1080p' || v === 'default') ? v : 'best';
   }
 
+  /* ---------------- the one extra picture a clip may carry ----------------
+   *
+   * A clip animates the card's frame and is handed nothing else. The single
+   * exception is somebody the board says ARRIVES partway through: they are in
+   * no frame by definition, so their appearance exists only as words, and the
+   * model has nothing to match them to.
+   *
+   * Two facts from the account's own contract shape this, and both are larger
+   * than the feature:
+   *
+   *   Only six models take reference media at all, and ltx-2.3 — the board
+   *   default — is not one of them. Sending a second picture to any other
+   *   model is SILENTLY DROPPED and the call falls back to animating the
+   *   first image. So it is offered only where it can work.
+   *
+   *   "exactly one image => image-to-video (animate a single still); two or
+   *   more => reference-to-video". A second picture stops the call animating
+   *   the approved frame and starts it building from both. That is the door
+   *   the two lanes closed, opening from the other side, so this is a
+   *   per-card decision somebody makes on purpose — never a default, and
+   *   never a consequence of clicking the arrival mark.
+   */
+  function takesRefs(slug) {
+    const t = toolNamed(TOOL.video);
+    const d = (t && t.description) || '';
+    /* Up to a period FOLLOWED BY SPACE: the model names have dots in them,
+     * and stopping at the first one captured "seedance-2" and nothing else. */
+    const m = /Reference-to-video is supported only by these models:([\s\S]*?)\.\s/.exec(d);
+    if (!m) return false;
+    return m[1].split(',').map(function (x) { return x.trim(); }).indexOf(slug) >= 0;
+  }
+
+  /* Whether this card WANTS to send them, which is only ever something the
+   * person storyboarding turned on. */
+  function sendsArrivals(shot) {
+    return !!(shot && shot.shoot && shot.shoot.sendArrivals);
+  }
+
+  /* Who would travel with the clip, and why not where they would not.
+   * { people: [{id,label,img,render}], on, can, why } */
+  function arrivalRefs(p, shot, slug) {
+    const people = [];
+    (SB.Personas.arriving ? SB.Personas.arriving(p, shot) : []).forEach(function (per) {
+      const img = SB.Personas.hero(per);
+      if (img) people.push({ id: per.id, label: per.name || 'unnamed', img: img, render: img.render });
+    });
+    const can = takesRefs(slug);
+    const on = sendsArrivals(shot);
+    return {
+      people: people,
+      on: on,
+      can: can,
+      /* the shortest true sentence about why nothing extra is going */
+      why: !people.length
+        ? (SB.Personas.arriving && SB.Personas.arriving(p, shot).length
+          ? 'nobody arriving on this card has a reference frame'
+          : 'nobody arrives during this shot')
+        : !can ? slug + ' takes no reference pictures — they would be dropped without a word'
+          : !on ? 'not asked for on this card'
+            : ''
+    };
+  }
+
   /* ---------------- the shoot controls ----------------
    *
    * Three questions with the same shape: what does this card ask for, what
@@ -1903,6 +1966,9 @@
       aspect: opts.aspect,
       duration: opts.duration, resolution: opts.resolution || '',
       frame: opts.frame, frameName: opts.frameName,
+      /* [{blob, name, label}] — whoever arrives partway through, in the order
+         the cast block names them. The frame is always first in the array. */
+      extra: opts.extra || [],
       onState: opts.onState
     };
     const viaMcp = function () {
@@ -1913,13 +1979,34 @@
        * so it has to become a URL first. */
       return (opts.frame ? uploadForUrl(opts.frame) : Promise.resolve(''))
         .then(function (url) {
+          /* Each arrival is uploaded after the frame, so the array order is
+             the order the prompt names them. An upload that fails takes the
+             whole push with it rather than quietly sending fewer pictures
+             than the prompt promises. */
+          if (!url || !canon.extra.length) return [url].filter(Boolean);
+          let chain = Promise.resolve([url]);
+          canon.extra.forEach(function (x) {
+            chain = chain.then(function (acc) {
+              return uploadForUrl(x.blob).then(function (u) {
+                return acc.concat(u ? [u] : []);
+              }, function (e) {
+                const err = new Error('“' + x.label + '” could not be uploaded, so the clip ' +
+                  'was not made: ' + (e.message || e) + '. Nothing was charged.');
+                err.submitted = true;
+                throw err;
+              });
+            });
+          });
+          return chain;
+        })
+        .then(function (urls) {
           const args = {
             org_id: orgId(),
             prompt: canon.prompt,
             model: canon.slug || null,
             aspect_ratio: canon.aspect || null,
             duration: canon.duration ? String(canon.duration) : null,
-            image_url: url ? [url] : null
+            image_url: urls.length ? urls : null
           };
           if (canon.resolution) args.resolution = canon.resolution;
           return callRaw(TOOL.video, args);
@@ -2202,11 +2289,30 @@
           });
         })
         : before.then(function () { return startFrame(p, shot); }).then(function (frame) {
-          return video({
-            prompt: text, slug: slugNow, restSlug: slugOf(model, 'key'),
-            aspect: aspect, resolution: res, duration: dur,
-            frame: frame && frame.blob, frameName: frame && frame.name,
-            onState: function () { state('waiting'); }
+          /* The one exception to "a clip is handed its frame and nothing
+             else": somebody who arrives partway through is in no frame, so
+             their picture is the only way the model can match them — and
+             only where the card asked for it and the model takes it. */
+          const arr = arrivalRefs(p, shot, slugNow);
+          const wanted = (arr.on && arr.can) ? arr.people : [];
+          made.arrivals = wanted.map(function (x) { return x.label; });
+          return Promise.all(wanted.map(function (x) {
+            return SB.Renders.file(p, x.render).then(function (f) {
+              if (f) return { blob: f, name: f.name, label: x.label };
+              const src = SB.Blobs.src(p, x.img);
+              if (!src) return null;
+              return dataUrlToBlob(src).then(function (b) {
+                return { blob: b, name: SB.Renders.slug(x.label) + '.png', label: x.label };
+              });
+            }).catch(function () { return null; });
+          })).then(function (extra) {
+            return video({
+              prompt: text, slug: slugNow, restSlug: slugOf(model, 'key'),
+              aspect: aspect, resolution: res, duration: dur,
+              frame: frame && frame.blob, frameName: frame && frame.name,
+              extra: extra.filter(Boolean),
+              onState: function () { state('waiting'); }
+            });
           });
         }).then(function (got) {
           made.slug = got.usedSlug || made.slug;
@@ -3326,7 +3432,7 @@
     discover: discover, toolList: toolList, tools: function () { return mcp.tools || []; },
     capabilities: capabilities, rawTools: rawTools,
     durationFor: durationFor, settleOne: settleOne, settle: settle,
-    shootKey: shootKey, report: report, door: door,
+    shootKey: shootKey, takesRefs: takesRefs, arrivalRefs: arrivalRefs, report: report, door: door,
     restVerdict: function () { return lsStr(K_REST); },
     catalog: catalog, catalogAll: catalogAll, catalogSource: catalogSource,
     worked: worked, noteWorked: noteWorked,

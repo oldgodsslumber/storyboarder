@@ -340,7 +340,7 @@
    * What the writer still needs is the names to use, and the one group genuinely
    * missing from the picture: whoever arrives after it.
    */
-  function videoCastBlock(p, shot, cast) {
+  function videoCastBlock(p, shot, cast, model) {
     /* Who is in the picture is a question about the PICTURE, and the picture
      * was built from the first-frame lane. Asking the video lane produced the
      * inversion: somebody marked only in the motion box — which is how you
@@ -387,8 +387,30 @@
      * to invent staging the board had already written down, and to overrule it
      * when the two disagreed. Appearance is the gap here; the entrance never
      * was. */
+    /* Where their picture is actually going with the call, the words stop
+     * being the only record and become a binding — the same job the still's
+     * mapping does. Two wordings, chosen by what is carried. */
+    const sending = (SB.Imagine && SB.Imagine.arrivalRefs && model)
+      ? (function () {
+        const slug = SB.Imagine.slugOf ? SB.Imagine.slugOf(model) : '';
+        const a = SB.Imagine.arrivalRefs(p, shot, slug);
+        return (a.on && a.can) ? a.people : [];
+      })() : [];
+    const sent = {};
+    sending.forEach(function (x, i) { sent[x.id] = i + 2; });   // picture 1 is the frame
+
     if (late.length) {
       lines.push('');
+      if (sending.length) {
+        lines.push('NOT IN THE SUPPLIED FRAME — these arrive during the shot. Picture 1 is the ' +
+          'frame the clip opens on; the pictures after it are them:');
+        late.forEach(function (per) {
+          if (!sent[per.id]) return;
+          lines.push('  picture ' + sent[per.id] + ' is ' + (per.name || 'unnamed') +
+            ' — match them to it exactly when they enter.');
+        });
+        lines.push('');
+      }
       lines.push('NOT IN THE SUPPLIED FRAME — these arrive during the shot, so the words are the ' +
         'only record of what they look like:');
       late.forEach(function (per) {
@@ -433,7 +455,7 @@
      * subject has a reference image, for a call that carries the frame
      * alone. Three answers, no two alike. */
     if (role === 'video') {
-      return videoCastBlock(p, shot, cast);
+      return videoCastBlock(p, shot, cast, model);
     }
     /* One reference per subject, so one number — the ranges this used to
      * write ("images 3–5 — Nat") went with the list. */
