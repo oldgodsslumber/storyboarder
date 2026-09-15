@@ -783,6 +783,16 @@
             .filter(function (id) { return sh.personaIds.indexOf(id) >= 0; });
           sh.image = SB.Blobs.adopt(p, sh.image);
           sh.annotation = SB.Blobs.adopt(p, sh.annotation);
+          /* The fields that arrived after the oldest snapshots were frozen.
+             Every reader guards against undefined and a restore self-heals on
+             the next save, but this loop exists precisely so a restored board
+             is shaped like a current one rather than nearly. */
+          sh.description = sh.description || '';
+          sh.imageDescription = sh.imageDescription || '';
+          sh.videoDescription = sh.videoDescription || '';
+          if (!sh.shoot || typeof sh.shoot !== 'object') sh.shoot = {};
+          if (!sh.fields || typeof sh.fields !== 'object') sh.fields = {};
+          if (!sh.prompts || typeof sh.prompts !== 'object') sh.prompts = {};
         });
       });
       (v.snapshot.personas || []).forEach(function (per) { migratePersona(p, per); });
@@ -1332,6 +1342,9 @@
   const CONTENT_KEYS = [
     'type', 'color', 'image', 'annotation', 'description',
     'imageDescription', 'videoDescription', 'shoot',
+    /* videoAlts is the other takes of `video`; leaving it out of the swap
+       separated the chosen take from the ones it was chosen against */
+    'videoAlts',
     'fields', 'prompts', 'personaIds', 'castEnters', 'comments', 'render', 'video'
   ];
 
@@ -1364,8 +1377,21 @@
     copy.local = SB.Doc.make(w.doc.text.slice(w.from, w.to));
     /* a comment is a conversation about one card, not about its copy */
     copy.comments = [];
-    /* whatever was generated was generated for the original */
-    copy.render = null;
+    /* The full-size original comes across — it is the card's own picture, not
+     * something generated, and a copy that shows the picture while claiming to
+     * have no original exports a 480p proxy in the Original column and
+     * animates the proxy when a clip is shot from it.
+     *
+     * The BYTES are shared, like the proxy: the store is keyed by content. The
+     * SERIAL is not, because two cards filed under 0001 would write the same
+     * filename twice into one export folder. */
+    if (copy.render && copy.render.ref) {
+      p.renderSeq = (p.renderSeq | 0) + 1;
+      copy.render = Object.assign({}, copy.render, { serial: p.renderSeq });
+    } else {
+      copy.render = null;
+    }
+    /* the clip was shot for the original, and its other takes with it */
     copy.video = null;
     copy.videoAlts = [];
     const at = typeof toIdx === 'number'

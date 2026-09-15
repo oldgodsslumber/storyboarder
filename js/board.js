@@ -78,11 +78,17 @@
     const ids = dragged(id);
     let at = typeof toIdx === 'number' ? toIdx : null;
     let last = null;
+    const copies = [];
     ids.forEach(function (one) {
       last = SB.Model.duplicateShot(P(), one, toSceneId, at);
+      if (last) copies.push(last.id);
       if (last && at != null) at++;
     });
     if (!last) return;
+    /* The copies are what is now selected. Leaving the selection on the
+       originals while the lead moved to a copy meant the next shift-click
+       anchored off a card that was not in the selection. */
+    SB.app.selection = copies.slice();
     SB.app.selectedShotId = last.id;
     SB.app.changed(true);
     SB.toast(ids.length === 1 ? 'Card copied' : ids.length + ' cards copied');
@@ -204,7 +210,7 @@
       it.addEventListener('dragend', function () { unmark(); });
       it.addEventListener('dragstart', function (ev) {
         ev.dataTransfer.setData(DND_SCENE, sc.id);
-        ev.dataTransfer.effectAllowed = 'move';
+        ev.dataTransfer.effectAllowed = 'copyMove';
       });
       it.addEventListener('dragover', function (ev) {
         const types = ev.dataTransfer.types;
@@ -236,6 +242,11 @@
         const shotId = ev.dataTransfer.getData(DND_SHOT);
         if (shotId) {
           ev.preventDefault();
+          if (ev.shiftKey) {
+            doCopy(shotId, sc.id, sc.shots.length);
+            SB.toast('Copied into scene ' + (idx + 1));
+            return;
+          }
           SB.Model.moveShots(P(), dragged(shotId), sc.id, sc.shots.length);
           SB.app.selectedSceneId = sc.id;
           SB.app.changed(true);
@@ -295,7 +306,7 @@
       else if (ev.clientY > r.bottom - edge) panel.scrollTop += 18;
     });
     document.addEventListener('dragend', function () {
-      document.querySelectorAll('.drag-over,.drop-shot,.dragging').forEach(function (el) {
+      document.querySelectorAll('.drag-over,.drop-shot,.dragging,.copy-target,.swap-target').forEach(function (el) {
         el.classList.remove('drag-over');
         el.classList.remove('drop-shot');
         el.classList.remove('dragging');
@@ -781,6 +792,9 @@
       unmark();
       const id = ev.dataTransfer.getData(DND_SHOT);
       if (!id) return;
+      /* every drop target answers the same gesture, or the one that does not
+         is the one somebody lands on and it quietly does the destructive thing */
+      if (ev.shiftKey) { doCopy(id, sc.id, sc.shots.length); return; }
       SB.Model.moveShots(P(), dragged(id), sc.id, sc.shots.length);
       SB.app.changed(true);
     });
@@ -983,6 +997,7 @@
     c.addEventListener('dragleave', function () {
       c.classList.remove('drag-over');
       c.classList.remove('swap-target');
+      c.classList.remove('copy-target');
     });
     c.addEventListener('drop', function (ev) {
       if (ev.dataTransfer.types.indexOf(DND_SHOT) < 0) return;
@@ -1018,6 +1033,11 @@
     });
     c.addEventListener('mousedown', function (ev) {
       if (ev.target.closest('button, select, input, textarea, [contenteditable]')) return;
+      /* The header is the drag handle, and preventDefault here cancels the
+       * browser's drag before it starts — so shift-drag could not even begin
+       * from the one place a drag begins. Range-select keeps the rest of the
+       * card; the handle's job is dragging. */
+      if (ev.shiftKey && ev.target.closest('.card-head')) return;
       if (ev.ctrlKey || ev.metaKey || ev.shiftKey) {
         ev.preventDefault();                       // no text selection while picking
         selectShot(sh.id, ev);
@@ -1033,7 +1053,10 @@
     head.addEventListener('dragend', function () { unmark(); });
     head.addEventListener('dragstart', function (ev) {
       ev.dataTransfer.setData(DND_SHOT, sh.id);
-      ev.dataTransfer.effectAllowed = 'move';
+      /* copyMove, not move: a dropEffect outside effectAllowed is forced to
+       * `none`, and `none` means the drop event never fires at all. Saying
+       * move here made every shift-drag a silent no-op. */
+      ev.dataTransfer.effectAllowed = 'copyMove';
       /* dragging one of a group takes the whole group */
       B.dragging = isSelected(sh.id) ? selection().slice() : [sh.id];
       B.dragging.forEach(function (id) {
@@ -1357,15 +1380,20 @@
     return wrap;
   }
 
-  /* ---- the feed ----
+  /* ---- what is WRONG with this card ----
    *
-   * What this card hands the model, in order. This row is the whole reason @
-   * means "show the model a picture": the rule is invisible until its
-   * consequence is sitting on the card, numbered, with the images in the order
-   * the files go in. Somebody who has never used an image model can read this
-   * strip and drop the right files in the right order.
+   * This was the feed strip: what the card hands over, numbered, with
+   * thumbnails and a button to write the files out. That moved to the prompt
+   * table, where each lane shows what IT sends — the version that is true per
+   * call rather than per card.
+   *
+   * What is left is the part that was never information. A name typed without
+   * an @ feeds nothing; a mark whose subject was deleted points at nobody;
+   * past the advice limit a model averages references instead of reading
+   * them; and a description that reads as somebody arriving needs one of them
+   * marked. A healthy card shows none of it.
    */
-function feedRow(sh) {
+  function feedRow(sh) {
     const row = SB.el('div', 'feed-row');
     row.dataset.feed = sh.id;
 
@@ -1760,6 +1788,18 @@ function feedRow(sh) {
 
   /* ---------------- image frame ---------------- */
 
+  /* Both ways of removing a picture, in one place, because they were two
+   * places that did half the job each. `render` is the full-size ORIGINAL —
+   * not something generated, which is `render.made` — so a card that has had
+   * its picture removed must not go on holding it, exporting it as its
+   * original, feeding it to a clip, or opening it when the now-empty frame
+   * is clicked. */
+  function dropImage(sh) {
+    sh.image = null;
+    sh.render = null;
+    SB.app.changed(true);
+  }
+
   function frame(sh) {
     const f = SB.el('div', 'frame');
     if (sh.image) {
@@ -1817,7 +1857,10 @@ function feedRow(sh) {
     if (sh.image) {
       const rm = SB.el('button', 'mini danger', '✕');
       rm.title = 'Remove image';
-      rm.onclick = function (ev) { ev.stopPropagation(); sh.image = null; SB.app.changed(true); };
+      rm.onclick = function (ev) {
+        ev.stopPropagation();
+        dropImage(sh);
+      };
       tools.appendChild(rm);
     }
     f.appendChild(tools);
@@ -1827,7 +1870,7 @@ function feedRow(sh) {
          480p frame was the same gesture as replacing it. Now it opens the
          picture; an empty frame still picks, because there is nothing to
          look at and "click to load" is all it has. */
-      if (!sh.image && !sh.render) {
+      if (!sh.image) {
         SB.pickImageFile().then(function (file) { if (file) setImage(sh, file); });
         return;
       }
@@ -1836,7 +1879,7 @@ function feedRow(sh) {
         img: sh.image, render: sh.render,
         label: (f2 ? f2.code : '') + (sh.type ? ' · ' + sh.type : ''),
         onReplace: function (file) { setImage(sh, file); },
-        onRemove: function () { sh.image = null; SB.app.changed(true); }
+        onRemove: function () { dropImage(sh); }
       }], 0, { title: 'First frame' });
     });
     f.addEventListener('dragover', function (ev) {

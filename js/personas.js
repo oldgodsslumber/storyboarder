@@ -136,8 +136,14 @@
 
   /* Frames a board carried before the cut, kept rather than deleted: since
    * originals live in the .storyboard, dropping them on open would destroy the
-   * only copy. They are fed to nothing and exported by nothing, and the panel
-   * offers to use one or delete them. */
+   * only copy. They are fed to nothing and exported by nothing.
+   *
+   * Where they can be SEEN: the viewer, opened from the subject's frame —
+   * they follow the current one on the arrow keys. Where they can be dealt
+   * with: Settings → General, which counts their bytes, saves them out at
+   * full size and deletes them for good. Not in the panel; a second thumbnail
+   * under the reference read as a second reference, which is what the cut to
+   * one was for. */
   function retiredOf(per) {
     return (per && Array.isArray(per.retired)) ? per.retired : [];
   }
@@ -153,6 +159,11 @@
     return rec;
   }
 
+  /* Taking the current reference off a subject. The retired frames stay:
+   * they are still the only copy of those originals, and Settings is where
+   * they are saved out or deleted. The caller says so — from the panel they
+   * would otherwise become unreachable, since the viewer that lists them
+   * opens from the frame that just went. */
   function clearImage(per) {
     if (!per) return;
     delete per.image;

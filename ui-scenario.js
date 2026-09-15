@@ -1251,7 +1251,7 @@
            exception took the rest of the suite with it. It returns the moment
            the condition is true, so a healthy run costs nothing. */
         const settle = async function (fn) {
-          for (let i = 0; i < 200 && !fn(); i++) await pauseTop();
+          for (let i = 0; i < 320 && !fn(); i++) await pauseTop();
           return fn();
         };
 
@@ -1407,7 +1407,7 @@
         frameEl.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
         /* 2s was under clipMeta's own 4s budget for reading a file, so a slow
            run asserted before the clip had landed. */
-        for (let k = 0; k < 160 && !(bothShot.image && bothShot.video); k++) await nap(50);
+        for (let k = 0; k < 260 && !(bothShot.image && bothShot.video); k++) await nap(50);
         t('a drop carrying a picture and a clip keeps both',
           !!bothShot.image && !!bothShot.video,
           'image=' + !!bothShot.image + ' clip=' + !!bothShot.video);
@@ -1620,6 +1620,87 @@
         SB.PromptPanel.close();
         await nap(40);
         sh.shoot = {};
+        SB.app.changed(true);
+        await nap(40);
+      }
+
+      // the two things a real browser checks before a drop ever happens
+      {
+        const nap = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+        const sc0 = P().scenes[0];
+        const card = document.querySelector('.card[data-shot="' + sc0.shots[0].id + '"]');
+        const head = card.querySelector('.card-head');
+
+        /* 1. effectAllowed must permit the operation dropEffect asks for.
+           'move' x 'copy' is `none` per the HTML tables, and a `none`
+           operation means the DROP EVENT NEVER FIRES — the copy branch was
+           unreachable in Chrome while this suite passed, because a
+           synthesised DragEvent skips that negotiation entirely. */
+        /* (effectAllowed cannot be read back off a synthesised DataTransfer,
+           which is the whole reason this went unnoticed — test-core.mjs
+           asserts it against the source instead.) */
+
+        /* 2. mousedown on the drag handle must not preventDefault, or the
+           browser never starts the drag at all. The range-select branch did,
+           so shift-held-from-the-start could not begin a drag. */
+        const md = new MouseEvent('mousedown', { bubbles: true, cancelable: true,
+          shiftKey: true, clientX: 5, clientY: 5 });
+        head.dispatchEvent(md);
+        t('shift on the drag handle leaves the drag to the browser',
+          !md.defaultPrevented, 'defaultPrevented=' + md.defaultPrevented);
+
+        /* and the card body still range-selects, which is what that branch
+           was there for */
+        const body = card.querySelector('.desc-box') ? card : card;
+        const md2 = new MouseEvent('mousedown', { bubbles: true, cancelable: true,
+          shiftKey: true, clientX: 5, clientY: 5 });
+        const frameEl = card.querySelector('.frame');
+        frameEl.dispatchEvent(md2);
+        t('while shift elsewhere on the card still picks a range',
+          md2.defaultPrevented, 'defaultPrevented=' + md2.defaultPrevented);
+        await nap(30);
+      }
+
+      // every drop target answers the same gesture
+      {
+        const nap = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+        const p0 = P();
+        const scA = p0.scenes[0];
+        const scB = SB.Model.addScene(p0, 0);
+        scB.heading = 'Elsewhere';
+        SB.app.changed(true);
+        await nap(60);
+        const src = scA.shots[0];
+        const wasA = scA.shots.length, wasB = scB.shots.length;
+
+        const shiftDrop = function (el, x, y) {
+          const dt2 = new DataTransfer();
+          dt2.setData('application/x-sb-shot', src.id);
+          el.dispatchEvent(new DragEvent('drop', { dataTransfer: dt2, bubbles: true,
+            cancelable: true, clientX: x, clientY: y, shiftKey: true }));
+        };
+
+        /* the scene block — its heading, which is a drop target of its own */
+        const blk = document.querySelector('.scene-block[data-scene="' + scB.id + '"]');
+        const bh = blk.querySelector('.scene-head');
+        const br = bh.getBoundingClientRect();
+        shiftDrop(bh, br.left + 10, br.top + 5);
+        await nap(60);
+        t('shift-dropping on a scene heading copies rather than moves',
+          scA.shots.length === wasA && scB.shots.length === wasB + 1,
+          scA.shots.length + '/' + wasA + ' ' + scB.shots.length + '/' + wasB);
+
+        /* the scene list on the left, which toasted "Moved" while moving */
+        const row = document.querySelector('.scene-item[data-scene="' + scB.id + '"]');
+        const rr = row.getBoundingClientRect();
+        const beforeA = scA.shots.length, beforeB = scB.shots.length;
+        shiftDrop(row, rr.left + 10, rr.top + 5);
+        await nap(60);
+        t('and so does shift-dropping on a scene in the list',
+          scA.shots.length === beforeA && scB.shots.length === beforeB + 1,
+          scA.shots.length + '/' + beforeA + ' ' + scB.shots.length + '/' + beforeB);
+
+        SB.Model.deleteScene(p0, scB.id);
         SB.app.changed(true);
         await nap(40);
       }

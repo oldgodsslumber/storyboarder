@@ -67,10 +67,11 @@
     box.appendChild(table);
 
     /* The leftovers of the era when one subject could carry several frames.
-       Nothing feeds them, nothing exports them, and the reference panel does
-       not show them — so this is the only place they can be dealt with, and
-       they can be taken out of the file before they are deleted, since the
-       file is the only copy. */
+       Nothing feeds them and nothing exports them. The viewer behind a
+       subject's frame will SHOW them — they follow the current one on the
+       arrow keys — but this is the only place they can be dealt with, and
+       they can be taken out of the file at full size before they are
+       deleted, since the file is the only copy. */
     if (retired.length) {
       const note = SB.el('div', 'pp-note');
       note.appendChild(document.createTextNode(
@@ -85,14 +86,28 @@
       out.onclick = function () {
         retired.forEach(function (r, n) {
           const a = document.createElement('a');
-          a.href = SB.Blobs.src(P(), r.img);
+          /* The FULL-SIZE original where the file holds one. This is the
+             button that says the board is the only copy, and it sits beside
+             "delete them for good" — saving the board's 854×480 copy and
+             then destroying the original is the one outcome it exists to
+             prevent. Retired records do carry originals: migrate fills
+             them in and Settings counts their bytes above. */
+          const full = r.img.render ? SB.Renders.dataUrl(P(), r.img.render) : '';
+          a.href = full || SB.Blobs.src(P(), r.img);
           a.download = SB.Renders.slug(r.per.name || 'subject') + '-old-' + (n + 1) +
-            (r.img.label ? '-' + SB.Renders.slug(r.img.label) : '') + '.jpg';
+            (r.img.label ? '-' + SB.Renders.slug(r.img.label) : '') +
+            (full ? '.' + ((r.img.render && r.img.render.ext) || 'png') : '-board.jpg');
           document.body.appendChild(a);
           a.click();
           a.remove();
         });
-        SB.toast('Saved ' + retired.length + ' frame' + (retired.length === 1 ? '' : 's'));
+        const fulls = retired.filter(function (r) {
+          return r.img.render && SB.Renders.has(P(), r.img.render);
+        }).length;
+        SB.toast('Saved ' + retired.length + ' frame' + (retired.length === 1 ? '' : 's') +
+          (fulls === retired.length ? ' at full size'
+            : fulls ? ' \u2014 ' + fulls + ' at full size, the rest board copies'
+              : ' \u2014 all board copies, no originals in this file'));
       };
       note.appendChild(out);
       note.appendChild(document.createTextNode(' '));

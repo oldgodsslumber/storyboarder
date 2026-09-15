@@ -65,6 +65,11 @@
     stage.appendChild(cap);
 
     const onKey = function (e) {
+      /* Only the window in front answers — the same rule the modal's own
+       * Escape follows. Without it a viewer buried under another dialog
+       * stepped on every press, two open viewers both stepped on one, and an
+       * arrow typed into a textarea behind the modal was swallowed. */
+      if (!SB.isTopModal || !SB.isTopModal(m.root)) return;
       if (e.key === 'ArrowLeft') { step(-1); e.preventDefault(); }
       else if (e.key === 'ArrowRight') { step(1); e.preventDefault(); }
     };

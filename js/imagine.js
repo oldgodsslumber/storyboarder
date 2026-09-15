@@ -870,6 +870,11 @@
    * So a board says what it wants once and every model is asked for the
    * nearest thing it has.
    */
+  /* gpt-image-2 does low/medium/high; the 2.5 models go on to xhigh and max.
+   * "auto" is the model choosing for itself, which is what the default policy
+   * already means, so it is not a rung. */
+  const QUALITY_LADDER = ['low', 'medium', 'high', 'xhigh', 'max'];
+
   const RES_RANK = {
     '360p': 360, '480p': 480, '540p': 540, '720p': 720, '768p': 768,
     '1080p': 1080, '1440p': 1440, '2160p': 2160, '4k': 2160,
@@ -900,43 +905,86 @@
    * answer", so changing a board default moves every card that never said
    * otherwise.
    */
-  function override(shot, what) {
-    const v = shot && shot.shoot && shot.shoot[what];
+  /* `resolution` is asked of both lanes and they share no values — 1K/2K/4K
+   * against 720p/1080p/2160p — so it is two keys, not one. Duration is only
+   * ever a clip's and quality only ever a still's, so those stay as they are. */
+  function shootKey(kind, what) {
+    return what === 'resolution'
+      ? (kind === 'image' ? 'imageResolution' : 'videoResolution')
+      : what;
+  }
+
+  function override(shot, what, kind) {
+    const v = shot && shot.shoot && shot.shoot[shootKey(kind, what)];
     return typeof v === 'string' && v ? v : (typeof v === 'number' ? String(v) : '');
   }
 
   /* What a card will actually be shot at, and whether that is what was asked
    * for. Returns { value, asked, allowed, fell } — `fell` is true when the
    * request could not be honoured, which is the thing worth saying out loud. */
+  /* What the BOARD asks for, when the card says nothing. For duration and
+   * quality that is a plain setting; for resolution it is the policy — best
+   * each model offers, 1080p where offered, or the model's own floor — and
+   * settleOne not knowing that was the whole of the disagreement. */
+  function boardAsk(p, slug, kind, what, allowed) {
+    if (what === 'duration') return p.settings.imagineDuration || '';
+    if (what === 'quality') {
+      const set = p.settings.imagineQuality || '';
+      if (set) return set;
+      if (policy(p) === 'default' || !allowed || !allowed.length) return '';
+      let best = '';
+      QUALITY_LADDER.forEach(function (q) { if (allowed.indexOf(q) >= 0) best = q; });
+      return best;
+    }
+    /* resolution */
+    if (policy(p) === 'default' || !allowed || !allowed.length) return '';
+    const sorted = allowed.slice().sort(function (a, b) { return rank(a) - rank(b); });
+    if (policy(p) === 'best') return sorted[sorted.length - 1];
+    const under = sorted.filter(function (v) { return rank(v) <= 1080; });
+    return under.length ? under[under.length - 1] : sorted[0];
+  }
+
   function settleOne(p, shot, slug, kind, what) {
     const tool = kind === 'image' ? TOOL.image : TOOL.video;
     const allowed = allowFor(tool, slug, what);
-    const asked = override(shot, what) ||
-      (what === 'duration' ? (p.settings.imagineDuration || '')
-        : what === 'quality' ? (p.settings.imagineQuality || '') : '');
+    const mine = override(shot, what, kind);
+    const asked = mine || boardAsk(p, slug, kind, what, allowed);
     if (!allowed || !allowed.length) {
       /* [] is the model saying it takes none of this and uses its own;
          null is "not known yet". Either way nothing is sent. */
-      return { value: '', asked: asked, allowed: allowed || [], fell: !!(asked && allowed) };
+      return { value: '', asked: asked, mine: mine, allowed: allowed || [],
+        fell: !!(asked && allowed) };
     }
     if (asked && allowed.indexOf(asked) >= 0) {
-      return { value: asked, asked: asked, allowed: allowed, fell: false };
+      return { value: asked, asked: asked, mine: mine, allowed: allowed, fell: false };
     }
     if (asked) {
-      /* the nearest thing it does take, rather than its floor by accident */
-      const n = parseFloat(asked);
+      /* A card asking for something this model does not have falls back to
+       * what the BOARD would have said, which for quality is the top of the
+       * ladder and for resolution the policy — not to the first item on the
+       * list, which is the model's floor. */
+      if (mine) {
+        const b = boardAsk(p, slug, kind, what, allowed);
+        if (b && allowed.indexOf(b) >= 0) {
+          return { value: b, asked: mine, mine: mine, allowed: allowed, fell: true };
+        }
+      }
+      /* Otherwise the nearest thing it does take, ranked the way the value is
+       * written, so "4k" is not read as four. */
+      const num = what === 'resolution' ? rank : function (v) { return parseFloat(v); };
+      const n = num(asked);
       let best = allowed[0];
-      if (isFinite(n)) {
+      if (isFinite(n) && n > 0) {
         let gap = Infinity;
         allowed.forEach(function (v) {
-          const m = parseFloat(v);
-          if (!isFinite(m)) return;
+          const m = num(v);
+          if (!isFinite(m) || !m) return;
           if (Math.abs(m - n) < gap) { gap = Math.abs(m - n); best = v; }
         });
       }
-      return { value: best, asked: asked, allowed: allowed, fell: true };
+      return { value: best, asked: asked, mine: mine, allowed: allowed, fell: true };
     }
-    return { value: '', asked: '', allowed: allowed, fell: false };
+    return { value: '', asked: '', mine: mine, allowed: allowed, fell: false };
   }
 
   /* Everything one push will ask for, in one object, so the row that shows it
@@ -960,38 +1008,15 @@
   /* The resolution to ask this model for, or '' to send nothing — which is
    * the honest answer both for "leave it alone" and for a model that ignores
    * the field. */
+  /* One answer, so the control beside the button and the call it sends can
+   * never disagree again. */
   function resolutionFor(p, slug, kind, shot) {
-    const list = allowFor(kind === 'image' ? TOOL.image : TOOL.video, slug, 'resolution');
-    /* A card that names one outranks the policy — that is what an override
-     * is for — but it still has to be something the model offers. */
-    const mine = override(shot, 'resolution');
-    if (mine && list && list.indexOf(mine) >= 0) return mine;
-    if (policy(p) === 'default') return '';
-    if (!list || !list.length) return '';
-    const sorted = list.slice().sort(function (a, b) { return rank(a) - rank(b); });
-    if (policy(p) === 'best') return sorted[sorted.length - 1];
-    /* 1080p where it is offered, otherwise the best below it — and the
-     * smallest available if even that is above 1080p. */
-    const under = sorted.filter(function (v) { return rank(v) <= 1080; });
-    return under.length ? under[under.length - 1] : sorted[0];
+    return settleOne(p, shot, slug, kind || 'image', 'resolution').value;
   }
 
   /* Only gpt-image-2 takes one, and its floor is "low". */
   function qualityFor(p, slug, shot) {
-    const list = allowFor(TOOL.image, slug, 'quality');
-    const mine = override(shot, 'quality') || (p.settings.imagineQuality || '');
-    if (mine && list && list.indexOf(mine) >= 0) return mine;
-    if (policy(p) === 'default') return '';
-    if (!list || !list.length) return '';
-    /* The ladder gained rungs: gpt-image-2 does low/medium/high, and the 2.5
-     * models do auto/low/medium/high/xhigh/max. A fixed preference of "high"
-     * asked the better models for third best while the board said best.
-     * "auto" is the model choosing for itself, which is what the default
-     * policy already means, so it is not a rung. */
-    const LADDER = ['low', 'medium', 'high', 'xhigh', 'max'];
-    let best = '';
-    LADDER.forEach(function (q) { if (list.indexOf(q) >= 0) best = q; });
-    return best;
+    return settleOne(p, shot, slug, 'image', 'quality').value;
   }
 
   /* ---------------- what it costs ----------------
@@ -2949,7 +2974,12 @@
         v.onerror = function () { finish(null); };
         v.src = url;
       } catch (e) { finish(null); }
-      setTimeout(function () { finish(null); }, 4000);
+      /* A backstop for the case where neither loadedmetadata nor error ever
+       * fires — not a deadline for decoding. Four seconds was tight enough
+       * that a busy machine lost the duration off a perfectly good file, and
+       * the clip then landed with no length on its badge. The clip is kept
+       * either way; this only decides whether we know how long it is. */
+      setTimeout(function () { finish(null); }, 8000);
     });
   }
 
@@ -3295,7 +3325,8 @@
     /* discovery, for the Settings readout */
     discover: discover, toolList: toolList, tools: function () { return mcp.tools || []; },
     capabilities: capabilities, rawTools: rawTools,
-    durationFor: durationFor, settleOne: settleOne, settle: settle, report: report, door: door,
+    durationFor: durationFor, settleOne: settleOne, settle: settle,
+    shootKey: shootKey, report: report, door: door,
     restVerdict: function () { return lsStr(K_REST); },
     catalog: catalog, catalogAll: catalogAll, catalogSource: catalogSource,
     worked: worked, noteWorked: noteWorked,

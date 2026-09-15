@@ -1371,7 +1371,7 @@ body.comment-mode .frame{cursor:crosshair}
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-09-15 18:32 · 9c21e53+";</script>
+<script>window.SB_BUILD = "2026-09-15 19:03 · e41ec34+";</script>
 
 <div id="app">
 
@@ -1884,6 +1884,10 @@ window.SB = window.SB || {};
     const all = document.querySelectorAll('#modalRoot .modal-back');
     return all.length ? all[all.length - 1] : null;
   }
+
+  /* Which dialog is in front. The modal's own Escape has always needed this;
+   * so does anything else that listens on the document while open. */
+  SB.isTopModal = function (back) { return topmostModal() === back; };
 
   SB.modal = function (opts) {
     const back = SB.el('div', 'modal-back');
@@ -5557,6 +5561,11 @@ window.SB = window.SB || {};
    * So a board says what it wants once and every model is asked for the
    * nearest thing it has.
    */
+  /* gpt-image-2 does low/medium/high; the 2.5 models go on to xhigh and max.
+   * "auto" is the model choosing for itself, which is what the default policy
+   * already means, so it is not a rung. */
+  const QUALITY_LADDER = ['low', 'medium', 'high', 'xhigh', 'max'];
+
   const RES_RANK = {
     '360p': 360, '480p': 480, '540p': 540, '720p': 720, '768p': 768,
     '1080p': 1080, '1440p': 1440, '2160p': 2160, '4k': 2160,
@@ -5587,43 +5596,86 @@ window.SB = window.SB || {};
    * answer", so changing a board default moves every card that never said
    * otherwise.
    */
-  function override(shot, what) {
-    const v = shot && shot.shoot && shot.shoot[what];
+  /* `resolution` is asked of both lanes and they share no values — 1K/2K/4K
+   * against 720p/1080p/2160p — so it is two keys, not one. Duration is only
+   * ever a clip's and quality only ever a still's, so those stay as they are. */
+  function shootKey(kind, what) {
+    return what === 'resolution'
+      ? (kind === 'image' ? 'imageResolution' : 'videoResolution')
+      : what;
+  }
+
+  function override(shot, what, kind) {
+    const v = shot && shot.shoot && shot.shoot[shootKey(kind, what)];
     return typeof v === 'string' && v ? v : (typeof v === 'number' ? String(v) : '');
   }
 
   /* What a card will actually be shot at, and whether that is what was asked
    * for. Returns { value, asked, allowed, fell } — `fell` is true when the
    * request could not be honoured, which is the thing worth saying out loud. */
+  /* What the BOARD asks for, when the card says nothing. For duration and
+   * quality that is a plain setting; for resolution it is the policy — best
+   * each model offers, 1080p where offered, or the model's own floor — and
+   * settleOne not knowing that was the whole of the disagreement. */
+  function boardAsk(p, slug, kind, what, allowed) {
+    if (what === 'duration') return p.settings.imagineDuration || '';
+    if (what === 'quality') {
+      const set = p.settings.imagineQuality || '';
+      if (set) return set;
+      if (policy(p) === 'default' || !allowed || !allowed.length) return '';
+      let best = '';
+      QUALITY_LADDER.forEach(function (q) { if (allowed.indexOf(q) >= 0) best = q; });
+      return best;
+    }
+    /* resolution */
+    if (policy(p) === 'default' || !allowed || !allowed.length) return '';
+    const sorted = allowed.slice().sort(function (a, b) { return rank(a) - rank(b); });
+    if (policy(p) === 'best') return sorted[sorted.length - 1];
+    const under = sorted.filter(function (v) { return rank(v) <= 1080; });
+    return under.length ? under[under.length - 1] : sorted[0];
+  }
+
   function settleOne(p, shot, slug, kind, what) {
     const tool = kind === 'image' ? TOOL.image : TOOL.video;
     const allowed = allowFor(tool, slug, what);
-    const asked = override(shot, what) ||
-      (what === 'duration' ? (p.settings.imagineDuration || '')
-        : what === 'quality' ? (p.settings.imagineQuality || '') : '');
+    const mine = override(shot, what, kind);
+    const asked = mine || boardAsk(p, slug, kind, what, allowed);
     if (!allowed || !allowed.length) {
       /* [] is the model saying it takes none of this and uses its own;
          null is "not known yet". Either way nothing is sent. */
-      return { value: '', asked: asked, allowed: allowed || [], fell: !!(asked && allowed) };
+      return { value: '', asked: asked, mine: mine, allowed: allowed || [],
+        fell: !!(asked && allowed) };
     }
     if (asked && allowed.indexOf(asked) >= 0) {
-      return { value: asked, asked: asked, allowed: allowed, fell: false };
+      return { value: asked, asked: asked, mine: mine, allowed: allowed, fell: false };
     }
     if (asked) {
-      /* the nearest thing it does take, rather than its floor by accident */
-      const n = parseFloat(asked);
+      /* A card asking for something this model does not have falls back to
+       * what the BOARD would have said, which for quality is the top of the
+       * ladder and for resolution the policy — not to the first item on the
+       * list, which is the model's floor. */
+      if (mine) {
+        const b = boardAsk(p, slug, kind, what, allowed);
+        if (b && allowed.indexOf(b) >= 0) {
+          return { value: b, asked: mine, mine: mine, allowed: allowed, fell: true };
+        }
+      }
+      /* Otherwise the nearest thing it does take, ranked the way the value is
+       * written, so "4k" is not read as four. */
+      const num = what === 'resolution' ? rank : function (v) { return parseFloat(v); };
+      const n = num(asked);
       let best = allowed[0];
-      if (isFinite(n)) {
+      if (isFinite(n) && n > 0) {
         let gap = Infinity;
         allowed.forEach(function (v) {
-          const m = parseFloat(v);
-          if (!isFinite(m)) return;
+          const m = num(v);
+          if (!isFinite(m) || !m) return;
           if (Math.abs(m - n) < gap) { gap = Math.abs(m - n); best = v; }
         });
       }
-      return { value: best, asked: asked, allowed: allowed, fell: true };
+      return { value: best, asked: asked, mine: mine, allowed: allowed, fell: true };
     }
-    return { value: '', asked: '', allowed: allowed, fell: false };
+    return { value: '', asked: '', mine: mine, allowed: allowed, fell: false };
   }
 
   /* Everything one push will ask for, in one object, so the row that shows it
@@ -5647,38 +5699,15 @@ window.SB = window.SB || {};
   /* The resolution to ask this model for, or '' to send nothing — which is
    * the honest answer both for "leave it alone" and for a model that ignores
    * the field. */
+  /* One answer, so the control beside the button and the call it sends can
+   * never disagree again. */
   function resolutionFor(p, slug, kind, shot) {
-    const list = allowFor(kind === 'image' ? TOOL.image : TOOL.video, slug, 'resolution');
-    /* A card that names one outranks the policy — that is what an override
-     * is for — but it still has to be something the model offers. */
-    const mine = override(shot, 'resolution');
-    if (mine && list && list.indexOf(mine) >= 0) return mine;
-    if (policy(p) === 'default') return '';
-    if (!list || !list.length) return '';
-    const sorted = list.slice().sort(function (a, b) { return rank(a) - rank(b); });
-    if (policy(p) === 'best') return sorted[sorted.length - 1];
-    /* 1080p where it is offered, otherwise the best below it — and the
-     * smallest available if even that is above 1080p. */
-    const under = sorted.filter(function (v) { return rank(v) <= 1080; });
-    return under.length ? under[under.length - 1] : sorted[0];
+    return settleOne(p, shot, slug, kind || 'image', 'resolution').value;
   }
 
   /* Only gpt-image-2 takes one, and its floor is "low". */
   function qualityFor(p, slug, shot) {
-    const list = allowFor(TOOL.image, slug, 'quality');
-    const mine = override(shot, 'quality') || (p.settings.imagineQuality || '');
-    if (mine && list && list.indexOf(mine) >= 0) return mine;
-    if (policy(p) === 'default') return '';
-    if (!list || !list.length) return '';
-    /* The ladder gained rungs: gpt-image-2 does low/medium/high, and the 2.5
-     * models do auto/low/medium/high/xhigh/max. A fixed preference of "high"
-     * asked the better models for third best while the board said best.
-     * "auto" is the model choosing for itself, which is what the default
-     * policy already means, so it is not a rung. */
-    const LADDER = ['low', 'medium', 'high', 'xhigh', 'max'];
-    let best = '';
-    LADDER.forEach(function (q) { if (list.indexOf(q) >= 0) best = q; });
-    return best;
+    return settleOne(p, shot, slug, 'image', 'quality').value;
   }
 
   /* ---------------- what it costs ----------------
@@ -7636,7 +7665,12 @@ window.SB = window.SB || {};
         v.onerror = function () { finish(null); };
         v.src = url;
       } catch (e) { finish(null); }
-      setTimeout(function () { finish(null); }, 4000);
+      /* A backstop for the case where neither loadedmetadata nor error ever
+       * fires — not a deadline for decoding. Four seconds was tight enough
+       * that a busy machine lost the duration off a perfectly good file, and
+       * the clip then landed with no length on its badge. The clip is kept
+       * either way; this only decides whether we know how long it is. */
+      setTimeout(function () { finish(null); }, 8000);
     });
   }
 
@@ -7982,7 +8016,8 @@ window.SB = window.SB || {};
     /* discovery, for the Settings readout */
     discover: discover, toolList: toolList, tools: function () { return mcp.tools || []; },
     capabilities: capabilities, rawTools: rawTools,
-    durationFor: durationFor, settleOne: settleOne, settle: settle, report: report, door: door,
+    durationFor: durationFor, settleOne: settleOne, settle: settle,
+    shootKey: shootKey, report: report, door: door,
     restVerdict: function () { return lsStr(K_REST); },
     catalog: catalog, catalogAll: catalogAll, catalogSource: catalogSource,
     worked: worked, noteWorked: noteWorked,
@@ -8561,8 +8596,14 @@ window.SB = window.SB || {};
 
   /* Frames a board carried before the cut, kept rather than deleted: since
    * originals live in the .storyboard, dropping them on open would destroy the
-   * only copy. They are fed to nothing and exported by nothing, and the panel
-   * offers to use one or delete them. */
+   * only copy. They are fed to nothing and exported by nothing.
+   *
+   * Where they can be SEEN: the viewer, opened from the subject's frame —
+   * they follow the current one on the arrow keys. Where they can be dealt
+   * with: Settings → General, which counts their bytes, saves them out at
+   * full size and deletes them for good. Not in the panel; a second thumbnail
+   * under the reference read as a second reference, which is what the cut to
+   * one was for. */
   function retiredOf(per) {
     return (per && Array.isArray(per.retired)) ? per.retired : [];
   }
@@ -8578,6 +8619,11 @@ window.SB = window.SB || {};
     return rec;
   }
 
+  /* Taking the current reference off a subject. The retired frames stay:
+   * they are still the only copy of those originals, and Settings is where
+   * they are saved out or deleted. The caller says so — from the panel they
+   * would otherwise become unreachable, since the viewer that lists them
+   * opens from the frame that just went. */
   function clearImage(per) {
     if (!per) return;
     delete per.image;
@@ -10055,6 +10101,16 @@ window.SB = window.SB || {};
             .filter(function (id) { return sh.personaIds.indexOf(id) >= 0; });
           sh.image = SB.Blobs.adopt(p, sh.image);
           sh.annotation = SB.Blobs.adopt(p, sh.annotation);
+          /* The fields that arrived after the oldest snapshots were frozen.
+             Every reader guards against undefined and a restore self-heals on
+             the next save, but this loop exists precisely so a restored board
+             is shaped like a current one rather than nearly. */
+          sh.description = sh.description || '';
+          sh.imageDescription = sh.imageDescription || '';
+          sh.videoDescription = sh.videoDescription || '';
+          if (!sh.shoot || typeof sh.shoot !== 'object') sh.shoot = {};
+          if (!sh.fields || typeof sh.fields !== 'object') sh.fields = {};
+          if (!sh.prompts || typeof sh.prompts !== 'object') sh.prompts = {};
         });
       });
       (v.snapshot.personas || []).forEach(function (per) { migratePersona(p, per); });
@@ -10604,6 +10660,9 @@ window.SB = window.SB || {};
   const CONTENT_KEYS = [
     'type', 'color', 'image', 'annotation', 'description',
     'imageDescription', 'videoDescription', 'shoot',
+    /* videoAlts is the other takes of `video`; leaving it out of the swap
+       separated the chosen take from the ones it was chosen against */
+    'videoAlts',
     'fields', 'prompts', 'personaIds', 'castEnters', 'comments', 'render', 'video'
   ];
 
@@ -10636,8 +10695,21 @@ window.SB = window.SB || {};
     copy.local = SB.Doc.make(w.doc.text.slice(w.from, w.to));
     /* a comment is a conversation about one card, not about its copy */
     copy.comments = [];
-    /* whatever was generated was generated for the original */
-    copy.render = null;
+    /* The full-size original comes across — it is the card's own picture, not
+     * something generated, and a copy that shows the picture while claiming to
+     * have no original exports a 480p proxy in the Original column and
+     * animates the proxy when a clip is shot from it.
+     *
+     * The BYTES are shared, like the proxy: the store is keyed by content. The
+     * SERIAL is not, because two cards filed under 0001 would write the same
+     * filename twice into one export folder. */
+    if (copy.render && copy.render.ref) {
+      p.renderSeq = (p.renderSeq | 0) + 1;
+      copy.render = Object.assign({}, copy.render, { serial: p.renderSeq });
+    } else {
+      copy.render = null;
+    }
+    /* the clip was shot for the original, and its other takes with it */
     copy.video = null;
     copy.videoAlts = [];
     const at = typeof toIdx === 'number'
@@ -12317,6 +12389,11 @@ window.SB = window.SB || {};
     stage.appendChild(cap);
 
     const onKey = function (e) {
+      /* Only the window in front answers — the same rule the modal's own
+       * Escape follows. Without it a viewer buried under another dialog
+       * stepped on every press, two open viewers both stepped on one, and an
+       * arrow typed into a textarea behind the modal was swallowed. */
+      if (!SB.isTopModal || !SB.isTopModal(m.root)) return;
       if (e.key === 'ArrowLeft') { step(-1); e.preventDefault(); }
       else if (e.key === 'ArrowRight') { step(1); e.preventDefault(); }
     };
@@ -12505,11 +12582,17 @@ window.SB = window.SB || {};
     const ids = dragged(id);
     let at = typeof toIdx === 'number' ? toIdx : null;
     let last = null;
+    const copies = [];
     ids.forEach(function (one) {
       last = SB.Model.duplicateShot(P(), one, toSceneId, at);
+      if (last) copies.push(last.id);
       if (last && at != null) at++;
     });
     if (!last) return;
+    /* The copies are what is now selected. Leaving the selection on the
+       originals while the lead moved to a copy meant the next shift-click
+       anchored off a card that was not in the selection. */
+    SB.app.selection = copies.slice();
     SB.app.selectedShotId = last.id;
     SB.app.changed(true);
     SB.toast(ids.length === 1 ? 'Card copied' : ids.length + ' cards copied');
@@ -12631,7 +12714,7 @@ window.SB = window.SB || {};
       it.addEventListener('dragend', function () { unmark(); });
       it.addEventListener('dragstart', function (ev) {
         ev.dataTransfer.setData(DND_SCENE, sc.id);
-        ev.dataTransfer.effectAllowed = 'move';
+        ev.dataTransfer.effectAllowed = 'copyMove';
       });
       it.addEventListener('dragover', function (ev) {
         const types = ev.dataTransfer.types;
@@ -12663,6 +12746,11 @@ window.SB = window.SB || {};
         const shotId = ev.dataTransfer.getData(DND_SHOT);
         if (shotId) {
           ev.preventDefault();
+          if (ev.shiftKey) {
+            doCopy(shotId, sc.id, sc.shots.length);
+            SB.toast('Copied into scene ' + (idx + 1));
+            return;
+          }
           SB.Model.moveShots(P(), dragged(shotId), sc.id, sc.shots.length);
           SB.app.selectedSceneId = sc.id;
           SB.app.changed(true);
@@ -12722,7 +12810,7 @@ window.SB = window.SB || {};
       else if (ev.clientY > r.bottom - edge) panel.scrollTop += 18;
     });
     document.addEventListener('dragend', function () {
-      document.querySelectorAll('.drag-over,.drop-shot,.dragging').forEach(function (el) {
+      document.querySelectorAll('.drag-over,.drop-shot,.dragging,.copy-target,.swap-target').forEach(function (el) {
         el.classList.remove('drag-over');
         el.classList.remove('drop-shot');
         el.classList.remove('dragging');
@@ -13208,6 +13296,9 @@ window.SB = window.SB || {};
       unmark();
       const id = ev.dataTransfer.getData(DND_SHOT);
       if (!id) return;
+      /* every drop target answers the same gesture, or the one that does not
+         is the one somebody lands on and it quietly does the destructive thing */
+      if (ev.shiftKey) { doCopy(id, sc.id, sc.shots.length); return; }
       SB.Model.moveShots(P(), dragged(id), sc.id, sc.shots.length);
       SB.app.changed(true);
     });
@@ -13410,6 +13501,7 @@ window.SB = window.SB || {};
     c.addEventListener('dragleave', function () {
       c.classList.remove('drag-over');
       c.classList.remove('swap-target');
+      c.classList.remove('copy-target');
     });
     c.addEventListener('drop', function (ev) {
       if (ev.dataTransfer.types.indexOf(DND_SHOT) < 0) return;
@@ -13445,6 +13537,11 @@ window.SB = window.SB || {};
     });
     c.addEventListener('mousedown', function (ev) {
       if (ev.target.closest('button, select, input, textarea, [contenteditable]')) return;
+      /* The header is the drag handle, and preventDefault here cancels the
+       * browser's drag before it starts — so shift-drag could not even begin
+       * from the one place a drag begins. Range-select keeps the rest of the
+       * card; the handle's job is dragging. */
+      if (ev.shiftKey && ev.target.closest('.card-head')) return;
       if (ev.ctrlKey || ev.metaKey || ev.shiftKey) {
         ev.preventDefault();                       // no text selection while picking
         selectShot(sh.id, ev);
@@ -13460,7 +13557,10 @@ window.SB = window.SB || {};
     head.addEventListener('dragend', function () { unmark(); });
     head.addEventListener('dragstart', function (ev) {
       ev.dataTransfer.setData(DND_SHOT, sh.id);
-      ev.dataTransfer.effectAllowed = 'move';
+      /* copyMove, not move: a dropEffect outside effectAllowed is forced to
+       * `none`, and `none` means the drop event never fires at all. Saying
+       * move here made every shift-drag a silent no-op. */
+      ev.dataTransfer.effectAllowed = 'copyMove';
       /* dragging one of a group takes the whole group */
       B.dragging = isSelected(sh.id) ? selection().slice() : [sh.id];
       B.dragging.forEach(function (id) {
@@ -13784,15 +13884,20 @@ window.SB = window.SB || {};
     return wrap;
   }
 
-  /* ---- the feed ----
+  /* ---- what is WRONG with this card ----
    *
-   * What this card hands the model, in order. This row is the whole reason @
-   * means "show the model a picture": the rule is invisible until its
-   * consequence is sitting on the card, numbered, with the images in the order
-   * the files go in. Somebody who has never used an image model can read this
-   * strip and drop the right files in the right order.
+   * This was the feed strip: what the card hands over, numbered, with
+   * thumbnails and a button to write the files out. That moved to the prompt
+   * table, where each lane shows what IT sends — the version that is true per
+   * call rather than per card.
+   *
+   * What is left is the part that was never information. A name typed without
+   * an @ feeds nothing; a mark whose subject was deleted points at nobody;
+   * past the advice limit a model averages references instead of reading
+   * them; and a description that reads as somebody arriving needs one of them
+   * marked. A healthy card shows none of it.
    */
-function feedRow(sh) {
+  function feedRow(sh) {
     const row = SB.el('div', 'feed-row');
     row.dataset.feed = sh.id;
 
@@ -14187,6 +14292,18 @@ function feedRow(sh) {
 
   /* ---------------- image frame ---------------- */
 
+  /* Both ways of removing a picture, in one place, because they were two
+   * places that did half the job each. `render` is the full-size ORIGINAL —
+   * not something generated, which is `render.made` — so a card that has had
+   * its picture removed must not go on holding it, exporting it as its
+   * original, feeding it to a clip, or opening it when the now-empty frame
+   * is clicked. */
+  function dropImage(sh) {
+    sh.image = null;
+    sh.render = null;
+    SB.app.changed(true);
+  }
+
   function frame(sh) {
     const f = SB.el('div', 'frame');
     if (sh.image) {
@@ -14244,7 +14361,10 @@ function feedRow(sh) {
     if (sh.image) {
       const rm = SB.el('button', 'mini danger', '✕');
       rm.title = 'Remove image';
-      rm.onclick = function (ev) { ev.stopPropagation(); sh.image = null; SB.app.changed(true); };
+      rm.onclick = function (ev) {
+        ev.stopPropagation();
+        dropImage(sh);
+      };
       tools.appendChild(rm);
     }
     f.appendChild(tools);
@@ -14254,7 +14374,7 @@ function feedRow(sh) {
          480p frame was the same gesture as replacing it. Now it opens the
          picture; an empty frame still picks, because there is nothing to
          look at and "click to load" is all it has. */
-      if (!sh.image && !sh.render) {
+      if (!sh.image) {
         SB.pickImageFile().then(function (file) { if (file) setImage(sh, file); });
         return;
       }
@@ -14263,7 +14383,7 @@ function feedRow(sh) {
         img: sh.image, render: sh.render,
         label: (f2 ? f2.code : '') + (sh.type ? ' · ' + sh.type : ''),
         onReplace: function (file) { setImage(sh, file); },
-        onRemove: function () { sh.image = null; SB.app.changed(true); }
+        onRemove: function () { dropImage(sh); }
       }], 0, { title: 'First frame' });
     });
     f.addEventListener('dragover', function (ev) {
@@ -17248,7 +17368,9 @@ function feedRow(sh) {
     const IM = SB.Imagine;
     const one = IM.settleOne(P(), sh, slug, kind, what);
     if (!one.allowed.length) return null;          // the model takes none
-    const mine = (sh.shoot || {})[what] || '';
+    /* settleOne knows which key this lane keeps its answer under — image and
+       video resolutions share no values, so they cannot share a key. */
+    const mine = one.mine || '';
     const sel = document.createElement('select');
     sel.className = 'shoot-pick' + (mine ? ' mine' : '') + (one.fell ? ' fell' : '');
 
@@ -17285,9 +17407,10 @@ function feedRow(sh) {
       (one.fell ? '\n' + one.asked + ' is not among them \u2014 ' + one.value +
         ' is what would be sent.' : '');
 
+    const key = IM.shootKey(kind, what);
     sel.onchange = function () {
       sh.shoot = sh.shoot || {};
-      if (sel.value) sh.shoot[what] = sel.value; else delete sh.shoot[what];
+      if (sel.value) sh.shoot[key] = sel.value; else delete sh.shoot[key];
       SB.app.changed(false);
       render();
     };
@@ -18582,8 +18705,11 @@ function feedRow(sh) {
    * the rest were numbering a person had to honour by hand. Two angles are two
    * subjects now ("Nat", "Nat (back)"), which the feed can already number.
    *
-   * What a board already had is not deleted: extra frames are retired, shown
-   * below, and either promoted back into the slot or thrown away deliberately.
+   * What a board already had is not deleted: extra frames are retired. They
+   * are not shown here — a second thumbnail under the reference read as a
+   * second reference — but they are in the viewer behind this frame, on the
+   * arrow keys, and Settings → General counts them, saves them out at full
+   * size and deletes them for good.
    */
   function frames(per, kind, wrap) {
     const box = SB.el('div', 'persona-frames');
@@ -18632,9 +18758,16 @@ function feedRow(sh) {
           note: one.label || '',
           onReplace: function (file) { addImage(per, file); },
           onRemove: function () {
+            const kept = SB.Personas.retiredOf(per).length;
             SB.Personas.clearImage(per);
             SB.app.changed(true);
             renderRefs();
+            if (kept) {
+              /* this frame was the way into the viewer that lists them */
+              SB.toast(kept + ' older frame' + (kept === 1 ? '' : 's') +
+                ' of ' + (per.name || 'this subject') + ' ' + (kept === 1 ? 'is' : 'are') +
+                ' still in the file — Settings → General', false, { ms: 9000 });
+            }
           }
         }].concat(old.map(function (x) {
           return { img: x, render: x.render, label: per.name || 'reference',
@@ -19455,10 +19588,11 @@ function feedRow(sh) {
     box.appendChild(table);
 
     /* The leftovers of the era when one subject could carry several frames.
-       Nothing feeds them, nothing exports them, and the reference panel does
-       not show them — so this is the only place they can be dealt with, and
-       they can be taken out of the file before they are deleted, since the
-       file is the only copy. */
+       Nothing feeds them and nothing exports them. The viewer behind a
+       subject's frame will SHOW them — they follow the current one on the
+       arrow keys — but this is the only place they can be dealt with, and
+       they can be taken out of the file at full size before they are
+       deleted, since the file is the only copy. */
     if (retired.length) {
       const note = SB.el('div', 'pp-note');
       note.appendChild(document.createTextNode(
@@ -19473,14 +19607,28 @@ function feedRow(sh) {
       out.onclick = function () {
         retired.forEach(function (r, n) {
           const a = document.createElement('a');
-          a.href = SB.Blobs.src(P(), r.img);
+          /* The FULL-SIZE original where the file holds one. This is the
+             button that says the board is the only copy, and it sits beside
+             "delete them for good" — saving the board's 854×480 copy and
+             then destroying the original is the one outcome it exists to
+             prevent. Retired records do carry originals: migrate fills
+             them in and Settings counts their bytes above. */
+          const full = r.img.render ? SB.Renders.dataUrl(P(), r.img.render) : '';
+          a.href = full || SB.Blobs.src(P(), r.img);
           a.download = SB.Renders.slug(r.per.name || 'subject') + '-old-' + (n + 1) +
-            (r.img.label ? '-' + SB.Renders.slug(r.img.label) : '') + '.jpg';
+            (r.img.label ? '-' + SB.Renders.slug(r.img.label) : '') +
+            (full ? '.' + ((r.img.render && r.img.render.ext) || 'png') : '-board.jpg');
           document.body.appendChild(a);
           a.click();
           a.remove();
         });
-        SB.toast('Saved ' + retired.length + ' frame' + (retired.length === 1 ? '' : 's'));
+        const fulls = retired.filter(function (r) {
+          return r.img.render && SB.Renders.has(P(), r.img.render);
+        }).length;
+        SB.toast('Saved ' + retired.length + ' frame' + (retired.length === 1 ? '' : 's') +
+          (fulls === retired.length ? ' at full size'
+            : fulls ? ' \u2014 ' + fulls + ' at full size, the rest board copies'
+              : ' \u2014 all board copies, no originals in this file'));
       };
       note.appendChild(out);
       note.appendChild(document.createTextNode(' '));
@@ -21365,23 +21513,48 @@ function feedRow(sh) {
       '</div></figure>';
   }
 
+  /* How many mapping rows fit on one sheet. The wrapper is a fixed-height
+   * page with overflow:hidden, so anything past this was simply not printed
+   * and nothing said so — 28 of 40 cards, on the page that exists to tell
+   * somebody the exact order to drop files in. Measured against the rendered
+   * height at the tightest preset, with the heading and lead taken off the
+   * first sheet. */
+  const FEED_FIRST = 24;
+  const FEED_MORE = 30;
+
+  function feedPages(rows) {
+    const out = [];
+    let at = 0;
+    while (at < rows.length) {
+      const take = out.length ? FEED_MORE : FEED_FIRST;
+      out.push(rows.slice(at, at + take));
+      at += take;
+    }
+    return out;
+  }
+
   function feedHTML(rows) {
     if (!rows.length) return '';
-    const body = rows.map(function (r) {
-      return '<tr><td class="c">' + SB.esc(r.code) + '</td><td>' +
-        r.items.map(function (i) {
-          return '<span class="fi"><b>' + i.n + '</b> ' + SB.esc(i.label) +
-            (i.role ? ' <i>(' + SB.esc(i.role) + ')</i>' : '') + '</span>';
-        }).join('') + '</td></tr>';
+    const pages = feedPages(rows);
+    return pages.map(function (page, n) {
+      const body = page.map(function (r) {
+        return '<tr><td class="c">' + SB.esc(r.code) + '</td><td>' +
+          r.items.map(function (i) {
+            return '<span class="fi"><b>' + i.n + '</b> ' + SB.esc(i.label) +
+              (i.role ? ' <i>(' + SB.esc(i.role) + ')</i>' : '') + '</span>';
+          }).join('') + '</td></tr>';
+      }).join('');
+      const head = n === 0
+        ? '<h2>What each card hands over</h2>' +
+          '<p class="lead">The references for the <b>first frame</b>, in this order. The ' +
+          'number is the position the prompt names, so a model fed them out of order is being ' +
+          'told about different pictures. A clip is not on this list: it animates the ' +
+          'card\u2019s own finished frame and is handed nothing else.</p>'
+        : '<h2>What each card hands over <span class="cont">continued</span></h2>';
+      return '<section class="page"><div class="feedwrap">' + head +
+        '<table class="feed"><thead><tr><th>Shot</th><th>References, in order</th></tr></thead>' +
+        '<tbody>' + body + '</tbody></table></div></section>';
     }).join('');
-    return '<section class="page"><div class="feedwrap">' +
-      '<h2>What each card hands over</h2>' +
-      '<p class="lead">The references for the <b>first frame</b>, in this order. The number is ' +
-      'the position the prompt names, so a model fed them out of order is being told about ' +
-      'different pictures. A clip is not on this list: it animates the card\u2019s own finished ' +
-      'frame and is handed nothing else.</p>' +
-      '<table class="feed"><thead><tr><th>Shot</th><th>References, in order</th></tr></thead>' +
-      '<tbody>' + body + '</tbody></table></div></section>';
   }
 
   function refCSS(pr) {
@@ -21438,6 +21611,7 @@ function feedRow(sh) {
       'color:#666;border-bottom:1px solid ' + INK.line + ';padding:2mm 1mm}',
       'table.feed td{vertical-align:top;padding:1.6mm 1mm;border-bottom:1px solid #eef0f3}',
       'table.feed td.c{font-weight:700;width:22mm;white-space:nowrap}',
+      '.feedwrap h2 .cont{font-weight:400;font-size:.62em;color:#6b7280;letter-spacing:.4px}',
       /* which of the two calls this row is the mapping for, printed only on a
          card whose lanes are handed different pictures */
       'table.feed td.c .lane{display:block;font-weight:400;font-style:normal;' +
@@ -21494,10 +21668,10 @@ function feedRow(sh) {
          refPages() prints one "no references yet" sheet while reporting zero
          — so the dialog promised sheets nobody was going to print. */
       sheets: board + (refs ? Math.max(refs.sheets, 1) +
-        (o.refFeeds && feedRows().length ? 1 : 0) : 0),
+        (o.refFeeds ? feedPages(feedRows()).length : 0) : 0),
       boardSheets: board,
       refSheets: refs ? Math.max(refs.sheets, 1) +
-        (o.refFeeds && feedRows().length ? 1 : 0) : 0
+        (o.refFeeds ? feedPages(feedRows()).length : 0) : 0
     };
   }
 

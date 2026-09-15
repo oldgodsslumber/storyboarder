@@ -339,23 +339,48 @@
       '</div></figure>';
   }
 
+  /* How many mapping rows fit on one sheet. The wrapper is a fixed-height
+   * page with overflow:hidden, so anything past this was simply not printed
+   * and nothing said so — 28 of 40 cards, on the page that exists to tell
+   * somebody the exact order to drop files in. Measured against the rendered
+   * height at the tightest preset, with the heading and lead taken off the
+   * first sheet. */
+  const FEED_FIRST = 24;
+  const FEED_MORE = 30;
+
+  function feedPages(rows) {
+    const out = [];
+    let at = 0;
+    while (at < rows.length) {
+      const take = out.length ? FEED_MORE : FEED_FIRST;
+      out.push(rows.slice(at, at + take));
+      at += take;
+    }
+    return out;
+  }
+
   function feedHTML(rows) {
     if (!rows.length) return '';
-    const body = rows.map(function (r) {
-      return '<tr><td class="c">' + SB.esc(r.code) + '</td><td>' +
-        r.items.map(function (i) {
-          return '<span class="fi"><b>' + i.n + '</b> ' + SB.esc(i.label) +
-            (i.role ? ' <i>(' + SB.esc(i.role) + ')</i>' : '') + '</span>';
-        }).join('') + '</td></tr>';
+    const pages = feedPages(rows);
+    return pages.map(function (page, n) {
+      const body = page.map(function (r) {
+        return '<tr><td class="c">' + SB.esc(r.code) + '</td><td>' +
+          r.items.map(function (i) {
+            return '<span class="fi"><b>' + i.n + '</b> ' + SB.esc(i.label) +
+              (i.role ? ' <i>(' + SB.esc(i.role) + ')</i>' : '') + '</span>';
+          }).join('') + '</td></tr>';
+      }).join('');
+      const head = n === 0
+        ? '<h2>What each card hands over</h2>' +
+          '<p class="lead">The references for the <b>first frame</b>, in this order. The ' +
+          'number is the position the prompt names, so a model fed them out of order is being ' +
+          'told about different pictures. A clip is not on this list: it animates the ' +
+          'card\u2019s own finished frame and is handed nothing else.</p>'
+        : '<h2>What each card hands over <span class="cont">continued</span></h2>';
+      return '<section class="page"><div class="feedwrap">' + head +
+        '<table class="feed"><thead><tr><th>Shot</th><th>References, in order</th></tr></thead>' +
+        '<tbody>' + body + '</tbody></table></div></section>';
     }).join('');
-    return '<section class="page"><div class="feedwrap">' +
-      '<h2>What each card hands over</h2>' +
-      '<p class="lead">The references for the <b>first frame</b>, in this order. The number is ' +
-      'the position the prompt names, so a model fed them out of order is being told about ' +
-      'different pictures. A clip is not on this list: it animates the card\u2019s own finished ' +
-      'frame and is handed nothing else.</p>' +
-      '<table class="feed"><thead><tr><th>Shot</th><th>References, in order</th></tr></thead>' +
-      '<tbody>' + body + '</tbody></table></div></section>';
   }
 
   function refCSS(pr) {
@@ -412,6 +437,7 @@
       'color:#666;border-bottom:1px solid ' + INK.line + ';padding:2mm 1mm}',
       'table.feed td{vertical-align:top;padding:1.6mm 1mm;border-bottom:1px solid #eef0f3}',
       'table.feed td.c{font-weight:700;width:22mm;white-space:nowrap}',
+      '.feedwrap h2 .cont{font-weight:400;font-size:.62em;color:#6b7280;letter-spacing:.4px}',
       /* which of the two calls this row is the mapping for, printed only on a
          card whose lanes are handed different pictures */
       'table.feed td.c .lane{display:block;font-weight:400;font-style:normal;' +
@@ -468,10 +494,10 @@
          refPages() prints one "no references yet" sheet while reporting zero
          — so the dialog promised sheets nobody was going to print. */
       sheets: board + (refs ? Math.max(refs.sheets, 1) +
-        (o.refFeeds && feedRows().length ? 1 : 0) : 0),
+        (o.refFeeds ? feedPages(feedRows()).length : 0) : 0),
       boardSheets: board,
       refSheets: refs ? Math.max(refs.sheets, 1) +
-        (o.refFeeds && feedRows().length ? 1 : 0) : 0
+        (o.refFeeds ? feedPages(feedRows()).length : 0) : 0
     };
   }
 

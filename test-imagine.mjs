@@ -759,14 +759,14 @@ section('what a card asks the model for');
     JSON.stringify(D('wan-2.2')));
 
   /* resolution and quality answer to the card too */
-  sh.shoot = { resolution: '1080p' };
+  sh.shoot = { videoResolution: '1080p' };
   t('a card can ask for its own resolution',
     SB.Imagine.resolutionFor(pS, 'ltx-2.3', 'video', sh) === '1080p',
     SB.Imagine.resolutionFor(pS, 'ltx-2.3', 'video', sh));
   t('while the board still answers for every other card',
     SB.Imagine.resolutionFor(pS, 'ltx-2.3', 'video', { shoot: {} }) === '2160p',
     SB.Imagine.resolutionFor(pS, 'ltx-2.3', 'video', { shoot: {} }));
-  sh.shoot = { resolution: '4096p' };
+  sh.shoot = { videoResolution: '4096p' };
   t('and a resolution the model does not have is ignored, not sent',
     SB.Imagine.resolutionFor(pS, 'ltx-2.3', 'video', sh) === '2160p',
     SB.Imagine.resolutionFor(pS, 'ltx-2.3', 'video', sh));

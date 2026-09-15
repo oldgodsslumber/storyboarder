@@ -631,12 +631,39 @@ console.log('\n— a card, copied —');
 
   /* and what belonged to the original stays with it */
   eq(b.comments.length, 0, 'a conversation about one card is not about its copy');
-  eq(b.render, null, 'nor is what was generated for it');
+  /* The full-size original DOES come across — it is the card's own picture,
+     not something generated — sharing its bytes but filed under a serial of
+     its own, since two cards under 0001 write one filename twice. */
+  eq(!!b.render && b.render.ref === a.render.ref, true,
+    'the original comes with the copy, pointing at the same bytes');
+  eq(b.render.serial !== a.render.serial, true, 'filed under a serial of its own');
+  eq(b.video, null, 'while the clip shot for the original stays with it');
 
   /* a copy is a first-class card */
   eq(M.findShot(p, b.id).code, M.code(0, 1), 'and it numbers where it sits');
   b.description = 'changed';
   eq(a.description !== b.description, true, 'editing one leaves the other alone');
+}
+
+console.log('\n\u2014 what a synthetic drag cannot tell you \u2014');
+{
+  /* Shift-drag was dead in every real browser while the UI suite passed,
+     because a synthesised DragEvent skips the browser's negotiation: a
+     dropEffect outside effectAllowed is forced to `none`, and a `none`
+     operation means the drop event never fires. 'move' x 'copy' is exactly
+     that pair. Nothing in the DOM can assert this after the fact \u2014 a
+     synthetic DataTransfer will not even read the value back \u2014 so it is
+     asserted against the source. */
+  const board = readFileSync(join(root, 'js/board.js'), 'utf8');
+  const sets = board.match(/effectAllowed\s*=\s*'[a-zA-Z]+'/g) || [];
+  eq(sets.length > 0, true, 'the board declares what its drags allow');
+  eq(sets.every(function (x) { return /copyMove/.test(x); }), true,
+    'and every one of them permits copy, or shift-drag cannot fire at all');
+
+  /* The other half: preventDefault on the drag handle cancels the drag before
+     it starts, so shift-held-from-the-start could never begin one. */
+  eq(board.indexOf("ev.shiftKey && ev.target.closest('.card-head')") > 0, true,
+    'and the drag handle is left to the browser when shift is held');
 }
 
 console.log('\n— brand style —');

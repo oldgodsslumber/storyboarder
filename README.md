@@ -233,7 +233,7 @@ prints; the clip is the motion made from it.
 - **a shot list** as CSV — code, type, description, both prompts, and the files each shot
   points at — for the call sheet or the ticket.
 - **reference sets per shot**, numbered in feed order, in `refs/<shot code>/`, which is what
-  `copy image set` did on a card.
+  `copy image set` does on that lane.
 - **board copies** (854×480) when the small ones are what you want.
 - **contact sheets** are the same PDF flow as before, one click away on the panel.
 
@@ -390,7 +390,7 @@ it will never make a card or scene reappear or vanish.
   last card, or below the last scene, means *last*. Both used to mean something else —
   the gap sent a card to the far end of the scene, and dropping below the scene list did
   nothing at all, which is why reordering at the two ends rarely stuck.
-- **The still and the clip can have words of their own.** Under the feed strip, two chips —
+- **The still and the clip can have words of their own.** Under the description, two chips —
   `⊕ first frame` and `⊕ motion` — open a box each. The **first frame** box is only what is
   true as the shot opens; the **motion** box is what moves, in what order, how it ends. Both
   are optional, both start closed, and a card that never uses them is exactly as tall as it
@@ -400,8 +400,7 @@ it will never make a card or scene reappear or vanish.
   Because **a reference is an `@` mark in the text it was written in**, splitting the words
   splits the references for free: `@` the rig in the first-frame box and the still is shown
   it; `@` someone in the motion box and only the clip is. No second list, nothing to keep in
-  sync. The card's feed strip stays the union of all three boxes — it is the record of
-  everything this card touches — while each prompt is handed only its own lane, numbered from
+  sync. The card no longer lists what it feeds at all — the prompt table does, per lane — while each prompt is handed only its own lane, numbered from
   one. An older board has both boxes empty and behaves exactly as it always did.
 
 - **Clicking a picture shows it, it does not replace it.** A click on a card's frame — or on
@@ -425,8 +424,10 @@ it will never make a card or scene reappear or vanish.
   whose subject was **deleted**, **more references than a model reads**, and the *someone
   arrives?* nudge. A healthy card shows none of them. The ◉ that answers that last one moved
   to the **first-frame lane**, which is the list of the people that frame is built from.
-- Images: drop, paste (with a card selected), or click the frame. Everything is downscaled
-  to a ≤480p JPEG proxy and stored inline — no full-res copies anywhere.
+- Images: drop, paste (with a card selected), or click an EMPTY frame. A frame that already
+  has a picture opens it large instead — see above. Everything is downscaled
+  to a ≤480p JPEG proxy for the board to draw, with the full-size original kept beside it in
+  the same file.
 - Card colour washes the **whole card**, not a stripe down its edge. It's a fixed palette of
   ten mid-tone hues, mixed into the card surface at a strength chosen per theme so text and
   the text boxes keep their contrast. Click the swatch in a card's header.
@@ -810,12 +811,13 @@ Knowing when to hand a model a reference image is expertise. Written as one rule
 visible consequence, it is a process somebody can follow on their first day — which is the
 whole point.
 
-Under every description is the **feed**: the images this card hands over, numbered in order,
-with thumbnails. **copy image set** saves them named `1_`, `2_`… so a folder sorts into the
-order the prompt promises. A mark with nothing behind it goes amber and takes no number. A
-name typed *without* a mark feeds nothing, so the card offers to **link** it. Past four
-images it says so, because that is where most models start averaging references instead of
-reading them.
+What a card hands over is listed in the **prompt table**, on the lane that hands it over:
+numbered in order, with thumbnails, and **copy image set** saving them named `1_`, `2_`… so a
+folder sorts into the order that lane's prompt promises. A mark with nothing behind it takes
+no number and says so. The card itself stays quiet — until something is wrong with it: a name
+typed *without* a mark feeds nothing, so it offers to **link** it; a mark whose subject was
+deleted offers to leave it as prose; and past four images it says so, because that is where
+most models start averaging references instead of reading them.
 
 Marks are stored as ids, so renaming a subject or renumbering the board rewrites nothing.
 Deleting a subject leaves its last known name behind as ordinary prose. Nothing but prose

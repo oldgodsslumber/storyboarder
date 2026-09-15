@@ -651,7 +651,9 @@
     const IM = SB.Imagine;
     const one = IM.settleOne(P(), sh, slug, kind, what);
     if (!one.allowed.length) return null;          // the model takes none
-    const mine = (sh.shoot || {})[what] || '';
+    /* settleOne knows which key this lane keeps its answer under — image and
+       video resolutions share no values, so they cannot share a key. */
+    const mine = one.mine || '';
     const sel = document.createElement('select');
     sel.className = 'shoot-pick' + (mine ? ' mine' : '') + (one.fell ? ' fell' : '');
 
@@ -688,9 +690,10 @@
       (one.fell ? '\n' + one.asked + ' is not among them \u2014 ' + one.value +
         ' is what would be sent.' : '');
 
+    const key = IM.shootKey(kind, what);
     sel.onchange = function () {
       sh.shoot = sh.shoot || {};
-      if (sel.value) sh.shoot[what] = sel.value; else delete sh.shoot[what];
+      if (sel.value) sh.shoot[key] = sel.value; else delete sh.shoot[key];
       SB.app.changed(false);
       render();
     };

@@ -644,8 +644,11 @@
    * the rest were numbering a person had to honour by hand. Two angles are two
    * subjects now ("Nat", "Nat (back)"), which the feed can already number.
    *
-   * What a board already had is not deleted: extra frames are retired, shown
-   * below, and either promoted back into the slot or thrown away deliberately.
+   * What a board already had is not deleted: extra frames are retired. They
+   * are not shown here — a second thumbnail under the reference read as a
+   * second reference — but they are in the viewer behind this frame, on the
+   * arrow keys, and Settings → General counts them, saves them out at full
+   * size and deletes them for good.
    */
   function frames(per, kind, wrap) {
     const box = SB.el('div', 'persona-frames');
@@ -694,9 +697,16 @@
           note: one.label || '',
           onReplace: function (file) { addImage(per, file); },
           onRemove: function () {
+            const kept = SB.Personas.retiredOf(per).length;
             SB.Personas.clearImage(per);
             SB.app.changed(true);
             renderRefs();
+            if (kept) {
+              /* this frame was the way into the viewer that lists them */
+              SB.toast(kept + ' older frame' + (kept === 1 ? '' : 's') +
+                ' of ' + (per.name || 'this subject') + ' ' + (kept === 1 ? 'is' : 'are') +
+                ' still in the file — Settings → General', false, { ms: 9000 });
+            }
           }
         }].concat(old.map(function (x) {
           return { img: x, render: x.render, label: per.name || 'reference',

@@ -386,6 +386,10 @@ window.SB = window.SB || {};
     return all.length ? all[all.length - 1] : null;
   }
 
+  /* Which dialog is in front. The modal's own Escape has always needed this;
+   * so does anything else that listens on the document while open. */
+  SB.isTopModal = function (back) { return topmostModal() === back; };
+
   SB.modal = function (opts) {
     const back = SB.el('div', 'modal-back');
     const m = SB.el('div', 'modal');
