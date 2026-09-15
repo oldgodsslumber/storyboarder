@@ -802,11 +802,12 @@
         };
         SB.app.changed(true);
         var rHead = document.querySelector('.card[data-shot="' + rShot0.id + '"] .card-head');
-        t('a card says which file its render is',
-          !!rHead.querySelector('.code-serial') &&
-          rHead.querySelector('.code-serial').textContent === '0007',
-          rHead.textContent);
-        t('and the board still shows the shot code beside it',
+        /* The serial chip has gone off the card — the file a render is under
+           is in the prompt table, where the folder it is being matched to is
+           also listed. The card keeps its code, which is its identity. */
+        t('the card no longer carries a file number',
+          !rHead.querySelector('.code-serial'), rHead.textContent);
+        t('but still shows the shot code',
           /1A|1B|1C/.test(rHead.querySelector('.code').textContent), '');
         /* the feed says which files it is about to hand over */
         var other = P().scenes[0].shots[1];
@@ -872,33 +873,27 @@
         SB.app.changed(true);
       }
 
-      // riffing: the next shot off this one, with its frame as the reference
+      // riffing is tagging now: the button has gone, what a tag does has not
       {
-        var rCard = document.querySelector('.card[data-shot="' + firstShot.id + '"]');
-        var before = P().scenes[0].shots.length;
         var atIdx = P().scenes[0].shots.indexOf(firstShot);
         firstShot.image = SB.Blobs.image(P(),
           'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 4, 3);
-        rCard.querySelector('.card-riff').click();
-        var made = P().scenes[0].shots[atIdx + 1];
-        t('riff adds a shot straight after the one it came from',
-          P().scenes[0].shots.length === before + 1 && made && made.id !== firstShot.id,
-          P().scenes[0].shots.length + ' shots');
-        t('and seeds it with a reference to that shot',
-          SB.Refs.parse(P(), made.description)[0].id === firstShot.id,
-          JSON.stringify(made.description));
-        t('so its frame is the first thing the new card feeds',
+        t('no card carries a riff button any more',
+          !document.querySelector('.card .card-riff'), '');
+
+        var made = SB.Model.addShot(P(), P().scenes[0].id, { type: firstShot.type },
+          atIdx + 1);
+        made.description = 'Reverse of ' + SB.Refs.mark(firstShot.id, '1A') + '.';
+        SB.app.changed(true);
+
+        t('a card that tags another shot feeds that shot\u2019s frame',
           SB.Refs.feed(P(), made)[0].kind === 'shot' &&
           SB.Refs.feed(P(), made)[0].numbers[0] === 1, '');
-        /* deliberately NOT the cast: a riff is an edit of the frame before it,
-           and that frame already holds everybody in it. Carrying them across
-           put unmentioned references into a feed that needed one, and arrival
-           marks told the writer to leave the new shot's own subject out. */
-        t('the cast is not dragged along with it',
-          (made.personaIds || []).length === 0 && (made.castEnters || []).length === 0,
-          JSON.stringify(made.personaIds) + ' / ' + JSON.stringify(made.castEnters));
-        t('so the source frame is the only thing it feeds',
+        t('and the frame is the only thing it feeds',
           SB.Refs.feed(P(), made).length === 1, SB.Refs.feed(P(), made).length + ' entries');
+        t('so the still is written as an edit of it, not a new scene',
+          /DERIVED FROM A SUPPLIED FRAME/.test(SB.Brand.systemFor(P(), made, 'image')), '');
+
         SB.PromptPanel.open();
         var rLane = document.querySelector('.pt-row[data-shot="' + made.id +
           '"] .pt-prompt[data-lane="image"]');
@@ -1782,6 +1777,26 @@
         });
         SB.app.changed(true);
         await nap(40);
+      }
+
+      // a page older than the code it loaded says so
+      {
+        const nap = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+        t('a complete page shows no stale warning',
+          !document.querySelector('.stale-bar'), '');
+        /* the check is what a cached index.html missing a module would hit */
+        const was = SB.Viewer;
+        delete SB.Viewer;
+        SB.app.checkParts();
+        await nap(40);
+        const bar = document.querySelector('.stale-bar');
+        t('a missing module raises a bar that names it',
+          !!bar && /Viewer/.test(bar.textContent), bar ? bar.textContent.slice(0, 90) : 'none');
+        t('and offers to reload',
+          !!bar && !!Array.prototype.filter.call(bar.querySelectorAll('button'),
+            function (b) { return /Reload/.test(b.textContent); })[0], '');
+        if (bar) bar.remove();
+        SB.Viewer = was;
       }
 
       // a click shows the picture; replacing is something you say
@@ -2685,59 +2700,20 @@
         b.description = 'SECOND picture';
         SB.app.changed(true);
 
-        /* the two-click route: ⇄ on one card, then click the other */
-        const swapBtn = Array.prototype.filter.call(
-          document.querySelectorAll('.card[data-shot="' + a.id + '"] .ch-actions .mini'),
-          function (x) { return x.textContent === '⇄'; })[0];
-        t('every card offers a swap button', !!swapBtn, 'missing');
-        swapBtn.click();
-        t('it arms the swap', SB.Board.swapArmed() === a.id, SB.Board.swapArmed());
-        t('and the other cards show they can be picked',
-          document.querySelectorAll('.card.swap-pick').length ===
-          document.querySelectorAll('.card').length - 1,
-          document.querySelectorAll('.card.swap-pick').length);
-        document.querySelector('.card[data-shot="' + b.id + '"] .frame').click();
-        t('clicking another card swaps the pictures',
-          a.description === 'SECOND picture' && b.description === 'FIRST picture',
-          a.description + ' / ' + b.description);
-        t('and the dialogue stayed on its own card',
+        /* Swapping is alt-drag and only alt-drag: the ⇄ button and the
+           two-click route cost a control on every card to save a modifier on
+           a rare gesture. doSwap itself is unchanged and still tested through
+           the drag below. */
+        SB.Model.swapShotContent(P(), a.id, b.id);
+        SB.app.changed(true);
+        t('swapping two cards still moves the pictures and not the dialogue',
+          a.description === 'SECOND picture' && b.description === 'FIRST picture' &&
           document.querySelector('.script-box[data-shot="' + a.id + '"]').textContent ===
-          'Wide of the office.',
-          document.querySelector('.script-box[data-shot="' + a.id + '"]').textContent);
-        t('the swap disarms afterwards', SB.Board.swapArmed() === null, SB.Board.swapArmed());
-
-        /* ⇄ on one card then ⇄ on the other — the way it reads, and the way
-           it was actually being used */
-        const btnOf = function (id) {
-          return Array.prototype.filter.call(
-            document.querySelectorAll('.card[data-shot="' + id + '"] .ch-actions .mini'),
-            function (x) { return x.textContent === '⇄'; })[0];
-        };
-        let wasA = a.description, wasB = b.description;
-        btnOf(a.id).click();
-        t('arming shows on the other cards’ buttons too',
-          btnOf(b.id).classList.contains('danger'), btnOf(b.id).className);
-        btnOf(b.id).click();
-        t('pressing ⇄ on the second card completes the swap',
-          a.description === wasB && b.description === wasA,
+            'Wide of the office.',
           a.description + ' / ' + b.description);
-        t('and the dialogue still did not move',
-          document.querySelector('.script-box[data-shot="' + a.id + '"]').textContent ===
-          'Wide of the office.', '');
-        t('nothing is left armed', SB.Board.swapArmed() === null, SB.Board.swapArmed());
-
-        /* picking the second card by its description box, not its frame */
-        wasA = a.description; wasB = b.description;
-        btnOf(a.id).click();
-        document.querySelector('.card[data-shot="' + b.id + '"] .desc-box').click();
-        t('clicking a text box on the second card also completes it',
-          a.description === wasB && b.description === wasA,
-          a.description + ' / ' + b.description);
-
-        /* Esc gets you out */
-        swapBtn.click();
-        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-        t('Escape cancels an armed swap', SB.Board.swapArmed() === null, SB.Board.swapArmed());
+        t('and no card carries a swap button any more',
+          !Array.prototype.some.call(document.querySelectorAll('.card .ch-actions .mini'),
+            function (x) { return x.textContent === '\u21c4'; }), '');
 
         /* the fast route: alt-drag one card onto another */
         const dt = new DataTransfer();

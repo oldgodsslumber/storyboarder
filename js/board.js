@@ -1019,18 +1019,9 @@
       SB.app.changed(true);
     });
 
-    /* the two-click route, for when a modifier key is not on your mind */
-    if (B.swapFrom && B.swapFrom !== sh.id) c.classList.add('swap-pick');
-    if (B.swapFrom === sh.id) c.classList.add('swap-armed');
-    c.addEventListener('click', function (ev) {
-      if (!B.swapFrom || B.swapFrom === sh.id) return;
-      /* Once a swap is armed, a click anywhere on another card completes it.
-       * It used to ignore clicks that landed on a text box or a dropdown,
-       * which is most of a card — so picking the second card often did
-       * nothing at all. The ⇄ button has its own handler. */
-      if (ev.target.closest('.ch-actions')) return;
-      doSwap(B.swapFrom, sh.id);
-    });
+    /* Swapping two cards' pictures is alt-drag, and only alt-drag. The
+       two-click route existed for when a modifier is not on your mind; it
+       cost a button on every card to save a key on a rare gesture. */
     c.addEventListener('mousedown', function (ev) {
       if (ev.target.closest('button, select, input, textarea, [contenteditable]')) return;
       /* The header is the drag handle, and preventDefault here cancels the
@@ -1069,57 +1060,11 @@
     head.appendChild(SB.el('span', 'code', SB.Model.code(si, sj)));
     /* The number the full-size render is filed under. A serial means nothing on
        its own, so the board is where it is given a meaning. */
-    if (sh.render && sh.render.serial) {
-      const ser = SB.el('span', 'code-serial', SB.Renders.pad(sh.render.serial));
-      ser.title = SB.Renders.has(P(), sh.render)
-        ? 'The full-size original is in this file' +
-          (sh.render.w ? ', ' + sh.render.w + '×' + sh.render.h : '') + ' — it exports as ' +
-          SB.Renders.fileName(sh.render.serial, sh.render.ext) + '.'
-        : 'Only the board copy of this frame travelled — it was filed when originals lived ' +
-          'in a folder. Drop the picture in again to bring the original with it.';
-      head.appendChild(ser);
-    }
 
     /* Riffing is how a board actually gets made: you stand on a finished shot
        and want the next one OFF it — the reverse, tighter, a moment later. The
        new card arrives with this one already marked as a reference, so its
        frame is fed and the description only has to say what changes. */
-    const riff = SB.el('button', 'mini card-riff' + (sh.noShot ? ' hidden' : ''), '▸ riff');
-    riff.title = 'New shot after this one, with this shot\'s frame as its reference. ' +
-      'Then just say what changes — "reverse angle", "push in on their face".';
-    riff.onclick = function (ev) {
-      ev.stopPropagation();
-      const made = SB.Model.addShot(P(), sc.id, { type: sh.type, color: sh.color });
-      if (!made) return;
-      /* straight after the one it came from, not at the end of the scene */
-      const at = sc.shots.indexOf(sh);
-      if (at >= 0) {
-        sc.shots.splice(sc.shots.indexOf(made), 1);
-        sc.shots.splice(at + 1, 0, made);
-      }
-      /* Deliberately NOT the cast. A riff is an edit of the frame before it,
-         and that frame already contains everybody in it — carrying the cast
-         across put four unmentioned references into a feed that needed one,
-         and every one of them was numbered in the prompt's mapping. @ whoever
-         the change is actually about; the source frame brings the rest.
-
-         And never the arrival marks: a riff is the shot AFTER its source, so
-         anyone marked as arriving has already arrived. Inherited, they told
-         the writer to leave the new shot's own subject out of it. */
-      made.description = SB.Refs.mark(sh.id, SB.Model.code(si, sj)) + ' — ';
-      SB.app.selectedShotId = made.id;
-      SB.app.selection = [made.id];
-      SB.app.changed(true);
-      const box = document.querySelector('.card[data-shot="' + made.id + '"] .desc-box');
-      if (box) {
-        box.focus();
-        SB.RefBox.setCaret(box, (made.description || '').length);
-        box.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }
-      SB.toast('Riffing off ' + SB.Model.code(si, sj) + ' — say what changes' +
-        (sh.image ? '' : '. It has no frame yet, so render it first'), !sh.image);
-    };
-    head.appendChild(riff);
 
     const sel = document.createElement('select');
     sel.className = 'type';
@@ -1140,7 +1085,6 @@
     head.appendChild(sel);
     head.appendChild(framingHost(sh));
 
-    if (sh.noShot) head.appendChild(SB.el('span', 'badge noshot', 'no shot'));
 
     const acts = SB.el('div', 'ch-actions');
     const col = SB.el('button', 'swatch');
@@ -1157,31 +1101,12 @@
     };
     acts.appendChild(col);
 
-    const ns = SB.el('button', 'mini', sh.noShot ? 'shot' : 'no shot');
-    ns.title = 'Mark as “no shot” — stays on the board, excluded from prompts and PDF';
+    const ns = SB.el('button', 'mini' + (sh.noShot ? ' on' : ''), '🚫');
+    ns.title = sh.noShot
+      ? 'Marked “no shot” — on the board, out of the prompts and the PDF. Press to put it back.'
+      : 'Mark as “no shot” — stays on the board, excluded from prompts and PDF';
     ns.onclick = function () { sh.noShot = !sh.noShot; SB.app.changed(true); };
     acts.appendChild(ns);
-
-    const armedHere = B.swapFrom === sh.id;
-    const armedElsewhere = !!B.swapFrom && !armedHere;
-    const swap = SB.el('button', 'mini' + (armedHere ? ' primary' : (armedElsewhere ? ' danger' : '')), '⇄');
-    /* findShot can come back empty if the armed card was deleted in between —
-     * and a throw here would take the whole board render down with it. */
-    const armedRef = armedElsewhere ? SB.Model.findShot(P(), B.swapFrom) : null;
-    swap.title = armedHere
-      ? 'Waiting — click the card to swap with, or press Esc'
-      : armedElsewhere
-        ? 'Swap ' + (armedRef ? armedRef.code : 'the armed card') + ' with this card'
-        : 'Swap this shot with another — picture, description and prompts move, ' +
-        'the dialogue and the position stay. Alt-drag does the same.';
-    swap.onclick = function (ev) {
-      ev.stopPropagation();
-      /* Pressing ⇄ on a second card is the obvious way to finish the job, so
-       * do that rather than quietly re-arming and looking like nothing works. */
-      if (armedElsewhere) { doSwap(B.swapFrom, sh.id); return; }
-      armSwap(armedHere ? null : sh.id);
-    };
-    acts.appendChild(swap);
 
     const del = SB.el('button', 'mini danger', '✕');
     del.title = 'Delete shot (script text stays in the master)';
@@ -1285,7 +1210,6 @@
    * it again puts everything back — that IS the undo. */
   function doSwap(aId, bId) {
     const r = SB.Model.swapShotContent(P(), aId, bId);
-    B.swapFrom = null;
     if (!r) {
       /* say so rather than looking like the click missed */
       SB.app.changed(true);
@@ -1295,12 +1219,6 @@
     SB.app.selectedShotId = bId;
     SB.app.changed(true);
     SB.toast('Swapped ' + r.a + ' and ' + r.b + ' — the script stayed put');
-  }
-
-  function armSwap(id) {
-    B.swapFrom = id || null;
-    SB.app.changed(true);
-    if (B.swapFrom) SB.toast('Click the card to swap with, or press Esc');
   }
 
   /* Who is in this shot. The order is the order their reference images are fed
@@ -1510,28 +1428,6 @@
     return row;
   }
 
-  /* The number on the card head, once the original has been filed. It arrives
-   * after the picture does, so it is put in place rather than waiting for
-   * whatever redraws the board next. */
-  function refreshSerial(id) {
-    const f = SB.Model.findShot(P(), id);
-    const head = document.querySelector('.card[data-shot="' + id + '"] .card-head');
-    if (!f || !head) return;
-    const old = head.querySelector('.code-serial');
-    if (old) old.remove();
-    const r = f.shot.render;
-    if (!r || !r.serial) return;
-    const ser = SB.el('span', 'code-serial', SB.Renders.pad(r.serial));
-    ser.title = SB.Renders.has(P(), r)
-      ? 'The full-size original is in this file' +
-        (r.w ? ', ' + r.w + '×' + r.h : '') + ' — it exports as ' +
-        SB.Renders.fileName(r.serial, r.ext) + '.'
-      : 'This frame was filed when originals lived in a folder, so only the board copy ' +
-        'travelled. Drop the picture in again to bring the original with it.';
-    const code = head.querySelector('.code');
-    if (code && code.nextSibling) head.insertBefore(ser, code.nextSibling);
-    else head.appendChild(ser);
-  }
 
   function refreshFeed(id) {
     document.querySelectorAll('.feed-row[data-feed="' + id + '"]').forEach(function (row) {
@@ -1883,6 +1779,10 @@
         SB.pickImageFile().then(function (file) { if (file) setImage(sh, file); });
         return;
       }
+      if (!SB.Viewer) {
+        SB.toast('This page is an old copy and the viewer did not load — reload it.', true);
+        return;
+      }
       const f2 = SB.Model.findShot(P(), sh.id);
       SB.Viewer.open(P(), [{
         img: sh.image, render: sh.render,
@@ -2055,7 +1955,6 @@
         target.render = rec;
         SB.Store.touch();
         SB.Board.refreshFeed(target.id);
-        refreshSerial(target.id);
       }).catch(function (e) {
         /* The proxy is already on the card, so this is not a lost picture —
            but it IS a lost original, and that is exactly what used to happen
@@ -2119,12 +2018,9 @@
     refreshCastRows: refreshCastRows, refreshPromptStale: refreshPromptStale,
     framingHost: framingHost, refreshFraming: refreshFraming,
     refreshFeed: refreshFeed,
-    refreshSerial: refreshSerial,
     saveFeed: saveFeed,
     setImage: setImage, clipDrop: clipDrop,
     swap: doSwap,
-    armSwap: armSwap,
-    swapArmed: function () { return B.swapFrom || null; },
     select: selectShot,
     selection: selection,
     clearSelection: clearSelection,

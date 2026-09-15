@@ -88,6 +88,32 @@
 
   /* Which build is this? Shown on the brand, so a stale copy of the single
    * file can be spotted instead of argued about. */
+  /* Every module the app is assembled from. A missing one means the page
+   * that listed them is older than the code it is loading — which on a
+   * cached index.html is invisible until somebody presses the one control
+   * that needed it and nothing happens. */
+  const PARTS = ['Doc', 'Blobs', 'Renders', 'Refs', 'Personas', 'Fields', 'Model', 'Store',
+    'History', 'Editor', 'RefBox', 'Viewer', 'Board', 'ScriptMode', 'Comments', 'Prompts',
+    'Coverage', 'PromptPanel', 'PersonaPanel', 'Mentions', 'Settings', 'Versions', 'Brand',
+    'Pdf', 'Imagine', 'H3', 'Providers'];
+
+  function checkParts() {
+    const missing = PARTS.filter(function (n) { return !SB[n]; });
+    if (!missing.length) return;
+    /* Not a toast: a toast goes away, and this does not get better on its
+       own. It names the parts so the report is useful rather than "it broke". */
+    const bar = SB.el('div', 'stale-bar');
+    bar.appendChild(SB.el('span', null,
+      'This page is an old copy — ' + missing.length + ' part' +
+      (missing.length === 1 ? '' : 's') + ' of the app did not load (' +
+      missing.join(', ') + '). Anything that needs ' +
+      (missing.length === 1 ? 'it' : 'them') + ' will do nothing when clicked.'));
+    const again = SB.el('button', 'tb on', 'Reload');
+    again.onclick = function () { location.reload(true); };
+    bar.appendChild(again);
+    document.body.appendChild(bar);
+  }
+
   function stampBuild() {
     const b = document.querySelector('.brand');
     if (!b) return;
@@ -208,6 +234,8 @@
     };
 
     stampBuild();
+    checkParts();
+    app.checkParts = checkParts;
     setProject(SB.Model.newProject());
     wire();
     watchJobs();
@@ -406,7 +434,6 @@
 
     document.addEventListener('keydown', function (ev) {
       if (ev.key === 'Escape') {
-        if (SB.Board.swapArmed()) { ev.preventDefault(); SB.Board.armSwap(null); return; }
         if (SB.Board.selection().length > 1) { ev.preventDefault(); SB.Board.clearSelection(); return; }
       }
       /* Ctrl+A over the board picks every card, not the page text */
