@@ -112,10 +112,56 @@
         const vText = window.__calls[0].body.contents[0].parts[0].text;
         t('the video call is told what moves',
           /lifts it and drinks/.test(vText), '');
-        t('and not the first-frame-only line',
-          !/still full/.test(vText), vText.slice(-200));
+        /* The first frame's words DO reach the video call — but as a
+           statement of what the picture already shows, not as material for
+           the paragraph. Without them the writer had never seen the shot it
+           was animating and invented its own staging: a woman standing at
+           the window came back sitting on the couch. */
+        const frameAt = vText.indexOf('THE FIRST FRAME THIS CLIP ANIMATES');
+        t('the video call is told what the first frame shows', frameAt > 0, frameAt);
+        t('and it is quarantined in that block, not in what to write',
+          /still full/.test(vText) && vText.indexOf('still full') > frameAt,
+          vText.indexOf('still full') + ' vs ' + frameAt);
+        t('with the rule that the picture wins',
+          /the picture wins/.test(vText), '');
+        t('and the standing order not to describe it again',
+          /Do NOT write it out again/.test(vText), '');
         t('with the shared description reaching it too',
           /the lamp on/.test(vText), '');
+
+        {
+          const bare = SB.Model.addShot(P(), P().scenes[0].id, {});
+          bare.videoDescription = 'The door swings shut.';
+          window.__calls = [];
+          await SB.Prompts.generateFor(bare, { video: true });
+          const bText = window.__calls[0].body.contents[0].parts[0].text;
+          t('a card with no first frame is told nothing about one',
+            bText.indexOf('THE FIRST FRAME THIS CLIP ANIMATES') < 0, '');
+        }
+
+        /* The case this exists for, in the words it happened in: the frame
+           has her standing at the window on the phone, the video prompt put
+           her on the couch. The staging was in the WRITTEN first-frame
+           prompt, not in any box, which is where it lives on most boards. */
+        {
+          const call = SB.Model.addShot(P(), P().scenes[0].id, {});
+          call.description = 'She takes the call.';
+          const imM = SB.Model.imageModel(P());
+          call.prompts[imM.id] = {
+            imagePrompt: 'A woman standing at the living-room window, phone to her ear, ' +
+              'net curtain half drawn.',
+            videoPrompt: '', modelName: imM.name
+          };
+          call.image = SB.Blobs.image(P(), 'data:image/gif;base64,R0lGODlhAQABAAAAACw=', 16, 9);
+          window.__calls = [];
+          await SB.Prompts.generateFor(call, { video: true });
+          const cText = window.__calls[0].body.contents[0].parts[0].text;
+          t('the written first-frame prompt reaches the video writer',
+            /standing at the living-room window/.test(cText), cText.slice(-260));
+          t('so it knows she is standing before it writes a step',
+            cText.indexOf('standing at the living-room window') >
+            cText.indexOf('THE FIRST FRAME THIS CLIP ANIMATES'), '');
+        }
 
         /* the lanes hand over different pictures, and the mapping says so */
         const nat = SB.Personas.add(P(), { name: 'Nat' });

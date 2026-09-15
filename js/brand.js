@@ -187,9 +187,15 @@
    * format, binding a label to a picture, not a repetition. */
   const VIDEO_INHERIT_RIDER = [
     'THE FIRST FRAME IS SUPPLIED TO THE MODEL AS A PICTURE',
+    '- The block headed THE FIRST FRAME THIS CLIP ANIMATES says what is in that picture. ' +
+    'It is settled fact. Whoever is standing is standing, whoever is holding something is ' +
+    'holding it, and the shot opens exactly there \u2014 never write an action that starts ' +
+    'from a different arrangement. If the description reads as though someone is elsewhere, ' +
+    'the picture wins.',
     '- Write nothing that is already visible in it: set, architecture, surfaces, furniture, ' +
     'wardrobe, hair, faces, colour, lighting, focal length, aperture, depth of field, grade or ' +
-    'grain. Restating any of it re-renders the shot instead of moving it.',
+    'grain. Knowing what is in the frame is not licence to describe it \u2014 restating any of ' +
+    'it re-renders the shot instead of moving it.',
     '- Open on the action. Spend the paragraph on movement: what moves, in what order, how far, ' +
     'how fast, and what the face and the body do. The camera is locked off unless the shot ' +
     'description asks for a move, so it is usually not part of the answer.',

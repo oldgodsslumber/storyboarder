@@ -694,6 +694,16 @@ Two things the app adds that a style guide can't know on its own:
   on it, which is exactly the failure this catches: "her hands shake around the mug" came
   back as a slow push in on her hands.
 
+**The video writer is told what the first frame shows.** The video *model* is handed the
+frame as a picture; the *writer* only ever gets words, and splitting the lanes took the first
+frame's words out of its half — so it wrote motion for a shot it had never seen. A woman
+standing at the window on the phone came back sitting on the couch. Every video job now ends
+with a block headed **THE FIRST FRAME THIS CLIP ANIMATES**, carrying the first-frame box and
+the first-frame prompt that was actually sent, under two rules: *do not contradict it — if the
+description reads as though someone is elsewhere, the picture wins*, and *do not write it out
+again — knowing what is in the frame is not licence to describe it*. A card with no frame gets
+no block, because there is nothing to be faithful to.
+
 Video prompts get the same house style plus motion rules — wardrobe and location must not
 change mid-shot, and **the camera is locked off**. No push, pan, tilt, dolly, zoom, orbit or
 handheld drift is written unless the shot description asks for one *in words* ("push in",

@@ -32,6 +32,41 @@
     return parts.join('\n\n');
   }
 
+  /* What the first frame actually shows, for the writer that cannot see it.
+   *
+   * Two sources, in the order they are trusted: the first-frame box, which is
+   * what a person wrote about the opening instant, and the first-frame prompt
+   * that was actually sent, which is the record of what got rendered. Most
+   * boards have only the second — the detail that matters ("standing at the
+   * window, phone to her ear") is usually in the written prompt, not in a box
+   * somebody filled in by hand — so both go, or this fixes nothing.
+   *
+   * Empty on a card with no frame yet: there is nothing to be faithful to. */
+  function frameShows(shot) {
+    const bits = [];
+    const own = SB.Refs.plain(P(), shot.imageDescription || '').trim();
+    if (own) bits.push(own);
+    const im = SB.Model.imageModel(P());
+    const wrote = im && shot.prompts && shot.prompts[im.id] &&
+      (shot.prompts[im.id].imagePrompt || '').trim();
+    if (wrote) bits.push(wrote);
+    return bits.join('\n\n');
+  }
+
+  function frameBlock(shot) {
+    const shows = frameShows(shot);
+    if (!shows) return '';
+    return '\n=== THE FIRST FRAME THIS CLIP ANIMATES ===\n' +
+      'The picture handed to the video model already shows the following. It is settled: ' +
+      'everyone is already standing, sitting or holding what this says they are, and the ' +
+      'shot opens exactly there.\n' +
+      '- Do NOT contradict it. If the description of the action reads as though somebody is ' +
+      'somewhere else, the picture wins and the movement has to start from where they are.\n' +
+      '- Do NOT write it out again. The model can see it; repeating the set, the wardrobe, ' +
+      'the light or the framing re-renders the shot instead of moving it. This block is here ' +
+      'so you know what is true, not so you can describe it.\n\n' + shows + '\n';
+  }
+
   function contextFor(shot, role) {
     const f = SB.Model.findShot(P(), shot.id);
     const w = SB.Model.windowFor(P(), shot);
@@ -47,6 +82,8 @@
       SHARED: SB.Refs.plain(P(), shot.description || ''),
       FIRST_FRAME: SB.Refs.plain(P(), shot.imageDescription || ''),
       MOTION: SB.Refs.plain(P(), shot.videoDescription || ''),
+      /* for a template that would rather place it itself */
+      FRAME_SHOWS: frameShows(shot),
       FIELDS: SB.Fields.promptBlock(P(), shot)
     };
     /* the project's own boxes, each usable on its own: {{ART_DIRECTION}} etc. */
@@ -85,8 +122,15 @@
       ctx.H3_LABELS = sc.labels || '(none — describe the shot in plain terms)';
       ctx.H3_TASK = sc.taskTypes.length ? '[' + sc.taskTypes.join(' + ') + ']' : '';
     }
+    /* Appended rather than placed in the template, so it reaches a board
+       whose template somebody has edited — which is every board that has been
+       tuned, and exactly the ones that would otherwise go on contradicting
+       their own first frames. A template that places {{FRAME_SHOWS}} itself
+       gets it there instead. */
+    const placed = /\{\{FRAME_SHOWS\}\}/.test(m.videoTemplate || '');
     return '=== IMAGE-TO-VIDEO PROMPT — INSTRUCTIONS ===\n' +
-      fill(m.videoTemplate, ctx) + extras(shot, m.videoTemplate) + '\n';
+      fill(m.videoTemplate, ctx) + extras(shot, m.videoTemplate) +
+      (placed ? '' : frameBlock(shot)) + '\n';
   }
 
   /* The H3 job: two prose keys instead of one prompt, and the six sections
