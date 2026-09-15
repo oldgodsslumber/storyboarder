@@ -1,10 +1,11 @@
 # What the ImagineArt MCP will actually let us set
 
 Everything below is read off the tool list the account itself publishes
-(`test-imagine-tools.json`, captured from a real `tools/list`). These tools do
-not carry a JSON `inputSchema` with enums — the whole contract is written in
-the tool **description** as prose, which is why `imagine.js` parses
-descriptions rather than schemas.
+(`test-imagine-tools.json`, captured from a real `tools/list`). The tools do
+carry a JSON `inputSchema`, but it types every argument as a nullable string
+with a sentence of guidance — **the enums are not in it**. The per-model
+allow-lists live in the tool **description** as prose, which is why
+`imagine.js` parses descriptions rather than schemas.
 
 ## The complete surface
 
