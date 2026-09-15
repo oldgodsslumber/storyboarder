@@ -157,6 +157,9 @@ button,input,select,textarea{font:inherit;color:inherit}
 /* where the card or scene you are dragging will land */
 #dropMark{position:fixed;display:none;z-index:900;pointer-events:none;
   background:var(--accent2);border-radius:2px;box-shadow:0 0 8px var(--accent2)}
+/* shift-drag drops a copy rather than moving the card */
+#dropMark.copy{background:var(--ok);box-shadow:0 0 8px var(--ok)}
+.card.copy-target{outline:2px dashed var(--ok);outline-offset:2px}
 .scene-item.drop-shot{
   border-color:var(--accent);background:var(--bg);
   box-shadow:inset 0 0 0 1px var(--accent);
@@ -1024,6 +1027,26 @@ button.linkish{
 .pt-prompt{display:flex;flex-direction:column;gap:5px}
 /* One lane: the words for this half, the pictures they pull in, the prompt.
    Read down the column and it is the order you work in. */
+/* a picture, big enough to judge */
+.viewer{display:flex;flex-direction:column;gap:8px}
+.viewer-shot{
+  position:relative;display:flex;align-items:center;justify-content:center;
+  background:var(--frame-bg);border:1px solid var(--line);border-radius:6px;
+  min-height:220px;max-height:68vh;overflow:hidden;
+}
+.viewer-shot img{max-width:100%;max-height:68vh;object-fit:contain;display:block}
+.viewer-cap{font-size:11px;color:var(--fg-dim);text-align:center}
+/* it is the board's own copy, not an original — said, not implied */
+.viewer.is-proxy .viewer-cap{color:var(--accent2)}
+.viewer-step{
+  position:absolute;top:50%;transform:translateY(-50%);
+  width:30px;height:44px;border-radius:5px;cursor:pointer;font-size:20px;line-height:1;
+  border:1px solid var(--line2);background:rgba(0,0,0,.45);color:#fff;opacity:.55;
+}
+.viewer-step:hover{opacity:1;border-color:var(--accent)}
+.viewer-step.prev{left:6px}
+.viewer-step.next{right:6px}
+
 .pt-lane{position:relative}
 /* What this push asks the model for, beside the button that sends it. The
    menus are the model's own lists, so an unlisted value cannot be chosen —
@@ -1348,7 +1371,7 @@ body.comment-mode .frame{cursor:crosshair}
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-09-15 18:13 · 9649860+";</script>
+<script>window.SB_BUILD = "2026-09-15 18:32 · 9c21e53+";</script>
 
 <div id="app">
 
@@ -10584,6 +10607,47 @@ window.SB = window.SB || {};
     'fields', 'prompts', 'personaIds', 'castEnters', 'comments', 'render', 'video'
   ];
 
+  /* A copy of a card, dropped where the drop landed.
+   *
+   * Everything in CONTENT_KEYS comes across — the picture, all three
+   * description boxes, the prompts, the cast, the shoot settings — with new
+   * ids for anything that carries one, so nothing about the copy is shared
+   * state with the original.
+   *
+   * Two things deliberately do NOT come across. A card's CLAIM on the master
+   * script is not copied: two cards claiming one stretch is the thing the
+   * script model forbids, so the copy is freestanding and keeps the words as
+   * its own. And the blobs are not duplicated — the store is keyed by content
+   * hash, so both cards point at the same picture, the copy costs nothing,
+   * and deleting either one cannot take the other's picture with it.
+   */
+  function duplicateShot(p, shotId, toSceneId, toIdx) {
+    const f = findShot(p, shotId);
+    if (!f) return null;
+    const t = toSceneId ? findScene(p, toSceneId) : f;
+    if (!t) return null;
+    const copy = newShot({ type: f.shot.type });
+    CONTENT_KEYS.forEach(function (k) { copy[k] = SB.clone(f.shot[k]); });
+    copy.id = SB.uid('sh');
+    /* freestanding, with the words it had */
+    copy.link = null;
+    copy.broken = false;
+    const w = windowFor(p, f.shot);
+    copy.local = SB.Doc.make(w.doc.text.slice(w.from, w.to));
+    /* a comment is a conversation about one card, not about its copy */
+    copy.comments = [];
+    /* whatever was generated was generated for the original */
+    copy.render = null;
+    copy.video = null;
+    copy.videoAlts = [];
+    const at = typeof toIdx === 'number'
+      ? SB.clamp(toIdx, 0, t.scene.shots.length)
+      : t.scene.shots.length;
+    t.scene.shots.splice(at, 0, copy);
+    p.updatedAt = Date.now();
+    return copy;
+  }
+
   /* Swap two shots' contents, leaving each card's dialogue where it is. */
   function swapShotContent(p, aId, bId) {
     const fa = findShot(p, aId), fb = findShot(p, bId);
@@ -10740,6 +10804,7 @@ window.SB = window.SB || {};
     moveShot: moveShot, moveShots: moveShots, moveScene: moveScene,
     splitSceneAt: splitSceneAt, sceneFromShots: sceneFromShots,
     swapShotContent: swapShotContent, CONTENT_KEYS: CONTENT_KEYS, described: described,
+    duplicateShot: duplicateShot,
     modelById: modelById, imageModel: imageModel, videoModel: videoModel, firstOfKind: firstOfKind,
     shotHolding: shotHolding
   };
@@ -12184,6 +12249,181 @@ window.SB = window.SB || {};
 
 </script>
 <script>
+/* ===== js/viewer.js ===== */
+/* viewer.js — a picture, big enough to judge.
+ *
+ * Four places on the board show a picture small and used to open a FILE
+ * PICKER when you clicked it: the card's frame, a subject's reference frame,
+ * and the thumbnails beside them. Clicking a picture you wanted a better look
+ * at replaced it instead, which is a bad trade at 480p and a worse one on a
+ * reference frame that is the only copy of somebody's face.
+ *
+ * So a click opens this, and a picture changes only when you say so: drop a
+ * file on it, press Remove, or press Replace in here. An EMPTY frame still
+ * opens the picker, because there is nothing to look at and "click to load"
+ * is the only affordance it has.
+ *
+ * What it shows is the FULL-SIZE ORIGINAL where the file holds one and the
+ * board's 854x480 copy where it does not — and it says which, because "this
+ * looks soft" and "this IS soft" are different problems and the answer is not
+ * otherwise anywhere on screen.
+ */
+(function (SB) {
+  'use strict';
+
+  /* One entry: { img, render, label, note } — `img` is the {ref,w,h} the board
+   * draws, `render` the full-size record if the file carries one. */
+  function srcOf(p, it) {
+    const full = it.render ? SB.Renders.dataUrl(p, it.render) : '';
+    if (full) {
+      return {
+        src: full, full: true,
+        file: SB.Renders.fileName(it.render.serial, it.render.ext),
+        bytes: it.render.bytes || 0
+      };
+    }
+    return { src: it.img ? SB.Blobs.src(p, it.img) : '', full: false };
+  }
+
+  function sizeNote(p, it, got, img) {
+    const bits = [];
+    if (img && img.naturalWidth) bits.push(img.naturalWidth + '×' + img.naturalHeight);
+    else if (it.img && it.img.w) bits.push(it.img.w + '×' + it.img.h);
+    if (got.full) {
+      bits.push('full-size original');
+      if (got.file) bits.push(got.file);
+      if (got.bytes) bits.push(Math.round(got.bytes / 1024) + ' KB');
+    } else {
+      /* Said plainly: a board copy is what gets fed to a model when no
+         original is held, and that is worth knowing before judging a face. */
+      bits.push('the board’s own copy — no full-size original in this file');
+    }
+    return bits.join(' · ');
+  }
+
+  /* items: [{img, render, label, note, onReplace, onRemove}], at: which one */
+  function open(p, items, at, opts) {
+    const list = (items || []).filter(function (x) { return x && (x.img || x.render); });
+    if (!list.length) return null;
+    opts = opts || {};
+    let i = SB.clamp(at | 0, 0, list.length - 1);
+
+    const stage = SB.el('div', 'viewer');
+    const shot = SB.el('div', 'viewer-shot');
+    const img = document.createElement('img');
+    shot.appendChild(img);
+    stage.appendChild(shot);
+    const cap = SB.el('div', 'viewer-cap');
+    stage.appendChild(cap);
+
+    const onKey = function (e) {
+      if (e.key === 'ArrowLeft') { step(-1); e.preventDefault(); }
+      else if (e.key === 'ArrowRight') { step(1); e.preventDefault(); }
+    };
+
+    const m = SB.modal({
+      title: opts.title || 'Picture', width: '820px', body: stage,
+      buttons: buttons(),
+      /* every way out runs this: Escape, the backdrop, and each button */
+      onClose: function () { document.removeEventListener('keydown', onKey); }
+    });
+    document.addEventListener('keydown', onKey);
+
+    function buttons() {
+      const out = [];
+      const it = list[i];
+      if (it.onReplace) {
+        out.push({
+          label: 'Replace…',
+          onClick: function (close) {
+            SB.pickImageFile().then(function (f) {
+              if (!f) return;
+              close();
+              it.onReplace(f);
+            });
+          }
+        });
+      }
+      if (it.onRemove) {
+        out.push({
+          label: 'Remove',
+          onClick: function (close) { close(); it.onRemove(); }
+        });
+      }
+      out.push({
+        label: 'Save a copy',
+        onClick: function () {
+          const got = srcOf(p, list[i]);
+          if (!got.src) return;
+          const a = document.createElement('a');
+          a.href = got.src;
+          a.download = got.file ||
+            ((SB.Renders.slug(list[i].label) || 'picture') + (got.full ? '.png' : '-board.jpg'));
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+        }
+      });
+      out.push({ label: 'Close', primary: true });
+      return out;
+    }
+
+    function draw() {
+      const it = list[i];
+      const got = srcOf(p, it);
+      img.src = got.src;
+      img.onload = function () { cap.textContent = line(got, img); };
+      cap.textContent = line(got, null);
+      stage.classList.toggle('is-proxy', !got.full);
+    }
+
+    function line(got, el) {
+      const it = list[i];
+      const who = it.label || '';
+      const where = list.length > 1 ? '  (' + (i + 1) + ' of ' + list.length + ')' : '';
+      return (who ? who + ' — ' : '') + sizeNote(p, it, got, el) +
+        (it.note ? ' · ' + it.note : '') + where;
+    }
+
+    /* ← → across the other pictures on the same card or the same subject.
+     * The buttons belong to the picture on screen, so they are rebuilt with
+     * it rather than closed over the one it opened on. */
+    function step(by) {
+      if (list.length < 2) return;
+      i = (i + by + list.length) % list.length;
+      draw();
+      const foot = m.root.querySelector('.foot');
+      if (foot) {
+        foot.innerHTML = '';
+        buttons().forEach(function (b) {
+          const btn = SB.el('button', 'tb' + (b.primary ? ' on' : ''), b.label);
+          btn.onclick = function () {
+            if (b.onClick) b.onClick(m.close, m.body); else m.close();
+          };
+          foot.appendChild(btn);
+        });
+      }
+    }
+
+    if (list.length > 1) {
+      const prev = SB.el('button', 'viewer-step prev', '‹');
+      const next = SB.el('button', 'viewer-step next', '›');
+      prev.onclick = function () { step(-1); };
+      next.onclick = function () { step(1); };
+      shot.appendChild(prev);
+      shot.appendChild(next);
+    }
+
+    draw();
+    return m;
+  }
+
+  SB.Viewer = { open: open, srcOf: srcOf };
+
+})(window.SB);
+
+</script>
+<script>
 /* ===== js/board.js ===== */
 /* board.js — scene list, scene blocks, shot cards, drag & drop. */
 (function (SB) {
@@ -12260,6 +12500,21 @@ window.SB = window.SB || {};
 
   /* Which cards a drop should carry: the whole group if the dragged card is
    * part of one, otherwise just the card. */
+  /* Shift-drag: the cards that were dragged, copied where they landed. */
+  function doCopy(id, toSceneId, toIdx) {
+    const ids = dragged(id);
+    let at = typeof toIdx === 'number' ? toIdx : null;
+    let last = null;
+    ids.forEach(function (one) {
+      last = SB.Model.duplicateShot(P(), one, toSceneId, at);
+      if (last && at != null) at++;
+    });
+    if (!last) return;
+    SB.app.selectedShotId = last.id;
+    SB.app.changed(true);
+    SB.toast(ids.length === 1 ? 'Card copied' : ids.length + ' cards copied');
+  }
+
   function dragged(id) {
     if (B.dragging && B.dragging.indexOf(id) >= 0) return B.dragging.slice();
     return [id];
@@ -12311,7 +12566,7 @@ window.SB = window.SB || {};
 
   /* A line where the thing will land. Without it the only way to find out was
    * to let go. */
-  function mark(hit, horiz) {
+  function mark(hit, horiz, copy) {
     let m = document.getElementById('dropMark');
     if (!m) {
       m = SB.el('div');
@@ -12321,6 +12576,7 @@ window.SB = window.SB || {};
     if (!hit || !hit.rect) { m.style.display = 'none'; return; }
     const r = hit.rect;
     m.style.display = 'block';
+    m.classList.toggle('copy', !!copy);
     if (horiz) {
       m.style.left = ((hit.after ? r.right + 4 : r.left - 4) - 1) + 'px';
       m.style.top = r.top + 'px';
@@ -12924,6 +13180,10 @@ window.SB = window.SB || {};
       if (!id) return;
       /* the gap left of the first card means "first", not "last" */
       const hit = shotHit(shots, ev);
+      if (ev.shiftKey) {
+        doCopy(id, sc.id, kids(shots, 'card').length ? hit.idx : sc.shots.length);
+        return;
+      }
       SB.Model.moveShots(P(), dragged(id), sc.id,
         kids(shots, 'card').length ? hit.idx : sc.shots.length);
       SB.app.changed(true);
@@ -13140,9 +13400,12 @@ window.SB = window.SB || {};
       ev.preventDefault(); ev.stopPropagation();
       /* Alt turns the drop from "move this card here" into "swap the two
        * pictures over, leave both bits of dialogue where they are". */
-      c.classList.toggle('swap-target', !!ev.altKey);
-      c.classList.toggle('drag-over', !ev.altKey);
-      if (ev.altKey) unmark(); else mark(shotHit(c.parentNode, ev), true);
+      ev.dataTransfer.dropEffect = ev.shiftKey ? 'copy' : 'move';
+      c.classList.toggle('swap-target', !!ev.altKey && !ev.shiftKey);
+      c.classList.toggle('drag-over', !ev.altKey || !!ev.shiftKey);
+      c.classList.toggle('copy-target', !!ev.shiftKey);
+      if (ev.altKey && !ev.shiftKey) unmark();
+      else mark(shotHit(c.parentNode, ev), true, ev.shiftKey);
     });
     c.addEventListener('dragleave', function () {
       c.classList.remove('drag-over');
@@ -13153,9 +13416,14 @@ window.SB = window.SB || {};
       ev.preventDefault(); ev.stopPropagation();
       c.classList.remove('drag-over');
       c.classList.remove('swap-target');
+      c.classList.remove('copy-target');
       unmark();
       const id = ev.dataTransfer.getData(DND_SHOT);
-      if (!id || id === sh.id) return;
+      if (!id) return;
+      /* Read at the DROP, not at the dragstart: a modifier held on the way
+         out and let go before landing should not still count. */
+      if (ev.shiftKey) { doCopy(id, sc.id, shotHit(c.parentNode, ev).idx); return; }
+      if (id === sh.id) return;
       if (ev.altKey) { doSwap(id, sh.id); return; }
       /* measured against every card in the scene, so a drop that lands a few
        * pixels off this one still means the edge it looks like it means */
@@ -13524,25 +13792,31 @@ window.SB = window.SB || {};
    * the files go in. Somebody who has never used an image model can read this
    * strip and drop the right files in the right order.
    */
-  function feedRow(sh) {
+function feedRow(sh) {
     const row = SB.el('div', 'feed-row');
     row.dataset.feed = sh.id;
-    /* Everything this card touches, so nothing written anywhere on it goes
-       unseen — but NUMBERED off the first frame's lane, because those numbers
-       are the promise: they are what the prompt's mapping cites, what the
-       refs/ folder is named by, what the printed page lists and what "copy
-       image set" writes. The strip is where a person reads the order off,
-       and it was counting a third set nobody else used. */
-    const list = SB.Refs.feed(P(), sh);
-    const laneN = {};
-    SB.Refs.images(P(), sh, 'image').forEach(function (e) {
-      laneN[e.id] = (laneN[e.id] || []).concat([e.n]);
-    });
-    /* A name in the text that is not a mark feeds nothing — the exact mistake
-       this feature exists to stop. It is most likely on a card with NO feed at
-       all, so it is worked out before the empty case, not after it. */
-    /* Every box that can hold a mark — a name typed into the motion box
-       without an @ is the same mistake in a different place. */
+
+    /* What this card hands over used to be listed here, numbered, with the
+     * pictures and a button to write them out. It is gone from the card: the
+     * prompt table shows each call's own references, numbered the way that
+     * call's prompt cites them, which is the version that is true per push
+     * rather than per card.
+     *
+     * Three things on that row were never information though. They are
+     * mistakes, they have nowhere else to appear, and a board that hides
+     * them is a board that ships them:
+     *
+     *   a name typed without an @        — feeds nothing, which is the exact
+     *                                      mistake the @ rule exists to stop
+     *   a mark whose subject was deleted — plain text now, pointing at nobody
+     *   more references than a model reads — past the advice limit they are
+     *                                      averaged together, not read
+     *
+     * So a healthy card shows nothing at all, and a card with one of these
+     * shows that one line and the button that fixes it.
+     */
+    const dead = SB.Refs.feed(P(), sh).filter(function (e) { return e.kind === 'dead'; });
+
     const seenLoose = {};
     const loose = SB.Refs.boxes(sh).reduce(function (acc, t) {
       return acc.concat(SB.Refs.unlinked(P(), t || ''));
@@ -13553,192 +13827,35 @@ window.SB = window.SB || {};
       return true;
     });
 
-    if (!list.length && !loose.length) {
-      /* Only worth saying on a card that has something to say it about. */
-      if (SB.Model.described(sh)) {
-        const hint = SB.el('span', 'feed-empty', 'no references — @ anything the model should see');
-        hint.title = 'Type @ in the description to name a person, a place, an object or another ' +
-          'shot. Whatever you @ is a picture the model gets handed.';
-        row.appendChild(hint);
-      }
-      return row;
-    }
-
-    if (list.length) row.appendChild(SB.el('span', 'feed-label', 'feed'));
-
-    list.forEach(function (e) {
-      const cell = SB.el('button', 'feed-cell' +
-        (e.mentioned ? '' : ' unmentioned') +
-        (e.kind === 'dead' ? ' dead' : '') +
-        (e.kind === 'shot' ? ' is-shot' : '') +
-        (e.images.length ? '' : ' empty'));
-      /* The first frame's numbers, which are the ones the prompt cites, the
-         refs/ folder is named by and "copy image set" writes. A mark that
-         only the clip's words know about gets a dot: it is in no folder and
-         no mapping, and numbering it was inventing a third order. */
-      const mine = laneN[e.id] || [];
-      const n = mine.length
-        ? (mine.length === 1 ? String(mine[0])
-          : mine[0] + '\u2013' + mine[mine.length - 1])
-        : (e.images.length ? '\u00b7' : '\u2013');
-      cell.appendChild(SB.el('span', 'feed-n' + (mine.length ? '' : ' aside'), String(n)));
-
-      if (e.images.length) {
-        const t = SB.el('span', 'feed-thumb');
-        const im = document.createElement('img');
-        im.src = SB.Blobs.src(P(), e.images[0]);
-        t.appendChild(im);
-        if (e.images.length > 1) t.appendChild(SB.el('span', 'feed-more', '×' + e.images.length));
-        cell.appendChild(t);
-      } else {
-        cell.appendChild(SB.el('span', 'feed-thumb none', '?'));
-      }
-
-      cell.appendChild(SB.el('span', 'feed-name', e.label));
-
-      /* The first frame is one instant, so whether somebody is already there
-         matters as much as whether their picture is fed. It used to live on a
-         chip in a row of its own; it belongs on the thing it is about. */
-      const per = e.subject;
-      if (per && SB.Personas.kindOf(per).id === 'person') {
-        const arriving = SB.Personas.enters(sh, e.id);
-        const when = SB.el('button', 'feed-when' + (arriving ? ' arriving' : ''),
-          arriving ? '▷' : '◉');
-        when.title = arriving
-          ? 'Arrives during the shot, so the first frame leaves them out. Click to say they are ' +
-            'there when it opens.'
-          : 'There when the shot opens. Click if they arrive partway through instead.';
-        when.onclick = function (ev) {
-          ev.stopPropagation();
-          SB.Personas.toggleEnters(sh, e.id);
-          SB.Store.touch();
-          refreshFeed(sh.id);
-        };
-        cell.appendChild(when);
-      }
-
-      /* Cast, but nobody said to show it — so nobody chose its place in the
-         order either. The way off the card, now the cast row has gone. */
-      if (!e.mentioned && e.kind === 'subject') {
-        const off = SB.el('button', 'feed-off', '✕');
-        off.title = 'Take ' + e.label + ' off this card. It is not mentioned in the ' +
-          'description, so nothing else changes.';
-        off.onclick = function (ev) {
-          ev.stopPropagation();
-          SB.Personas.toggleOnShot(P(), sh, e.id);
-          SB.app.changed(true);
-        };
-        cell.appendChild(off);
-      }
-      /* Named by the serial, but only where the file actually holds the
-         original — a folder-era record has the number and nothing behind it. */
-      const sers = (e.renders || []).filter(function (r) { return SB.Renders.has(P(), r); })
-        .map(function (r) { return SB.Renders.pad(r.serial); });
-      if (sers.length) {
-        cell.classList.add('full');
-        cell.appendChild(SB.el('span', 'feed-ser', sers.join(' ')));
-      }
-      cell.title = e.label + (e.why ? ' — ' + e.why : '') +
-        (e.kind === 'dead' ? '\nClick to take the reference out and keep the name as text.' : '') +
-        (sers.length
-          ? '\nFull-size ' + sers.join(', ') + ' is what gets fed; the board copy stands in ' +
-            'for anything whose original this file does not hold.'
-          : (e.images.length ? '\nBoard copy only (854×480) — no original kept.' : '')) +
-        (e.kind === 'dead' ? ''
-          : e.images.length ? '\nClick to open it.' : '\nClick to fix it.');
-      cell.onclick = function (ev) {
-        ev.stopPropagation();
-        /* Nothing to open — what it needs is the mark taken out, leaving the
-           name it had as ordinary prose. */
-        if (e.kind === 'dead') {
-          /* The strip is the union of all three boxes, so the dead mark being
-           clicked is not necessarily in the shared one. */
-        SB.Refs.rewrite(sh, function (t) { return SB.Refs.unmark(P(), t, e.id); });
-          SB.app.changed(true);
-          SB.toast('“' + e.label + '” is plain text now');
-          return;
-        }
-        SB.RefBox.go(e.id);
-      };
-      row.appendChild(cell);
-    });
-
-    /* A description that still says what somebody looks like: the feed is the
-       real record of who is in this, so that text is a frozen copy of somebody
-       who may not even be on the card any more. */
-    const terms = SB.Coverage.carriesWardrobe(P(), sh);
-    if (terms) {
-      const warn = SB.el('button', 'mini feed-fix', 'describes wardrobe');
-      warn.title = 'This description still says what somebody looks like (' +
-        terms.slice(0, 4).join(', ') + (terms.length > 4 ? '…' : '') + '). ' +
-        'The subjects it feeds are the real record — click to take it out of the text.';
-      warn.onclick = function (ev) {
-        ev.stopPropagation();
-        warn.disabled = true;
-        warn.textContent = 'cleaning…';
-        SB.Coverage.cleanWardrobe(P(), [sh]).then(function (r) {
-          SB.app.changed(true);
-          SB.toast(r.cleaned
-            ? 'Description cleaned — the subjects keep the wardrobe now'
-            : 'Nothing could be taken out of that one', !r.cleaned);
-        }).catch(function (e) {
-          warn.disabled = false;
-          warn.textContent = 'describes wardrobe';
-          if (SB.apiBlocked(e, function () { warn.onclick(ev); })) return;
-          SB.toast(e.message || String(e), true);
-        });
-      };
-      row.appendChild(warn);
-    }
-
-    /* People, not subjects: an insert of one hand and one scanner is two
-       "cast", and the nudge asked which of them makes an entrance. */
-    const people = SB.Personas.forShot(P(), sh).filter(function (x) {
-      return SB.Personas.kindOf(x).id === 'person';
-    });
-    if (people.length > 1 && !SB.Personas.arriving(P(), sh).length &&
-        SB.Personas.readsAsArrival(SB.Refs.text(P(), sh))) {
-      const nudge = SB.el('button', 'mini feed-late', 'someone arrives?');
-      nudge.title = 'This description reads as somebody turning up partway through, but ' +
-        'everyone here is marked as being present when it opens — so they will all be drawn ' +
-        'into the first frame. Click the ◉ on whoever arrives.';
-      nudge.onclick = function (ev) {
-        ev.stopPropagation();
-        SB.toast('Click the ◉ beside whoever arrives partway through');
-      };
-      row.appendChild(nudge);
-    }
-
-    /* The references this card hands a model are the FIRST FRAME's. A clip is
-       handed the finished frame and nothing else, so there is no second set
-       and never was one to copy. */
     const imgs = SB.Refs.images(P(), sh, 'image');
     /* A frame this shot is derived from is not one of these: it is the
        picture being edited, not a reference averaged in with others. */
     const refCount = imgs.filter(function (e) { return e.kind !== 'shot'; }).length;
-    if (refCount > SB.Personas.IMAGE_ADVICE) {
-      const warn = SB.el('span', 'feed-warn', refCount + ' references');
-      warn.title = 'Past ' + SB.Personas.IMAGE_ADVICE + ' references most image models start ' +
-        'averaging them together instead of reading them. Drop a mark, or drop a frame off one ' +
-        'of these subjects.';
-      row.appendChild(warn);
-    }
-    if (imgs.length) {
-      const full = imgs.filter(function (e) { return SB.Renders.has(P(), e.render); }).length;
-      const copy = SB.el('button', 'mini feed-copy', 'copy image set');
-      copy.title = 'Write all ' + imgs.length + ' reference images out, numbered in the order ' +
-        'the first-frame prompt names them.' +
-        (full ? '\n' + full + ' of them full-size.'
-              : '\nAll of them are the board\u2019s 854\u00d7480 copies \u2014 they were filed when ' +
-                'originals lived in a folder. Drop them in again to bring the originals with them.');
-      copy.onclick = function (ev) {
+
+    /* People, not subjects: an insert of one hand and one scanner is two
+       "cast", and the nudge asks which of them makes an entrance. It stays on
+       the card because the description that reads as an arrival is being
+       typed six inches above it. */
+    const people = SB.Personas.forShot(P(), sh).filter(function (x) {
+      return SB.Personas.kindOf(x).id === 'person';
+    });
+    const late = people.length > 1 && !SB.Personas.arriving(P(), sh).length &&
+      SB.Personas.readsAsArrival(SB.Refs.text(P(), sh));
+
+    if (!dead.length && !loose.length && !late &&
+        refCount <= SB.Personas.IMAGE_ADVICE) return row;
+
+    if (late) {
+      const nudge = SB.el('button', 'mini feed-late', 'someone arrives?');
+      nudge.title = 'This description reads as somebody turning up partway through, but ' +
+        'everyone here is marked as being present when it opens — so they will all be ' +
+        'drawn into the first frame. Mark whoever arrives with the ◉ beside them on the ' +
+        'first-frame lane in Prompts.';
+      nudge.onclick = function (ev) {
         ev.stopPropagation();
-        /* the code is looked up rather than closed over: feedRow is rebuilt on
-           its own by refreshFeed, which has no scene/shot indices to hand */
-        const f = SB.Model.findShot(P(), sh.id);
-        saveFeed(sh, imgs, f ? f.code : 'shot');
+        SB.toast('Prompts → the first-frame lane: ◉ beside whoever arrives');
       };
-      row.appendChild(copy);
+      row.appendChild(nudge);
     }
 
     if (loose.length) {
@@ -13746,18 +13863,15 @@ window.SB = window.SB || {};
         loose.length === 1 ? 'link 1 name' : 'link ' + loose.length + ' names');
       fix.title = loose.map(function (x) { return x.name; }).join(', ') +
         (loose.length === 1 ? ' is named' : ' are named') +
-        ' in the description but not referenced, so no picture is sent for ' +
+        ' on this card but not referenced, so no picture is sent for ' +
         (loose.length === 1 ? 'it' : 'them') + '. Click to link ' +
         (loose.length === 1 ? 'it' : 'them') + '.';
       fix.onclick = function (ev) {
         ev.stopPropagation();
-        /* Every box. The count above already reads all three, so linking only
-           the shared one left the button sitting there after a toast saying
-           the job was done. */
+        /* every box — the count above reads all three, and linking only the
+           shared one left the button sitting there after a toast saying the
+           job was done */
         SB.Refs.rewrite(sh, function (t) { return SB.Refs.linkAll(P(), t); });
-        /* and cast them, as picking from the popover does — a marked subject
-           that is not cast was numbered in the manifest with no description
-           above it to say what it looks like. */
         loose.forEach(function (x) {
           if ((sh.personaIds || []).indexOf(x.id) < 0) {
             sh.personaIds = (sh.personaIds || []).concat([x.id]);
@@ -13768,6 +13882,30 @@ window.SB = window.SB || {};
       };
       row.appendChild(fix);
     }
+
+    dead.forEach(function (e) {
+      const gone = SB.el('button', 'mini feed-fix danger', e.label + ' is gone');
+      gone.title = (e.why || 'This subject was deleted.') +
+        ' Click to leave the name as plain text.';
+      gone.onclick = function (ev) {
+        ev.stopPropagation();
+        /* the strip was the union of all three boxes, so the dead mark is
+           not necessarily in the shared one */
+        SB.Refs.rewrite(sh, function (t) { return SB.Refs.unmark(P(), t, e.id); });
+        SB.app.changed(true);
+        SB.toast('\u201c' + e.label + '\u201d is plain text now');
+      };
+      row.appendChild(gone);
+    });
+
+    if (refCount > SB.Personas.IMAGE_ADVICE) {
+      const warn = SB.el('span', 'feed-warn', refCount + ' references');
+      warn.title = 'Past ' + SB.Personas.IMAGE_ADVICE + ' references most image models start ' +
+        'averaging them together instead of reading them. Drop a mark, or drop a frame off one ' +
+        'of these subjects.';
+      row.appendChild(warn);
+    }
+
     return row;
   }
 
@@ -14112,7 +14250,21 @@ window.SB = window.SB || {};
     f.appendChild(tools);
 
     f.addEventListener('click', function () {
-      SB.pickImageFile().then(function (file) { if (file) setImage(sh, file); });
+      /* A click used to open the file picker, so wanting a better look at a
+         480p frame was the same gesture as replacing it. Now it opens the
+         picture; an empty frame still picks, because there is nothing to
+         look at and "click to load" is all it has. */
+      if (!sh.image && !sh.render) {
+        SB.pickImageFile().then(function (file) { if (file) setImage(sh, file); });
+        return;
+      }
+      const f2 = SB.Model.findShot(P(), sh.id);
+      SB.Viewer.open(P(), [{
+        img: sh.image, render: sh.render,
+        label: (f2 ? f2.code : '') + (sh.type ? ' · ' + sh.type : ''),
+        onReplace: function (file) { setImage(sh, file); },
+        onRemove: function () { sh.image = null; SB.app.changed(true); }
+      }], 0, { title: 'First frame' });
     });
     f.addEventListener('dragover', function (ev) {
       if (ev.dataTransfer.types.indexOf(DND_SHOT) >= 0) return;
@@ -17590,6 +17742,34 @@ window.SB = window.SB || {};
    * into a model in this order, so it says 0007.png. The subject's name rides
    * along after it, because the filename alone says nothing about who it is.
    */
+  /* Is this person already there when the shot opens?
+   *
+   * A first frame is one instant, so somebody who walks in partway through
+   * must not be drawn standing in it — and the video cast block splits its
+   * two lists on exactly this. The control used to live on the card's feed
+   * strip; the strip has gone, and this is the list of the people the FIRST
+   * FRAME is built from, which is what the question is about. */
+  function whenBtn(sh, id, role) {
+    if (role === 'video') return null;
+    const per = SB.Personas.find(P(), id);
+    if (!per || SB.Personas.kindOf(per).id !== 'person') return null;
+    const arriving = SB.Personas.enters(sh, id);
+    const b = SB.el('button', 'feed-when' + (arriving ? ' arriving' : ''),
+      arriving ? '\u25b7' : '\u25c9');
+    b.title = arriving
+      ? 'Arrives during the shot, so the first frame leaves them out. Click to say they are ' +
+        'there when it opens.'
+      : 'There when the shot opens. Click if they arrive partway through instead.';
+    b.onclick = function (ev) {
+      ev.stopPropagation();
+      SB.Personas.toggleEnters(sh, id);
+      SB.Store.touch();
+      refreshFeedCell(sh.id);
+      if (SB.Board.refreshFeed) SB.Board.refreshFeed(sh.id);
+    };
+    return b;
+  }
+
   function feedList(sh, code, role) {
     const wrap = SB.el('div', 'pt-feed-list');
     const list = SB.Refs.feed(P(), sh, role);
@@ -17657,6 +17837,7 @@ window.SB = window.SB || {};
         file || 'board copy only');
       it.appendChild(nameEl);
       it.appendChild(SB.el('span', 'feed-who', e.label + (e.role ? ' · ' + e.role : '')));
+      (function () { const w = whenBtn(sh, e.id, role); if (w) it.appendChild(w); })();
 
       it.title = (notSent
         ? 'Not sent with the clip. The still was built from this and approved; the clip ' +
@@ -17680,6 +17861,7 @@ window.SB = window.SB || {};
       it.appendChild(SB.el('span', 'feed-thumb none', '?'));
       it.appendChild(SB.el('span', 'feed-file none', e.kind === 'dead' ? 'gone' : 'no picture'));
       it.appendChild(SB.el('span', 'feed-who', e.label));
+      (function () { const w = whenBtn(sh, e.id, role); if (w) it.appendChild(w); })();
       it.title = e.label + (e.why ? ' — ' + e.why : '');
       wrap.appendChild(it);
     });
@@ -18436,7 +18618,34 @@ window.SB = window.SB || {};
     } else {
       big.appendChild(SB.el('div', 'drop-hint', 'drop the reference frame here, or click to load'));
     }
-    big.title = one ? 'Drop or click to replace this reference image' : '';
+    if (one) {
+      /* Same trade as the card's frame, and worse here: this picture is often
+         the only copy of somebody's face in the file, and a click meant to
+         inspect it opened a picker over the top. */
+      big.style.cursor = 'zoom-in';
+      big.addEventListener('click', function (ev) {
+        if (ev.target.closest && ev.target.closest('.frame-x')) return;
+        ev.stopPropagation();
+        const old = SB.Personas.retiredOf(per);
+        const items = [{
+          img: one, render: one.render, label: per.name || 'reference',
+          note: one.label || '',
+          onReplace: function (file) { addImage(per, file); },
+          onRemove: function () {
+            SB.Personas.clearImage(per);
+            SB.app.changed(true);
+            renderRefs();
+          }
+        }].concat(old.map(function (x) {
+          return { img: x, render: x.render, label: per.name || 'reference',
+            note: (x.label ? x.label + ' · ' : '') + 'older frame, fed to nothing' };
+        }));
+        SB.Viewer.open(P(), items, 0, { title: per.name || 'Reference' });
+      });
+    }
+    big.title = one
+      ? 'Click to see it full size. Drop a file on it to replace it.'
+      : '';
     dropTarget(big, per);
     box.appendChild(big);
 
@@ -18470,7 +18679,11 @@ window.SB = window.SB || {};
   }
 
   function dropTarget(el, per) {
+    /* Only an EMPTY frame picks a file on click. One with a picture in it
+       opens the viewer instead — wanting a better look at a face must not be
+       the same gesture as replacing it. */
     el.onclick = el.onclick || function () {
+      if (SB.Personas.hero(per)) return;
       SB.pickImageFile().then(function (f) { if (f) addImage(per, f); });
     };
     el.addEventListener('dragover', function (ev) {

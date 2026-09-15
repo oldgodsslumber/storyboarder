@@ -404,6 +404,27 @@ it will never make a card or scene reappear or vanish.
   everything this card touches — while each prompt is handed only its own lane, numbered from
   one. An older board has both boxes empty and behaves exactly as it always did.
 
+- **Clicking a picture shows it, it does not replace it.** A click on a card's frame — or on
+  a subject's reference frame — opens it large: the **full-size original** where the file
+  holds one and the board's own copy where it does not, saying which and at what size, with
+  ← → across the other pictures on the same subject. An **empty** frame still opens the file
+  picker, because there is nothing to look at. Replacing is only ever: drop a file on it,
+  **Replace…** inside the viewer, or the ✕. That trade used to go the other way, and on a
+  reference frame it was risking the only copy of somebody's face to get a better look at it.
+- **Shift-drag duplicates a card.** Alt-drag already swaps two pictures, so a modifier that
+  changes what the drop means is a gesture the board has. The copy takes everything —
+  picture, all three description boxes, prompts, cast, shoot settings — with new ids, lands
+  where you dropped it, and **shares** its picture rather than copying it (the store is keyed
+  by content, so a duplicate costs nothing and deleting one card cannot take the other's
+  picture). It claims no part of the master script: two cards claiming one stretch is the
+  thing the script model forbids, so the copy keeps those words as its own.
+- **The card no longer lists what it feeds.** That strip and its *copy image set* are in the
+  prompt table now, per lane, numbered the way each call's own prompt cites them — which is
+  the version that is true per push rather than per card. What stays on the card is the part
+  that was never information: a name typed **without an `@`** (which feeds nothing), a mark
+  whose subject was **deleted**, **more references than a model reads**, and the *someone
+  arrives?* nudge. A healthy card shows none of them. The ◉ that answers that last one moved
+  to the **first-frame lane**, which is the list of the people that frame is built from.
 - Images: drop, paste (with a card selected), or click the frame. Everything is downscaled
   to a ≤480p JPEG proxy and stored inline — no full-res copies anywhere.
 - Card colour washes the **whole card**, not a stripe down its edge. It's a fixed palette of
@@ -1024,6 +1045,7 @@ js/personapanel.js the reference library + scene organizer
 js/renders.js     full-size originals and clips, kept in the file by serial
 js/exportpanel.js the way back out: files, a manifest, a shot list
 js/refs.js        marks, the feed, and the boundary a model reads
+js/viewer.js      a picture, big enough to judge
 js/refbox.js      the description box that draws a mark as a link
 js/mentions.js    the @ popover
 js/prompts.js     Gemini prompt writing

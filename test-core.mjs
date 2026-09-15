@@ -584,6 +584,61 @@ console.log('\n— the lanes do not leak into each other —');
     'the first frame numbers Alpha 1 and Delta 2 — what refs/ and the mapping say');
 }
 
+console.log('\n— a card, copied —');
+{
+  const M = SB.Model, R = SB.Refs, Per = SB.Personas;
+  const p = M.newProject();
+  p.master = SB.Doc.make('A long stretch of script that a card can claim.');
+  const sc = p.scenes[0] || M.addScene(p, 0);
+  const nat = Per.add(p, { name: 'Nat' });
+  nat.image = SB.Blobs.image(p, 'data:image/gif;base64,R0lGODlhAQABAAAAACw=', 4, 3);
+
+  const a = M.addShot(p, sc.id, { type: 'Close-up' });
+  a.description = 'At the desk with ' + R.mark(nat.id, 'Nat') + '.';
+  a.imageDescription = 'The cup is full.';
+  a.videoDescription = 'She lifts it.';
+  a.shoot = { duration: '8' };
+  a.personaIds = [nat.id];
+  a.image = SB.Blobs.image(p, 'data:image/gif;base64,R0lGODlhAQABAAAAACx=', 16, 9);
+  a.comments = [{ id: 'c1', text: 'looks good' }];
+  a.link = { from: 2, to: 20 };
+  a.render = { ref: 'nope', serial: 4, ext: 'png' };
+
+  const before = sc.shots.length;
+  const b = M.duplicateShot(p, a.id, sc.id, 1);
+  eq(sc.shots.length, before + 1, 'the copy lands on the board');
+  eq(sc.shots[1].id, b.id, 'where the drop put it');
+  eq(b.id !== a.id, true, 'with an id of its own');
+
+  /* the content comes across, key for key */
+  eq(b.type, a.type, 'the shot type comes with it');
+  eq(b.description, a.description, 'and every description box');
+  eq(b.imageDescription + '|' + b.videoDescription,
+    a.imageDescription + '|' + a.videoDescription, 'both lanes');
+  eq(JSON.stringify(b.shoot), JSON.stringify(a.shoot), 'and what it asks the model for');
+  eq(b.personaIds.join(), a.personaIds.join(), 'and the cast');
+  eq(JSON.stringify(b.image), JSON.stringify(a.image), 'and the picture record');
+
+  /* the picture is SHARED, not copied — the store is keyed by content */
+  eq(b.image.ref, a.image.ref, 'pointing at the same blob, so the copy is free');
+  eq(Object.keys(p.blobs).length, 2, 'and no second copy of it was written');
+
+  /* two cards cannot claim one stretch of script */
+  eq(b.link, null, 'the copy claims nothing of the master script');
+  eq(!!b.local && b.local.text.length > 0, true, 'and keeps the words as its own');
+  eq(b.local.text, p.master.text.slice(2, 20), 'the same words the original claimed');
+  eq(a.link && a.link.from, 2, 'while the original keeps its claim');
+
+  /* and what belonged to the original stays with it */
+  eq(b.comments.length, 0, 'a conversation about one card is not about its copy');
+  eq(b.render, null, 'nor is what was generated for it');
+
+  /* a copy is a first-class card */
+  eq(M.findShot(p, b.id).code, M.code(0, 1), 'and it numbers where it sits');
+  b.description = 'changed';
+  eq(a.description !== b.description, true, 'editing one leaves the other alone');
+}
+
 console.log('\n— brand style —');
 {
   const B = SB.Brand;

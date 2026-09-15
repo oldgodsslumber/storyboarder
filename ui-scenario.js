@@ -779,13 +779,14 @@
       var firstShot = SB.Model.findShot(P(), document.querySelector('.card').dataset.shot).shot;
       SB.Personas.toggleOnShot(P(), firstShot, per1.id);
       SB.app.changed(true);
-      t('a cast subject shows in the feed instead',
-        /Ops lead/.test(document.querySelector('.card .feed-row').textContent),
+      /* The strip is gone from the card. What a call hands over is in the
+         prompt table, per lane, numbered the way that call's prompt cites
+         it — and the card stays quiet unless something is wrong. */
+      t('a healthy card says nothing about its references',
+        document.querySelector('.card .feed-row').textContent === '',
         document.querySelector('.card .feed-row').textContent);
-      t('flagged, because nobody said to show it',
-        !!document.querySelector('.card .feed-cell.unmentioned'), '');
-      t('and it can be taken off from there',
-        !!document.querySelector('.card .feed-cell.unmentioned .feed-off'), '');
+      t('and carries no copy button',
+        !document.querySelector('.card .feed-copy'), '');
 
       // the full-size original, and what the card says about it
       {
@@ -812,21 +813,26 @@
         other.description = 'Reverse of ' + SB.Refs.mark(rShot0.id, '1A') + '.';
         SB.Board.refreshFeed(other.id);
         var oFeed = document.querySelector('.feed-row[data-feed="' + other.id + '"]');
-        t('a feed cell backed by a full-size file names it',
-          !!oFeed.querySelector('.feed-cell.full .feed-ser') &&
-          oFeed.querySelector('.feed-ser').textContent === '0007',
-          oFeed.textContent);
-        t('a folder-era record, with a number and no picture behind it, is not claimed',
+        /* The strip that named the file has gone from the card; the table's
+           first-frame lane names it, where the numbers are true per call. */
+        SB.PromptPanel.open();
+        const oLane = document.querySelector('.pt-row[data-shot="' + other.id +
+          '"] .pt-prompt[data-lane="image"]');
+        t('the first-frame lane names the file it will hand over',
+          /0007/.test(oLane ? oLane.textContent : ''),
+          oLane ? oLane.textContent.slice(0, 90) : 'no lane');
+        t('a folder-era record, a number with no picture behind it, is not claimed',
           (function () {
             var was = rShot0.render;
             rShot0.render = { serial: 8, ext: 'png', bytes: 9, at: 1 };
-            SB.Board.refreshFeed(other.id);
-            var cell = document.querySelector('.feed-row[data-feed="' + other.id + '"]');
-            var quiet = !cell.querySelector('.feed-cell.full .feed-ser');
+            SB.PromptPanel.open();
+            var lane2 = document.querySelector('.pt-row[data-shot="' + other.id +
+              '"] .pt-prompt[data-lane="image"]');
+            var quiet = !/0008/.test(lane2 ? lane2.textContent : '');
             rShot0.render = was;
-            SB.Board.refreshFeed(other.id);
             return quiet;
           })(), '');
+        SB.PromptPanel.close();
         t('and the serial rides with the picture, not the card',
           (function () {
             SB.Model.swapShotContent(P(), rShot0.id, other.id);
@@ -851,12 +857,17 @@
         SB.app.changed(true);
         var cRow = document.querySelector('.feed-row[data-feed="' + cShot.id + '"]');
         var cBtn = cRow && cRow.querySelector('.feed-copy');
-        t('a card with references offers its image set', !!cBtn, cRow ? cRow.textContent : 'no row');
+        t('the card offers no image set — the table does', !cBtn, cRow ? cRow.textContent : '');
+        /* the button moved to the table, where it still has to work */
+        SB.PromptPanel.open();
+        const tBtn = Array.prototype.filter.call(
+          document.querySelectorAll('.pt-row[data-shot="' + cShot.id + '"] button'),
+          function (b) { return /copy image set/.test(b.textContent); })[0];
+        t('the table offers it instead', !!tBtn, tBtn ? tBtn.textContent : 'none');
         var threw = null;
-        var realErr = window.onerror;
-        try { cBtn.click(); } catch (e) { threw = e.message; }
+        try { if (tBtn) tBtn.click(); } catch (e) { threw = e.message; }
         t('and clicking it does not throw', !threw, String(threw));
-        window.onerror = realErr;
+        SB.PromptPanel.close();
         cShot.description = cWas;
         SB.app.changed(true);
       }
@@ -888,9 +899,13 @@
           JSON.stringify(made.personaIds) + ' / ' + JSON.stringify(made.castEnters));
         t('so the source frame is the only thing it feeds',
           SB.Refs.feed(P(), made).length === 1, SB.Refs.feed(P(), made).length + ' entries');
-        var rFeed = document.querySelector('.feed-row[data-feed="' + made.id + '"]');
-        t('and the new card shows the source in its strip',
-          !!rFeed && /1A|1B|1C/.test(rFeed.textContent), rFeed ? rFeed.textContent : 'none');
+        SB.PromptPanel.open();
+        var rLane = document.querySelector('.pt-row[data-shot="' + made.id +
+          '"] .pt-prompt[data-lane="image"]');
+        t('and the first-frame lane shows the source it is built from',
+          !!rLane && /1A|1B|1C/.test(rLane.textContent),
+          rLane ? rLane.textContent.slice(0, 80) : 'none');
+        SB.PromptPanel.close();
         SB.Model.deleteShot(P(), made.id);
         firstShot.image = null;
         SB.app.changed(true);
@@ -902,26 +917,41 @@
         SB.Personas.toggleOnShot(P(), firstShot, per2.id);
         firstShot.description = 'He writes at the desk. A colleague walks into frame behind him.';
         SB.app.changed(true);
+        /* The nudge stays on the card — the description that reads as an
+           arrival is being typed right above it — while the ◉ that answers it
+           moved to the first-frame lane with the rest of the strip. */
         var crow = document.querySelector('.feed-row[data-feed="' + firstShot.id + '"]');
-        t('the board notices a description that reads as an arrival',
+        t('the board still notices a description that reads as an arrival',
           !!crow.querySelector('.feed-late'), crow.textContent);
-        var whens = crow.querySelectorAll('.feed-when');
-        t('every person in the feed says whether they are there when it opens',
+        t('and says where to answer it',
+          /first-frame lane/.test(crow.querySelector('.feed-late').title), '');
+
+        SB.PromptPanel.open();
+        const wLane = function () {
+          return document.querySelector('.pt-row[data-shot="' + firstShot.id +
+            '"] .pt-prompt[data-lane="image"]');
+        };
+        var whens = wLane().querySelectorAll('.feed-when');
+        t('every person on the first-frame lane says whether they are there when it opens',
           whens.length === 2 && whens[0].tagName === 'BUTTON',
           whens.length + ' ' + (whens[0] && whens[0].tagName));
         whens[1].click();
         t('clicking one marks it as arriving partway through',
           SB.Personas.enters(firstShot, per2.id), JSON.stringify(firstShot.castEnters));
+        t('and the lane shows it',
+          !!wLane().querySelector('.feed-when.arriving'), '');
+        SB.PromptPanel.close();
         crow = document.querySelector('.feed-row[data-feed="' + firstShot.id + '"]');
-        t('the feed shows it', !!crow.querySelector('.feed-when.arriving'), '');
-        t('and the nudge goes away once somebody is marked',
+        t('and the nudge on the card goes away once somebody is marked',
           !crow.querySelector('.feed-late'), '');
         var iSys = SB.Prompts.jobsFor(firstShot, SB.Model.imageModel(P()), null, { image: true })[0].system;
         t('the first-frame request says the frame is one instant',
           /THE FIRST FRAME IS ONE INSTANT/.test(iSys), '');
         t('and names who is not in it',
           /MARKED AS ARRIVING[\s\S]*Technician/.test(iSys), '');
-        crow.querySelectorAll('.feed-when')[1].click();   // put it back
+        SB.PromptPanel.open();
+        wLane().querySelectorAll('.feed-when')[1].click();   // put it back
+        SB.PromptPanel.close();
         SB.Personas.toggleOnShot(P(), firstShot, per2.id);
         firstShot.description = '';
         SB.app.changed(true);
@@ -1594,6 +1624,95 @@
         await nap(40);
       }
 
+      // shift-drag drops a copy
+      {
+        const nap = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+        const sc = P().scenes[0];
+        const src = sc.shots[0];
+        src.imageDescription = 'Marker for the copy test.';
+        SB.app.changed(true);
+        await nap(60);
+        const before = sc.shots.length;
+        const target = document.querySelector('.card[data-shot="' + sc.shots[0].id + '"]');
+        const r = target.getBoundingClientRect();
+        const dt = new DataTransfer();
+        dt.setData('application/x-sb-shot', src.id);
+        target.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true,
+          cancelable: true, clientX: r.left + 6, clientY: r.top + r.height / 2,
+          shiftKey: true }));
+        await nap(80);
+        t('shift-drag leaves the original and adds a copy',
+          sc.shots.length === before + 1, sc.shots.length + ' vs ' + before);
+        const copies = sc.shots.filter(function (x) {
+          return x.imageDescription === 'Marker for the copy test.';
+        });
+        t('and the copy carries the card’s words', copies.length === 2, copies.length);
+        t('with ids of their own', copies[0].id !== copies[1].id, '');
+        const dupe = copies.filter(function (x) { return x.id !== src.id; })[0];
+        SB.Model.deleteShot(P(), dupe.id);
+        src.imageDescription = '';
+        SB.app.changed(true);
+        await nap(40);
+      }
+
+      // a click shows the picture; replacing is something you say
+      {
+        const nap = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+        const sh = P().scenes[0].shots[0];
+        const wasImg = sh.image, wasRender = sh.render;
+
+        /* an empty frame still picks a file — there is nothing to look at */
+        sh.image = null; sh.render = null;
+        SB.app.changed(true);
+        await nap(60);
+        const frameOf = function () {
+          return document.querySelector('.card[data-shot="' + sh.id + '"] .frame');
+        };
+        t('an empty frame still says click to load',
+          /click to load/.test(frameOf().textContent), frameOf().textContent.slice(0, 40));
+
+        /* with a picture, a click opens it rather than replacing it */
+        sh.image = SB.Blobs.image(P(),
+          'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 16, 9);
+        SB.app.changed(true);
+        await nap(60);
+        frameOf().click();
+        await nap(80);
+        const v = document.querySelector('.modal .viewer');
+        t('clicking a picture opens it large', !!v, '');
+        t('and says it is the board\u2019s own copy, not an original',
+          /board/.test(v.querySelector('.viewer-cap').textContent),
+          v.querySelector('.viewer-cap').textContent);
+        t('with a way to replace it and a way to remove it',
+          Array.prototype.filter.call(document.querySelectorAll('.modal .foot button'),
+            function (b) { return /Replace|Remove/.test(b.textContent); }).length === 2,
+          Array.prototype.map.call(document.querySelectorAll('.modal .foot button'),
+            function (b) { return b.textContent; }).join(','));
+        t('and the picture is still on the card, untouched',
+          !!sh.image, JSON.stringify(sh.image));
+
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        await nap(60);
+        t('escape closes it', !document.querySelector('.modal .viewer'), '');
+
+        /* a full-size original is shown as one, and named */
+        sh.render = { ref: SB.Blobs.put(P(), 'data:image/webp;base64,' + 'Q'.repeat(200)),
+          serial: 11, ext: 'webp', w: 1920, h: 1080, bytes: 2048, at: 1 };
+        SB.app.changed(true);
+        await nap(60);
+        frameOf().click();
+        await nap(80);
+        const cap = document.querySelector('.modal .viewer-cap').textContent;
+        t('an original is named by its file', /0011\.webp/.test(cap), cap);
+        t('and called what it is', /full-size original/.test(cap), cap);
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        await nap(60);
+
+        sh.image = wasImg; sh.render = wasRender;
+        SB.app.changed(true);
+        await nap(40);
+      }
+
       // moving cards and scenes, especially to the two ends
       {
         const nap = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
@@ -2055,23 +2174,34 @@
         t('and the object turns up in that card of the prompt',
           /OBJECTS/.test(SB.Personas.block(P(), shB, null)), '');
 
-        // the feed strip is the rule made visible
-        const fr = mCard.querySelector('.feed-row');
-        t('the card shows what it will feed', !!fr && !!fr.querySelector('.feed-cell'),
-          fr ? fr.textContent : 'no row');
+        // the rule made visible — in the table, per call, since the strip went
+        SB.PromptPanel.open();
+        const fLane = function () {
+          return document.querySelector('.pt-row[data-shot="' + mShotId +
+            '"] .pt-prompt[data-lane="image"]');
+        };
+        t('the first-frame lane shows what it will feed',
+          !!fLane() && !!fLane().querySelector('.pt-fe'),
+          fLane() ? fLane().textContent.slice(0, 90) : 'no lane');
         t('a mark with no picture behind it is called out and takes no number',
-          !!fr.querySelector('.feed-cell.empty') &&
-          fr.querySelector('.feed-cell.empty .feed-n').textContent === '–', fr.textContent);
+          !!fLane().querySelector('.pt-fe.empty') &&
+          fLane().querySelector('.pt-fe.empty .feed-n').textContent === '\u2013',
+          fLane().textContent.slice(0, 120));
+        SB.PromptPanel.close();
         /* give it a frame and it takes its place in the order */
         const handset = SB.Personas.all(P()).filter(function (x) { return x.name === 'Handset'; })[0];
         SB.Personas.setImage(handset, SB.Blobs.image(P(),
           'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 4, 3), 'front');
         SB.Board.refreshFeed(mShotId);
-        const fr1 = mCard.querySelector('.feed-row');
+        SB.PromptPanel.open();
         t('numbered in the order the marks were written',
-          fr1.querySelector('.feed-n').textContent === '1',
-          fr1.querySelector('.feed-n').textContent);
-        t('and the image set can be handed over', !!fr1.querySelector('.feed-copy'), '');
+          fLane().querySelector('.feed-n').textContent === '1',
+          fLane().querySelector('.feed-n').textContent);
+        t('and the image set can be handed over',
+          Array.prototype.some.call(fLane().querySelectorAll('button'),
+            function (b) { return /copy image set/.test(b.textContent); }),
+          fLane().textContent.slice(0, 90));
+        SB.PromptPanel.close();
 
         // a name typed without an @ feeds nothing, and the card says so
         boxSet(box, boxGet(box) + ' Ops lead watches.');

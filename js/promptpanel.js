@@ -1145,6 +1145,34 @@
    * into a model in this order, so it says 0007.png. The subject's name rides
    * along after it, because the filename alone says nothing about who it is.
    */
+  /* Is this person already there when the shot opens?
+   *
+   * A first frame is one instant, so somebody who walks in partway through
+   * must not be drawn standing in it — and the video cast block splits its
+   * two lists on exactly this. The control used to live on the card's feed
+   * strip; the strip has gone, and this is the list of the people the FIRST
+   * FRAME is built from, which is what the question is about. */
+  function whenBtn(sh, id, role) {
+    if (role === 'video') return null;
+    const per = SB.Personas.find(P(), id);
+    if (!per || SB.Personas.kindOf(per).id !== 'person') return null;
+    const arriving = SB.Personas.enters(sh, id);
+    const b = SB.el('button', 'feed-when' + (arriving ? ' arriving' : ''),
+      arriving ? '\u25b7' : '\u25c9');
+    b.title = arriving
+      ? 'Arrives during the shot, so the first frame leaves them out. Click to say they are ' +
+        'there when it opens.'
+      : 'There when the shot opens. Click if they arrive partway through instead.';
+    b.onclick = function (ev) {
+      ev.stopPropagation();
+      SB.Personas.toggleEnters(sh, id);
+      SB.Store.touch();
+      refreshFeedCell(sh.id);
+      if (SB.Board.refreshFeed) SB.Board.refreshFeed(sh.id);
+    };
+    return b;
+  }
+
   function feedList(sh, code, role) {
     const wrap = SB.el('div', 'pt-feed-list');
     const list = SB.Refs.feed(P(), sh, role);
@@ -1212,6 +1240,7 @@
         file || 'board copy only');
       it.appendChild(nameEl);
       it.appendChild(SB.el('span', 'feed-who', e.label + (e.role ? ' · ' + e.role : '')));
+      (function () { const w = whenBtn(sh, e.id, role); if (w) it.appendChild(w); })();
 
       it.title = (notSent
         ? 'Not sent with the clip. The still was built from this and approved; the clip ' +
@@ -1235,6 +1264,7 @@
       it.appendChild(SB.el('span', 'feed-thumb none', '?'));
       it.appendChild(SB.el('span', 'feed-file none', e.kind === 'dead' ? 'gone' : 'no picture'));
       it.appendChild(SB.el('span', 'feed-who', e.label));
+      (function () { const w = whenBtn(sh, e.id, role); if (w) it.appendChild(w); })();
       it.title = e.label + (e.why ? ' — ' + e.why : '');
       wrap.appendChild(it);
     });

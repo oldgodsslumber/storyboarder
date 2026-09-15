@@ -73,6 +73,21 @@
 
   /* Which cards a drop should carry: the whole group if the dragged card is
    * part of one, otherwise just the card. */
+  /* Shift-drag: the cards that were dragged, copied where they landed. */
+  function doCopy(id, toSceneId, toIdx) {
+    const ids = dragged(id);
+    let at = typeof toIdx === 'number' ? toIdx : null;
+    let last = null;
+    ids.forEach(function (one) {
+      last = SB.Model.duplicateShot(P(), one, toSceneId, at);
+      if (last && at != null) at++;
+    });
+    if (!last) return;
+    SB.app.selectedShotId = last.id;
+    SB.app.changed(true);
+    SB.toast(ids.length === 1 ? 'Card copied' : ids.length + ' cards copied');
+  }
+
   function dragged(id) {
     if (B.dragging && B.dragging.indexOf(id) >= 0) return B.dragging.slice();
     return [id];
@@ -124,7 +139,7 @@
 
   /* A line where the thing will land. Without it the only way to find out was
    * to let go. */
-  function mark(hit, horiz) {
+  function mark(hit, horiz, copy) {
     let m = document.getElementById('dropMark');
     if (!m) {
       m = SB.el('div');
@@ -134,6 +149,7 @@
     if (!hit || !hit.rect) { m.style.display = 'none'; return; }
     const r = hit.rect;
     m.style.display = 'block';
+    m.classList.toggle('copy', !!copy);
     if (horiz) {
       m.style.left = ((hit.after ? r.right + 4 : r.left - 4) - 1) + 'px';
       m.style.top = r.top + 'px';
@@ -737,6 +753,10 @@
       if (!id) return;
       /* the gap left of the first card means "first", not "last" */
       const hit = shotHit(shots, ev);
+      if (ev.shiftKey) {
+        doCopy(id, sc.id, kids(shots, 'card').length ? hit.idx : sc.shots.length);
+        return;
+      }
       SB.Model.moveShots(P(), dragged(id), sc.id,
         kids(shots, 'card').length ? hit.idx : sc.shots.length);
       SB.app.changed(true);
@@ -953,9 +973,12 @@
       ev.preventDefault(); ev.stopPropagation();
       /* Alt turns the drop from "move this card here" into "swap the two
        * pictures over, leave both bits of dialogue where they are". */
-      c.classList.toggle('swap-target', !!ev.altKey);
-      c.classList.toggle('drag-over', !ev.altKey);
-      if (ev.altKey) unmark(); else mark(shotHit(c.parentNode, ev), true);
+      ev.dataTransfer.dropEffect = ev.shiftKey ? 'copy' : 'move';
+      c.classList.toggle('swap-target', !!ev.altKey && !ev.shiftKey);
+      c.classList.toggle('drag-over', !ev.altKey || !!ev.shiftKey);
+      c.classList.toggle('copy-target', !!ev.shiftKey);
+      if (ev.altKey && !ev.shiftKey) unmark();
+      else mark(shotHit(c.parentNode, ev), true, ev.shiftKey);
     });
     c.addEventListener('dragleave', function () {
       c.classList.remove('drag-over');
@@ -966,9 +989,14 @@
       ev.preventDefault(); ev.stopPropagation();
       c.classList.remove('drag-over');
       c.classList.remove('swap-target');
+      c.classList.remove('copy-target');
       unmark();
       const id = ev.dataTransfer.getData(DND_SHOT);
-      if (!id || id === sh.id) return;
+      if (!id) return;
+      /* Read at the DROP, not at the dragstart: a modifier held on the way
+         out and let go before landing should not still count. */
+      if (ev.shiftKey) { doCopy(id, sc.id, shotHit(c.parentNode, ev).idx); return; }
+      if (id === sh.id) return;
       if (ev.altKey) { doSwap(id, sh.id); return; }
       /* measured against every card in the scene, so a drop that lands a few
        * pixels off this one still means the edge it looks like it means */
@@ -1337,25 +1365,31 @@
    * the files go in. Somebody who has never used an image model can read this
    * strip and drop the right files in the right order.
    */
-  function feedRow(sh) {
+function feedRow(sh) {
     const row = SB.el('div', 'feed-row');
     row.dataset.feed = sh.id;
-    /* Everything this card touches, so nothing written anywhere on it goes
-       unseen — but NUMBERED off the first frame's lane, because those numbers
-       are the promise: they are what the prompt's mapping cites, what the
-       refs/ folder is named by, what the printed page lists and what "copy
-       image set" writes. The strip is where a person reads the order off,
-       and it was counting a third set nobody else used. */
-    const list = SB.Refs.feed(P(), sh);
-    const laneN = {};
-    SB.Refs.images(P(), sh, 'image').forEach(function (e) {
-      laneN[e.id] = (laneN[e.id] || []).concat([e.n]);
-    });
-    /* A name in the text that is not a mark feeds nothing — the exact mistake
-       this feature exists to stop. It is most likely on a card with NO feed at
-       all, so it is worked out before the empty case, not after it. */
-    /* Every box that can hold a mark — a name typed into the motion box
-       without an @ is the same mistake in a different place. */
+
+    /* What this card hands over used to be listed here, numbered, with the
+     * pictures and a button to write them out. It is gone from the card: the
+     * prompt table shows each call's own references, numbered the way that
+     * call's prompt cites them, which is the version that is true per push
+     * rather than per card.
+     *
+     * Three things on that row were never information though. They are
+     * mistakes, they have nowhere else to appear, and a board that hides
+     * them is a board that ships them:
+     *
+     *   a name typed without an @        — feeds nothing, which is the exact
+     *                                      mistake the @ rule exists to stop
+     *   a mark whose subject was deleted — plain text now, pointing at nobody
+     *   more references than a model reads — past the advice limit they are
+     *                                      averaged together, not read
+     *
+     * So a healthy card shows nothing at all, and a card with one of these
+     * shows that one line and the button that fixes it.
+     */
+    const dead = SB.Refs.feed(P(), sh).filter(function (e) { return e.kind === 'dead'; });
+
     const seenLoose = {};
     const loose = SB.Refs.boxes(sh).reduce(function (acc, t) {
       return acc.concat(SB.Refs.unlinked(P(), t || ''));
@@ -1366,192 +1400,35 @@
       return true;
     });
 
-    if (!list.length && !loose.length) {
-      /* Only worth saying on a card that has something to say it about. */
-      if (SB.Model.described(sh)) {
-        const hint = SB.el('span', 'feed-empty', 'no references — @ anything the model should see');
-        hint.title = 'Type @ in the description to name a person, a place, an object or another ' +
-          'shot. Whatever you @ is a picture the model gets handed.';
-        row.appendChild(hint);
-      }
-      return row;
-    }
-
-    if (list.length) row.appendChild(SB.el('span', 'feed-label', 'feed'));
-
-    list.forEach(function (e) {
-      const cell = SB.el('button', 'feed-cell' +
-        (e.mentioned ? '' : ' unmentioned') +
-        (e.kind === 'dead' ? ' dead' : '') +
-        (e.kind === 'shot' ? ' is-shot' : '') +
-        (e.images.length ? '' : ' empty'));
-      /* The first frame's numbers, which are the ones the prompt cites, the
-         refs/ folder is named by and "copy image set" writes. A mark that
-         only the clip's words know about gets a dot: it is in no folder and
-         no mapping, and numbering it was inventing a third order. */
-      const mine = laneN[e.id] || [];
-      const n = mine.length
-        ? (mine.length === 1 ? String(mine[0])
-          : mine[0] + '\u2013' + mine[mine.length - 1])
-        : (e.images.length ? '\u00b7' : '\u2013');
-      cell.appendChild(SB.el('span', 'feed-n' + (mine.length ? '' : ' aside'), String(n)));
-
-      if (e.images.length) {
-        const t = SB.el('span', 'feed-thumb');
-        const im = document.createElement('img');
-        im.src = SB.Blobs.src(P(), e.images[0]);
-        t.appendChild(im);
-        if (e.images.length > 1) t.appendChild(SB.el('span', 'feed-more', '×' + e.images.length));
-        cell.appendChild(t);
-      } else {
-        cell.appendChild(SB.el('span', 'feed-thumb none', '?'));
-      }
-
-      cell.appendChild(SB.el('span', 'feed-name', e.label));
-
-      /* The first frame is one instant, so whether somebody is already there
-         matters as much as whether their picture is fed. It used to live on a
-         chip in a row of its own; it belongs on the thing it is about. */
-      const per = e.subject;
-      if (per && SB.Personas.kindOf(per).id === 'person') {
-        const arriving = SB.Personas.enters(sh, e.id);
-        const when = SB.el('button', 'feed-when' + (arriving ? ' arriving' : ''),
-          arriving ? '▷' : '◉');
-        when.title = arriving
-          ? 'Arrives during the shot, so the first frame leaves them out. Click to say they are ' +
-            'there when it opens.'
-          : 'There when the shot opens. Click if they arrive partway through instead.';
-        when.onclick = function (ev) {
-          ev.stopPropagation();
-          SB.Personas.toggleEnters(sh, e.id);
-          SB.Store.touch();
-          refreshFeed(sh.id);
-        };
-        cell.appendChild(when);
-      }
-
-      /* Cast, but nobody said to show it — so nobody chose its place in the
-         order either. The way off the card, now the cast row has gone. */
-      if (!e.mentioned && e.kind === 'subject') {
-        const off = SB.el('button', 'feed-off', '✕');
-        off.title = 'Take ' + e.label + ' off this card. It is not mentioned in the ' +
-          'description, so nothing else changes.';
-        off.onclick = function (ev) {
-          ev.stopPropagation();
-          SB.Personas.toggleOnShot(P(), sh, e.id);
-          SB.app.changed(true);
-        };
-        cell.appendChild(off);
-      }
-      /* Named by the serial, but only where the file actually holds the
-         original — a folder-era record has the number and nothing behind it. */
-      const sers = (e.renders || []).filter(function (r) { return SB.Renders.has(P(), r); })
-        .map(function (r) { return SB.Renders.pad(r.serial); });
-      if (sers.length) {
-        cell.classList.add('full');
-        cell.appendChild(SB.el('span', 'feed-ser', sers.join(' ')));
-      }
-      cell.title = e.label + (e.why ? ' — ' + e.why : '') +
-        (e.kind === 'dead' ? '\nClick to take the reference out and keep the name as text.' : '') +
-        (sers.length
-          ? '\nFull-size ' + sers.join(', ') + ' is what gets fed; the board copy stands in ' +
-            'for anything whose original this file does not hold.'
-          : (e.images.length ? '\nBoard copy only (854×480) — no original kept.' : '')) +
-        (e.kind === 'dead' ? ''
-          : e.images.length ? '\nClick to open it.' : '\nClick to fix it.');
-      cell.onclick = function (ev) {
-        ev.stopPropagation();
-        /* Nothing to open — what it needs is the mark taken out, leaving the
-           name it had as ordinary prose. */
-        if (e.kind === 'dead') {
-          /* The strip is the union of all three boxes, so the dead mark being
-           clicked is not necessarily in the shared one. */
-        SB.Refs.rewrite(sh, function (t) { return SB.Refs.unmark(P(), t, e.id); });
-          SB.app.changed(true);
-          SB.toast('“' + e.label + '” is plain text now');
-          return;
-        }
-        SB.RefBox.go(e.id);
-      };
-      row.appendChild(cell);
-    });
-
-    /* A description that still says what somebody looks like: the feed is the
-       real record of who is in this, so that text is a frozen copy of somebody
-       who may not even be on the card any more. */
-    const terms = SB.Coverage.carriesWardrobe(P(), sh);
-    if (terms) {
-      const warn = SB.el('button', 'mini feed-fix', 'describes wardrobe');
-      warn.title = 'This description still says what somebody looks like (' +
-        terms.slice(0, 4).join(', ') + (terms.length > 4 ? '…' : '') + '). ' +
-        'The subjects it feeds are the real record — click to take it out of the text.';
-      warn.onclick = function (ev) {
-        ev.stopPropagation();
-        warn.disabled = true;
-        warn.textContent = 'cleaning…';
-        SB.Coverage.cleanWardrobe(P(), [sh]).then(function (r) {
-          SB.app.changed(true);
-          SB.toast(r.cleaned
-            ? 'Description cleaned — the subjects keep the wardrobe now'
-            : 'Nothing could be taken out of that one', !r.cleaned);
-        }).catch(function (e) {
-          warn.disabled = false;
-          warn.textContent = 'describes wardrobe';
-          if (SB.apiBlocked(e, function () { warn.onclick(ev); })) return;
-          SB.toast(e.message || String(e), true);
-        });
-      };
-      row.appendChild(warn);
-    }
-
-    /* People, not subjects: an insert of one hand and one scanner is two
-       "cast", and the nudge asked which of them makes an entrance. */
-    const people = SB.Personas.forShot(P(), sh).filter(function (x) {
-      return SB.Personas.kindOf(x).id === 'person';
-    });
-    if (people.length > 1 && !SB.Personas.arriving(P(), sh).length &&
-        SB.Personas.readsAsArrival(SB.Refs.text(P(), sh))) {
-      const nudge = SB.el('button', 'mini feed-late', 'someone arrives?');
-      nudge.title = 'This description reads as somebody turning up partway through, but ' +
-        'everyone here is marked as being present when it opens — so they will all be drawn ' +
-        'into the first frame. Click the ◉ on whoever arrives.';
-      nudge.onclick = function (ev) {
-        ev.stopPropagation();
-        SB.toast('Click the ◉ beside whoever arrives partway through');
-      };
-      row.appendChild(nudge);
-    }
-
-    /* The references this card hands a model are the FIRST FRAME's. A clip is
-       handed the finished frame and nothing else, so there is no second set
-       and never was one to copy. */
     const imgs = SB.Refs.images(P(), sh, 'image');
     /* A frame this shot is derived from is not one of these: it is the
        picture being edited, not a reference averaged in with others. */
     const refCount = imgs.filter(function (e) { return e.kind !== 'shot'; }).length;
-    if (refCount > SB.Personas.IMAGE_ADVICE) {
-      const warn = SB.el('span', 'feed-warn', refCount + ' references');
-      warn.title = 'Past ' + SB.Personas.IMAGE_ADVICE + ' references most image models start ' +
-        'averaging them together instead of reading them. Drop a mark, or drop a frame off one ' +
-        'of these subjects.';
-      row.appendChild(warn);
-    }
-    if (imgs.length) {
-      const full = imgs.filter(function (e) { return SB.Renders.has(P(), e.render); }).length;
-      const copy = SB.el('button', 'mini feed-copy', 'copy image set');
-      copy.title = 'Write all ' + imgs.length + ' reference images out, numbered in the order ' +
-        'the first-frame prompt names them.' +
-        (full ? '\n' + full + ' of them full-size.'
-              : '\nAll of them are the board\u2019s 854\u00d7480 copies \u2014 they were filed when ' +
-                'originals lived in a folder. Drop them in again to bring the originals with them.');
-      copy.onclick = function (ev) {
+
+    /* People, not subjects: an insert of one hand and one scanner is two
+       "cast", and the nudge asks which of them makes an entrance. It stays on
+       the card because the description that reads as an arrival is being
+       typed six inches above it. */
+    const people = SB.Personas.forShot(P(), sh).filter(function (x) {
+      return SB.Personas.kindOf(x).id === 'person';
+    });
+    const late = people.length > 1 && !SB.Personas.arriving(P(), sh).length &&
+      SB.Personas.readsAsArrival(SB.Refs.text(P(), sh));
+
+    if (!dead.length && !loose.length && !late &&
+        refCount <= SB.Personas.IMAGE_ADVICE) return row;
+
+    if (late) {
+      const nudge = SB.el('button', 'mini feed-late', 'someone arrives?');
+      nudge.title = 'This description reads as somebody turning up partway through, but ' +
+        'everyone here is marked as being present when it opens — so they will all be ' +
+        'drawn into the first frame. Mark whoever arrives with the ◉ beside them on the ' +
+        'first-frame lane in Prompts.';
+      nudge.onclick = function (ev) {
         ev.stopPropagation();
-        /* the code is looked up rather than closed over: feedRow is rebuilt on
-           its own by refreshFeed, which has no scene/shot indices to hand */
-        const f = SB.Model.findShot(P(), sh.id);
-        saveFeed(sh, imgs, f ? f.code : 'shot');
+        SB.toast('Prompts → the first-frame lane: ◉ beside whoever arrives');
       };
-      row.appendChild(copy);
+      row.appendChild(nudge);
     }
 
     if (loose.length) {
@@ -1559,18 +1436,15 @@
         loose.length === 1 ? 'link 1 name' : 'link ' + loose.length + ' names');
       fix.title = loose.map(function (x) { return x.name; }).join(', ') +
         (loose.length === 1 ? ' is named' : ' are named') +
-        ' in the description but not referenced, so no picture is sent for ' +
+        ' on this card but not referenced, so no picture is sent for ' +
         (loose.length === 1 ? 'it' : 'them') + '. Click to link ' +
         (loose.length === 1 ? 'it' : 'them') + '.';
       fix.onclick = function (ev) {
         ev.stopPropagation();
-        /* Every box. The count above already reads all three, so linking only
-           the shared one left the button sitting there after a toast saying
-           the job was done. */
+        /* every box — the count above reads all three, and linking only the
+           shared one left the button sitting there after a toast saying the
+           job was done */
         SB.Refs.rewrite(sh, function (t) { return SB.Refs.linkAll(P(), t); });
-        /* and cast them, as picking from the popover does — a marked subject
-           that is not cast was numbered in the manifest with no description
-           above it to say what it looks like. */
         loose.forEach(function (x) {
           if ((sh.personaIds || []).indexOf(x.id) < 0) {
             sh.personaIds = (sh.personaIds || []).concat([x.id]);
@@ -1581,6 +1455,30 @@
       };
       row.appendChild(fix);
     }
+
+    dead.forEach(function (e) {
+      const gone = SB.el('button', 'mini feed-fix danger', e.label + ' is gone');
+      gone.title = (e.why || 'This subject was deleted.') +
+        ' Click to leave the name as plain text.';
+      gone.onclick = function (ev) {
+        ev.stopPropagation();
+        /* the strip was the union of all three boxes, so the dead mark is
+           not necessarily in the shared one */
+        SB.Refs.rewrite(sh, function (t) { return SB.Refs.unmark(P(), t, e.id); });
+        SB.app.changed(true);
+        SB.toast('\u201c' + e.label + '\u201d is plain text now');
+      };
+      row.appendChild(gone);
+    });
+
+    if (refCount > SB.Personas.IMAGE_ADVICE) {
+      const warn = SB.el('span', 'feed-warn', refCount + ' references');
+      warn.title = 'Past ' + SB.Personas.IMAGE_ADVICE + ' references most image models start ' +
+        'averaging them together instead of reading them. Drop a mark, or drop a frame off one ' +
+        'of these subjects.';
+      row.appendChild(warn);
+    }
+
     return row;
   }
 
@@ -1925,7 +1823,21 @@
     f.appendChild(tools);
 
     f.addEventListener('click', function () {
-      SB.pickImageFile().then(function (file) { if (file) setImage(sh, file); });
+      /* A click used to open the file picker, so wanting a better look at a
+         480p frame was the same gesture as replacing it. Now it opens the
+         picture; an empty frame still picks, because there is nothing to
+         look at and "click to load" is all it has. */
+      if (!sh.image && !sh.render) {
+        SB.pickImageFile().then(function (file) { if (file) setImage(sh, file); });
+        return;
+      }
+      const f2 = SB.Model.findShot(P(), sh.id);
+      SB.Viewer.open(P(), [{
+        img: sh.image, render: sh.render,
+        label: (f2 ? f2.code : '') + (sh.type ? ' · ' + sh.type : ''),
+        onReplace: function (file) { setImage(sh, file); },
+        onRemove: function () { sh.image = null; SB.app.changed(true); }
+      }], 0, { title: 'First frame' });
     });
     f.addEventListener('dragover', function (ev) {
       if (ev.dataTransfer.types.indexOf(DND_SHOT) >= 0) return;

@@ -1335,6 +1335,47 @@
     'fields', 'prompts', 'personaIds', 'castEnters', 'comments', 'render', 'video'
   ];
 
+  /* A copy of a card, dropped where the drop landed.
+   *
+   * Everything in CONTENT_KEYS comes across — the picture, all three
+   * description boxes, the prompts, the cast, the shoot settings — with new
+   * ids for anything that carries one, so nothing about the copy is shared
+   * state with the original.
+   *
+   * Two things deliberately do NOT come across. A card's CLAIM on the master
+   * script is not copied: two cards claiming one stretch is the thing the
+   * script model forbids, so the copy is freestanding and keeps the words as
+   * its own. And the blobs are not duplicated — the store is keyed by content
+   * hash, so both cards point at the same picture, the copy costs nothing,
+   * and deleting either one cannot take the other's picture with it.
+   */
+  function duplicateShot(p, shotId, toSceneId, toIdx) {
+    const f = findShot(p, shotId);
+    if (!f) return null;
+    const t = toSceneId ? findScene(p, toSceneId) : f;
+    if (!t) return null;
+    const copy = newShot({ type: f.shot.type });
+    CONTENT_KEYS.forEach(function (k) { copy[k] = SB.clone(f.shot[k]); });
+    copy.id = SB.uid('sh');
+    /* freestanding, with the words it had */
+    copy.link = null;
+    copy.broken = false;
+    const w = windowFor(p, f.shot);
+    copy.local = SB.Doc.make(w.doc.text.slice(w.from, w.to));
+    /* a comment is a conversation about one card, not about its copy */
+    copy.comments = [];
+    /* whatever was generated was generated for the original */
+    copy.render = null;
+    copy.video = null;
+    copy.videoAlts = [];
+    const at = typeof toIdx === 'number'
+      ? SB.clamp(toIdx, 0, t.scene.shots.length)
+      : t.scene.shots.length;
+    t.scene.shots.splice(at, 0, copy);
+    p.updatedAt = Date.now();
+    return copy;
+  }
+
   /* Swap two shots' contents, leaving each card's dialogue where it is. */
   function swapShotContent(p, aId, bId) {
     const fa = findShot(p, aId), fb = findShot(p, bId);
@@ -1491,6 +1532,7 @@
     moveShot: moveShot, moveShots: moveShots, moveScene: moveScene,
     splitSceneAt: splitSceneAt, sceneFromShots: sceneFromShots,
     swapShotContent: swapShotContent, CONTENT_KEYS: CONTENT_KEYS, described: described,
+    duplicateShot: duplicateShot,
     modelById: modelById, imageModel: imageModel, videoModel: videoModel, firstOfKind: firstOfKind,
     shotHolding: shotHolding
   };

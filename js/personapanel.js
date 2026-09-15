@@ -680,7 +680,34 @@
     } else {
       big.appendChild(SB.el('div', 'drop-hint', 'drop the reference frame here, or click to load'));
     }
-    big.title = one ? 'Drop or click to replace this reference image' : '';
+    if (one) {
+      /* Same trade as the card's frame, and worse here: this picture is often
+         the only copy of somebody's face in the file, and a click meant to
+         inspect it opened a picker over the top. */
+      big.style.cursor = 'zoom-in';
+      big.addEventListener('click', function (ev) {
+        if (ev.target.closest && ev.target.closest('.frame-x')) return;
+        ev.stopPropagation();
+        const old = SB.Personas.retiredOf(per);
+        const items = [{
+          img: one, render: one.render, label: per.name || 'reference',
+          note: one.label || '',
+          onReplace: function (file) { addImage(per, file); },
+          onRemove: function () {
+            SB.Personas.clearImage(per);
+            SB.app.changed(true);
+            renderRefs();
+          }
+        }].concat(old.map(function (x) {
+          return { img: x, render: x.render, label: per.name || 'reference',
+            note: (x.label ? x.label + ' · ' : '') + 'older frame, fed to nothing' };
+        }));
+        SB.Viewer.open(P(), items, 0, { title: per.name || 'Reference' });
+      });
+    }
+    big.title = one
+      ? 'Click to see it full size. Drop a file on it to replace it.'
+      : '';
     dropTarget(big, per);
     box.appendChild(big);
 
@@ -714,7 +741,11 @@
   }
 
   function dropTarget(el, per) {
+    /* Only an EMPTY frame picks a file on click. One with a picture in it
+       opens the viewer instead — wanting a better look at a face must not be
+       the same gesture as replacing it. */
     el.onclick = el.onclick || function () {
+      if (SB.Personas.hero(per)) return;
       SB.pickImageFile().then(function (f) { if (f) addImage(per, f); });
     };
     el.addEventListener('dragover', function (ev) {
