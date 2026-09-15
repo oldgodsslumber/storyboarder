@@ -33,5 +33,18 @@ html = html.replace(/<script src="([^"]+)"><\/script>\s*/g, (_, src) => {
   return '<script>\n/* ===== ' + src + ' ===== */\n' + js.replace(/<\/script>/g, '<\\/script>') + '\n</script>\n';
 });
 
-writeFileSync(join(root, 'storyboarder.html'), html, 'utf8');
+const out = join(root, 'storyboarder.html');
+writeFileSync(out, html, 'utf8');
 console.log('wrote storyboarder.html (' + (html.length / 1024).toFixed(1) + ' KB)');
+
+/* A file:// page is cached hard, and a reload -- even a hard one -- serves the
+ * old document often enough to have cost us three rounds of "the fix is not
+ * there" when it was. A query string is a different URL, so the browser cannot
+ * do it. The stamp goes in the query, so every build prints an address that
+ * has never been fetched before.
+ *
+ * Printed rather than opened: which browser, and whether now is a good moment,
+ * are not this script's business. */
+const bust = 'file:///' + out.replace(/\\/g, '/') + '?b=' +
+  stamp.replace(/[^0-9a-z]+/gi, '');
+console.log('open:  ' + bust);
