@@ -961,7 +961,30 @@
      * somebody staring at a wrong face most needs told apart. */
     const refs = SB.Imagine && SB.Imagine.refsFor
       ? SB.Imagine.refsFor(P(), sh, roleOf(field)) : null;
-    if (refs) {
+    if (refs && refs.role === 'video') {
+      /* The clip's reference is this card's frame, and only that. */
+      let text, why, warn;
+      if (!refs.frame) {
+        text = 'no frame'; warn = true;
+        why = 'A clip animates this card\u2019s first frame and there is none yet. Render it ' +
+          'first \u2014 without it the model invents the shot from the words instead of moving ' +
+          'the picture you approved.';
+      } else if (refs.feed) {
+        text = 'animates the frame'; warn = false;
+        why = 'The full-size frame on this card is uploaded and animated. The ' + refs.feed +
+          ' reference picture' + (refs.feed === 1 ? '' : 's') + ' marked on this lane ' +
+          (refs.feed === 1 ? 'is' : 'are') + ' NOT sent with it: the still was built from ' +
+          'them and approved, and handing them to the video model too asks it to build the ' +
+          'shot again rather than move the one it was given.';
+      } else {
+        text = 'animates the frame'; warn = false;
+        why = 'The full-size frame on this card is uploaded and animated. That is the clip\u2019s ' +
+          'only reference, which is the point: the shot is not made twice.';
+      }
+      const chip = SB.el('span', 'badge refs' + (warn ? ' warn' : ' ok'), text);
+      chip.title = why;
+      foot.appendChild(chip);
+    } else if (refs) {
       let text, why, warn;
       if (refs.byKey && refs.feed) {
         text = 'no refs sent'; warn = true;
@@ -1033,6 +1056,39 @@
   function feedList(sh, code, role) {
     const wrap = SB.el('div', 'pt-feed-list');
     const list = SB.Refs.feed(P(), sh, role);
+
+    /* The video lane's reference is the card's own frame — always, and
+     * nothing else. Listing the marked subjects here as though they travel
+     * with the clip is what made the two lanes look paired when they are
+     * not: the still is built from those pictures and approved, and the clip
+     * moves the result. They stay on the list because they are still what
+     * the WORDS of the video prompt were written against, but they are
+     * shown for what they are. */
+    if (role === 'video') {
+      const framed = !!(sh.render || sh.image);
+      const head = SB.el('div', 'pt-fe pt-frame' + (framed ? '' : ' empty'));
+      head.appendChild(SB.el('span', 'feed-n', framed ? '1' : '\u2013'));
+      const th = SB.el('span', 'feed-thumb' + (framed ? '' : ' none'));
+      if (framed && sh.image) {
+        const im = document.createElement('img');
+        im.src = SB.Blobs.src(P(), sh.image);
+        th.appendChild(im);
+      } else if (!framed) {
+        th.textContent = '?';
+      }
+      head.appendChild(th);
+      const full = framed && SB.Renders.has(P(), sh.render);
+      head.appendChild(SB.el('span', 'feed-file' + (full ? '' : ' none'),
+        full ? SB.Renders.fileName(sh.render.serial, sh.render.ext)
+          : (framed ? 'board copy only' : 'not rendered yet')));
+      head.appendChild(SB.el('span', 'feed-who', 'this card\u2019s frame'));
+      head.title = framed
+        ? 'The clip animates this. It is the only picture the video call is sent.'
+        : 'There is no frame to animate yet. Render the first frame before pushing a clip, ' +
+          'or the model invents the shot from the words instead of moving your picture.';
+      wrap.appendChild(head);
+      if (!list.length) return wrap;
+    }
     if (!list.length) {
       /* Two lanes means this would be said twice on every row of a board that
          does not use references. The board itself says it once, on the card,
@@ -1043,9 +1099,13 @@
     }
     /* one line per FILE, so the numbers down the column are the numbers in the
        prompt's mapping and in the folder */
+    const notSent = role === 'video';
     SB.Refs.images(P(), sh, role).forEach(function (e) {
-      const it = SB.el('div', 'pt-fe' + (e.kind === 'shot' ? ' is-shot' : ''));
-      it.appendChild(SB.el('span', 'feed-n', String(e.n)));
+      const it = SB.el('div', 'pt-fe' + (e.kind === 'shot' ? ' is-shot' : '') +
+        (notSent ? ' not-sent' : ''));
+      /* No number on the video lane: the only numbered picture there is the
+         frame, and giving these one implied they went with it. */
+      it.appendChild(SB.el('span', 'feed-n', notSent ? '\u00b7' : String(e.n)));
 
       const t = SB.el('span', 'feed-thumb');
       const im3 = document.createElement('img');
@@ -1061,10 +1121,14 @@
       it.appendChild(nameEl);
       it.appendChild(SB.el('span', 'feed-who', e.label + (e.role ? ' · ' + e.role : '')));
 
-      it.title = (file
-        ? file + ' — the full-size original, carried in this file'
-        : 'No original for this one: the board\'s 854×480 copy is what gets fed. Drop the ' +
-          'picture in again and the original comes with it.') +
+      it.title = (notSent
+        ? 'Not sent with the clip. The still was built from this and approved; the clip ' +
+          'animates that frame. It is here because the video prompt was written knowing ' +
+          'this is in the picture.'
+        : (file
+          ? file + ' — the full-size original, carried in this file'
+          : 'No original for this one: the board\'s 854×480 copy is what gets fed. Drop the ' +
+            'picture in again and the original comes with it.')) +
         '\n' + e.label + (e.role ? ' (' + e.role + ')' : '');
       wrap.appendChild(it);
     });
@@ -1082,7 +1146,9 @@
       wrap.appendChild(it);
     });
 
-    const imgs = SB.Refs.images(P(), sh, role);
+    /* Not on the video lane: there is no set to hand a video model. Its one
+       file is the frame, and that is on the card. */
+    const imgs = role === 'video' ? [] : SB.Refs.images(P(), sh, role);
     if (imgs.length) {
       const full = imgs.filter(function (e) { return SB.Renders.has(P(), e.render); }).length;
       const b = SB.el('button', 'mini', 'copy image set');

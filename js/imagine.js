@@ -2678,10 +2678,28 @@
        is no way to tell them from the ones that do. */
     const named = SB.Refs.feed(p, shot, role).filter(function (e) { return e.kind === 'subject'; });
     const wordsOnly = named.filter(function (e) { return !e.images.length; }).length;
-    const carries = role === 'image'
-      ? (transport() === 'key' ? 0 : 1)
-      : 1;
+    /* A clip animates THIS CARD'S FRAME. That is the whole pipeline: the
+     * still is made and approved first, and the video call is handed it as
+     * its one reference. The marked subjects belong to the still — sending
+     * them to the video model as well is asking it to build the shot again
+     * out of pictures instead of moving the one it was given, which is the
+     * exact failure the two lanes exist to prevent. So the video lane reports
+     * the frame, and says plainly that the marks do not go with it. */
+    if (role === 'video') {
+      return {
+        role: 'video',
+        frame: !!(shot.render || shot.image),
+        feed: feed.length,
+        wordsOnly: wordsOnly,
+        carries: (shot.render || shot.image) ? 1 : 0,
+        first: null,
+        byKey: transport() === 'key'
+      };
+    }
+
+    const carries = transport() === 'key' ? 0 : 1;
     return {
+      role: 'image',
       feed: feed.length,
       wordsOnly: wordsOnly,
       carries: Math.min(carries, feed.length),
@@ -2698,6 +2716,19 @@
     if (shot.noShot) {
       return { short: 'no shot', long: 'A \u201cno shot\u201d card is never generated.' };
     }
+    /* A clip is made FROM the first frame. With no frame there is nothing to
+     * animate, and the call does not fail — it quietly becomes text-to-video
+     * and invents the shot over again, which is a wasted charge and the one
+     * thing this pipeline exists to prevent. */
+    if (role === 'video' && !(shot.render || shot.image)) {
+      return {
+        short: 'no frame',
+        long: 'A clip animates this card\u2019s first frame, and this card has none yet. ' +
+          'Without one the model invents the shot from the words instead of moving the ' +
+          'picture you approved. Render or drop in the first frame, then push the clip.'
+      };
+    }
+
     const gate = blocker(model);
     const gateNote = gate ? {
       short: /signed in/.test(gate) ? 'sign in'

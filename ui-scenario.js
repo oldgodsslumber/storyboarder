@@ -3080,10 +3080,19 @@
         app.changed(true);
         SB.PromptPanel.open();
 
-        const chipOf = function (sh) {
-          const c = document.querySelector('.pt-row[data-shot="' + sh.id + '"] .badge.refs');
+        /* A row carries a badge per lane now, and they answer different
+           questions: the still says which reference picture travels, the clip
+           says it animates this card's frame. */
+        const laneOf = function (sh, which) {
+          return document.querySelector('.pt-row[data-shot="' + sh.id + '"] ' +
+            '.pt-prompt[data-lane="' + which + '"]');
+        };
+        const chipIn = function (sh, which) {
+          const cell = laneOf(sh, which);
+          const c = cell && cell.querySelector('.badge.refs');
           return c ? c.textContent : '(none)';
         };
+        const chipOf = function (sh) { return chipIn(sh, 'image'); };
         t('a card with one reference says it is sending it',
           chipOf(made[0]) === 'sends 1 ref', chipOf(made[0]));
         t('a subject with no reference frame is called out, not left silent',
@@ -3097,8 +3106,28 @@
           document.querySelector('.pt-row[data-shot="' + made[2].id + '"] .badge.refs').title.slice(0, 60));
         t('an empty card says so without crying wolf',
           chipOf(made[3]) === 'no refs' &&
-          !document.querySelector('.pt-row[data-shot="' + made[3].id + '"] .badge.refs.warn'),
+          !laneOf(made[3], 'image').querySelector('.badge.refs.warn'),
           chipOf(made[3]));
+
+        /* The clip's reference is the card's own frame, never the marks — that
+           separation is the whole reason the two lanes exist. */
+        t('the clip lane says it animates the frame, whatever is marked',
+          chipIn(made[0], 'video') === 'no frame' || chipIn(made[0], 'video') === 'animates the frame',
+          chipIn(made[0], 'video'));
+        t('and a card with no frame says exactly that, on the clip lane only',
+          chipIn(made[0], 'video') === 'no frame' &&
+          !!laneOf(made[0], 'video').querySelector('.badge.refs.warn'),
+          chipIn(made[0], 'video'));
+        t('the still lane is unaffected by it',
+          chipOf(made[0]) === 'sends 1 ref', chipOf(made[0]));
+        t('the clip lane shows the frame as its one reference',
+          !!laneOf(made[0], 'video').querySelector('.pt-fe.pt-frame'), '');
+        t('and marks the pictures it is not carrying',
+          laneOf(made[0], 'video').querySelectorAll('.pt-fe.not-sent').length >= 1,
+          laneOf(made[0], 'video').querySelectorAll('.pt-fe.not-sent').length);
+        t('with no offer to copy them as the clip\u2019s set',
+          !Array.prototype.some.call(laneOf(made[0], 'video').querySelectorAll('button'),
+            function (b) { return /copy image set/.test(b.textContent); }), '');
 
         SB.PromptPanel.close();
         made.forEach(function (x) { SB.Model.deleteShot(P(), x.id); });

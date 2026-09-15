@@ -552,6 +552,16 @@ which was a quiet lie on any card whose two calls are handed different things. E
 carries the list it will actually send, numbered the way its own prompt cites it, with its own
 **copy image set**. A lane that feeds nothing shows nothing.
 
+**The clip's reference is this card's own frame — always, and nothing else.** That is the
+whole pipeline: the still is made, looked at and approved, and the video call is handed *it*.
+The pictures marked on the video lane are context the prompt was **written** against, not
+files the clip carries — sending those too would ask the model to build the shot again out of
+references instead of moving the one it was given, which is the failure the two lanes exist to
+prevent. So the video lane lists the frame as its one reference and shows everything else
+dimmed, and there is no "copy image set" on that lane, because a clip has no set. A card with
+**no frame** refuses the push and says why: without one the call silently becomes
+text-to-video and invents the shot over again.
+
 A lane box left empty is the shared description doing the work — the common case — and it says
 so rather than looking blank. On a narrow window the two lanes stack instead of hiding behind
 a toggle: nothing in this panel is a click away, because the point of it is reading twenty

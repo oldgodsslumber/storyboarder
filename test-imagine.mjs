@@ -661,6 +661,55 @@ section('what actually goes on the wire');
 }
 
 /* ------------------------------------------------ what actually worked */
+section('the clip animates the frame, and only the frame');
+{
+  const p9 = SB.Model.newProject();
+  sandbox.SB.app = { project: p9, changed() { } };
+  const sc = p9.scenes[0] || SB.Model.addScene(p9, 0);
+  const nat = SB.Personas.add(p9, { name: 'Nat' });
+  nat.image = SB.Blobs.image(p9, 'data:image/gif;base64,R0lGODlhAQABAAAAACw=', 4, 3);
+  const sh = SB.Model.addShot(p9, sc.id, {});
+  sh.description = 'At the desk with ' + SB.Refs.mark(nat.id, 'Nat') + '.';
+
+  const vm = p9.settings.models.filter(m => m.kind === 'video')[0];
+  const im = p9.settings.models.filter(m => m.kind === 'image')[0];
+  sh.prompts[vm.id] = { videoPrompt: 'She lets go.', imagePrompt: '', modelName: vm.name };
+  sh.prompts[im.id] = sh.prompts[im.id] ||
+    { imagePrompt: 'A desk.', videoPrompt: '', modelName: im.name };
+
+  /* with no frame there is nothing to animate, and the call would quietly
+     become text-to-video: the shot invented over again */
+  const no = SB.Imagine.whyNot(p9, sh, vm, 'video');
+  t('a clip is refused on a card with no first frame',
+    !!no && no.short === 'no frame', no ? no.short : 'allowed');
+  t('and the reason says what would otherwise happen',
+    !!no && /invents the shot from the words/.test(no.long), no ? no.long.slice(0, 80) : '');
+
+  const vr = SB.Imagine.refsFor(p9, sh, 'video');
+  t('the clip lane carries nothing while there is no frame', vr.carries === 0, vr.carries);
+  t('and knows the marks are not what it would carry',
+    vr.feed === 1 && vr.first === null, vr.feed + ' ' + JSON.stringify(vr.first));
+
+  /* the still, on the same card, does carry its marked reference */
+  const ir = SB.Imagine.refsFor(p9, sh, 'image');
+  /* carries is 0 on the API-key door, which sends no picture at all — what
+     matters here is WHICH picture each lane is about. */
+  t('while the still lane is about the marked reference',
+    ir.role === 'image' && ir.first && ir.first.label === 'Nat',
+    ir.role + ' ' + (ir.first && ir.first.label));
+
+  /* once the frame exists the clip is about that and nothing else */
+  sh.image = SB.Blobs.image(p9, 'data:image/gif;base64,R0lGODlhAQABAAAAACw=', 16, 9);
+  const vr2 = SB.Imagine.refsFor(p9, sh, 'video');
+  t('with a frame the clip carries exactly one picture', vr2.carries === 1, vr2.carries);
+  t('and it is the frame, not a marked subject', vr2.frame === true && vr2.first === null,
+    JSON.stringify({ frame: vr2.frame, first: vr2.first }));
+  t('a clip is allowed once there is something to animate',
+    !SB.Imagine.whyNot(p9, sh, vm, 'video') ||
+    SB.Imagine.whyNot(p9, sh, vm, 'video').short !== 'no frame',
+    JSON.stringify(SB.Imagine.whyNot(p9, sh, vm, 'video')));
+}
+
 section('a slug that worked outranks every published list');
 
 {

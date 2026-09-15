@@ -1047,6 +1047,13 @@ button.linkish{
 
 /* the feed, down the column */
 .pt-feed-list{display:flex;flex-direction:column;gap:3px}
+/* the clip's one reference: this card's own frame */
+.pt-fe.pt-frame{border-left:2px solid var(--accent2);padding-left:5px}
+.pt-fe.pt-frame .feed-who{color:var(--accent2)}
+.pt-fe.pt-frame.empty .feed-who{color:var(--danger)}
+/* marked on the lane, but not carried by the clip — the still already used it */
+.pt-fe.not-sent{opacity:.5}
+.pt-fe.not-sent .feed-n{color:var(--fg-dim)}
 .pt-fe{
   display:flex;align-items:center;gap:5px;font-size:10px;color:var(--fg-dim);
   border:1px solid var(--line2);border-radius:9px;padding:1px 6px 1px 2px;
@@ -1328,7 +1335,7 @@ body.comment-mode .frame{cursor:crosshair}
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-09-15 15:31 · 5b1714b+";</script>
+<script>window.SB_BUILD = "2026-09-15 17:16 · a040806+";</script>
 
 <div id="app">
 
@@ -7316,10 +7323,28 @@ window.SB = window.SB || {};
        is no way to tell them from the ones that do. */
     const named = SB.Refs.feed(p, shot, role).filter(function (e) { return e.kind === 'subject'; });
     const wordsOnly = named.filter(function (e) { return !e.images.length; }).length;
-    const carries = role === 'image'
-      ? (transport() === 'key' ? 0 : 1)
-      : 1;
+    /* A clip animates THIS CARD'S FRAME. That is the whole pipeline: the
+     * still is made and approved first, and the video call is handed it as
+     * its one reference. The marked subjects belong to the still — sending
+     * them to the video model as well is asking it to build the shot again
+     * out of pictures instead of moving the one it was given, which is the
+     * exact failure the two lanes exist to prevent. So the video lane reports
+     * the frame, and says plainly that the marks do not go with it. */
+    if (role === 'video') {
+      return {
+        role: 'video',
+        frame: !!(shot.render || shot.image),
+        feed: feed.length,
+        wordsOnly: wordsOnly,
+        carries: (shot.render || shot.image) ? 1 : 0,
+        first: null,
+        byKey: transport() === 'key'
+      };
+    }
+
+    const carries = transport() === 'key' ? 0 : 1;
     return {
+      role: 'image',
       feed: feed.length,
       wordsOnly: wordsOnly,
       carries: Math.min(carries, feed.length),
@@ -7336,6 +7361,19 @@ window.SB = window.SB || {};
     if (shot.noShot) {
       return { short: 'no shot', long: 'A \u201cno shot\u201d card is never generated.' };
     }
+    /* A clip is made FROM the first frame. With no frame there is nothing to
+     * animate, and the call does not fail — it quietly becomes text-to-video
+     * and invents the shot over again, which is a wasted charge and the one
+     * thing this pipeline exists to prevent. */
+    if (role === 'video' && !(shot.render || shot.image)) {
+      return {
+        short: 'no frame',
+        long: 'A clip animates this card\u2019s first frame, and this card has none yet. ' +
+          'Without one the model invents the shot from the words instead of moving the ' +
+          'picture you approved. Render or drop in the first frame, then push the clip.'
+      };
+    }
+
     const gate = blocker(model);
     const gateNote = gate ? {
       short: /signed in/.test(gate) ? 'sign in'
@@ -17100,7 +17138,30 @@ window.SB = window.SB || {};
      * somebody staring at a wrong face most needs told apart. */
     const refs = SB.Imagine && SB.Imagine.refsFor
       ? SB.Imagine.refsFor(P(), sh, roleOf(field)) : null;
-    if (refs) {
+    if (refs && refs.role === 'video') {
+      /* The clip's reference is this card's frame, and only that. */
+      let text, why, warn;
+      if (!refs.frame) {
+        text = 'no frame'; warn = true;
+        why = 'A clip animates this card\u2019s first frame and there is none yet. Render it ' +
+          'first \u2014 without it the model invents the shot from the words instead of moving ' +
+          'the picture you approved.';
+      } else if (refs.feed) {
+        text = 'animates the frame'; warn = false;
+        why = 'The full-size frame on this card is uploaded and animated. The ' + refs.feed +
+          ' reference picture' + (refs.feed === 1 ? '' : 's') + ' marked on this lane ' +
+          (refs.feed === 1 ? 'is' : 'are') + ' NOT sent with it: the still was built from ' +
+          'them and approved, and handing them to the video model too asks it to build the ' +
+          'shot again rather than move the one it was given.';
+      } else {
+        text = 'animates the frame'; warn = false;
+        why = 'The full-size frame on this card is uploaded and animated. That is the clip\u2019s ' +
+          'only reference, which is the point: the shot is not made twice.';
+      }
+      const chip = SB.el('span', 'badge refs' + (warn ? ' warn' : ' ok'), text);
+      chip.title = why;
+      foot.appendChild(chip);
+    } else if (refs) {
       let text, why, warn;
       if (refs.byKey && refs.feed) {
         text = 'no refs sent'; warn = true;
@@ -17172,6 +17233,39 @@ window.SB = window.SB || {};
   function feedList(sh, code, role) {
     const wrap = SB.el('div', 'pt-feed-list');
     const list = SB.Refs.feed(P(), sh, role);
+
+    /* The video lane's reference is the card's own frame — always, and
+     * nothing else. Listing the marked subjects here as though they travel
+     * with the clip is what made the two lanes look paired when they are
+     * not: the still is built from those pictures and approved, and the clip
+     * moves the result. They stay on the list because they are still what
+     * the WORDS of the video prompt were written against, but they are
+     * shown for what they are. */
+    if (role === 'video') {
+      const framed = !!(sh.render || sh.image);
+      const head = SB.el('div', 'pt-fe pt-frame' + (framed ? '' : ' empty'));
+      head.appendChild(SB.el('span', 'feed-n', framed ? '1' : '\u2013'));
+      const th = SB.el('span', 'feed-thumb' + (framed ? '' : ' none'));
+      if (framed && sh.image) {
+        const im = document.createElement('img');
+        im.src = SB.Blobs.src(P(), sh.image);
+        th.appendChild(im);
+      } else if (!framed) {
+        th.textContent = '?';
+      }
+      head.appendChild(th);
+      const full = framed && SB.Renders.has(P(), sh.render);
+      head.appendChild(SB.el('span', 'feed-file' + (full ? '' : ' none'),
+        full ? SB.Renders.fileName(sh.render.serial, sh.render.ext)
+          : (framed ? 'board copy only' : 'not rendered yet')));
+      head.appendChild(SB.el('span', 'feed-who', 'this card\u2019s frame'));
+      head.title = framed
+        ? 'The clip animates this. It is the only picture the video call is sent.'
+        : 'There is no frame to animate yet. Render the first frame before pushing a clip, ' +
+          'or the model invents the shot from the words instead of moving your picture.';
+      wrap.appendChild(head);
+      if (!list.length) return wrap;
+    }
     if (!list.length) {
       /* Two lanes means this would be said twice on every row of a board that
          does not use references. The board itself says it once, on the card,
@@ -17182,9 +17276,13 @@ window.SB = window.SB || {};
     }
     /* one line per FILE, so the numbers down the column are the numbers in the
        prompt's mapping and in the folder */
+    const notSent = role === 'video';
     SB.Refs.images(P(), sh, role).forEach(function (e) {
-      const it = SB.el('div', 'pt-fe' + (e.kind === 'shot' ? ' is-shot' : ''));
-      it.appendChild(SB.el('span', 'feed-n', String(e.n)));
+      const it = SB.el('div', 'pt-fe' + (e.kind === 'shot' ? ' is-shot' : '') +
+        (notSent ? ' not-sent' : ''));
+      /* No number on the video lane: the only numbered picture there is the
+         frame, and giving these one implied they went with it. */
+      it.appendChild(SB.el('span', 'feed-n', notSent ? '\u00b7' : String(e.n)));
 
       const t = SB.el('span', 'feed-thumb');
       const im3 = document.createElement('img');
@@ -17200,10 +17298,14 @@ window.SB = window.SB || {};
       it.appendChild(nameEl);
       it.appendChild(SB.el('span', 'feed-who', e.label + (e.role ? ' · ' + e.role : '')));
 
-      it.title = (file
-        ? file + ' — the full-size original, carried in this file'
-        : 'No original for this one: the board\'s 854×480 copy is what gets fed. Drop the ' +
-          'picture in again and the original comes with it.') +
+      it.title = (notSent
+        ? 'Not sent with the clip. The still was built from this and approved; the clip ' +
+          'animates that frame. It is here because the video prompt was written knowing ' +
+          'this is in the picture.'
+        : (file
+          ? file + ' — the full-size original, carried in this file'
+          : 'No original for this one: the board\'s 854×480 copy is what gets fed. Drop the ' +
+            'picture in again and the original comes with it.')) +
         '\n' + e.label + (e.role ? ' (' + e.role + ')' : '');
       wrap.appendChild(it);
     });
@@ -17221,7 +17323,9 @@ window.SB = window.SB || {};
       wrap.appendChild(it);
     });
 
-    const imgs = SB.Refs.images(P(), sh, role);
+    /* Not on the video lane: there is no set to hand a video model. Its one
+       file is the frame, and that is on the card. */
+    const imgs = role === 'video' ? [] : SB.Refs.images(P(), sh, role);
     if (imgs.length) {
       const full = imgs.filter(function (e) { return SB.Renders.has(P(), e.render); }).length;
       const b = SB.el('button', 'mini', 'copy image set');
