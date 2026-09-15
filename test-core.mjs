@@ -2983,6 +2983,27 @@ console.log('\n— the reference sheets —');
   eq(rows[0].code, '1A', 'by code');
   eq(rows[0].items.map(function (i) { return i.n; }), [1], 'numbered the way the prompt names them');
 
+  /* A split card hands the two calls different files, so one numbered row
+     would be a promise neither prompt makes. */
+  {
+    const one = p.scenes[0].shots[0];
+    const thing = SB.Personas.add(p, { kind: 'thing', name: 'Rig' });
+    thing.image = SB.Blobs.image(p, 'data:image/gif;base64,R0lGODlhAQABAAAAACx=', 4, 3);
+    const wasImg = one.imageDescription;
+    one.imageDescription = 'The ' + SB.Refs.mark(thing.id, 'Rig') + ' is set up.';
+    const split = SB.Pdf.feedRows();
+    eq(split.length, 2, 'a card whose lanes differ prints a row each');
+    eq(split.map(function (r) { return r.lane; }), ['first frame', 'video'],
+      'each saying which call it is the mapping for');
+    eq(split[0].items.length, 2, 'the first-frame row lists what that call is sent');
+    eq(split[1].items.length, 1, 'and the video row what its own is');
+    const printed = SB.Pdf.html({ doc: 'refs', refFeeds: true, silent: true });
+    eq(/class="lane">first frame</.test(printed), true, 'and the printed page says so');
+    one.imageDescription = wasImg;
+    p.personas = p.personas.filter(function (x) { return x.id !== thing.id; });
+    eq(SB.Pdf.feedRows().length, 1, 'while a card that says it all in one box prints one row');
+  }
+
   /* both documents in one file, each with its own paper and its own grid */
   const both = SB.Pdf.html({ doc: 'both', silent: true });
   eq(/<div class="bd">/.test(both) && /<div class="rf">/.test(both), true,

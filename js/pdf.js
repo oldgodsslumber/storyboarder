@@ -415,7 +415,11 @@
       'table.feed th{text-align:left;font-size:.8em;text-transform:uppercase;letter-spacing:.5px;' +
       'color:#666;border-bottom:1px solid ' + INK.line + ';padding:2mm 1mm}',
       'table.feed td{vertical-align:top;padding:1.6mm 1mm;border-bottom:1px solid #eef0f3}',
-      'table.feed td.c{font-weight:700;width:18mm;white-space:nowrap}',
+      'table.feed td.c{font-weight:700;width:22mm;white-space:nowrap}',
+      /* which of the two calls this row is the mapping for, printed only on a
+         card whose lanes are handed different pictures */
+      'table.feed td.c .lane{display:block;font-weight:400;font-style:normal;' +
+      'font-size:.72em;letter-spacing:.3px;color:#6b7280;text-transform:uppercase}',
       '.fi{display:inline-block;margin:0 4mm 1mm 0}',
       '.fi b{display:inline-block;min-width:4mm;color:#666}',
       'footer{flex:0 0 auto;padding-top:3mm;font-size:9px;color:#666;text-align:center}',
