@@ -280,7 +280,7 @@
   function castSides(p, shot) {
     const out = { f: false, m: false };
     if (!shot) return out;
-    const bits = [shot.description, shot.type];
+    const bits = [shot.description, shot.imageDescription, shot.videoDescription, shot.type];
     if (shot.fields) {
       Object.keys(shot.fields).forEach(function (k) { bits.push(shot.fields[k]); });
     }
@@ -424,7 +424,8 @@
     const extra = shot.fields ? Object.keys(shot.fields).map(function (k) {
       return shot.fields[k];
     }) : [];
-    const src = [shot.description, shot.type].concat(extra)
+    const src = [shot.description, shot.imageDescription, shot.videoDescription, shot.type]
+      .concat(extra)
       .filter(function (x) { return typeof x === 'string' && x; }).join('. ');
     return movesIn(p && SB.Refs ? SB.Refs.plain(p, src) : src).length > 0;
   }
@@ -502,7 +503,7 @@
     /* Is a frame of another shot being handed over? Then this still is an edit
      * of it, which changes both what to say and what to leave unsaid. */
     const derived = (role === 'image' || role === 'both') &&
-      SB.Refs.feed(p, shot).some(function (e) {
+      SB.Refs.feed(p, shot, role).some(function (e) {
         return e.kind === 'shot' && e.images.length;
       });
     /* On an image job derived from another shot's frame, the house style is

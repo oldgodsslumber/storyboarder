@@ -6,6 +6,7 @@
   const DND_SCENE = 'application/x-sb-scene';
 
   const B = {
+    openBox: {},              // shotId:role -> the lane box is open on this card
     scriptEditors: {},        // shotId -> editor api
     scriptEls: {},            // shotId -> element
     sceneScriptEditors: {},   // sceneId -> editor api, for a scene's own section
@@ -1178,6 +1179,12 @@
     /* what this card will actually feed, in order */
     c.appendChild(feedRow(sh));
 
+    /* The still and the clip want different words, and most cards never need
+     * to say so — so the two boxes are chips until somebody opens one, and a
+     * card that does not use them never grows. One that does is open on sight:
+     * text nobody can see is worse than a taller card. */
+    c.appendChild(laneBoxes(sh, si, sj));
+
     /* --- the project's own extra fields --- */
     SB.Fields.enabled(P()).forEach(function (f) {
       const lbl = SB.el('div', 'box-label');
@@ -1243,6 +1250,71 @@
   /* Who is in this shot. The order is the order their reference images are fed
    * to the model, so it is shown. */
 
+  /* ---- the two lanes ----
+   *
+   * `description` is what we see and both prompts read it. These two are read
+   * by one prompt each — and because a reference IS a mark in the text it was
+   * written in, an @ in here is a picture that lane hands over and the other
+   * never sees. That is the whole mechanism; there is no second list.
+   */
+  const LANES = [
+    { role: 'image', key: 'imageDescription', label: 'first frame',
+      hint: 'Only what is true as the shot opens. @ anything the FIRST FRAME should be shown.' },
+    { role: 'video', key: 'videoDescription', label: 'motion',
+      hint: 'What moves, in what order, how it ends. @ anything the CLIP should be shown.' }
+  ];
+
+  function laneOpen(sh, lane) {
+    if ((sh[lane.key] || '').trim()) return true;
+    return !!B.openBox[sh.id + ':' + lane.role];
+  }
+
+  function laneBoxes(sh, si, sj) {
+    const wrap = SB.el('div', 'lanes');
+    const chips = SB.el('div', 'lane-chips');
+    LANES.forEach(function (lane) {
+      const has = !!(sh[lane.key] || '').trim();
+      const open = laneOpen(sh, lane);
+      const chip = SB.el('button', 'lane-chip' + (has ? ' has' : '') + (open ? ' open' : ''),
+        (has ? '\u25cf ' : '\u2295 ') + lane.label);
+      chip.title = lane.hint + (has ? '' : '\nEmpty — this lane uses the description above.');
+      chip.onclick = function () {
+        const k = sh.id + ':' + lane.role;
+        if (has) {
+          /* a filled box is never hidden — emptying it is how you close it */
+          SB.toast('Clear the ' + lane.label + ' box to put it away');
+          return;
+        }
+        if (B.openBox[k]) delete B.openBox[k]; else B.openBox[k] = 1;
+        render();
+      };
+      chips.appendChild(chip);
+    });
+    wrap.appendChild(chips);
+
+    LANES.forEach(function (lane) {
+      if (!laneOpen(sh, lane)) return;
+      const lbl = SB.el('div', 'box-label lane-label');
+      lbl.appendChild(SB.el('span', null, lane.label));
+      wrap.appendChild(lbl);
+      const box = SB.el('div', 'desc-box lane-box lane-' + lane.role);
+      box.dataset.shot = sh.id;
+      box.dataset.lane = lane.role;
+      SB.RefBox.attach(box, {
+        get: function () { return sh[lane.key] || ''; },
+        set: function (t) {
+          sh[lane.key] = t;
+          SB.app.changed(false);
+          refreshFeed(sh.id);
+        },
+        placeholder: lane.hint,
+        ctx: { shot: sh, code: SB.Model.code(si, sj) }
+      });
+      wrap.appendChild(box);
+    });
+    return wrap;
+  }
+
   /* ---- the feed ----
    *
    * What this card hands the model, in order. This row is the whole reason @
@@ -1258,11 +1330,15 @@
     /* A name in the text that is not a mark feeds nothing — the exact mistake
        this feature exists to stop. It is most likely on a card with NO feed at
        all, so it is worked out before the empty case, not after it. */
-    const loose = SB.Refs.unlinked(P(), sh.description);
+    /* Every box that can hold a mark — a name typed into the motion box
+       without an @ is the same mistake in a different place. */
+    const loose = SB.Refs.boxes(sh).reduce(function (acc, t) {
+      return acc.concat(SB.Refs.unlinked(P(), t || ''));
+    }, []);
 
     if (!list.length && !loose.length) {
       /* Only worth saying on a card that has something to say it about. */
-      if ((sh.description || '').trim()) {
+      if (SB.Model.described(sh)) {
         const hint = SB.el('span', 'feed-empty', 'no references — @ anything the model should see');
         hint.title = 'Type @ in the description to name a person, a place, an object or another ' +
           'shot. Whatever you @ is a picture the model gets handed.';

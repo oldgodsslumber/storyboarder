@@ -121,8 +121,24 @@
   /* Everything on this card that can hold a mark, in the order it is read:
    * the description, then the project's own boxes. A mark in a field used to
    * be invisible here, which made its position in the feed a lie. */
-  function marked(p, shot) {
-    let out = parse(p, shot.description);
+  /* Which boxes a lane reads, in the order they are read. The shared
+   * description first — it is the sentence the card is about — then the box
+   * for this lane, then the project's own fields.
+   *
+   * `role` is 'image', 'video', or nothing at all. Nothing means the union,
+   * which is what the card strip, the export and the printed board want: one
+   * list of everything this card touches. A lane wants only its own, because
+   * the numbers it hands out are the numbers its prompt will cite. */
+  function boxes(shot, role) {
+    const out = [shot.description];
+    if (role !== 'video') out.push(shot.imageDescription);
+    if (role !== 'image') out.push(shot.videoDescription);
+    return out;
+  }
+
+  function marked(p, shot, role) {
+    let out = [];
+    boxes(shot, role).forEach(function (t) { out = out.concat(parse(p, t)); });
     if (SB.Fields && SB.Fields.enabled) {
       SB.Fields.enabled(p).forEach(function (f) {
         out = out.concat(parse(p, SB.Fields.value(shot, f.id)));
@@ -131,11 +147,11 @@
     return out;
   }
 
-  function feed(p, shot) {
+  function feed(p, shot, role) {
     const out = [];
     const seen = {};
 
-    marked(p, shot).forEach(function (m) {
+    marked(p, shot, role).forEach(function (m) {
       if (seen[m.id]) return;
       seen[m.id] = 1;
       /* A mark whose target is gone feeds nothing, but it is still sitting in
@@ -196,9 +212,9 @@
   }
 
   /* Just the pictures, in order — what "copy the image set" hands over. */
-  function images(p, shot) {
+  function images(p, shot, role) {
     const list = [];
-    feed(p, shot).forEach(function (e) {
+    feed(p, shot, role).forEach(function (e) {
       e.images.forEach(function (img, i) {
         list.push({
           img: img, id: e.id, kind: e.kind, label: e.label,
@@ -336,7 +352,7 @@
 
   SB.Refs = {
     mark: mark, parse: parse, plain: plain, target: target, unmark: unmark,
-    feed: feed, images: images, insert: insert,
+    feed: feed, images: images, insert: insert, boxes: boxes, marked: marked,
     unlinked: unlinked, linkAll: linkAll, proseHits: proseHits,
     relink: relink, lostIn: lostIn
   };

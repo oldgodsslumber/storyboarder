@@ -19,7 +19,20 @@
     });
   }
 
-  function contextFor(shot) {
+  /* What this lane is told the shot is.
+   *
+   * The shared description plus the box for this lane, run together as one
+   * paragraph — so {{DESCRIPTION}} means the same thing it always did and no
+   * template anybody has edited has to change. The two halves are also
+   * available on their own, for a template that wants to place them. */
+  function describe(shot, role) {
+    const parts = SB.Refs.boxes(shot, role)
+      .map(function (t) { return SB.Refs.plain(P(), t || '').trim(); })
+      .filter(Boolean);
+    return parts.join('\n\n');
+  }
+
+  function contextFor(shot, role) {
     const f = SB.Model.findShot(P(), shot.id);
     const w = SB.Model.windowFor(P(), shot);
     const ctx = {
@@ -30,7 +43,10 @@
       SCENE_DESC: f ? SB.Refs.plain(P(), f.scene.description) : '',
       SCRIPT: w.doc.text.slice(w.from, w.to),
       /* marks resolve to the names they have now — the writer gets prose */
-      DESCRIPTION: SB.Refs.plain(P(), shot.description),
+      DESCRIPTION: describe(shot, role),
+      SHARED: SB.Refs.plain(P(), shot.description || ''),
+      FIRST_FRAME: SB.Refs.plain(P(), shot.imageDescription || ''),
+      MOTION: SB.Refs.plain(P(), shot.videoDescription || ''),
       FIELDS: SB.Fields.promptBlock(P(), shot)
     };
     /* the project's own boxes, each usable on its own: {{ART_DIRECTION}} etc. */
@@ -57,12 +73,12 @@
   }
 
   function imageBlock(shot, m) {
-    const ctx = contextFor(shot); ctx.MODEL = m.name;
+    const ctx = contextFor(shot, 'image'); ctx.MODEL = m.name;
     return '=== FIRST-FRAME IMAGE PROMPT — INSTRUCTIONS ===\n' +
       fill(m.imageTemplate, ctx) + extras(shot, m.imageTemplate) + '\n';
   }
   function videoBlock(shot, m, sc) {
-    const ctx = contextFor(shot); ctx.MODEL = m.name;
+    const ctx = contextFor(shot, 'video'); ctx.MODEL = m.name;
     /* The H3 template works from a label table the app has already assigned,
        so the writer never has to invent one. */
     if (sc) {
@@ -368,7 +384,10 @@
     if (shot.noShot) {
       return Promise.reject(new Error('A \u201cno shot\u201d card is never generated.'));
     }
-    if (!(shot.description || '').trim()) {
+    /* Any of the three boxes is something to work from — a card that says
+       nothing in the shared box but everything in the motion box is written,
+       not blocked. */
+    if (!SB.Model.described(shot)) {
       return Promise.reject(new Error('Write a description first \u2014 there is nothing to work from.'));
     }
 

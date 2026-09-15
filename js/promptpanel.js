@@ -453,8 +453,12 @@
 
     const grid = SB.el('div', 'pt-grid');
     const hdr = SB.el('div', 'pt-head-row');
+    /* Four columns, not five. There used to be one Feed column at the end,
+       which showed a single list for two calls that are handed different
+       things — each lane now carries the list it will actually send, numbered
+       the way its own prompt cites it. */
     ['Shot', 'Description', 'First frame' + (im ? ' · ' + im.name : ''),
-      'Video' + (vm ? ' · ' + vm.name : ''), 'Feed'].forEach(function (t) {
+      'Video' + (vm ? ' · ' + vm.name : '')].forEach(function (t) {
         hdr.appendChild(SB.el('div', 'pt-h', t));
       });
     grid.appendChild(hdr);
@@ -555,23 +559,52 @@
         refreshFeedCell(sh.id);
         paintGens();          // a description is the thing "generate" waits for
       },
-      placeholder: 'What we see. @ anything the model should be shown.',
+      placeholder: 'What we see — both prompts read this. @ anything to be shown.',
       ctx: { shot: sh, code: r.code }
     });
     c2.appendChild(desc);
     row.appendChild(c2);
 
-    /* ---- the two prompts ---- */
-    row.appendChild(promptCell(sh, im, 'imagePrompt'));
-    row.appendChild(promptCell(sh, vm, 'videoPrompt'));
-
-    /* ---- what goes in with it ---- */
-    const c5 = SB.el('div', 'pt-cell pt-feed');
-    c5.dataset.feedCell = sh.id;
-    c5.appendChild(feedList(sh, r.code));
-    row.appendChild(c5);
+    /* ---- the two lanes ---- */
+    row.appendChild(promptCell(sh, im, 'imagePrompt', r));
+    row.appendChild(promptCell(sh, vm, 'videoPrompt', r));
 
     return row;
+  }
+
+  /* What this lane says beyond the shared description, and what that adds to
+   * what it hands over. An @ typed here is a picture THIS lane sends and the
+   * other never sees — which is the whole reason the boxes are separate. */
+  const LANE = {
+    imagePrompt: { role: 'image', key: 'imageDescription', label: 'first frame',
+      hint: 'Only what is true as the shot opens. @ anything the first frame should see.' },
+    videoPrompt: { role: 'video', key: 'videoDescription', label: 'motion',
+      hint: 'What moves, in what order, how it ends. @ anything the clip should see.' }
+  };
+
+  function laneDesc(sh, field, r) {
+    const lane = LANE[field];
+    const wrap = SB.el('div', 'pt-lane');
+    const box = SB.el('div', 'pt-desc pt-lane-desc');
+    box.dataset.shot = sh.id;
+    box.dataset.lane = lane.role;
+    SB.RefBox.attach(box, {
+      get: function () { return sh[lane.key] || ''; },
+      set: function (t) {
+        sh[lane.key] = t;
+        SB.Store.touch();
+        SB.Board.refreshCastRows();
+        refreshFeedCell(sh.id);
+        paintGens();
+      },
+      placeholder: lane.hint,
+      ctx: { shot: sh, code: r.code }
+    });
+    wrap.appendChild(box);
+    /* An empty lane is not an omission — it is the shared description doing
+       the work, which is the common case and should look like a decision. */
+    if (!(sh[lane.key] || '').trim()) wrap.classList.add('using-shared');
+    return wrap;
   }
 
   /* The box comes first in every column, so the three of them start on the same
@@ -799,8 +832,23 @@
     });
   }
 
-  function promptCell(sh, m, field) {
+  function promptCell(sh, m, field, r) {
     const cell = SB.el('div', 'pt-cell pt-prompt');
+    cell.dataset.lane = LANE[field].role;
+    /* Which lane this is. Invisible at full width, where the column heading
+       says it; the heading is what goes away when the lanes stack. */
+    cell.appendChild(SB.el('div', 'pt-lane-cap',
+      (LANE[field].role === 'image' ? 'First frame' : 'Video') +
+      (m ? ' \u00b7 ' + m.name : '')));
+    /* say it, see what goes with it, read what was written, act on it */
+    if (r) cell.appendChild(laneDesc(sh, field, r));
+    if (r) {
+      const fe = SB.el('div', 'pt-feed', '');
+      fe.dataset.feedCell = sh.id + ':' + LANE[field].role;
+      const fl = feedList(sh, r.code, LANE[field].role);
+      if (fl) fe.appendChild(fl);
+      cell.appendChild(fe);
+    }
     if (!m) {
       cell.appendChild(SB.el('div', 'pt-none', 'no model chosen'));
       return cell;
@@ -976,16 +1024,20 @@
    * into a model in this order, so it says 0007.png. The subject's name rides
    * along after it, because the filename alone says nothing about who it is.
    */
-  function feedList(sh, code) {
+  function feedList(sh, code, role) {
     const wrap = SB.el('div', 'pt-feed-list');
-    const list = SB.Refs.feed(P(), sh);
+    const list = SB.Refs.feed(P(), sh, role);
     if (!list.length) {
+      /* Two lanes means this would be said twice on every row of a board that
+         does not use references. The board itself says it once, on the card,
+         where the description it is about is being typed. */
+      if (role) return null;
       wrap.appendChild(SB.el('div', 'pt-none', 'no references'));
       return wrap;
     }
     /* one line per FILE, so the numbers down the column are the numbers in the
        prompt's mapping and in the folder */
-    SB.Refs.images(P(), sh).forEach(function (e) {
+    SB.Refs.images(P(), sh, role).forEach(function (e) {
       const it = SB.el('div', 'pt-fe' + (e.kind === 'shot' ? ' is-shot' : ''));
       it.appendChild(SB.el('span', 'feed-n', String(e.n)));
 
@@ -1024,7 +1076,7 @@
       wrap.appendChild(it);
     });
 
-    const imgs = SB.Refs.images(P(), sh);
+    const imgs = SB.Refs.images(P(), sh, role);
     if (imgs.length) {
       const full = imgs.filter(function (e) { return SB.Renders.has(P(), e.render); }).length;
       const b = SB.el('button', 'mini', 'copy image set');
@@ -1038,12 +1090,15 @@
 
   function refreshFeedCell(id) {
     if (!root) return;
-    const cell = bodyEl.querySelector('.pt-feed[data-feed-cell="' + id + '"]');
-    if (!cell) return;
     const f = SB.Model.findShot(P(), id);
     if (!f) return;
-    cell.innerHTML = '';
-    cell.appendChild(feedList(f.shot, f.code));
+    ['image', 'video'].forEach(function (role) {
+      const cell = bodyEl.querySelector('.pt-feed[data-feed-cell="' + id + ':' + role + '"]');
+      if (!cell) return;
+      cell.innerHTML = '';
+      const fl = feedList(f.shot, f.code, role);
+      if (fl) cell.appendChild(fl);
+    });
   }
 
   /* ------------------------------------------------------- one shot at a time */

@@ -57,7 +57,7 @@
     if (shot.image) {
       out.push({ n: ++n, kind: 'frame', label: 'the first frame of this shot', feedN: null });
     }
-    SB.Refs.images(p, shot).forEach(function (e) {
+    SB.Refs.images(p, shot, 'video').forEach(function (e) {
       out.push({
         n: ++n, kind: e.kind, label: e.label, role: e.role || '',
         id: e.id, feedN: e.n
@@ -72,7 +72,7 @@
   function subjects(p, shot) {
     const pics = pictures(p, shot);
     const out = [];
-    SB.Refs.feed(p, shot).forEach(function (e) {
+    SB.Refs.feed(p, shot, 'video').forEach(function (e) {
       if (e.kind !== 'subject') return;
       const mine = pics.filter(function (x) { return x.id === e.id; });
       out.push({
@@ -165,10 +165,10 @@
   function taskTypes(p, shot) {
     const types = [];
     if (shot.image) types.push('keyframe completion');
-    const refs = SB.Refs.feed(p, shot).some(function (e) {
+    const refs = SB.Refs.feed(p, shot, 'video').some(function (e) {
       return e.kind === 'subject' && e.images.length;
     });
-    const riff = SB.Refs.feed(p, shot).some(function (e) {
+    const riff = SB.Refs.feed(p, shot, 'video').some(function (e) {
       return e.kind === 'shot' && e.images.length;
     });
     if (refs || riff) types.push('reference generation');

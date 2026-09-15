@@ -2079,7 +2079,8 @@
    * The original where the board has one, the proxy where it does not: a
    * reference is there to be matched, and 480p is a poor thing to match. */
   function firstRef(p, shot) {
-    const feed = SB.Refs.images(p, shot);
+    /* the still's own lane: the picture a first frame is matched against */
+    const feed = SB.Refs.images(p, shot, 'image');
     const e = feed[0];
     if (!e) return Promise.resolve(null);
     const name = 'ref1-' + (SB.Renders.slug(e.label) || 'ref') + '.png';
@@ -2617,11 +2618,11 @@
    * prompt's numbered mapping describes all of them as supplied. That gap is
    * the thing nobody could see. */
   function refsFor(p, shot, role) {
-    const feed = SB.Refs.images(p, shot);
+    const feed = SB.Refs.images(p, shot, role);
     /* Subjects on the card that have no reference frame of their own. They
        reach the model as words and nothing else, and looking at the card there
        is no way to tell them from the ones that do. */
-    const named = SB.Refs.feed(p, shot).filter(function (e) { return e.kind === 'subject'; });
+    const named = SB.Refs.feed(p, shot, role).filter(function (e) { return e.kind === 'subject'; });
     const wordsOnly = named.filter(function (e) { return !e.images.length; }).length;
     const carries = role === 'image'
       ? (transport() === 'key' ? 0 : 1)

@@ -371,14 +371,17 @@
 
   function block(p, shot, model, role) {
     /* image N -> which subject, assigned before anything is written so the
-     * per-kind sections can cite numbers the mapping will agree with */
-    const numbered = SB.Refs.images(p, shot);
+     * per-kind sections can cite numbers the mapping will agree with.
+     * Numbered for THIS lane: the two lanes feed different pictures now, and
+     * a mapping that numbers one lane while the other is sent is worse than
+     * no mapping at all. */
+    const numbered = SB.Refs.images(p, shot, role);
     /* Every subject in the FEED, in feed order — not just the cast. A subject
      * can be marked without being cast (a mark written by hand, a name linked
      * from the card), and describing only the cast left images numbered in the
      * mapping with no entry above them, under a paragraph claiming the entries
      * above were the complete and authoritative record. */
-    const cast = SB.Refs.feed(p, shot)
+    const cast = SB.Refs.feed(p, shot, role)
       .filter(function (e) { return e.kind === 'subject'; })
       .map(function (e) { return e.subject; });
     /* A card can feed images with nobody cast on it — a shot mark from a riff,
@@ -435,7 +438,7 @@
          frame is a reference like any other, and the numbers have to agree
          with the strip on the card and with the files the person is about to
          drop in. */
-      SB.Refs.images(p, shot).forEach(function (e) {
+      SB.Refs.images(p, shot, role).forEach(function (e) {
         lines.push('  image ' + e.n + ' = ' + e.label + (e.role ? ' (' + e.role + ')' : ''));
       });
     }
@@ -506,7 +509,7 @@
      * entirely and rebuilt the room from scratch, which is the one thing the
      * source frame exists to prevent. So this is a constraint on the OUTPUT,
      * and it says which instructions above it cancels. */
-    const shots = SB.Refs.feed(p, shot).filter(function (e) {
+    const shots = SB.Refs.feed(p, shot, role).filter(function (e) {
       return e.kind === 'shot' && e.images.length;
     });
     if (shots.length && (role === 'image' || role === 'both')) {

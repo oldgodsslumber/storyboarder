@@ -335,6 +335,22 @@ button,input,select,textarea{font:inherit;color:inherit}
 .script-box.broken{border-color:var(--danger);background:rgba(255,95,86,.07)}
 .script-box:empty::before{content:"(empty)";color:var(--fg-dim)}
 .desc-box{min-height:70px;max-height:260px;overflow:auto;width:calc(100% - 12px);font-size:12.5px}
+/* The still and the clip can have words of their own. Most cards never need
+   them, so they are chips until opened — and a card that never opens one is
+   exactly as tall as it was. */
+.lanes{display:flex;flex-direction:column;gap:2px;margin-top:2px}
+.lane-chips{display:flex;gap:5px;flex-wrap:wrap;padding:1px 2px 2px}
+.lane-chip{
+  font-size:10px;padding:2px 7px;border-radius:999px;cursor:pointer;
+  border:1px solid var(--line2);background:transparent;color:var(--fg-dim);
+}
+.lane-chip:hover{color:var(--fg);border-color:var(--accent)}
+.lane-chip.has{border-color:var(--accent);color:var(--accent)}
+.lane-chip.open{background:var(--bg3)}
+.lane-label{opacity:.85}
+.lane-box{min-height:46px;font-size:12px;background:var(--bg3)}
+.lane-box.lane-image{box-shadow:inset 2px 0 0 var(--accent)}
+.lane-box.lane-video{box-shadow:inset 2px 0 0 var(--accent2)}
 .desc-box.field-box{min-height:42px;font-size:12px}
 .script-box:focus,.desc-box:focus{outline:none;border-color:var(--accent)}
 
@@ -927,7 +943,7 @@ button.linkish{
 .pt-grid{display:flex;flex-direction:column;min-width:1080px}
 .pt-head-row,.pt-row{
   display:grid;
-  grid-template-columns:118px minmax(200px,1.05fr) minmax(240px,1.35fr) minmax(240px,1.35fr) 210px;
+  grid-template-columns:118px minmax(180px,.9fr) minmax(300px,1.6fr) minmax(300px,1.6fr);
   gap:10px;align-items:start;
 }
 .pt-head-row{
@@ -1000,6 +1016,19 @@ button.linkish{
 
 /* the two prompt boxes — the reason this screen exists */
 .pt-prompt{display:flex;flex-direction:column;gap:5px}
+/* One lane: the words for this half, the pictures they pull in, the prompt.
+   Read down the column and it is the order you work in. */
+.pt-lane{position:relative}
+.pt-lane-cap{display:none}
+.pt-lane-desc{min-height:44px;font-size:12px;background:var(--bg3)}
+/* An empty lane box is the shared description doing the work, not a gap */
+.pt-lane.using-shared .pt-lane-desc{opacity:.72;border-style:dashed}
+.pt-lane.using-shared .pt-lane-desc:focus{opacity:1;border-style:solid}
+.pt-prompt > .pt-feed{
+  border-left:2px solid var(--line2);padding-left:7px;margin:1px 0 2px;
+}
+/* a lane that feeds nothing takes up no room at all */
+.pt-prompt > .pt-feed:empty{display:none}
 .pt-text{
   width:100%;background:var(--input-bg);color:var(--fg);border:1px solid var(--line);
   border-radius:5px;padding:6px 7px;font-size:12px;line-height:1.5;
@@ -1274,3 +1303,18 @@ body.comment-mode .frame{cursor:crosshair}
 .clip-pick .clip-row:hover{border-color:var(--accent);color:var(--accent)}
 .clip-pick .clip-row .n{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .clip-pick .clip-row .b{color:var(--fg-dim);font-variant-numeric:tabular-nums}
+
+/* A narrow window stacks the two lanes rather than hiding one behind a toggle:
+   the shot and the shared description on the first line, then a lane per line,
+   each naming itself since the column headings are gone. Nothing is a click
+   away — the panel is for reading twenty rows quickly. */
+@media (max-width:1180px){
+  .pt-grid{min-width:0}
+  .pt-head-row,.pt-row{grid-template-columns:104px minmax(0,1fr)}
+  .pt-head-row .pt-h:nth-child(n+3){display:none}
+  .pt-prompt{grid-column:1 / -1;border-top:1px solid var(--line);padding-top:7px}
+  .pt-lane-cap{
+    display:block;font-size:9px;text-transform:uppercase;letter-spacing:.7px;
+    color:var(--fg-dim);font-weight:600;margin-bottom:1px;
+  }
+}

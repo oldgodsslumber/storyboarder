@@ -382,6 +382,65 @@ console.log('\n— gender is cast, not guessed —');
     'and that nobody else gets one assigned');
 }
 
+console.log('\n— two lanes, one board —');
+{
+  const M = SB.Model, R = SB.Refs, Per = SB.Personas;
+  const p = M.newProject();
+  const sc = p.scenes[0] || M.addScene(p, 0);
+  const nat = Per.add(p, { name: 'Nat' });
+  nat.image = SB.Blobs.image(p, 'data:image/gif;base64,R0lGODlhAQABAAAAACw=', 4, 3);
+  const tech = Per.add(p, { name: 'Tech' });
+  tech.image = SB.Blobs.image(p, 'data:image/gif;base64,R0lGODlhAQABAAAAACx=', 4, 3);
+  const mug = Per.add(p, { kind: 'thing', name: 'Mug' });
+  mug.image = SB.Blobs.image(p, 'data:image/gif;base64,R0lGODlhAQABAAAAACy=', 4, 3);
+
+  const sh = M.addShot(p, sc.id, {});
+  sh.description = 'At the desk with ' + R.mark(nat.id, 'Nat') + '.';
+  sh.imageDescription = 'The ' + R.mark(mug.id, 'Mug') + ' is already on the table.';
+  sh.videoDescription = R.mark(tech.id, 'Tech') + ' comes in behind her.';
+
+  const names = function (role) {
+    return R.feed(p, sh, role).map(function (e) { return e.label; }).join(',');
+  };
+
+  /* the whole mechanism: a mark belongs to the lane it was typed in */
+  eq(names('image'), 'Nat,Mug', 'the image lane sees the shared box and its own');
+  eq(names('video'), 'Nat,Tech', 'the video lane sees the shared box and its own');
+  eq(names(), 'Nat,Mug,Tech', 'and the card strip sees everything, in first-seen order');
+
+  /* the numbers a prompt cites are the numbers that lane sends */
+  eq(R.images(p, sh, 'image').map(function (e) { return e.n + ':' + e.label; }).join(' '),
+    '1:Nat 2:Mug', 'the image lane numbers its own pictures from one');
+  eq(R.images(p, sh, 'video').map(function (e) { return e.n + ':' + e.label; }).join(' '),
+    '1:Nat 2:Tech', 'and so does the video lane — the same number means a different file');
+
+  /* which is exactly why the cast block has to be numbered per lane */
+  const imB = Per.block(p, sh, { id: 'm1', name: 'GPT Image', kind: 'image' }, 'image');
+  const vmB = Per.block(p, sh, { id: 'm2', name: 'LTX 2.3', kind: 'video' }, 'video');
+  eq(/image 2 = Mug/.test(imB), true, 'the image mapping names what the image call sends');
+  eq(/Tech/.test(imB), false, 'and never names a subject only the clip is shown');
+  eq(/Tech/.test(vmB), true, 'the video mapping names the one the clip is shown');
+
+  /* the boxes travel with the card's content, not with its place on the board */
+  eq(M.CONTENT_KEYS.indexOf('imageDescription') >= 0 &&
+    M.CONTENT_KEYS.indexOf('videoDescription') >= 0, true,
+    'a swap carries both boxes with the rest of the card');
+
+  /* a card with only a lane box filled in is still a card worth writing */
+  const only = M.addShot(p, sc.id, {});
+  only.videoDescription = 'She lets go of the cup.';
+  eq(M.described(only), true, 'a card that speaks only in the motion box is described');
+  eq(M.described(M.addShot(p, sc.id, {})), false, 'an empty one is not');
+
+  /* an old board has neither box and behaves exactly as it did */
+  const old = M.migrate({ name: 'old', scenes: [{ id: 'sc1', heading: 'A', shots: [
+    { id: 'sh_old', description: 'Just the one box.' }] }] });
+  const os = old.scenes[0].shots[0];
+  eq(os.imageDescription, '', 'an older board opens with the boxes empty');
+  eq(SB.Refs.boxes(os, 'image').filter(Boolean).join('|'), 'Just the one box.',
+    'and every lane reads the description it already had');
+}
+
 console.log('\n— brand style —');
 {
   const B = SB.Brand;

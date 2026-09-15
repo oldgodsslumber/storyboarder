@@ -416,8 +416,11 @@
       t('grouped under their scene',
         document.querySelectorAll('.pt-scene').length === P().scenes.length,
         document.querySelectorAll('.pt-scene').length);
-      t('the five columns are there',
-        document.querySelectorAll('.pt-head-row .pt-h').length === 5, '');
+      /* Four, not five: the one Feed column at the end became a feed inside
+         each lane, because the two calls are handed different things. */
+      t('the four columns are there',
+        document.querySelectorAll('.pt-head-row .pt-h').length === 4,
+        document.querySelectorAll('.pt-head-row .pt-h').length);
       t('and no shots are shown as cards here',
         document.querySelectorAll('.pt-body .card').length === 0, '');
 
@@ -1378,6 +1381,83 @@
         Array.prototype.forEach.call(document.querySelectorAll('#modalRoot .modal-back'),
           function (el) { el.remove(); });
         await nap(20);
+      }
+
+      // the two lanes: on the card, and in the table
+      {
+        const nap = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+        const sh = P().scenes[0].shots[0];
+        sh.description = 'At the desk.';
+        sh.imageDescription = '';
+        sh.videoDescription = '';
+        SB.app.changed(true);
+        await nap(60);
+
+        const card = function () {
+          return document.querySelector('.card[data-shot="' + sh.id + '"]');
+        };
+        const chips = card().querySelectorAll('.lane-chip');
+        t('a card offers a first-frame and a motion box', chips.length === 2,
+          chips.length + ' chips');
+        t('and neither is open until it is asked for',
+          card().querySelectorAll('.lane-box').length === 0, '');
+
+        chips[1].click();
+        await nap(60);
+        t('clicking one opens it',
+          card().querySelectorAll('.lane-box.lane-video').length === 1, '');
+        t('and the other stays shut',
+          card().querySelectorAll('.lane-box.lane-image').length === 0, '');
+
+        chips[1].click();
+        await nap(60);
+        t('clicking it again puts it away',
+          card().querySelectorAll('.lane-box').length === 0, '');
+
+        /* text nobody can see is worse than a taller card */
+        sh.videoDescription = 'She lets go of the cup.';
+        SB.app.changed(true);
+        await nap(60);
+        t('a box with words in it is open on sight',
+          card().querySelectorAll('.lane-box.lane-video').length === 1, '');
+        t('and its chip says so',
+          /\u25cf/.test(card().querySelectorAll('.lane-chip')[1].textContent),
+          card().querySelectorAll('.lane-chip')[1].textContent);
+
+        /* the lanes in the table */
+        SB.PromptPanel.open();
+        await nap(80);
+        const row = document.querySelector('.pt-row[data-shot="' + sh.id + '"]');
+        t('each prompt column carries its own description box',
+          row.querySelectorAll('.pt-lane-desc').length === 2,
+          row.querySelectorAll('.pt-lane-desc').length);
+        t('and its own feed',
+          row.querySelectorAll('.pt-prompt > .pt-feed').length === 2,
+          row.querySelectorAll('.pt-prompt > .pt-feed').length);
+        t('the empty one says it is using the description',
+          row.querySelectorAll('.pt-lane.using-shared').length === 1,
+          row.querySelectorAll('.pt-lane.using-shared').length);
+
+        /* an @ in one lane reaches that lane and no other */
+        const per = SB.Personas.add(P(), { name: 'Rigger' });
+        per.image = SB.Blobs.image(P(), 'data:image/gif;base64,R0lGODlhAQABAAAAACw=', 4, 3);
+        sh.imageDescription = 'The ' + SB.Refs.mark(per.id, 'Rigger') + ' stands by.';
+        SB.PromptPanel.open();
+        await nap(80);
+        const row2 = document.querySelector('.pt-row[data-shot="' + sh.id + '"]');
+        const feeds = row2.querySelectorAll('.pt-prompt > .pt-feed');
+        t('a mark typed in the first-frame box feeds the image lane',
+          /Rigger/.test(feeds[0].textContent), feeds[0].textContent.slice(0, 80));
+        t('and never the video lane',
+          !/Rigger/.test(feeds[1].textContent), feeds[1].textContent.slice(0, 80));
+
+        SB.PromptPanel.close();
+        await nap(40);
+        sh.imageDescription = '';
+        sh.videoDescription = '';
+        P().personas = P().personas.filter(function (x) { return x.id !== per.id; });
+        SB.app.changed(true);
+        await nap(40);
       }
 
       // moving cards and scenes, especially to the two ends

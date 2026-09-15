@@ -85,6 +85,72 @@
       t('the cast reaches the request', /CAST/.test(sys2) && /Ops lead/.test(sys2), '');
       t('with the reference-image numbering', /image 1 = Ops lead/.test(sys2), '');
 
+      /* ---------- each lane gets its own words ---------- */
+      {
+        const sh = shots.a;
+        sh.description = 'At the desk, the lamp on.';
+        sh.imageDescription = 'The cup is still full.';
+        sh.videoDescription = 'She lifts it and drinks.';
+        sh.personaIds = [];
+        P().settings.videoModelId = P().settings.models.filter(function (m) {
+          return m.kind === 'video';
+        })[0].id;
+
+        window.__calls = [];
+        window.__reply = null;
+        await SB.Prompts.generateFor(sh, { image: true });
+        const iText = window.__calls[0].body.contents[0].parts[0].text;
+        t('the image call is told what is true as the shot opens',
+          /The cup is still full/.test(iText), '');
+        t('and is not told what happens next',
+          !/lifts it and drinks/.test(iText), iText.slice(-200));
+        t('while the shared description reaches it',
+          /the lamp on/.test(iText), '');
+
+        window.__calls = [];
+        await SB.Prompts.generateFor(sh, { video: true });
+        const vText = window.__calls[0].body.contents[0].parts[0].text;
+        t('the video call is told what moves',
+          /lifts it and drinks/.test(vText), '');
+        t('and not the first-frame-only line',
+          !/still full/.test(vText), vText.slice(-200));
+        t('with the shared description reaching it too',
+          /the lamp on/.test(vText), '');
+
+        /* the lanes hand over different pictures, and the mapping says so */
+        const nat = SB.Personas.add(P(), { name: 'Nat' });
+        nat.image = SB.Blobs.image(P(), 'data:image/gif;base64,R0lGODlhAQABAAAAACw=', 4, 3);
+        const rig = SB.Personas.add(P(), { kind: 'thing', name: 'Rig' });
+        rig.image = SB.Blobs.image(P(), 'data:image/gif;base64,R0lGODlhAQABAAAAACx=', 4, 3);
+        sh.imageDescription = 'The ' + SB.Refs.mark(rig.id, 'Rig') + ' is set up.';
+        sh.videoDescription = SB.Refs.mark(nat.id, 'Nat') + ' walks past it.';
+
+        window.__calls = [];
+        await SB.Prompts.generateFor(sh, { image: true });
+        const iSys = window.__calls[0].body.systemInstruction.parts[0].text;
+        t('the image call maps only the picture it is sent',
+          /image 1 = Rig/.test(iSys) && !/= Nat/.test(iSys), iSys.slice(0, 260));
+
+        window.__calls = [];
+        await SB.Prompts.generateFor(sh, { video: true });
+        const vSys = window.__calls[0].body.systemInstruction.parts[0].text;
+        t('and the video call maps only its own',
+          /Nat/.test(vSys) && !/Rig/.test(vSys), vSys.slice(0, 260));
+
+        /* a card with nothing in the shared box is still writable */
+        const lone = SB.Model.addShot(P(), P().scenes[0].id, {});
+        lone.videoDescription = 'The door swings shut.';
+        let wrote = false;
+        window.__calls = [];
+        await SB.Prompts.generateFor(lone, { video: true }).then(function () { wrote = true; },
+          function () { wrote = false; });
+        t('a card that speaks only in one lane is not blocked', wrote, '');
+
+        sh.imageDescription = '';
+        sh.videoDescription = '';
+        sh.personaIds = [];
+      }
+
       /* ---------- a gender nobody cast ---------- */
       {
         const guessed = 'A businessman leans over the desk, his sleeve catching the lamp.';

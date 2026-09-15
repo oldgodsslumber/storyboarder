@@ -438,6 +438,13 @@
       castEnters: [],
       broken: false,
       description: '',
+      /* The still and the clip are different jobs and want different words.
+       * `description` is what we see and feeds both; these two are optional
+       * and feed one each. A mark written in one of them is a reference that
+       * lane hands over and the other never sees — which is the whole point,
+       * since a reference IS a mark in the text it was written in. */
+      imageDescription: '',
+      videoDescription: '',
       fields: {},                       // extra text boxes, keyed by field id
       image: null,                      // {ref,w,h} into project.blobs
       /* Every other take of this shot, oldest kept first. `video` above is
@@ -944,6 +951,11 @@
         }
         sh.broken = !!sh.broken;
         sh.description = sh.description || '';
+        /* The still and the clip can each have words of their own. A board
+           written before they existed has neither, and reads exactly as it
+           did: every lane falls back to the description it already had. */
+        sh.imageDescription = sh.imageDescription || '';
+        sh.videoDescription = sh.videoDescription || '';
         sh.fields = (sh.fields && typeof sh.fields === 'object') ? sh.fields : {};
         sh.comments = Array.isArray(sh.comments) ? sh.comments : [];
         sh.prompts = sh.prompts || {};
@@ -1288,8 +1300,17 @@
    * script. The script window, whether it is linked or freestanding, and the
    * "no shot" flag all describe the fragment of script this card sits on, so
    * they stay behind when the imagery moves. */
+  /* Is there anything on this card for a writer to work from? Three boxes
+   * now, and any one of them counts. */
+  function described(shot) {
+    if (!shot) return false;
+    return !!((shot.description || '').trim() || (shot.imageDescription || '').trim() ||
+      (shot.videoDescription || '').trim());
+  }
+
   const CONTENT_KEYS = [
     'type', 'color', 'image', 'annotation', 'description',
+    'imageDescription', 'videoDescription',
     'fields', 'prompts', 'personaIds', 'castEnters', 'comments', 'render', 'video'
   ];
 
@@ -1448,7 +1469,7 @@
     addScene: addScene, deleteScene: deleteScene, addShot: addShot, deleteShot: deleteShot,
     moveShot: moveShot, moveShots: moveShots, moveScene: moveScene,
     splitSceneAt: splitSceneAt, sceneFromShots: sceneFromShots,
-    swapShotContent: swapShotContent, CONTENT_KEYS: CONTENT_KEYS,
+    swapShotContent: swapShotContent, CONTENT_KEYS: CONTENT_KEYS, described: described,
     modelById: modelById, imageModel: imageModel, videoModel: videoModel, firstOfKind: firstOfKind,
     shotHolding: shotHolding
   };

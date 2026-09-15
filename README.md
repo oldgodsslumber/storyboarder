@@ -383,6 +383,20 @@ it will never make a card or scene reappear or vanish.
   last card, or below the last scene, means *last*. Both used to mean something else —
   the gap sent a card to the far end of the scene, and dropping below the scene list did
   nothing at all, which is why reordering at the two ends rarely stuck.
+- **The still and the clip can have words of their own.** Under the feed strip, two chips —
+  `⊕ first frame` and `⊕ motion` — open a box each. The **first frame** box is only what is
+  true as the shot opens; the **motion** box is what moves, in what order, how it ends. Both
+  are optional, both start closed, and a card that never uses them is exactly as tall as it
+  was. A box with words in it is open on sight — text nobody can see is worse than a taller
+  card — and empty it to put it away.
+
+  Because **a reference is an `@` mark in the text it was written in**, splitting the words
+  splits the references for free: `@` the rig in the first-frame box and the still is shown
+  it; `@` someone in the motion box and only the clip is. No second list, nothing to keep in
+  sync. The card's feed strip stays the union of all three boxes — it is the record of
+  everything this card touches — while each prompt is handed only its own lane, numbered from
+  one. An older board has both boxes empty and behaves exactly as it always did.
+
 - Images: drop, paste (with a card selected), or click the frame. Everything is downscaled
   to a ≤480p JPEG proxy and stored inline — no full-res copies anywhere.
 - Card colour washes the **whole card**, not a stripe down its edge. It's a fixed palette of
@@ -514,15 +528,27 @@ unused; if a card still names something that cannot be found, the toast says how
 ## Prompt export
 
 A board is made one card at a time; prompts are written a whole film at a time. So
-**Prompts** (top bar) is a full-page **table** — one row per shot, five columns:
+**Prompts** (top bar) is a full-page **table** — one row per shot, four columns, of which the
+last two are **lanes**: everything about the still in one, everything about the clip in the
+next, each read top to bottom in the order you work — *say it, see what goes with it, read
+what was written, act on it.*
 
 | | |
 |---|---|
 | **Shot** | code, the serial its render is filed under, a thumbnail, the type. Click the thumbnail to jump to that card. |
-| **Description** | the same reference box as the card, so marks stay live links and `@` works |
-| **First frame** | a large prompt box, with its own ✦ generate, a *gendered* flag and a *cast changed* badge |
-| **Video** | the same again for the image→video prompt |
-| **Feed** | the reference files this row hands over, in order — named by file (`0007.png`), because those are what you go and find — with **copy image set** |
+| **Description** | what we see. The same reference box as the card, so marks stay live links and `@` works. **Both** prompts read it. |
+| **First frame** | the shot's **first-frame** box, then the references *that* lane hands over, then the image prompt with its ✦ generate, its badges and its push |
+| **Video** | the shot's **motion** box, the references the clip hands over, then the image→video prompt, the same again |
+
+There used to be a fifth **Feed** column showing one list of references for the whole row —
+which was a quiet lie on any card whose two calls are handed different things. Each lane now
+carries the list it will actually send, numbered the way its own prompt cites it, with its own
+**copy image set**. A lane that feeds nothing shows nothing.
+
+A lane box left empty is the shared description doing the work — the common case — and it says
+so rather than looking blank. On a narrow window the two lanes stack instead of hiding behind
+a toggle: nothing in this panel is a click away, because the point of it is reading twenty
+rows quickly.
 
 Rows group under their scene, the header sticks, and the filters are the point of a table:
 **Missing** (no prompt yet), **Stale** (a subject on the card was edited after the prompt was
