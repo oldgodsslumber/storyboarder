@@ -1108,7 +1108,7 @@
     ns.onclick = function () { sh.noShot = !sh.noShot; SB.app.changed(true); };
     acts.appendChild(ns);
 
-    const del = SB.el('button', 'mini danger', '✕');
+    const del = SB.el('button', 'mini danger', '🗑️');
     del.title = 'Delete shot (script text stays in the master)';
     SB.armButton(del, 'delete?', function () {
       SB.Model.deleteShot(P(), sh.id);

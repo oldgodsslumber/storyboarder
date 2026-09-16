@@ -1377,7 +1377,7 @@ body.comment-mode .frame{cursor:crosshair}
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-09-15 22:46 · b5de635+";</script>
+<script>window.SB_BUILD = "2026-09-16 00:34 · fd94bc2+";</script>
 
 <div id="app">
 
@@ -13990,7 +13990,7 @@ window.SB = window.SB || {};
     ns.onclick = function () { sh.noShot = !sh.noShot; SB.app.changed(true); };
     acts.appendChild(ns);
 
-    const del = SB.el('button', 'mini danger', '✕');
+    const del = SB.el('button', 'mini danger', '🗑️');
     del.title = 'Delete shot (script text stays in the master)';
     SB.armButton(del, 'delete?', function () {
       SB.Model.deleteShot(P(), sh.id);
