@@ -224,6 +224,13 @@ button,input,select,textarea{font:inherit;color:inherit}
 }
 .card.sel{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
 .card.sel.lead{box-shadow:0 0 0 2px var(--accent)}
+/* the lasso — drawn over the board while dragging on empty space */
+.marquee{
+  position:fixed;z-index:40;pointer-events:none;
+  border:1px solid var(--accent);
+  background:color-mix(in srgb, var(--accent) 14%, transparent);
+}
+body.marquee-on{user-select:none;cursor:crosshair}
 
 /* a break between two cards: click to start a new scene there */
 /* Fixed width: widening it on hover would shove every card sideways just for

@@ -2708,6 +2708,56 @@
         SB.Board.clearSelection();
       })();
 
+      // click-drag on empty space lassos the cards it touches
+      (function () {
+        SB.Board.clearSelection();
+        var sc = P().scenes[0];
+        var aId = sc.shots[0].id, bId = sc.shots[1].id;
+        var ra = document.querySelector('.card[data-shot="' + aId + '"]').getBoundingClientRect();
+        var rb = document.querySelector('.card[data-shot="' + bId + '"]').getBoundingClientRect();
+        var shots = document.querySelector('.shots[data-scene="' + sc.id + '"]');
+        var sweep = function (opts) {
+          shots.dispatchEvent(new MouseEvent('mousedown', Object.assign({
+            bubbles: true, button: 0, clientX: ra.left - 3, clientY: ra.top - 3
+          }, opts || {})));
+          document.dispatchEvent(new MouseEvent('mousemove', {
+            bubbles: true, clientX: rb.left + 8, clientY: rb.top + 8
+          }));
+        };
+
+        sweep();
+        t('dragging on empty space draws a marquee',
+          !!document.querySelector('.marquee'), '');
+        t('and the cards it touches are selected',
+          SB.Board.selection().length === 2 &&
+          SB.Board.selection().indexOf(aId) >= 0 && SB.Board.selection().indexOf(bId) >= 0,
+          SB.Board.selection().join());
+        document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+        t('the marquee goes on release', !document.querySelector('.marquee'), '');
+        t('and the selection stays', SB.Board.selection().length === 2,
+          SB.Board.selection().join());
+
+        /* a modifier at the start adds to what was there */
+        var otherSc = P().scenes.filter(function (s) { return s !== sc && s.shots.length; })[0];
+        var other = otherSc.shots[0].id;
+        SB.Board.select(other);
+        sweep({ ctrlKey: true });
+        document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+        t('a modifier makes the lasso add to the selection',
+          SB.Board.selection().length === 3 && SB.Board.selection().indexOf(other) >= 0,
+          SB.Board.selection().join());
+
+        /* below the threshold a click is still just a click */
+        var board = document.getElementById('board');
+        board.dispatchEvent(new MouseEvent('mousedown', {
+          bubbles: true, button: 0, clientX: 6, clientY: 6
+        }));
+        document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+        t('a plain click on empty space still just clears',
+          SB.Board.selection().length === 0 && !document.querySelector('.marquee'),
+          SB.Board.selection().join());
+      })();
+
       // swapping two shots without moving the dialogue
       (function () {
         const p = P();

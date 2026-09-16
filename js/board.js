@@ -92,6 +92,127 @@
     }
   }
 
+  /* ---------------- marquee selection ----------------
+   *
+   * Click-drag on empty board space draws a rectangle, and every card it
+   * touches joins the selection — the lasso every editor teaches. It only
+   * starts where nothing else has a claim: not on a card (clicking selects,
+   * the header drags), not in a box being typed in. A plain click stays a
+   * plain click: nothing appears until the pointer has actually moved, so
+   * the click-empty-space-to-deselect gesture is exactly what it was. A
+   * modifier held at the start adds to what was already selected instead of
+   * replacing it. */
+  function bindMarquee() {
+    if (B.marqueeBound) return;
+    const panel = document.getElementById('boardPanel');
+    if (!panel) return;
+    B.marqueeBound = true;
+    panel.addEventListener('mousedown', function (ev) {
+      if (ev.button !== 0) return;
+      if (ev.target.closest('.card, button, select, input, textarea, [contenteditable]')) return;
+      marquee(panel, ev);
+    });
+  }
+
+  function marquee(panel, ev) {
+    /* The anchor lives in CONTENT coordinates, so scrolling under the drag
+       stretches the rectangle instead of carrying it along — which is also
+       what lets it keep selecting cards that have gone off screen. */
+    const anchor = { x: ev.clientX + panel.scrollLeft, y: ev.clientY + panel.scrollTop };
+    const additive = ev.ctrlKey || ev.metaKey || ev.shiftKey;
+    const base = additive ? selection().slice() : [];
+    const at = { x: ev.clientX, y: ev.clientY };
+    let box = null;              // null until the pointer has moved enough
+    let timer = null;
+
+    /* the true extent, in client coordinates */
+    const rect = function () {
+      const ax = anchor.x - panel.scrollLeft, ay = anchor.y - panel.scrollTop;
+      return {
+        left: Math.min(ax, at.x), right: Math.max(ax, at.x),
+        top: Math.min(ay, at.y), bottom: Math.max(ay, at.y)
+      };
+    };
+
+    const draw = function () {
+      const r = rect();
+      /* clipped to the panel, so the drawn box never lies over the navigator
+         or the toolbar while the true extent keeps selecting off screen */
+      const pr = panel.getBoundingClientRect();
+      const l = Math.max(r.left, pr.left), t = Math.max(r.top, pr.top);
+      box.style.left = l + 'px';
+      box.style.top = t + 'px';
+      box.style.width = Math.max(0, Math.min(r.right, pr.right) - l) + 'px';
+      box.style.height = Math.max(0, Math.min(r.bottom, pr.bottom) - t) + 'px';
+    };
+
+    /* Any overlap counts — the cards are wide, and demanding full containment
+       would make a lasso down a column miss every one of them. */
+    const apply = function () {
+      const r = rect();
+      const ids = base.slice();
+      let lead = null;
+      document.querySelectorAll('#board .card').forEach(function (el) {
+        const c = el.getBoundingClientRect();
+        if (c.right < r.left || c.left > r.right || c.bottom < r.top || c.top > r.bottom) return;
+        if (ids.indexOf(el.dataset.shot) < 0) ids.push(el.dataset.shot);
+        lead = el.dataset.shot;
+      });
+      SB.app.selection = ids;
+      SB.app.selectedShotId = lead || (ids.length ? ids[ids.length - 1] : null);
+      paintSelection();
+    };
+
+    /* holding the pointer near the panel's edge scrolls the board, so one
+       sweep can take more than a screenful */
+    const EDGE = 32, STEP = 16;
+    const tick = function () {
+      const pr = panel.getBoundingClientRect();
+      let dy = 0;
+      if (at.y < pr.top + EDGE) dy = -STEP;
+      else if (at.y > pr.bottom - EDGE) dy = STEP;
+      if (!dy) return;
+      const was = panel.scrollTop;
+      panel.scrollTop = was + dy;
+      if (panel.scrollTop === was) return;      // already at the end
+      draw(); apply();
+    };
+
+    const move = function (m) {
+      at.x = m.clientX; at.y = m.clientY;
+      if (!box) {
+        if (Math.abs(at.x - (anchor.x - panel.scrollLeft)) < 4 &&
+            Math.abs(at.y - (anchor.y - panel.scrollTop)) < 4) return;
+        box = SB.el('div', 'marquee');
+        document.body.appendChild(box);
+        document.body.classList.add('marquee-on');
+        /* the browser has been building a text selection since mousedown —
+           take it back before it smears across the description boxes */
+        const s = window.getSelection && window.getSelection();
+        if (s && s.removeAllRanges) s.removeAllRanges();
+        timer = setInterval(tick, 30);
+      }
+      if (m.cancelable) m.preventDefault();
+      draw(); apply();
+    };
+
+    const onScroll = function () { if (box) { draw(); apply(); } };
+
+    const up = function () {
+      document.removeEventListener('mousemove', move);
+      document.removeEventListener('mouseup', up);
+      panel.removeEventListener('scroll', onScroll);
+      if (timer) clearInterval(timer);
+      if (box) { box.remove(); document.body.classList.remove('marquee-on'); }
+      /* below the threshold nothing was drawn, and the plain click has
+         already had its old meaning */
+    };
+
+    document.addEventListener('mousemove', move);
+    document.addEventListener('mouseup', up);
+    panel.addEventListener('scroll', onScroll);
+  }
+
   /* Which cards a drop should carry: the whole group if the dragged card is
    * part of one, otherwise just the card. */
   /* Shift-drag: the cards that were dragged, copied where they landed. */
@@ -382,10 +503,14 @@
     const board = document.getElementById('board');
     board.innerHTML = '';
     P().scenes.forEach(function (sc, si) { board.appendChild(sceneBlock(sc, si)); });
-    /* clicking the empty space below the cards drops the selection */
+    /* Clicking the empty space below the cards drops the selection — unless
+       a modifier is down, because that is an additive marquee being started
+       and clearing here would wipe the very selection it means to add to. */
     board.onmousedown = function (ev) {
+      if (ev.ctrlKey || ev.metaKey || ev.shiftKey) return;
       if (ev.target === board && selection().length) clearSelection();
     };
+    bindMarquee();
     const bar = document.getElementById('selBar');
     if (bar) {
       bar.innerHTML = '';
