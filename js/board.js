@@ -62,13 +62,34 @@
       app.selection = [id];
       app.selectedShotId = id;
     }
-    render();
+    paintSelection();
   }
 
   function clearSelection() {
     SB.app.selection = [];
     SB.app.selectedShotId = null;
-    render();
+    paintSelection();
+  }
+
+  /* Which cards are selected is a CLASS, not a structure — so it is painted
+   * onto the cards that are already there. Rebuilding the board for it threw
+   * away the element under the pointer on mousedown, and a click whose press
+   * and release land on different elements is never dispatched: selecting a
+   * card silently ate the click that selected it. */
+  function paintSelection() {
+    const sel = selection();
+    const lead = SB.app.selectedShotId;
+    document.querySelectorAll('#board .card').forEach(function (el) {
+      const id = el.dataset.shot;
+      el.classList.toggle('sel', sel.indexOf(id) >= 0);
+      el.classList.toggle('lead', lead === id);
+    });
+    const bar = document.getElementById('selBar');
+    if (bar) {
+      bar.innerHTML = '';
+      bar.appendChild(selectionBar());
+      bar.classList.toggle('hidden', sel.length < 2);
+    }
   }
 
   /* Which cards a drop should carry: the whole group if the dragged card is
@@ -2013,6 +2034,7 @@
     syncSceneAi: syncSceneAi,
     forgetScene: function (id) { delete AI[id]; },
     renderSceneList: renderSceneList, forgetOpenBoxes: forgetOpenBoxes,
+    paintSelection: paintSelection,
     renderScriptWindows: renderScriptWindows,
     refreshCast: refreshCast,
     refreshCastRows: refreshCastRows, refreshPromptStale: refreshPromptStale,

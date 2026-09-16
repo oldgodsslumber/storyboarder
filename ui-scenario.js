@@ -1799,6 +1799,72 @@
         SB.Viewer = was;
       }
 
+      // pressing a picture, the way a mouse does it
+      {
+        const nap = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+        const sh = P().scenes[0].shots[0];
+        const wasImg = sh.image;
+        sh.image = sh.image || SB.Blobs.image(P(),
+          'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 16, 9);
+        SB.app.changed(true);
+        await nap(80);
+
+        /* press, release, click — in that order, on the element that is
+           under the pointer at each step, which is what a browser does and
+           what a bare .click() does not. Selecting a card used to rebuild the
+           board on mousedown, so the element pressed was gone before the
+           release and no click was ever dispatched. */
+        /* nothing else may be in front of it, and it has to be on screen —
+           and whatever WAS in front goes back afterwards, because the tests
+           around this one are using it */
+        const hadPrompts = !!document.querySelector('.pt-grid');
+        const hadRefs = !!document.querySelector('.lib-refs, .lib-scenes');
+        if (SB.PromptPanel.close) SB.PromptPanel.close();
+        if (SB.PersonaPanel.close) SB.PersonaPanel.close();
+        document.querySelectorAll('#modalRoot .modal-back').forEach(function (b) { b.remove(); });
+        await nap(80);
+        document.querySelector('.card[data-shot="' + sh.id + '"]')
+          .scrollIntoView({ block: 'center' });
+        await nap(150);
+
+        const press = function () {
+          const f = document.querySelector('.card[data-shot="' + sh.id + '"] .frame');
+          const r = f.getBoundingClientRect();
+          const at = { bubbles: true, cancelable: true, button: 0,
+            clientX: Math.round(r.left + r.width / 2),
+            clientY: Math.round(r.top + r.height / 2) };
+          const target = document.elementFromPoint(at.clientX, at.clientY) || f;
+          target.dispatchEvent(new MouseEvent('mousedown', at));
+          const survived = target.isConnected;
+          const after = document.elementFromPoint(at.clientX, at.clientY) || target;
+          after.dispatchEvent(new MouseEvent('mouseup', at));
+          if (survived) after.dispatchEvent(new MouseEvent('click', at));
+          return survived;
+        };
+
+        const survived = press();
+        t('the element under the pointer survives the press',
+          survived, 'the board rebuilt itself on mousedown');
+        await nap(150);
+        t('so pressing a picture opens it',
+          !!document.querySelector('.modal .viewer'), '');
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        await nap(60);
+
+        /* and the press still selects the card, which is what it was for */
+        t('and the card it was on is selected',
+          SB.app.selectedShotId === sh.id, SB.app.selectedShotId);
+        t('with the class painted on, not rebuilt',
+          document.querySelector('.card[data-shot="' + sh.id + '"]').classList.contains('sel'),
+          document.querySelector('.card[data-shot="' + sh.id + '"]').className);
+
+        sh.image = wasImg;
+        SB.app.changed(true);
+        if (hadPrompts) SB.PromptPanel.open();
+        if (hadRefs) SB.PersonaPanel.open();
+        await nap(80);
+      }
+
       // a click shows the picture; replacing is something you say
       {
         const nap = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
