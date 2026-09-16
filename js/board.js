@@ -880,28 +880,29 @@
     });
 
     const acts = SB.el('div', 'scene-actions');
-    const bAdd = SB.el('button', 'mini', '+ Shot');
-    bAdd.title = 'Add a shot — or drop an image here to make a card from it';
-    acceptImageDrop(bAdd, sc);
-    bAdd.onclick = function () {
-      const sh = SB.Model.addShot(P(), sc.id, {});
-      SB.app.selectedShotId = sh.id;
-      SB.app.changed(true);
-    };
-    const bAddScene = SB.el('button', 'mini', '+ Scene below');
-    bAddScene.onclick = function () { SB.Model.addScene(P(), si); SB.app.changed(true); };
-    const bDel = SB.el('button', 'mini danger', 'Delete scene');
-    bDel.onclick = function () {
-      /* A scene holding a claim but no cards used to delete with no warning. */
-      if ((sc.shots.length || SB.Model.sceneTied(sc)) &&
-        !confirm('Delete "' + (sc.heading || 'scene') + '"' +
-          (sc.shots.length ? ' and its ' + sc.shots.length + ' shot(s)' : '') +
-          '? Script text stays in the master script.')) return;
+
+    /* + Shot and + Scene below have gone. Both had the same thing standing
+       next to them: the ghost add-shot card at the end of this scene's row,
+       which also takes an image drop, and the toolbar's + Scene. What the
+       banner keeps is the one control that is about this scene and nothing
+       else. */
+    const bDel = SB.el('button', 'mini danger', '🗑️');
+    bDel.title = 'Delete this scene. Its script text stays in the master script.';
+    /* Armed rather than a browser dialog, so it reads and behaves like a
+       card's delete — but the armed label still says what goes, because a
+       scene can take a dozen cards with it and a card cannot. */
+    SB.armButton(bDel, sc.shots.length
+      ? 'delete ' + sc.shots.length + ' shot' + (sc.shots.length === 1 ? '' : 's') + '?'
+      : 'delete scene?', function () {
       SB.Model.deleteScene(P(), sc.id);
       delete AI[sc.id];                  // its session state goes with it
       SB.app.changed(true);
-    };
-    acts.appendChild(bAdd); acts.appendChild(bAddScene); acts.appendChild(bDel);
+      SB.toast('Deleted “' + (sc.heading || 'scene') + '”' +
+        (sc.shots.length ? ' and its ' + sc.shots.length + ' shot' +
+          (sc.shots.length === 1 ? '' : 's') : '') +
+        ' — the script text stays in the master');
+    });
+    acts.appendChild(bDel);
     head.appendChild(acts);
     blk.appendChild(head);
 

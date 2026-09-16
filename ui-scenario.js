@@ -2258,14 +2258,41 @@
         tSc.local = SB.Doc.make('a section of its own');
         SB.app.changed(true);
         var tScenes = P().scenes.length;
-        var asked = 0;
-        var realConfirm = window.confirm;
-        window.confirm = function () { asked++; return false; };
-        document.querySelector('.scene-block[data-scene="' + tSc.id + '"] .scene-actions .danger')
-          .click();
-        window.confirm = realConfirm;
-        t('deleting a tied but empty scene asks about its claim first',
-          asked === 1 && P().scenes.length === tScenes, asked + ' asked, ' + P().scenes.length + ' left');
+        var tBtn = function () {
+          return document.querySelector('.scene-block[data-scene="' + tSc.id +
+            '"] .scene-actions .danger');
+        };
+        t('the banner keeps only the delete control',
+          document.querySelectorAll('.scene-block[data-scene="' + tSc.id +
+            '"] .scene-actions button').length === 1,
+          document.querySelectorAll('.scene-block[data-scene="' + tSc.id +
+            '"] .scene-actions button').length + ' buttons');
+
+        /* one press arms, it does not delete — the same guard a card has */
+        tBtn().click();
+        t('deleting a scene arms rather than going straight through',
+          P().scenes.length === tScenes && /delete/i.test(tBtn().textContent),
+          tBtn().textContent + ', ' + P().scenes.length + ' left');
+        t('and an empty one says so plainly',
+          /delete scene\?/i.test(tBtn().textContent), tBtn().textContent);
+
+        /* Esc backs out, leaving the scene alone */
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        t('Escape disarms it', P().scenes.length === tScenes, P().scenes.length + ' left');
+
+        /* a populated scene says what goes with it */
+        var pSc = SB.Model.addScene(P());
+        SB.Model.addShot(P(), pSc.id, {});
+        SB.Model.addShot(P(), pSc.id, {});
+        SB.app.changed(true);
+        var pBtn = document.querySelector('.scene-block[data-scene="' + pSc.id +
+          '"] .scene-actions .danger');
+        pBtn.click();
+        t('a scene with cards names how many go with it',
+          /delete 2 shots\?/i.test(pBtn.textContent), pBtn.textContent);
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        SB.Model.deleteScene(P(), pSc.id);
+        SB.app.changed(true);
         SB.Model.deleteScene(P(), tSc.id);
         SB.app.changed(true);
       }
