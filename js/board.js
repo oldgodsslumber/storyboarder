@@ -422,14 +422,13 @@
     }
   }
 
-  /* A scene's heading and description are on screen in two places at once —
-   * the banner over its cards, and the row in the reference library's scene
-   * organizer. Both write straight to the same object, so whichever one you
-   * are not typing into is holding a copy that went stale the moment you
-   * touched the other. Left alone, the next keystroke in the stale box wrote
-   * its whole outdated string back over the newer text.
+  /* A scene's heading and description can be on screen in more than one box
+   * at once. Every copy writes straight to the same object, so whichever one
+   * you are not typing into is holding a string that went stale the moment
+   * you touched the other. Left alone, the next keystroke in the stale box
+   * wrote its whole outdated string back over the newer text.
    *
-   * Every box carries its scene id, so both sides can be brought up to date
+   * Every box carries its scene id, so all of them can be brought up to date
    * from the model. The focused one is never touched: it is the one that is
    * right, and writing to it would move the caret. */
   function syncSceneFields(id) {
@@ -582,7 +581,6 @@
         SB.app.selection = [r.ids[0]];
         SB.app.changed(true);                 // rebuilds this row from ai state
         if (newCast.length) SB.PersonaPanel.refresh();
-        SB.PersonaPanel.refreshScenes();      // the shot count on this scene just moved
         SB.toast(ai.status + (r.beats.length ? ' — ' + r.beats.join(' → ') : ''));
       }).catch(function (e) { failed(e, runGen); });
     }
@@ -594,11 +592,10 @@
       ai.ids = null;
       ai.personaIds = null;
       /* the status is what the rebuilt row reads, so it is set before the
-         rebuild — otherwise the organizer redraws still saying "3 shots added" */
+         rebuild — otherwise the row redraws still saying "3 shots added" */
       ai.status = 'generated shots removed';
       ai.err = false;
       if (hadCast) SB.PersonaPanel.refresh();
-      SB.PersonaPanel.refreshScenes();
       SB.app.selectedShotId = null;
       SB.app.selection = [];
       SB.app.changed(true);

@@ -480,7 +480,7 @@
    * It used to be called "Scene 3", which is true exactly until somebody drags
    * it — and then the board has a scene called "Scene 3" sitting second, which
    * is worse than no name at all. The number is where a scene SITS: the
-   * navigator, the banner, the organizer and the prompt table all draw it from
+   * navigator, the banner and the prompt table all draw it from
    * the position, so it is right by construction and never has to be kept in
    * step. What the heading is for is what the scene IS. */
   function newScene(heading) {

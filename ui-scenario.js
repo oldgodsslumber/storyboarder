@@ -767,14 +767,9 @@
         document.querySelectorAll('.lib-refs .persona.kind-place').length === 1 &&
         document.querySelectorAll('.lib-refs .persona.kind-thing').length === 1, '');
 
-      // the scene organizer under it
-      t('the scenes are listed under the library',
-        document.querySelectorAll('.lib-scenes .sc-row').length === P().scenes.length,
-        document.querySelectorAll('.lib-scenes .sc-row').length);
-      t('and no shots are shown there',
-        document.querySelectorAll('.lib-scenes .card').length === 0, '');
-      t('each scene row carries its heading and description',
-        document.querySelector('.lib-scenes .sc-row .sh-heading').value === P().scenes[0].heading, '');
+      // scenes live on the board now — the library holds subjects only
+      t('the library carries no scene organizer',
+        !document.querySelector('.lib-scenes'), '');
 
       var firstShot = SB.Model.findShot(P(), document.querySelector('.card').dataset.shot).shot;
       SB.Personas.toggleOnShot(P(), firstShot, per1.id);
@@ -1818,7 +1813,7 @@
            and whatever WAS in front goes back afterwards, because the tests
            around this one are using it */
         const hadPrompts = !!document.querySelector('.pt-grid');
-        const hadRefs = !!document.querySelector('.lib-refs, .lib-scenes');
+        const hadRefs = !!document.querySelector('.lib-refs');
         if (SB.PromptPanel.close) SB.PromptPanel.close();
         if (SB.PersonaPanel.close) SB.PersonaPanel.close();
         document.querySelectorAll('#modalRoot .modal-back').forEach(function (b) { b.remove(); });
@@ -2230,62 +2225,23 @@
         SB.app.changed(true);
       }
 
-      // the scene organizer and the board banner are two windows onto one
-      // scene. Whichever you are not typing into used to hold a stale copy,
-      // and its next keystroke wrote that copy back over the newer text.
-      {
-        var oSc = P().scenes[0];
-        var oWasH = oSc.heading, oWasD = oSc.description;
-        var orgH = document.querySelector('.lib-scenes .sh-heading[data-scene="' + oSc.id + '"]');
-        orgH.value = 'EDITED IN THE ORGANIZER';
-        orgH.dispatchEvent(new Event('input', { bubbles: true }));
-        var banH = document.querySelector('.scene-head .sh-heading[data-scene="' + oSc.id + '"]');
-        t('an organizer edit reaches the board banner',
-          banH.value === 'EDITED IN THE ORGANIZER', JSON.stringify(banH.value));
-        banH.value = banH.value + '!';
-        banH.dispatchEvent(new Event('input', { bubbles: true }));
-        t('so typing in the banner afterwards does not clobber it',
-          oSc.heading === 'EDITED IN THE ORGANIZER!', JSON.stringify(oSc.heading));
-        t('and the edit travels back the other way',
-          document.querySelector('.lib-scenes .sh-heading[data-scene="' + oSc.id + '"]').value ===
-          'EDITED IN THE ORGANIZER!', '');
-        oSc.heading = oWasH; oSc.description = oWasD;
-        SB.PersonaPanel.refreshScenes();
-        SB.Board.render();
-      }
-
-      // dropping on the lower half of a row means the slot AFTER it — without
-      // that a one-step drag downward did nothing and the last slot was
-      // unreachable
+      // moveScene inserts BEFORE the index it is given — dropping past a row
+      // has to mean the slot after it, or the last slot is unreachable. The
+      // organizer that exercised this by drag is gone; the semantics are the
+      // board's now, so they are held at the model.
       {
         var names = function () { return P().scenes.map(function (x) { return x.heading; }).join(','); };
         var wasOrder = P().scenes.slice();
         var wasHeads = P().scenes.map(function (x) { return x.heading; });
         while (P().scenes.length < 3) SB.Model.addScene(P());
         P().scenes[0].heading = 'A'; P().scenes[1].heading = 'B'; P().scenes[2].heading = 'C';
-        SB.PersonaPanel.refreshScenes();
-        var rows = document.querySelectorAll('.lib-scenes .sc-row');
-        var dropOn = function (row, lower) {
-          var r = row.getBoundingClientRect();
-          var dt = new DataTransfer();
-          dt.setData('text/sb-scene', P().scenes[0].id);
-          row.dispatchEvent(new DragEvent('drop', {
-            dataTransfer: dt, bubbles: true, cancelable: true,
-            clientY: r.top + (lower ? r.height * 0.8 : r.height * 0.2)
-          }));
-        };
-        dropOn(rows[1], true);
-        t('dragging a scene onto the lower half of the next row moves it past',
+        SB.Model.moveScene(P(), P().scenes[0].id, 2);
+        t('moving a scene one step down lands it past the next row',
           names() === 'B,A,C', names());
-        rows = document.querySelectorAll('.lib-scenes .sc-row');
-        var dt2 = new DataTransfer();
-        dt2.setData('text/sb-scene', P().scenes[1].id);
-        var lr = rows[2].getBoundingClientRect();
-        rows[2].dispatchEvent(new DragEvent('drop', {
-          dataTransfer: dt2, bubbles: true, cancelable: true, clientY: lr.top + lr.height * 0.8
-        }));
+        SB.Model.moveScene(P(), P().scenes[1].id, 3);
         t('and a scene can reach the last slot',
           names() === 'B,C,A', names());
+        SB.app.changed(true);
         t('the left navigator agrees',
           document.querySelectorAll('#sceneList .scene-item .ttl')[0].textContent === 'B',
           document.querySelectorAll('#sceneList .scene-item .ttl')[0].textContent);
@@ -2305,9 +2261,8 @@
         var asked = 0;
         var realConfirm = window.confirm;
         window.confirm = function () { asked++; return false; };
-        SB.PersonaPanel.refreshScenes();
-        document.querySelectorAll('.lib-scenes .sc-row')[P().scenes.length - 1]
-          .querySelector('.sc-meta .danger').click();
+        document.querySelector('.scene-block[data-scene="' + tSc.id + '"] .scene-actions .danger')
+          .click();
         window.confirm = realConfirm;
         t('deleting a tied but empty scene asks about its claim first',
           asked === 1 && P().scenes.length === tScenes, asked + ' asked, ' + P().scenes.length + ' left');

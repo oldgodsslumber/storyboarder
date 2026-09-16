@@ -1,19 +1,16 @@
 /* personapanel.js — the reference library.
  *
- * A full-page takeover holding the two things that are true of the whole board
+ * A full-page takeover holding the one thing that is true of the whole board
  * rather than of one card: every recurring subject (the cast, the locations,
- * the objects) and the scenes in the order they play. Both are answers to
- * "what is this film made of", which is a question you ask with your head up,
- * away from the cards — so it gets the whole window rather than a 320px column
- * squeezed in beside the board.
+ * the objects). It is an answer to "what is this film made of", which is a
+ * question you ask with your head up, away from the cards — so it gets the
+ * whole window rather than a 320px column squeezed in beside the board.
  *
- * The scenes here are deliberately shot-free: this is the shape of the film,
- * not its contents. Shots have a board.
+ * Scenes live on the board, which has a list of its own.
  */
 (function (SB) {
   'use strict';
 
-  const SPLIT_KEY = 'sb.library.split';
   const SIZE_KEY = 'sb.library.size';
 
   /* How big a reference reads at. Portrait subjects are stored at 270x480 at
@@ -30,7 +27,7 @@
   catch (e) { /* private mode */ }
 
   let root = null;          // the overlay, while it is open
-  let refsEl, scenesEl, statusEl, searchEl, tabsEl, sizeEl;
+  let refsEl, statusEl, searchEl, tabsEl, sizeEl;
   let filter = 'all';       // which kind the library is showing
   let query = '';
   let targetId = null;      // the subject a paste would land on
@@ -73,25 +70,14 @@
 
     lib.appendChild(head());
 
-    const split = SB.el('div', 'lib-split');
     refsEl = SB.el('section', 'lib-refs');
-    scenesEl = SB.el('section', 'lib-scenes');
-    const divider = SB.el('div', 'lib-divider');
-    divider.title = 'Drag to give more room to either half';
-    split.appendChild(refsEl);
-    split.appendChild(divider);
-    split.appendChild(scenesEl);
-    lib.appendChild(split);
-    dragDivider(divider, refsEl);
+    lib.appendChild(refsEl);
 
     root.appendChild(lib);
     root.addEventListener('mousedown', function (ev) { if (ev.target === root) close(); });
     document.addEventListener('keydown', onKey);
     document.getElementById('modalRoot').appendChild(root);
     document.getElementById('btnPersonas').classList.add('on');
-
-    const saved = parseFloat(localStorage.getItem(SPLIT_KEY) || '');
-    if (saved > 20 && saved < 90) refsEl.style.flexBasis = saved + '%';
 
     render();
     if (searchEl) searchEl.focus();
@@ -109,7 +95,7 @@
     if (!root) return;
     root.remove();
     root = null;
-    refsEl = scenesEl = statusEl = searchEl = null;
+    refsEl = statusEl = searchEl = null;
     document.removeEventListener('keydown', onKey);
     document.getElementById('btnPersonas').classList.remove('on');
   }
@@ -117,30 +103,9 @@
   function toggle() { root ? close() : open(); }
   function isOpen() { return !!root; }
   function refresh() { if (root) render(); }
-  function refreshScenes() { if (root) renderScenes(); }
-  /* Just the library half — so something minted while typing in the scene
-     organizer appears without rebuilding the box being typed into. */
+  /* Just the library grid — so something minted while typing elsewhere
+     appears without rebuilding the box being typed into. */
   function refreshRefs() { if (root) renderRefs(); }
-
-  /* The divider writes a percentage rather than pixels, so the split survives
-   * the window being resized between sessions. */
-  function dragDivider(divider, upper) {
-    divider.addEventListener('mousedown', function (ev) {
-      ev.preventDefault();
-      const box = divider.parentNode.getBoundingClientRect();
-      const move = function (m) {
-        const pct = SB.clamp((m.clientY - box.top) / box.height * 100, 22, 88);
-        upper.style.flexBasis = pct + '%';
-      };
-      const up = function () {
-        document.removeEventListener('mousemove', move);
-        document.removeEventListener('mouseup', up);
-        try { localStorage.setItem(SPLIT_KEY, parseFloat(upper.style.flexBasis)); } catch (e) { /* private mode */ }
-      };
-      document.addEventListener('mousemove', move);
-      document.addEventListener('mouseup', up);
-    });
-  }
 
   function head() {
     const h = SB.el('header', 'lib-head');
@@ -308,7 +273,6 @@
   function renderNow() {
     if (!root || !P()) return;
     renderRefs();
-    renderScenes();
   }
 
   /* A board-wide sweep for descriptions that still carry a wardrobe. It lives
@@ -869,175 +833,6 @@
     SB.toast('Added to ' + (per.name || 'that subject'));
   }
 
-  /* --------------------------------------------------------------- scenes */
-
-  /* The shape of the film. Headings and descriptions, in order, with no shots
-   * under them — the board is where shots live, and putting them here would
-   * make this a second board instead of a way to see the whole thing at once. */
-  function renderScenes() {
-    if (!scenesEl || !P()) return;
-    const p = P();
-    /* This is called from under the user's hands — a generate finishing, an
-       undo — so where the caret was is remembered across the rebuild. */
-    const act = document.activeElement;
-    const keep = (act && scenesEl.contains(act) && act.dataset && act.dataset.scene)
-      ? { scene: act.dataset.scene, cls: act.className, at: act.selectionStart, to: act.selectionEnd }
-      : null;
-    scenesEl.innerHTML = '';
-
-    const h = SB.el('div', 'lib-section-head');
-    h.appendChild(SB.el('span', 't', 'Scenes'));
-    h.appendChild(SB.el('span', 'n', String(p.scenes.length)));
-    h.appendChild(SB.el('span', 'spacer'));
-    const add = SB.el('button', 'tb', '+ Scene');
-    add.onclick = function () {
-      const sc = SB.Model.addScene(p);
-      SB.app.selectedSceneId = sc.id;
-      SB.app.changed(true);
-      renderScenes();
-      const el = scenesEl.querySelector('.sc-row[data-id="' + sc.id + '"] .sh-heading');
-      if (el) { el.focus(); el.select(); }
-    };
-    h.appendChild(add);
-    scenesEl.appendChild(h);
-
-    const list = SB.el('div', 'sc-list');
-    p.scenes.forEach(function (sc, i) { list.appendChild(sceneRow(sc, i)); });
-    scenesEl.appendChild(list);
-    scenesEl.appendChild(SB.el('div', 'pp-note',
-      'Drag a scene by its handle to reorder the film. Shots stay with their scene.'));
-
-    if (keep) {
-      const back = scenesEl.querySelector(
-        '[data-scene="' + keep.scene + '"].' + keep.cls.split(' ').join('.'));
-      if (back) {
-        back.focus();
-        try { back.setSelectionRange(keep.at, keep.to); } catch (e) { /* not a text box */ }
-      }
-    }
-  }
-
-  function sceneRow(sc, idx) {
-    const p = P();
-    const row = SB.el('div', 'sc-row' + (SB.app.selectedSceneId === sc.id ? ' sel' : ''));
-    row.dataset.id = sc.id;
-
-    const grip = SB.el('div', 'sc-grip', '⠿');
-    grip.title = 'Drag to reorder';
-    grip.draggable = true;
-    grip.addEventListener('dragstart', function (ev) {
-      ev.dataTransfer.setData('text/sb-scene', sc.id);
-      ev.dataTransfer.effectAllowed = 'move';
-      row.classList.add('dragging');
-    });
-    grip.addEventListener('dragend', function () { row.classList.remove('dragging'); });
-    row.appendChild(grip);
-
-    row.addEventListener('dragover', function (ev) {
-      if (ev.dataTransfer.types.indexOf('text/sb-scene') < 0) return;
-      ev.preventDefault();
-      row.classList.add('drag-over');
-    });
-    row.addEventListener('dragleave', function () { row.classList.remove('drag-over'); });
-    row.addEventListener('drop', function (ev) {
-      row.classList.remove('drag-over');
-      const id = ev.dataTransfer.getData('text/sb-scene');
-      if (!id || id === sc.id) return;
-      ev.preventDefault();
-      /* moveScene inserts BEFORE the index it is given, so dropping on the
-         lower half of a row has to mean the slot after it — without this you
-         could never drag a scene to the end, and a one-step drag downward
-         quietly did nothing at all. */
-      const r = row.getBoundingClientRect();
-      const after = ev.clientY > r.top + r.height / 2;
-      SB.Model.moveScene(p, id, after ? idx + 1 : idx);
-      SB.app.changed(true);
-      renderScenes();
-      SB.Board.renderSceneList();
-    });
-
-    const num = SB.el('div', 'sc-num', String(idx + 1));
-    row.appendChild(num);
-
-    const fields = SB.el('div', 'sc-fields');
-    const hd = document.createElement('input');
-    hd.type = 'text';
-    hd.className = 'sh-heading';
-    hd.value = sc.heading || '';
-    hd.placeholder = 'Untitled scene — what happens here';
-    hd.dataset.scene = sc.id;
-    hd.addEventListener('input', function () {
-      sc.heading = hd.value;
-      SB.app.changed(false);
-      SB.Board.renderSceneList();
-      SB.Board.syncSceneFields(sc.id);
-    });
-    fields.appendChild(hd);
-
-    const d = SB.el('div', 'sh-desc');
-    d.dataset.scene = sc.id;
-    SB.RefBox.attach(d, {
-      get: function () { return sc.description || ''; },
-      set: function (t) {
-        sc.description = t;
-        SB.app.changed(false);
-        SB.Board.syncSceneFields(sc.id);
-      },
-      placeholder: 'Scene description — what happens here, in prose.',
-      ctx: { scene: sc }
-    });
-    fields.appendChild(d);
-    fields.appendChild(SB.Board.sceneAi(sc, d));
-    row.appendChild(fields);
-
-    /* The only nod to shots: how many, and whether the scene claims a section
-       of the script. Both are answers about the scene, not about its contents. */
-    const meta = SB.el('div', 'sc-meta');
-    const claim = sc.link && !sc.broken ? 'section'
-      : (sc.broken ? 'section broken' : (sc.local ? 'own section' : 'untied'));
-    const go = SB.el('button', 'mini', sc.shots.length +
-      (sc.shots.length === 1 ? ' shot' : ' shots'));
-    go.title = 'Show this scene on the board';
-    go.onclick = function () {
-      close();
-      SB.app.selectedSceneId = sc.id;
-      SB.Board.renderSceneList();
-      const blk = document.querySelector('.scene-block[data-scene="' + sc.id + '"]');
-      if (blk) blk.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    };
-    meta.appendChild(go);
-    const claimEl = SB.el('div', 'sc-claim' + (sc.broken ? ' broken' : ''), claim);
-    claimEl.title = sc.broken
-      ? 'This scene claimed a stretch of the master script, and the text it pointed at has moved.'
-      : (sc.link || sc.local
-        ? 'This scene claims a stretch of the master script.'
-        : 'This scene claims no part of the master script — which is normal. ' +
-          'Claiming one is a deliberate act: select the text in the Script panel and Capture.');
-    meta.appendChild(claimEl);
-
-    const del = SB.el('button', 'mini danger', '✕');
-    del.title = 'Delete this scene';
-    del.onclick = function () {
-      if (p.scenes.length < 2) { SB.toast('A board keeps at least one scene', true); return; }
-      /* The claim on the script is worth as much as the cards are, and it is
-         the thing you cannot see from here — so it is asked about too. */
-      const what = [];
-      if (sc.shots.length) what.push(sc.shots.length + ' shot' + (sc.shots.length === 1 ? '' : 's'));
-      if (SB.Model.sceneTied(sc)) what.push('its claim on the script');
-      if (what.length && !confirm('Delete “' + (sc.heading || 'this scene') + '” and ' +
-        what.join(' and ') + '?')) return;
-      SB.Model.deleteScene(p, sc.id);
-      SB.Board.forgetScene(sc.id);
-      SB.app.changed(true);
-      renderScenes();
-      SB.Board.renderSceneList();
-    };
-    meta.appendChild(del);
-    row.appendChild(meta);
-
-    return row;
-  }
-
   /* ---------------------------------------------------------------- utils */
 
   /* How many descriptions carry a mark for this subject — they do not break
@@ -1075,7 +870,7 @@
 
   SB.PersonaPanel = {
     init: init, open: open, close: close, toggle: toggle, isOpen: isOpen,
-    refresh: refresh, refreshScenes: refreshScenes, refreshRefs: refreshRefs,
+    refresh: refresh, refreshRefs: refreshRefs,
     pasteImage: pasteImage
   };
 
