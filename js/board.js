@@ -1490,10 +1490,10 @@
       nudge.title = 'This description reads as somebody turning up partway through, but ' +
         'everyone here is marked as being present when it opens — so they will all be ' +
         'drawn into the first frame. Mark whoever arrives with the ◉ beside them on the ' +
-        'first-frame lane in Prompts.';
+        'first-frame lane in Create.';
       nudge.onclick = function (ev) {
         ev.stopPropagation();
-        SB.toast('Prompts → the first-frame lane: ◉ beside whoever arrives');
+        SB.toast('Create → the first-frame lane: ◉ beside whoever arrives');
       };
       row.appendChild(nudge);
     }

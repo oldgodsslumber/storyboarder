@@ -55,7 +55,7 @@ words "Failed to fetch" — and none of them is the server saying no:
 
 ### Making the picture: ImagineArt
 
-The Prompts panel writes the prompt and now also sends it. Each prompt cell has a **▶
+The Create panel writes the prompt and now also sends it. Each prompt cell has a **▶
 render** (first frame) or **▶ shoot** (clip) beside `copy` and `✦ generate`. One press is
 one generation — nothing is batched, nothing fires on its own.
 
@@ -193,7 +193,7 @@ A card holds a still *and*, optionally, a clip — the still is what the board d
 prints; the clip is the motion made from it.
 
 - **Telling them apart:** every card carries one clip control in the top-left of the frame —
-  `▷ 2s` when it has a clip, a quiet `▷` when it does not. The Prompts panel's video column
+  `▷ 2s` when it has a clip, a quiet `▷` when it does not. The Create panel's video column
   opens the same thing, and **Settings → General** counts clips separately from stills
   because they are the heavy thing in a board.
 - **Reviewing one:** click it. The review plays the clip and says what it is — length,
@@ -517,15 +517,15 @@ see isn't much use. Each field also gets a template placeholder shown next to it
 `{{FIELDS}}` for all of them at once. If a model template doesn't place a field itself, the
 filled-in ones are appended to that request automatically rather than being dropped.
 
-## Comment mode
+## Review mode
 
-Toggle **Comment mode** to add comments under a card and to draw over a frame. Ink is kept
+Toggle **Review** to add comments under a card and to draw over a frame. Ink is kept
 as a transparent PNG layer on top of the image, never baked into it. Comments and ink
 belong to the current version.
 
 ### Comments on the script
 
-Comment mode also opens the script. Select any part of it and press **+ Comment**:
+Review mode also opens the script. Select any part of it and press **+ Comment**:
 
 - Commented phrases are **underlined** in the script — captures are a background wash, so a
   line that is both still reads as both. Click a phrase to jump to its note, or a note to
@@ -557,7 +557,7 @@ unused; if a card still names something that cannot be found, the toast says how
 ## Prompt export
 
 A board is made one card at a time; prompts are written a whole film at a time. So
-**Prompts** (top bar) is a full-page **table** — one row per shot, four columns, of which the
+**Create** (top bar) is a full-page **table** — one row per shot, four columns, of which the
 last two are **lanes**: everything about the still in one, everything about the clip in the
 next, each read top to bottom in the order you work — *say it, see what goes with it, read
 what was written, act on it.*
@@ -679,7 +679,7 @@ The house style lives in **Settings → Brand style** and rides along with every
 app writes, as a system instruction on top of the per-model templates: the creative
 constraints, style guidance, camera and technical feel, environment, and overall mood.
 It is stored in the project file, so a board carries its own house style. The toggle is in
-the Prompts panel (*apply house style*) and in the Settings tab.
+the Create panel (*apply house style*) and in the Settings tab.
 
 The house style is only stored in the project file once you edit it. A board left on the
 stock text follows the app, so a correction to the style reaches every board that never

@@ -254,7 +254,7 @@
     headEl.appendChild(r1);
     headEl.appendChild(r2);
 
-    r1.appendChild(SB.el('h2', null, 'Prompts'));
+    r1.appendChild(SB.el('h2', null, 'Create'));
 
     const tabs = SB.el('div', 'lib-tabs');
     const all = allRows();

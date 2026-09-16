@@ -1320,7 +1320,7 @@ body.comment-mode .frame{cursor:crosshair}
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-09-16 13:27 · b6acb3c+";</script>
+<script>window.SB_BUILD = "2026-09-16 13:38 · e0a41ef+";</script>
 
 <div id="app">
 
@@ -1341,9 +1341,9 @@ body.comment-mode .frame{cursor:crosshair}
 
     <div class="tb-group">
       <button id="btnScript"  class="tb toggle">Script</button>
-      <button id="btnComment" class="tb toggle">Comment mode</button>
-      <button id="btnPersonas" class="tb toggle" title="The cast, the locations, the objects — and the scenes in order">References</button>
-      <button id="btnPrompts" class="tb toggle">Prompts</button>
+      <button id="btnComment" class="tb toggle">Review</button>
+      <button id="btnPersonas" class="tb toggle" title="The cast, the locations, the objects">References</button>
+      <button id="btnPrompts" class="tb toggle">Create</button>
     </div>
 
     <div class="tb-sep"></div>
@@ -2948,7 +2948,7 @@ window.SB = window.SB || {};
       if (status === 429) {
         SB.GeminiModels.markExhausted(mdl);
         err = new Error('Gemini 429 — daily/rate limit reached for ' + mdl +
-          '. Pick another model in the Prompts panel. (' + msg + ')');
+          '. Pick another model in the Create panel. (' + msg + ')');
       } else if (status === 404) {
         err = new Error('Gemini 404 — "' + mdl + '" is not available to this key. ' +
           'Settings → API → refresh the model list. (' + msg + ')');
@@ -7884,7 +7884,7 @@ window.SB = window.SB || {};
     return {
       short: 'no prompt yet',
       long: 'Nothing to send: write the ' + (role === 'image' ? 'first-frame' : 'video') +
-        ' prompt for ' + model.name + ' first, in the Prompts panel.'
+        ' prompt for ' + model.name + ' first, in the Create panel.'
     };
   }
 
@@ -14300,10 +14300,10 @@ window.SB = window.SB || {};
       nudge.title = 'This description reads as somebody turning up partway through, but ' +
         'everyone here is marked as being present when it opens — so they will all be ' +
         'drawn into the first frame. Mark whoever arrives with the ◉ beside them on the ' +
-        'first-frame lane in Prompts.';
+        'first-frame lane in Create.';
       nudge.onclick = function (ev) {
         ev.stopPropagation();
-        SB.toast('Prompts → the first-frame lane: ◉ beside whoever arrives');
+        SB.toast('Create → the first-frame lane: ◉ beside whoever arrives');
       };
       row.appendChild(nudge);
     }
@@ -17304,7 +17304,7 @@ window.SB = window.SB || {};
     headEl.appendChild(r1);
     headEl.appendChild(r2);
 
-    r1.appendChild(SB.el('h2', null, 'Prompts'));
+    r1.appendChild(SB.el('h2', null, 'Create'));
 
     const tabs = SB.el('div', 'lib-tabs');
     const all = allRows();
@@ -20248,7 +20248,7 @@ window.SB = window.SB || {};
     }
 
     panels.imagine.appendChild(SB.el('div', 'pp-note',
-      'Where a finished prompt goes when you press ▶ in the Prompts panel. One press is ' +
+      'Where a finished prompt goes when you press ▶ in the Create panel. One press is ' +
       'one generation — a still lands on the card like any other frame, a clip is kept in ' +
       'the board beside it.'));
 
@@ -20873,7 +20873,7 @@ window.SB = window.SB || {};
       'Stored in this browser only — never written into the .storyboard file, so a board can be shared without leaking the key.'));
     gemPanel.appendChild(SB.el('div', 'pp-note',
       'The free tier is counted per Google Cloud project per day. What this browser has spent ' +
-      'today is shown as “Free calls” in the Prompts panel.'));
+      'today is shown as “Free calls” in the Create panel.'));
 
     let chosenModel = p.settings.geminiModel || SB.GeminiModels.DEFAULT;
     const pick = SB.GeminiModels.picker(chosenModel, function (id) { chosenModel = id; });

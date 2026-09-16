@@ -88,7 +88,7 @@
       if (status === 429) {
         SB.GeminiModels.markExhausted(mdl);
         err = new Error('Gemini 429 — daily/rate limit reached for ' + mdl +
-          '. Pick another model in the Prompts panel. (' + msg + ')');
+          '. Pick another model in the Create panel. (' + msg + ')');
       } else if (status === 404) {
         err = new Error('Gemini 404 — "' + mdl + '" is not available to this key. ' +
           'Settings → API → refresh the model list. (' + msg + ')');

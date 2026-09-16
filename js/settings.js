@@ -540,7 +540,7 @@
     }
 
     panels.imagine.appendChild(SB.el('div', 'pp-note',
-      'Where a finished prompt goes when you press ▶ in the Prompts panel. One press is ' +
+      'Where a finished prompt goes when you press ▶ in the Create panel. One press is ' +
       'one generation — a still lands on the card like any other frame, a clip is kept in ' +
       'the board beside it.'));
 
@@ -1165,7 +1165,7 @@
       'Stored in this browser only — never written into the .storyboard file, so a board can be shared without leaking the key.'));
     gemPanel.appendChild(SB.el('div', 'pp-note',
       'The free tier is counted per Google Cloud project per day. What this browser has spent ' +
-      'today is shown as “Free calls” in the Prompts panel.'));
+      'today is shown as “Free calls” in the Create panel.'));
 
     let chosenModel = p.settings.geminiModel || SB.GeminiModels.DEFAULT;
     const pick = SB.GeminiModels.picker(chosenModel, function (id) { chosenModel = id; });

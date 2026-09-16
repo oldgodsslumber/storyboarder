@@ -3244,7 +3244,7 @@
     return {
       short: 'no prompt yet',
       long: 'Nothing to send: write the ' + (role === 'image' ? 'first-frame' : 'video') +
-        ' prompt for ' + model.name + ' first, in the Prompts panel.'
+        ' prompt for ' + model.name + ' first, in the Create panel.'
     };
   }
 

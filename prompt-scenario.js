@@ -418,7 +418,7 @@
       await SB.Prompts.generateFor(shots.b, { image: true })
         .catch(function (e) { msg429 = e.message; });
       t('a 429 says which model ran out and what to do',
-        /daily\/rate limit/i.test(msg429) && /Prompts panel/.test(msg429), msg429);
+        /daily\/rate limit/i.test(msg429) && /Create panel/.test(msg429), msg429);
       t('a 429 marks the model spent for the day',
         SB.GeminiModels.count(P().settings.geminiModel) > before,
         before + ' -> ' + SB.GeminiModels.count(P().settings.geminiModel));
