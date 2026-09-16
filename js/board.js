@@ -244,7 +244,7 @@
   /* ---------------- where a drop lands ----------------
    *
    * Only the cards and the scene rows themselves ever answered this. A drop
-   * anywhere else - the gap between two cards, a scene-break marker, the add
+   * anywhere else - the gap between two cards, the add
    * button, the padding above the first scene, the empty space below the last
    * one - meant "put it at the end", or nothing at all. Which is why the ends
    * were the unreliable part: aiming just outside the first card is the
@@ -870,10 +870,6 @@
     const shots = SB.el('div', 'shots');
     shots.dataset.scene = sc.id;
     sc.shots.forEach(function (sh, sj) {
-      /* A break between two cards: everything from the right-hand card on
-       * becomes a new scene. A Premiere import arrives as one long scene of
-       * cuts, and this is how it gets carved up. */
-      if (sj > 0) shots.appendChild(sceneBreak(sc, sj));
       shots.appendChild(card(sh, sc, si, sj));
     });
 
@@ -984,24 +980,6 @@
         });
       });
     });
-  }
-
-  /* ---------------- a scene break between two cards ---------------- */
-
-  function sceneBreak(sc, idx) {
-    const b = SB.el('div', 'scene-break');
-    b.title = 'Start a new scene here — this card and the ones after it move into it';
-    b.appendChild(SB.el('span', 'scene-break-label', 'new scene'));
-    b.onclick = function (ev) {
-      ev.stopPropagation();
-      const made = SB.Model.splitSceneAt(P(), sc.id, idx);
-      if (!made) return;
-      SB.app.selectedSceneId = made.id;
-      SB.app.changed(true);
-      SB.toast('Split into a new scene — ' + made.shots.length +
-        ' card' + (made.shots.length === 1 ? '' : 's') + ' moved');
-    };
-    return b;
   }
 
   /* ---------------- what you can do to a group ---------------- */

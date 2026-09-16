@@ -1799,7 +1799,7 @@ console.log('\n— old boards migrate, and versions stop duplicating frames —'
   eq(B.has(p, junk), false, 'an image nothing points at is collected');
 }
 
-console.log('\n— breaking one long scene into several —');
+console.log('\n— carving a scene out of a selection —');
 {
   /* what a Premiere import looks like: every cut in one scene */
   const p = SB.Model.newProject();
@@ -1814,26 +1814,15 @@ console.log('\n— breaking one long scene into several —');
   }
   eq(p.scenes.length, 1, 'it arrives as one scene');
 
-  const made = SB.Model.splitSceneAt(p, sc.id, 3);
-  eq(!!made, true, 'a break between two cards makes a scene');
-  eq(p.scenes.length, 2, 'there are now two');
-  eq(p.scenes[0].shots.length, 3, 'the cards before the break stay put');
-  eq(p.scenes[1].shots.length, 3, 'the ones after it move across');
-  eq(p.scenes[1].shots[0].description, 'cut 4', 'starting with the card you broke at');
-  eq(SB.Model.findShot(p, ids[3]).code, '2A', 'and it renumbers');
-  eq(SB.Model.findShot(p, ids[2]).code, '1C', 'on both sides');
-
-  eq(SB.Model.splitSceneAt(p, sc.id, 0), null, 'breaking before the first card does nothing');
-  eq(SB.Model.splitSceneAt(p, sc.id, 3), null, 'nor does breaking past the last');
-  eq(p.scenes.length, 2, 'so no empty scenes appear');
-
-  /* the same again from a selection */
-  const picked = [p.scenes[1].shots[1].id, p.scenes[1].shots[2].id];
+  const picked = [ids[3], ids[4]];
   const s2 = SB.Model.sceneFromShots(p, picked);
   eq(!!s2, true, 'a group of cards can become a scene');
+  eq(p.scenes.length, 2, 'there are now two');
   eq(s2.shots.length, 2, 'holding just those cards');
-  eq(SB.Model.findShot(p, picked[0]).code, '3A', 'renumbered where they landed');
-  eq(p.scenes[1].shots.length, 1, 'and taken out of the scene they came from');
+  eq(s2.shots[0].description, 'cut 4', 'starting with the first card picked');
+  eq(SB.Model.findShot(p, picked[0]).code, '2A', 'renumbered where they landed');
+  eq(SB.Model.findShot(p, ids[2]).code, '1C', 'on both sides');
+  eq(p.scenes[0].shots.length, 4, 'and taken out of the scene they came from');
 
   /* selection order follows the board, not the order they were clicked */
   const p2 = SB.Model.newProject();

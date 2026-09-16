@@ -238,26 +238,6 @@ button,input,select,textarea{font:inherit;color:inherit}
 }
 body.marquee-on{user-select:none;cursor:crosshair}
 
-/* a break between two cards: click to start a new scene there */
-/* Fixed width: widening it on hover would shove every card sideways just for
-   pointing at the gap. The label floats over the neighbours instead. */
-.scene-break{
-  flex:0 0 14px;align-self:stretch;min-height:80px;
-  display:flex;align-items:center;justify-content:center;cursor:pointer;
-  margin:0 -7px;position:relative;z-index:3;
-}
-.scene-break::before{
-  content:"";width:3px;height:100%;border-radius:3px;background:transparent;transition:background .12s;
-}
-.scene-break:hover::before{background:var(--accent2)}
-.scene-break-label{
-  position:absolute;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;
-  color:var(--on-accent);background:var(--accent2);border-radius:9px;padding:3px 9px;
-  white-space:nowrap;opacity:0;transition:opacity .12s;pointer-events:none;
-  box-shadow:0 2px 8px var(--shadow);
-}
-.scene-break:hover .scene-break-label{opacity:1}
-
 /* what you can do to a group of cards */
 .sel-bar-wrap{
   position:sticky;bottom:0;z-index:8;display:flex;justify-content:center;
@@ -1340,7 +1320,7 @@ body.comment-mode .frame{cursor:crosshair}
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-09-16 13:20 · fd1c617+";</script>
+<script>window.SB_BUILD = "2026-09-16 13:27 · b6acb3c+";</script>
 
 <div id="app">
 
@@ -11107,21 +11087,6 @@ window.SB = window.SB || {};
     p.updatedAt = Date.now();
   }
 
-  /* Start a new scene at a card: that card and everything after it in the
-   * scene move into a fresh scene inserted straight after. This is how a
-   * Premiere import — one long scene of cuts — gets broken into scenes. */
-  function splitSceneAt(p, sceneId, idx) {
-    const f = findScene(p, sceneId);
-    if (!f) return null;
-    if (idx <= 0 || idx >= f.scene.shots.length) return null;   // nothing to move
-    const moved = f.scene.shots.splice(idx);
-    const sc = newScene();
-    sc.shots = moved;
-    p.scenes.splice(f.idx + 1, 0, sc);
-    p.updatedAt = Date.now();
-    return sc;
-  }
-
   /* Gather the given shots into a scene of their own, after the scene the
    * first of them is in. */
   function sceneFromShots(p, ids) {
@@ -11215,7 +11180,7 @@ window.SB = window.SB || {};
     scriptComments: scriptComments, commentCoverage: commentCoverage,
     addScene: addScene, deleteScene: deleteScene, addShot: addShot, deleteShot: deleteShot,
     moveShot: moveShot, moveShots: moveShots, moveScene: moveScene,
-    splitSceneAt: splitSceneAt, sceneFromShots: sceneFromShots,
+    sceneFromShots: sceneFromShots,
     swapShotContent: swapShotContent, CONTENT_KEYS: CONTENT_KEYS, described: described,
     duplicateShot: duplicateShot,
     modelById: modelById, imageModel: imageModel, videoModel: videoModel, firstOfKind: firstOfKind,
@@ -13089,7 +13054,7 @@ window.SB = window.SB || {};
   /* ---------------- where a drop lands ----------------
    *
    * Only the cards and the scene rows themselves ever answered this. A drop
-   * anywhere else - the gap between two cards, a scene-break marker, the add
+   * anywhere else - the gap between two cards, the add
    * button, the padding above the first scene, the empty space below the last
    * one - meant "put it at the end", or nothing at all. Which is why the ends
    * were the unreliable part: aiming just outside the first card is the
@@ -13715,10 +13680,6 @@ window.SB = window.SB || {};
     const shots = SB.el('div', 'shots');
     shots.dataset.scene = sc.id;
     sc.shots.forEach(function (sh, sj) {
-      /* A break between two cards: everything from the right-hand card on
-       * becomes a new scene. A Premiere import arrives as one long scene of
-       * cuts, and this is how it gets carved up. */
-      if (sj > 0) shots.appendChild(sceneBreak(sc, sj));
       shots.appendChild(card(sh, sc, si, sj));
     });
 
@@ -13829,24 +13790,6 @@ window.SB = window.SB || {};
         });
       });
     });
-  }
-
-  /* ---------------- a scene break between two cards ---------------- */
-
-  function sceneBreak(sc, idx) {
-    const b = SB.el('div', 'scene-break');
-    b.title = 'Start a new scene here — this card and the ones after it move into it';
-    b.appendChild(SB.el('span', 'scene-break-label', 'new scene'));
-    b.onclick = function (ev) {
-      ev.stopPropagation();
-      const made = SB.Model.splitSceneAt(P(), sc.id, idx);
-      if (!made) return;
-      SB.app.selectedSceneId = made.id;
-      SB.app.changed(true);
-      SB.toast('Split into a new scene — ' + made.shots.length +
-        ' card' + (made.shots.length === 1 ? '' : 's') + ' moved');
-    };
-    return b;
   }
 
   /* ---------------- what you can do to a group ---------------- */

@@ -2678,18 +2678,11 @@
         t('the bar goes away when nothing is selected',
           document.getElementById('selBar').classList.contains('hidden'), '');
 
-        /* the break between two cards */
-        const breaks = document.querySelectorAll('.scene-block[data-scene="' +
-          P().scenes[1].id + '"] .scene-break');
-        t('there is a break between each pair of cards', breaks.length === 3, breaks.length);
-        breaks[1].click();
-        t('clicking one starts a new scene there', P().scenes.length === 3, P().scenes.length);
-        t('with the cards from that point on',
-          P().scenes[2].shots.length === 2 && P().scenes[1].shots.length === 2,
-          P().scenes.map(function (s) { return s.shots.length; }).join('/'));
-        t('and everything renumbers',
-          SB.Model.findShot(P(), P().scenes[2].shots[0].id).code === '3A',
-          SB.Model.findShot(P(), P().scenes[2].shots[0].id).code);
+        /* the break-between-cards control is gone — the lasso plus "New scene
+           from these" is the way a long scene gets carved up now */
+        t('no scene-break control sits between the cards',
+          document.querySelectorAll('.scene-break').length === 0,
+          document.querySelectorAll('.scene-break').length);
 
         /* dragging one of a group takes the group */
         const wasFirst = P().scenes[0].shots.length;

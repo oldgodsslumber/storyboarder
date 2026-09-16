@@ -1448,21 +1448,6 @@
     p.updatedAt = Date.now();
   }
 
-  /* Start a new scene at a card: that card and everything after it in the
-   * scene move into a fresh scene inserted straight after. This is how a
-   * Premiere import — one long scene of cuts — gets broken into scenes. */
-  function splitSceneAt(p, sceneId, idx) {
-    const f = findScene(p, sceneId);
-    if (!f) return null;
-    if (idx <= 0 || idx >= f.scene.shots.length) return null;   // nothing to move
-    const moved = f.scene.shots.splice(idx);
-    const sc = newScene();
-    sc.shots = moved;
-    p.scenes.splice(f.idx + 1, 0, sc);
-    p.updatedAt = Date.now();
-    return sc;
-  }
-
   /* Gather the given shots into a scene of their own, after the scene the
    * first of them is in. */
   function sceneFromShots(p, ids) {
@@ -1556,7 +1541,7 @@
     scriptComments: scriptComments, commentCoverage: commentCoverage,
     addScene: addScene, deleteScene: deleteScene, addShot: addShot, deleteShot: deleteShot,
     moveShot: moveShot, moveShots: moveShots, moveScene: moveScene,
-    splitSceneAt: splitSceneAt, sceneFromShots: sceneFromShots,
+    sceneFromShots: sceneFromShots,
     swapShotContent: swapShotContent, CONTENT_KEYS: CONTENT_KEYS, described: described,
     duplicateShot: duplicateShot,
     modelById: modelById, imageModel: imageModel, videoModel: videoModel, firstOfKind: firstOfKind,
