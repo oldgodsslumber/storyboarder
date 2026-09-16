@@ -2791,6 +2791,24 @@
         document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
         t('nor does one on the scene banner', !document.querySelector('.marquee'), '');
         SB.Board.clearSelection();
+
+        /* the add-shot ghost card looks like empty space, so a drag from it
+           lassos — while a plain click on it still adds a shot */
+        var addBtn = document.querySelector('.shots[data-scene="' + sc.id + '"] + .add-shot') ||
+          document.querySelector('.scene-block[data-scene="' + sc.id + '"] .add-shot');
+        var wasShots = sc.shots.length;
+        addBtn.dispatchEvent(new MouseEvent('mousedown', {
+          bubbles: true, button: 0, buttons: 1, clientX: ra.left - 3, clientY: ra.top - 3
+        }));
+        document.dispatchEvent(new MouseEvent('mousemove', {
+          bubbles: true, buttons: 1, clientX: rb.left + 8, clientY: rb.top + 8
+        }));
+        t('a drag from the add-shot ghost card lassos',
+          !!document.querySelector('.marquee') && SB.Board.selection().length === 2,
+          SB.Board.selection().join());
+        document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+        t('and adds no shot', sc.shots.length === wasShots, sc.shots.length);
+        SB.Board.clearSelection();
         panelEl.scrollTop = wasScroll;
       })();
 

@@ -113,18 +113,24 @@
          label is text someone may want to drag-select), not the selection
          bar (a slipped press there must not wipe the very selection the bar
          operates on), not anything typed in or clicked. */
-      if (ev.target.closest('.card, .scene-head, .sel-bar, button, select, input, textarea, [contenteditable]')) return;
+      if (ev.target.closest('.card, .scene-head, .sel-bar, select, input, textarea, [contenteditable]')) return;
+      /* Buttons keep their clicks — except the add-shot ghost card, which is
+         the biggest empty-LOOKING surface on the board and the natural place
+         to start a lasso. A click on it still adds a shot; a drag from it is
+         somebody selecting. */
+      const btn = ev.target.closest('button');
+      if (btn && !btn.classList.contains('add-shot')) return;
       /* The scrollbar gutter is part of the panel but not of the board: a
          thumb drag delivers mousedown and then swallows the mouseup, which
          would leave a phantom lasso armed. */
       const pr = panel.getBoundingClientRect();
       if (ev.clientX - pr.left >= panel.clientWidth ||
           ev.clientY - pr.top >= panel.clientHeight) return;
-      marquee(panel, ev);
+      marquee(panel, ev, btn);
     });
   }
 
-  function marquee(panel, ev) {
+  function marquee(panel, ev, fromBtn) {
     /* The anchor lives in CONTENT coordinates, so scrolling under the drag
        stretches the rectangle instead of carrying it along — which is also
        what lets it keep selecting cards that have gone off screen. */
@@ -220,7 +226,22 @@
       document.removeEventListener('mouseup', up);
       panel.removeEventListener('scroll', onScroll);
       if (timer) clearInterval(timer);
-      if (box) { box.remove(); document.body.classList.remove('marquee-on'); }
+      if (box) {
+        box.remove();
+        document.body.classList.remove('marquee-on');
+        /* A drag that began on the add button must not also BE a click on
+           it — releasing back over the button would otherwise add a shot
+           on top of the selection just made. Scoped to the button: a click
+           anywhere else is none of this gesture's business. */
+        if (fromBtn) {
+          const swallow = function (e) {
+            e.stopPropagation(); e.preventDefault();
+            fromBtn.removeEventListener('click', swallow, true);
+          };
+          fromBtn.addEventListener('click', swallow, true);
+          setTimeout(function () { fromBtn.removeEventListener('click', swallow, true); }, 0);
+        }
+      }
       /* below the threshold nothing was drawn, and the plain click has
          already had its old meaning */
     };
