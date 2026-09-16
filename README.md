@@ -472,15 +472,15 @@ With more than one selected, a bar appears at the foot of the board: **new scene
 the group moves the whole group — into another scene, onto a scene in the left list, or to a
 new position — keeping the order they had on the board.
 
-### Starting a new scene between two cards
+### Starting a new scene from cards
 
-Hover the gap between any two cards and a **new scene** marker appears; click it and that
-card and everything after it in the scene move into a fresh scene inserted straight after.
-Everything renumbers.
+Select the cards that belong together — a click-drag lasso on empty board space, or the
+click shortcuts above — and press **new scene from these** on the selection bar. The cards
+move into a fresh scene inserted after the one the first of them was in, and everything
+renumbers.
 
-This is the tool for a **Premiere import**, which arrives as one long scene of cuts: walk the
-board, click the gap wherever the scene changes. The alternative for scattered cards is to
-select them (above) and use **new scene from these**.
+This is the tool for a **Premiere import**, which arrives as one long scene of cuts: lasso
+each run of cards where the scene changes.
 
 ### Swapping two shots
 
@@ -850,15 +850,6 @@ reference now.
 If the source has not been rendered yet, the card says so instead of feeding nothing; if it
 has been deleted, the mark goes dotted red and the strip says the reference is gone.
 
-### The scene organizer
-
-The lower half of the takeover lists every scene in order — number, heading, description,
-how many shots it holds and whether it claims a section of the script. **No shots are shown**:
-this is the shape of the film, and shots have a board. Drag a scene by its handle to
-reorder, click its shot count to jump to it, and the **✦ Rewrite** and **✦ Generate shots**
-buttons are the same ones that live under the scene banner. Drag the divider to give either
-half more room; where you leave it is remembered.
-
 ### Who is in the first frame
 
 A shot description is usually a little story — *he writes at the desk; a moment later somebody
@@ -1043,7 +1034,7 @@ js/comments.js    comment list + ink layer
 js/brand.js       house style, scene context, gendered-language check
 js/personas.js    recurring people, places and things + reference-image wording
 js/fields.js      the extra card text boxes, per project
-js/personapanel.js the reference library + scene organizer
+js/personapanel.js the reference library
 js/renders.js     full-size originals and clips, kept in the file by serial
 js/exportpanel.js the way back out: files, a manifest, a shot list
 js/refs.js        marks, the feed, and the boundary a model reads

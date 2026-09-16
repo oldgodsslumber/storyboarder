@@ -2706,15 +2706,22 @@
         SB.Board.clearSelection();
         var sc = P().scenes[0];
         var aId = sc.shots[0].id, bId = sc.shots[1].id;
+        /* the gutter guard measures against the panel, so the cards this
+           sweeps over have to actually be inside it — and the scroll goes
+           back afterwards, because later tests aim drops by client rect */
+        var panelEl = document.getElementById('boardPanel');
+        var wasScroll = panelEl.scrollTop;
+        document.querySelector('.card[data-shot="' + aId + '"]')
+          .scrollIntoView({ block: 'center' });
         var ra = document.querySelector('.card[data-shot="' + aId + '"]').getBoundingClientRect();
         var rb = document.querySelector('.card[data-shot="' + bId + '"]').getBoundingClientRect();
         var shots = document.querySelector('.shots[data-scene="' + sc.id + '"]');
         var sweep = function (opts) {
           shots.dispatchEvent(new MouseEvent('mousedown', Object.assign({
-            bubbles: true, button: 0, clientX: ra.left - 3, clientY: ra.top - 3
+            bubbles: true, button: 0, buttons: 1, clientX: ra.left - 3, clientY: ra.top - 3
           }, opts || {})));
           document.dispatchEvent(new MouseEvent('mousemove', {
-            bubbles: true, clientX: rb.left + 8, clientY: rb.top + 8
+            bubbles: true, buttons: 1, clientX: rb.left + 8, clientY: rb.top + 8
           }));
         };
 
@@ -2740,15 +2747,51 @@
           SB.Board.selection().length === 3 && SB.Board.selection().indexOf(other) >= 0,
           SB.Board.selection().join());
 
+        /* a mouseup lost outside the window must not leave a ghost lasso:
+           the first move that arrives with no button down ends it */
+        sweep();
+        t('the lasso is live mid-drag', !!document.querySelector('.marquee'), '');
+        document.dispatchEvent(new MouseEvent('mousemove', {
+          bubbles: true, buttons: 0, clientX: rb.left + 20, clientY: rb.top + 20
+        }));
+        t('a move with the button released ends it',
+          !document.querySelector('.marquee') && !document.body.classList.contains('marquee-on'), '');
+
         /* below the threshold a click is still just a click */
         var board = document.getElementById('board');
         board.dispatchEvent(new MouseEvent('mousedown', {
-          bubbles: true, button: 0, clientX: 6, clientY: 6
+          bubbles: true, button: 0, buttons: 1, clientX: 6, clientY: 6
         }));
         document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
         t('a plain click on empty space still just clears',
           SB.Board.selection().length === 0 && !document.querySelector('.marquee'),
           SB.Board.selection().join());
+
+        /* pressing on the selection bar or a scene banner must not arm one */
+        SB.Board.select(aId);
+        SB.Board.select(bId, { ctrlKey: true });
+        var barEl = document.querySelector('#selBar .sel-bar');
+        barEl.dispatchEvent(new MouseEvent('mousedown', {
+          bubbles: true, button: 0, buttons: 1, clientX: 10, clientY: 10
+        }));
+        document.dispatchEvent(new MouseEvent('mousemove', {
+          bubbles: true, buttons: 1, clientX: rb.left + 8, clientY: rb.top + 8
+        }));
+        document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+        t('a slipped press on the selection bar does not lasso',
+          !document.querySelector('.marquee') && SB.Board.selection().length === 2,
+          SB.Board.selection().join());
+        var bannerEl = document.querySelector('.scene-head');
+        bannerEl.dispatchEvent(new MouseEvent('mousedown', {
+          bubbles: true, button: 0, buttons: 1, clientX: 10, clientY: 10
+        }));
+        document.dispatchEvent(new MouseEvent('mousemove', {
+          bubbles: true, buttons: 1, clientX: rb.left + 8, clientY: rb.top + 8
+        }));
+        document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+        t('nor does one on the scene banner', !document.querySelector('.marquee'), '');
+        SB.Board.clearSelection();
+        panelEl.scrollTop = wasScroll;
       })();
 
       // swapping two shots without moving the dialogue

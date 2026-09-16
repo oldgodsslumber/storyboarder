@@ -109,7 +109,17 @@
     B.marqueeBound = true;
     panel.addEventListener('mousedown', function (ev) {
       if (ev.button !== 0) return;
-      if (ev.target.closest('.card, button, select, input, textarea, [contenteditable]')) return;
+      /* Only genuinely empty space: not a card, not the scene banner (its
+         label is text someone may want to drag-select), not the selection
+         bar (a slipped press there must not wipe the very selection the bar
+         operates on), not anything typed in or clicked. */
+      if (ev.target.closest('.card, .scene-head, .sel-bar, button, select, input, textarea, [contenteditable]')) return;
+      /* The scrollbar gutter is part of the panel but not of the board: a
+         thumb drag delivers mousedown and then swallows the mouseup, which
+         would leave a phantom lasso armed. */
+      const pr = panel.getBoundingClientRect();
+      if (ev.clientX - pr.left >= panel.clientWidth ||
+          ev.clientY - pr.top >= panel.clientHeight) return;
       marquee(panel, ev);
     });
   }
@@ -179,6 +189,11 @@
     };
 
     const move = function (m) {
+      /* A mouseup outside the window is never delivered — a move arriving
+         with the left button no longer down IS that missed mouseup. Without
+         this the box came back as a ghost that followed the cursor and kept
+         rewriting the selection until the next click. */
+      if (!(m.buttons & 1)) { up(); return; }
       at.x = m.clientX; at.y = m.clientY;
       if (!box) {
         if (Math.abs(at.x - (anchor.x - panel.scrollLeft)) < 4 &&
@@ -198,7 +213,9 @@
 
     const onScroll = function () { if (box) { draw(); apply(); } };
 
-    const up = function () {
+    const up = function (e) {
+      /* releasing the right button mid-lasso is not the end of the lasso */
+      if (e && e.button !== 0) return;
       document.removeEventListener('mousemove', move);
       document.removeEventListener('mouseup', up);
       panel.removeEventListener('scroll', onScroll);
@@ -2129,10 +2146,8 @@
 
   SB.Board = {
     render: render,
-    sceneAi: sceneAi,
     syncSceneFields: syncSceneFields,
     syncSceneAi: syncSceneAi,
-    forgetScene: function (id) { delete AI[id]; },
     renderSceneList: renderSceneList, forgetOpenBoxes: forgetOpenBoxes,
     paintSelection: paintSelection,
     renderScriptWindows: renderScriptWindows,
