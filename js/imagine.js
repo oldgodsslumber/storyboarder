@@ -2061,13 +2061,30 @@
         });
       });
     };
+    /* restVideo appends canon.frame and nothing else — it has no field for a
+     * second picture. When arrivals were asked for, the prompt already names
+     * <Picture 2>, binds a subject to it and puts "reference generation" in
+     * the task types, so going through this door ships a request that
+     * describes photographs it did not send. The still lane has refused this
+     * for the same reason since the day it was written; the clip lane never
+     * learned to. */
+    const dropsExtra = !!(opts.extra && opts.extra.length);
     if (transport() === 'key') {
+      if (dropsExtra) {
+        return Promise.reject(new Error('An API-key push sends the first frame only, and ' +
+          'this clip was set to send ' + opts.extra.length + ' arrival picture' +
+          (opts.extra.length === 1 ? '' : 's') + ' the prompt refers to. Sign in to ' +
+          'ImagineArt to send them, or turn the arrival pictures off on this card.'));
+      }
       return viaRest().then(function (r) {
         if (!r) throw new Error('ImagineArt did not answer with a clip.');
         return r;
       });
     }
     return firstOf(viaMcp, function () {
+      if (dropsExtra) {
+        return Promise.reject(new Error('the REST door carries no arrival picture'));
+      }
       return viaRest().then(function (r) {
         if (!r) throw new Error('Neither your account\u2019s tools nor the REST API made that ' +
           'clip. Settings → ImagineArt → what my account can do says what it offers.');
@@ -2322,15 +2339,29 @@
           const arr = arrivalRefs(p, shot, slugNow);
           const wanted = (arr.on && arr.can) ? arr.people : [];
           made.arrivals = wanted.map(function (x) { return x.label; });
+          /* Every one of these, or none of them.
+             *
+             * These pictures are numbered: the prompt says <Picture 2> is Bob
+             * and <Picture 3> is Cat. Dropping a picture that would not load
+             * and sending the rest slid Cat into slot 2, so every subject
+             * after the failure was bound to somebody else's photograph — the
+             * one failure this whole path exists to prevent, arriving
+             * silently. Better to stop and say which one could not be read. */
           return Promise.all(wanted.map(function (x) {
             return SB.Renders.file(p, x.render).then(function (f) {
               if (f) return { blob: f, name: f.name, label: x.label };
               const src = SB.Blobs.src(p, x.img);
-              if (!src) return null;
+              if (!src) throw new Error(x.label);
               return dataUrlToBlob(src).then(function (b) {
                 return { blob: b, name: SB.Renders.slug(x.label) + '.png', label: x.label };
               });
-            }).catch(function () { return null; });
+            }).catch(function (e) {
+              throw new Error('The arrival picture for “' + x.label + '” could not be read, ' +
+                'and the prompt numbers the pictures — sending the rest would hand every ' +
+                'later subject the wrong photograph. Give ' + x.label + ' a reference in the ' +
+                'References panel, or turn the arrival pictures off on this card.' +
+                (e && e.message && e.message !== x.label ? ' (' + e.message + ')' : ''));
+            });
           })).then(function (extra) {
             return video({
               prompt: text, slug: slugNow, restSlug: slugOf(model, 'key'),

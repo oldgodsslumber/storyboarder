@@ -1037,6 +1037,9 @@ button.linkish{
 .pt-fe.pt-frame .feed-who{color:var(--accent2)}
 .pt-fe.pt-frame.empty .feed-who{color:var(--danger)}
 /* marked on the lane, but not carried by the clip — the still already used it */
+.pt-fe-note{
+  font-size:10px;color:var(--accent2);padding:2px 0 0 22px;cursor:help;
+}
 .pt-fe.not-sent{opacity:.5}
 .pt-fe.not-sent .feed-n{color:var(--fg-dim)}
 .pt-fe{
@@ -1322,7 +1325,7 @@ body.comment-mode .frame{cursor:crosshair}
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-09-17 13:20 · 4556779+";</script>
+<script>window.SB_BUILD = "2026-09-17 13:43 · 7a38656+";</script>
 
 <div id="app">
 
@@ -6703,13 +6706,30 @@ window.SB = window.SB || {};
         });
       });
     };
+    /* restVideo appends canon.frame and nothing else — it has no field for a
+     * second picture. When arrivals were asked for, the prompt already names
+     * <Picture 2>, binds a subject to it and puts "reference generation" in
+     * the task types, so going through this door ships a request that
+     * describes photographs it did not send. The still lane has refused this
+     * for the same reason since the day it was written; the clip lane never
+     * learned to. */
+    const dropsExtra = !!(opts.extra && opts.extra.length);
     if (transport() === 'key') {
+      if (dropsExtra) {
+        return Promise.reject(new Error('An API-key push sends the first frame only, and ' +
+          'this clip was set to send ' + opts.extra.length + ' arrival picture' +
+          (opts.extra.length === 1 ? '' : 's') + ' the prompt refers to. Sign in to ' +
+          'ImagineArt to send them, or turn the arrival pictures off on this card.'));
+      }
       return viaRest().then(function (r) {
         if (!r) throw new Error('ImagineArt did not answer with a clip.');
         return r;
       });
     }
     return firstOf(viaMcp, function () {
+      if (dropsExtra) {
+        return Promise.reject(new Error('the REST door carries no arrival picture'));
+      }
       return viaRest().then(function (r) {
         if (!r) throw new Error('Neither your account\u2019s tools nor the REST API made that ' +
           'clip. Settings → ImagineArt → what my account can do says what it offers.');
@@ -6964,15 +6984,29 @@ window.SB = window.SB || {};
           const arr = arrivalRefs(p, shot, slugNow);
           const wanted = (arr.on && arr.can) ? arr.people : [];
           made.arrivals = wanted.map(function (x) { return x.label; });
+          /* Every one of these, or none of them.
+             *
+             * These pictures are numbered: the prompt says <Picture 2> is Bob
+             * and <Picture 3> is Cat. Dropping a picture that would not load
+             * and sending the rest slid Cat into slot 2, so every subject
+             * after the failure was bound to somebody else's photograph — the
+             * one failure this whole path exists to prevent, arriving
+             * silently. Better to stop and say which one could not be read. */
           return Promise.all(wanted.map(function (x) {
             return SB.Renders.file(p, x.render).then(function (f) {
               if (f) return { blob: f, name: f.name, label: x.label };
               const src = SB.Blobs.src(p, x.img);
-              if (!src) return null;
+              if (!src) throw new Error(x.label);
               return dataUrlToBlob(src).then(function (b) {
                 return { blob: b, name: SB.Renders.slug(x.label) + '.png', label: x.label };
               });
-            }).catch(function () { return null; });
+            }).catch(function (e) {
+              throw new Error('The arrival picture for “' + x.label + '” could not be read, ' +
+                'and the prompt numbers the pictures — sending the rest would hand every ' +
+                'later subject the wrong photograph. Give ' + x.label + ' a reference in the ' +
+                'References panel, or turn the arrival pictures off on this card.' +
+                (e && e.message && e.message !== x.label ? ' (' + e.message + ')' : ''));
+            });
           })).then(function (extra) {
             return video({
               prompt: text, slug: slugNow, restSlug: slugOf(model, 'key'),
@@ -8581,7 +8615,7 @@ window.SB = window.SB || {};
     return out;
   }
 
-  /* Just the pictures, in order — what "copy the image set" hands over. */
+  /* Just the pictures, in order — what "Download for MXM" hands over. */
   function images(p, shot, role) {
     const list = [];
     feed(p, shot, role).forEach(function (e) {
@@ -9051,6 +9085,34 @@ window.SB = window.SB || {};
     return forShot(p, shot).filter(function (per) { return enters(shot, per.id); });
   }
 
+  /* Who the first frame has in it, and who walks in after it.
+   *
+   * Two code paths used to answer this separately and disagree. The cast
+   * block asked the first-frame lane and treated anybody named only for the
+   * motion as an arrival — which is what writing somebody into the motion box
+   * MEANS. The H3 scaffold asked only the explicit arrival mark, so the
+   * ordinary way of writing an entrance produced "retained exactly from
+   * <Picture 1>" about somebody who is not in <Picture 1>. One card, two
+   * opposite claims, shipped in the same request.
+   *
+   * inFrame is a question about the PICTURE and only the first-frame lane
+   * answers it. arrives is a question about the SHOT: the tick answers it,
+   * and so does being absent from that lane, because writing somebody only
+   * into the motion box is how you say they walk in. The tick wins where the
+   * two disagree — it is also what decides whether their photograph is
+   * uploaded, and the labels have to describe the call that is actually
+   * made. */
+  function framing(p, shot) {
+    const inFrame = {};
+    (SB.Refs ? SB.Refs.feed(p, shot, 'image') : []).forEach(function (e) {
+      if (e.kind === 'subject' && e.subject) inFrame[e.id] = 1;
+    });
+    return {
+      inFrame: function (id) { return !!inFrame[id] && !enters(shot, id); },
+      arrives: function (id) { return !inFrame[id] || enters(shot, id); }
+    };
+  }
+
   /* Everything of one kind, in board order. */
   function ofKind(p, kind) {
     return all(p).filter(function (x) { return kindOf(x).id === kind; });
@@ -9090,13 +9152,13 @@ window.SB = window.SB || {};
       inFrame[e.id] = 1;
       framed.push(e.subject);
     });
-    const late = arriving(p, shot);
+    /* Named for the clip and not in the picture it opens on: they arrive.
+     * framing() is the one answer, shared with the H3 scaffold. */
+    const fr = framing(p, shot);
+    const late = [];
     const isLate = {};
-    late.forEach(function (x) { isLate[x.id] = 1; });
-    /* Named for the clip and not in the picture it opens on: that is what
-     * writing somebody into the motion box MEANS. They arrive. */
     cast.forEach(function (x) {
-      if (!inFrame[x.id] && !isLate[x.id]) { isLate[x.id] = 1; late.push(x); }
+      if (fr.arrives(x.id)) { isLate[x.id] = 1; late.push(x); }
     });
     /* And everyone the frame was built around is in it, whether or not the
      * clip's own words happen to mention them — the writer needs their names
@@ -9510,7 +9572,7 @@ window.SB = window.SB || {};
     imagesOf: imagesOf, hero: hero, hasImage: hasImage,
     setImage: setImage, clearImage: clearImage, labelImage: labelImage,
     retiredOf: retiredOf, useRetired: useRetired, dropRetired: dropRetired,
-    forShot: forShot, toggleOnShot: toggleOnShot, block: block, generate: generate,
+    forShot: forShot, framing: framing, toggleOnShot: toggleOnShot, block: block, generate: generate,
     enters: enters, setEnters: setEnters, toggleEnters: toggleEnters,
     presentAtOpen: presentAtOpen, arriving: arriving, ARRIVAL_RE: ARRIVAL_RE,
     readsAsArrival: readsAsArrival,
@@ -11286,7 +11348,12 @@ window.SB = window.SB || {};
      * moving the frame it was handed. The subjects are still named and still
      * described — in words, which is what a clip needs. */
     const out = [];
-    if (shot.image) {
+    /* The same test the upload makes. Gating on shot.image alone missed the
+     * board that holds an original with no proxy — a real legacy state — and
+     * imagine.js uploads that original as image 1 regardless. The frame went
+     * up with no <Picture 1> naming it, and any arrival riding with it went
+     * up unnamed too. */
+    if (shot.render || shot.image) {
       out.push({ n: 1, kind: 'frame', label: 'the first frame of this shot', feedN: null });
     }
     if (!out.length) return out;        // nothing to anchor the rest to
@@ -11301,6 +11368,16 @@ window.SB = window.SB || {};
    * its description is the whole of what the model has to go on. */
   function subjects(p, shot) {
     const pics = pictures(p, shot);
+    const fr = SB.Personas.framing ? SB.Personas.framing(p, shot) : {
+      inFrame: function (id) {
+        return !(SB.Personas.enters ? SB.Personas.enters(shot, id)
+          : (shot.castEnters || []).indexOf(id) >= 0);
+      },
+      arrives: function (id) {
+        return SB.Personas.enters ? !!SB.Personas.enters(shot, id)
+          : (shot.castEnters || []).indexOf(id) >= 0;
+      }
+    };
     const out = [];
     SB.Refs.feed(p, shot, 'video').forEach(function (e) {
       if (e.kind !== 'subject') return;
@@ -11311,8 +11388,17 @@ window.SB = window.SB || {};
         subject: e.subject,
         pictures: mine,
         description: tidy(e.subject && e.subject.description),
-        arrives: SB.Personas.enters ? !!SB.Personas.enters(shot, e.id)
-          : ((shot.castEnters || []).indexOf(e.id) >= 0)
+        /* The first-frame lane decides, not the arrival tick — the same
+         * answer personas.js gives its own cast block. Reading only the tick
+         * meant the ordinary way of writing an entrance (name them in the
+         * motion box) still claimed they were preserved from a frame they are
+         * not in, while somebody written INTO the frame and also ticked was
+         * declared absent from the picture built around them. */
+        arrives: fr.arrives(e.id),
+        /* separately from arriving: whether the opening picture holds them,
+         * which is the only thing that makes "preserved from <Picture 1>" a
+         * true sentence */
+        inFrame: fr.inFrame(e.id)
       });
     });
     return out;
@@ -11400,14 +11486,21 @@ window.SB = window.SB || {};
         lines.push('<Subject ' + s.n + '> (appears in [Shot 1]): fully_preserved - ' + what +
           ' are retained exactly from ' + joinPics(s.pictures) + ', wherever this shot’s ' +
           'framing shows them.');
-      } else if (!s.arrives) {
+      } else if (s.inFrame && anchors(p, shot).length) {
         lines.push('<Subject ' + s.n + '> (appears in [Shot 1]): fully_preserved - ' + what +
           ' are retained exactly from <Picture 1>, wherever this shot’s framing shows them.');
       } else {
+        /* No picture of them anywhere in the call — either they walk in after
+         * the frame, or this card has no frame at all. Citing <Picture 1>
+         * here named a label the table does not define, which the format
+         * forbids and this module's own problems() flags; the writer was then
+         * asked to obey a request that broke its own rule. */
         lines.push('<Subject ' + s.n + '> (appears in [Shot 1]): newly_introduced - not in ' +
           'any supplied picture. ' + what.charAt(0).toUpperCase() + what.slice(1) +
           ' are given here in words and are the only record of them: follow them exactly, ' +
-          'and keep them identical from the moment they enter to the end of the shot.');
+          'and keep them identical ' + (s.arrives
+            ? 'from the moment they enter to the end of the shot.'
+            : 'from the first frame to the last.'));
       }
     });
     return lines.join('\n');
@@ -11420,7 +11513,9 @@ window.SB = window.SB || {};
    */
   function taskTypes(p, shot) {
     const types = [];
-    if (shot.image) types.push('keyframe completion');
+    /* the same test pictures() makes, and the same one the upload makes: a
+       board can hold an original with no proxy */
+    if (shot.render || shot.image) types.push('keyframe completion');
     /* "reference generation" is true only when a reference photograph is
        actually in the call — which is now possible again, for somebody who
        arrives partway through and would otherwise be in no picture at all. */
@@ -15764,18 +15859,40 @@ window.SB = window.SB || {};
     return bits.join('\n\n');
   }
 
-  function frameBlock(shot) {
+  /* What the first frame shows, and what to do about it.
+   *
+   * Two different things, and they were bolted together: the CONTENT (the
+   * first-frame box and the prompt that was actually rendered) and the RULE
+   * (do not contradict it, do not write it out again). Suppressing the whole
+   * block for H3 — because that second bullet is the opposite of what the H3
+   * template asks for — threw the content away too, and left the one video
+   * format in the app with no idea what its own opening picture contains. It
+   * was then ordered to describe that picture's composition, appearance,
+   * environment and lighting, from nothing. That is the exact regression this
+   * block was written to end: a woman standing at the window on the phone
+   * coming back sitting on the couch.
+   *
+   * So the content is unconditional and the rule follows the format. */
+  function frameBlock(shot, opts) {
     const shows = frameShows(shot);
     if (!shows) return '';
+    const describes = !!(opts && opts.describes);
     return '\n=== THE FIRST FRAME THIS CLIP ANIMATES ===\n' +
       'The picture handed to the video model already shows the following. It is settled: ' +
       'everyone is already standing, sitting or holding what this says they are, and the ' +
       'shot opens exactly there.\n' +
       '- Do NOT contradict it. If the description of the action reads as though somebody is ' +
       'somewhere else, the picture wins and the movement has to start from where they are.\n' +
-      '- Do NOT write it out again. The model can see it; repeating the set, the wardrobe, ' +
-      'the light or the framing re-renders the shot instead of moving it. This block is here ' +
-      'so you know what is true, not so you can describe it.\n\n' + shows + '\n';
+      (describes
+        /* a format whose sections ARE the description of the frame */
+        ? '- Where your answer describes the shot — composition, each subject’s appearance ' +
+          'and position, the environment, the lighting — describe THIS. Every such detail ' +
+          'comes from what follows, not from your own invention. You are writing down a ' +
+          'picture that exists, not designing one.\n'
+        : '- Do NOT write it out again. The model can see it; repeating the set, the ' +
+          'wardrobe, the light or the framing re-renders the shot instead of moving it. ' +
+          'This block is here so you know what is true, not so you can describe it.\n') +
+      '\n' + shows + '\n';
   }
 
   function contextFor(shot, role) {
@@ -15838,15 +15955,14 @@ window.SB = window.SB || {};
        tuned, and exactly the ones that would otherwise go on contradicting
        their own first frames. A template that places {{FRAME_SHOWS}} itself
        gets it there instead. */
-    /* Not for H3: "do not write the frame out again" is the opposite of what
-       its own template asks for — composition, appearance, environment and
-       lighting are sections of the format — and <Picture 1> plus
-       retention_analysis already establish the frame as the anchor. */
-    const placed = /\{\{FRAME_SHOWS\}\}/.test(m.videoTemplate || '') ||
-      !!(SB.H3 && SB.H3.stock(m));
+    const placed = /\{\{FRAME_SHOWS\}\}/.test(m.videoTemplate || '');
+    /* H3's own sections are a description of the opening picture, so it gets
+       the frame's content with the opposite rule attached: describe this one,
+       rather than do not describe it. */
+    const describes = !!(SB.H3 && SB.H3.stock(m));
     return '=== IMAGE-TO-VIDEO PROMPT — INSTRUCTIONS ===\n' +
       fill(m.videoTemplate, ctx) + extras(shot, m.videoTemplate) +
-      (placed ? '' : frameBlock(shot)) + '\n';
+      (placed ? '' : frameBlock(shot, { describes: describes })) + '\n';
   }
 
   /* The H3 job: two prose keys instead of one prompt, and the six sections
@@ -16061,6 +16177,9 @@ window.SB = window.SB || {};
     cur[field] = value || '';
     cur.modelName = model.name;
     cur.at = Date.now();
+    /* Written now, so it matches the call as it stands now — whatever marked
+       the previous one out of date. */
+    delete cur.stale;
     shot.prompts[model.id] = cur;
   }
 
@@ -17312,6 +17431,7 @@ window.SB = window.SB || {};
   function isStale(r, im, vm) {
     const one = function (m, field) {
       const pr = m && r.shot.prompts[m.id];
+      if (pr && pr[field] && pr.stale) return true;
       return !!(pr && pr[field] && SB.Personas.staleFor(P(), r.shot, pr.at));
     };
     return one(im, 'imagePrompt') || one(vm, 'videoPrompt');
@@ -17897,7 +18017,20 @@ window.SB = window.SB || {};
     b.onclick = function () {
       sh.shoot = sh.shoot || {};
       if (on) delete sh.shoot.sendArrivals; else sh.shoot.sendArrivals = true;
-      SB.app.changed(false);
+      /* The written prompt named the pictures this call carries — <Picture 2>
+         bound to a subject, "reference generation" among the task types.
+         Pressing this changes how many pictures the call carries, so a prompt
+         written before the press now describes a different call: turn it off
+         and one picture travels against a prompt promising two; turn it on
+         and a photograph travels that no label names. Both are the failure
+         the numbering exists to prevent, arriving one click later.
+
+         Marked on the prompt rather than by ageing it, because staleness is
+         otherwise a question about persona edits and this is not one. */
+      const vm2 = SB.Model.videoModel(P());
+      const pr2 = vm2 && sh.prompts && sh.prompts[vm2.id];
+      if (pr2 && pr2.videoPrompt) pr2.stale = 'the arrival pictures changed';
+      SB.app.changed(true);
       render();
     };
     return b;
@@ -18096,7 +18229,7 @@ window.SB = window.SB || {};
    *
    * This was decided once, when the row was built, out of a description that
    * the box three cells to the left can change at any moment. Typing a
-   * description into a card that had none therefore left "✦ generate"
+   * description into a card that had none therefore left the prompt button
    * disabled until the panel was closed and opened again, which is a render by
    * another name.
    *
@@ -18247,9 +18380,13 @@ window.SB = window.SB || {};
 
     foot.appendChild(SB.el('span', 'spacer'));
 
+    /* Appended further down, immediately before the button it explains.
+       Left where it was it read "sign in  Generate: 📝 Prompt 🖼️ Frame" —
+       the reason butted against the word Generate and against the one button
+       on the row that needs no account at all, 140px from the dark button it
+       was actually about. */
     const why = SB.el('span', 'push-why');
     why.style.display = 'none';
-    foot.appendChild(why);
 
     const push = pushBtn(sh, m, field, why);
 
@@ -18284,7 +18421,7 @@ window.SB = window.SB || {};
       });
     };
     foot.appendChild(gen);
-    if (push) foot.appendChild(push);
+    if (push) { foot.appendChild(why); foot.appendChild(push); }
 
     cell.appendChild(foot);
     return cell;
@@ -18374,12 +18511,26 @@ window.SB = window.SB || {};
     /* one line per FILE, so the numbers down the column are the numbers in the
        prompt's mapping and in the folder */
     const notSent = role === 'video';
-    SB.Refs.images(P(), sh, role).forEach(function (e) {
+    /* How many of these the still push can actually carry, asked of the code
+       that does the carrying. A sheet holds four; an API-key push holds none
+       at all. The rest are named in the prompt and reach the model as words,
+       which is a fine outcome to choose and a terrible one to discover from a
+       face that came back wrong. */
+    const refs = (!notSent && SB.Imagine && SB.Imagine.refsFor)
+      ? SB.Imagine.refsFor(P(), sh, role) : null;
+    const byKey = !!(refs && refs.byKey);
+    const carries = refs ? (byKey ? 0 : refs.carries) : Infinity;
+    const pics = SB.Refs.images(P(), sh, role);
+    let dropped = 0;
+    pics.forEach(function (e, i) {
+      const rowOut = notSent || i >= carries;
+      if (rowOut && !notSent) dropped++;
       const it = SB.el('div', 'pt-fe' + (e.kind === 'shot' ? ' is-shot' : '') +
-        (notSent ? ' not-sent' : ''));
+        (rowOut ? ' not-sent' : ''));
       /* No number on the video lane: the only numbered picture there is the
-         frame, and giving these one implied they went with it. */
-      it.appendChild(SB.el('span', 'feed-n', notSent ? '\u00b7' : String(e.n)));
+         frame, and giving these one implied they went with it. A still that
+         is not carried has no number in the call either. */
+      it.appendChild(SB.el('span', 'feed-n', rowOut ? '\u00b7' : String(e.n)));
 
       const t = SB.el('span', 'feed-thumb');
       const im3 = document.createElement('img');
@@ -18400,6 +18551,15 @@ window.SB = window.SB || {};
         ? 'Not sent with the clip. The still was built from this and approved; the clip ' +
           'animates that frame. It is here because the video prompt was written knowing ' +
           'this is in the picture.'
+        : rowOut
+          ? (byKey
+            ? 'Not sent: an API-key push carries no reference picture at all. This one is ' +
+              'named in the prompt and reaches the model as words only. Sign in to ' +
+              'ImagineArt to send it, or drop it in by hand there.'
+            : 'Not sent: this push carries ' + carries + ' picture' +
+              (carries === 1 ? '' : 's') + ' and this is number ' + e.n + '. It reaches the ' +
+              'model as words only — drop it in by hand on ImagineArt if it has to be ' +
+              'matched exactly.')
         : (file
           ? file + ' — the full-size original, carried in this file'
           : 'No original for this one: the board\'s 854×480 copy is what gets fed. Drop the ' +
@@ -18407,6 +18567,21 @@ window.SB = window.SB || {};
         '\n' + e.label + (e.role ? ' (' + e.role + ')' : '');
       wrap.appendChild(it);
     });
+
+    /* and said once in words as well, because a dimmed row is a thing you
+       notice only if you already knew to look */
+    if (dropped) {
+      const note = SB.el('div', 'pt-fe-note', byKey
+        ? 'signed out \u2014 no reference picture travels'
+        : 'only the first ' + carries + ' travel \u2014 ' + dropped + ' go as words');
+      note.title = byKey
+        ? 'Signed in to ImagineArt, this push would carry ' +
+          (carries || pics.length) + '. On an API key it carries none.'
+        : 'A still push hands over ' + carries + ' picture' + (carries === 1 ? '' : 's') +
+          '. The other ' + dropped + ' are described in the prompt but not supplied, so ' +
+          'the model works from the words for those.';
+      wrap.appendChild(note);
+    }
 
     /* things that are referenced but have no picture behind them still have to
        be said — they are numbered nowhere and feed nothing */
@@ -20290,7 +20465,7 @@ window.SB = window.SB || {};
     }
 
     panels.imagine.appendChild(SB.el('div', 'pp-note',
-      'Where a finished prompt goes when you press ▶ in the Create panel. One press is ' +
+      'Where a finished prompt goes when you press 🖼️ Frame or 📽️ Video in the Create panel. One press is ' +
       'one generation — a still lands on the card like any other frame, a clip is kept in ' +
       'the board beside it.'));
 

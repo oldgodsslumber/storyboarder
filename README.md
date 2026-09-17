@@ -55,9 +55,9 @@ words "Failed to fetch" — and none of them is the server saying no:
 
 ### Making the picture: ImagineArt
 
-The Create panel writes the prompt and now also sends it. Each prompt cell has a **▶
-render** (first frame) or **▶ shoot** (clip) beside `copy` and `✦ generate`. One press is
-one generation — nothing is batched, nothing fires on its own.
+The Create panel writes the prompt and now also sends it. Each prompt cell ends with **Generate:** and the two
+things it makes — **📝 Prompt** and then **🖼️ Frame** (still lane) or **📽️ Video**
+(clip lane). One press is one generation — nothing is batched, nothing fires on its own.
 
 - A generated still lands on the card exactly like a dropped one: the ≤480p proxy the
   board draws, and the full-size original beside it, both inside the `.storyboard`.
@@ -66,14 +66,14 @@ one generation — nothing is batched, nothing fires on its own.
   removes it. If
   ImagineArt made the clip but the browser could not read the bytes back, you keep the
   remote link only and the app says so — that link expires.
-- **▶ shoot** animates the shot's own full-size frame when it has one, and falls back to
+- **📽️ Video** animates the shot's own full-size frame when it has one, and falls back to
   text-to-video when it does not. The button's tooltip says which it will do.
 - **A dark push button says why, on the row.** A push needs a prompt *written for the model
   named above that column*, an ImagineArt model set for it, and an account with an
   organization chosen. Prompts are kept per model because each one wants different wording,
   so a row whose prompt was written for Wan is dark under Nano Banana — and it says
   *"written for Wan"* rather than leaving you to guess. The header counts the board:
-  `▶ 14/30 frames · 2/30 clips`.
+  `▶ 14/30 frames · 2/30 clips` (the panel header's own counter).
 
 **Settings → ImagineArt** picks how it is paid for:
 
@@ -94,7 +94,7 @@ one generation — nothing is batched, nothing fires on its own.
     about 45 seconds, so a two-minute clip is a few long calls rather than a busy loop.
   - **A reference image is a URL, never bytes.** `generate_image` takes one `image_url`;
     `generate_video` takes an **array** (one entry animates a still, several would be
-    reference-to-video). Our frames are local, so `▶ shoot` uploads the frame through
+    reference-to-video). Our frames are local, so 📽️ Video uploads the frame through
     `user_upload` first and hands over the URL that comes back.
 
   **Resolution is asked for, never left to the model.** Every generator takes one and every
@@ -205,7 +205,7 @@ prints; the clip is the motion made from it.
 - **Putting one in:** drop an `.mp4` (or any video the browser reads) straight onto the
   card, or use *Add from a file…* in the review. It is kept whole, byte for byte, with its
   duration and dimensions read off the file. This is how a clip that already exists — cut
-  last month, handed over by someone — gets onto a board; before this, `▶ shoot` was the
+  last month, handed over by someone — gets onto a board; before this, a clip push was the
   only way a card could ever have one.
 - **A card holds exactly one clip, and it asks before it takes one.** Drop several at once
   and it lists them by name and size and asks which belongs here — or offers **one each**
@@ -233,7 +233,7 @@ prints; the clip is the motion made from it.
 - **a shot list** as CSV — code, type, description, both prompts, and the files each shot
   points at — for the call sheet or the ticket.
 - **reference sets per shot**, numbered in feed order, in `refs/<shot code>/`, which is what
-  `copy image set` does on that lane.
+  `Download for MXM` does on that lane.
 - **board copies** (854×480) when the small ones are what you want.
 - **contact sheets** are the same PDF flow as before, one click away on the panel.
 
@@ -417,7 +417,7 @@ it will never make a card or scene reappear or vanish.
   by content, so a duplicate costs nothing and deleting one card cannot take the other's
   picture). It claims no part of the master script: two cards claiming one stretch is the
   thing the script model forbids, so the copy keeps those words as its own.
-- **The card no longer lists what it feeds.** That strip and its *copy image set* are in the
+- **The card no longer lists what it feeds.** That strip and its *Download for MXM* are in the
   prompt table now, per lane, numbered the way each call's own prompt cites them — which is
   the version that is true per push rather than per card. What stays on the card is the part
   that was never information: a name typed **without an `@`** (which feeds nothing), a mark
@@ -566,7 +566,7 @@ what was written, act on it.*
 |---|---|
 | **Shot** | code, the serial its render is filed under, a thumbnail, the type. Click the thumbnail to jump to that card. |
 | **Description** | what we see. The same reference box as the card, so marks stay live links and `@` works. **Both** prompts read it. |
-| **First frame** | the shot's **first-frame** box, then the references *that* lane hands over, then the image prompt with its ✦ generate, its badges and its push |
+| **First frame** | the shot's **first-frame** box, then the references *that* lane hands over, then the image prompt with its **Generate:** row — 📝 Prompt, then 🖼️ Frame |
 | **Video** | the shot's **motion** box, then **the card's own frame** — the clip's one reference — then the image→video prompt, the same again |
 
 There used to be a fifth **Feed** column showing one list of references for the whole row —
@@ -581,10 +581,12 @@ The pictures marked on the video lane are context the prompt was **written** aga
 files the clip carries — sending those too would ask the model to build the shot again out of
 references instead of moving the one it was given, which is the failure the two lanes exist to
 prevent. So the video lane lists the frame as its one reference and shows everything else
-dimmed, and there is no "copy image set" on that lane, because a clip has no set. The printed
+dimmed, and there is no "Download for MXM" on that lane, because a clip has no set.
+The still lane dims the same way once a card feeds more references than one push can
+carry, and dims every one of them on an API-key push, which carries none — with a line
+under them saying so in words. The printed
 reference mapping and the exported `refs/` folder are the first frame's too, for the same
-reason. A card with **no frame** is warned about rather than stopped — the badge says the call
-would become text-to-video and invent the shot over again, and then gets out of the way.
+reason. A card with **no frame** is warned about rather than stopped — the frame row at the top of that lane turns red and says *not rendered yet*, and the push's tooltip says the call would become text-to-video.
 
 A lane box left empty is the shared description doing the work — the common case — and it says
 so rather than looking blank. On a narrow window the two lanes stack instead of hiding behind
@@ -596,7 +598,7 @@ Rows group under their scene, the header sticks, and the filters are the point o
 written), **This scene**. Each filter carries its count, zero included — so "what is left to
 do" is a list you can work down.
 
-**Prompts are written one shot at a time**, from the ✦ generate under each box. There is no
+**Prompts are written one shot at a time**, from the 📝 Prompt button under each box. There is no
 button that writes a whole board: it was a fast way to produce text nobody had read, since
 every prompt it wrote was one you then opened and edited anyway. Generating over an existing
 prompt replaces it, and says so. "No shot" cards and empty descriptions can't be generated at
@@ -812,7 +814,7 @@ visible consequence, it is a process somebody can follow on their first day — 
 whole point.
 
 What a card hands over is listed in the **prompt table**, on the lane that hands it over:
-numbered in order, with thumbnails, and **copy image set** saving them named `1_`, `2_`… so a
+numbered in order, with thumbnails, and **Download for MXM** saving them named `1_`, `2_`… so a
 folder sorts into the order that lane's prompt promises. A mark with nothing behind it takes
 no number and says so. The card itself stays quiet — until something is wrong with it: a name
 typed *without* a mark feeds nothing, so it offers to **link** it; a mark whose subject was

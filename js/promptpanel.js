@@ -156,6 +156,7 @@
   function isStale(r, im, vm) {
     const one = function (m, field) {
       const pr = m && r.shot.prompts[m.id];
+      if (pr && pr[field] && pr.stale) return true;
       return !!(pr && pr[field] && SB.Personas.staleFor(P(), r.shot, pr.at));
     };
     return one(im, 'imagePrompt') || one(vm, 'videoPrompt');
@@ -741,7 +742,20 @@
     b.onclick = function () {
       sh.shoot = sh.shoot || {};
       if (on) delete sh.shoot.sendArrivals; else sh.shoot.sendArrivals = true;
-      SB.app.changed(false);
+      /* The written prompt named the pictures this call carries — <Picture 2>
+         bound to a subject, "reference generation" among the task types.
+         Pressing this changes how many pictures the call carries, so a prompt
+         written before the press now describes a different call: turn it off
+         and one picture travels against a prompt promising two; turn it on
+         and a photograph travels that no label names. Both are the failure
+         the numbering exists to prevent, arriving one click later.
+
+         Marked on the prompt rather than by ageing it, because staleness is
+         otherwise a question about persona edits and this is not one. */
+      const vm2 = SB.Model.videoModel(P());
+      const pr2 = vm2 && sh.prompts && sh.prompts[vm2.id];
+      if (pr2 && pr2.videoPrompt) pr2.stale = 'the arrival pictures changed';
+      SB.app.changed(true);
       render();
     };
     return b;
@@ -940,7 +954,7 @@
    *
    * This was decided once, when the row was built, out of a description that
    * the box three cells to the left can change at any moment. Typing a
-   * description into a card that had none therefore left "✦ generate"
+   * description into a card that had none therefore left the prompt button
    * disabled until the panel was closed and opened again, which is a render by
    * another name.
    *
@@ -1091,9 +1105,13 @@
 
     foot.appendChild(SB.el('span', 'spacer'));
 
+    /* Appended further down, immediately before the button it explains.
+       Left where it was it read "sign in  Generate: 📝 Prompt 🖼️ Frame" —
+       the reason butted against the word Generate and against the one button
+       on the row that needs no account at all, 140px from the dark button it
+       was actually about. */
     const why = SB.el('span', 'push-why');
     why.style.display = 'none';
-    foot.appendChild(why);
 
     const push = pushBtn(sh, m, field, why);
 
@@ -1128,7 +1146,7 @@
       });
     };
     foot.appendChild(gen);
-    if (push) foot.appendChild(push);
+    if (push) { foot.appendChild(why); foot.appendChild(push); }
 
     cell.appendChild(foot);
     return cell;
@@ -1218,12 +1236,26 @@
     /* one line per FILE, so the numbers down the column are the numbers in the
        prompt's mapping and in the folder */
     const notSent = role === 'video';
-    SB.Refs.images(P(), sh, role).forEach(function (e) {
+    /* How many of these the still push can actually carry, asked of the code
+       that does the carrying. A sheet holds four; an API-key push holds none
+       at all. The rest are named in the prompt and reach the model as words,
+       which is a fine outcome to choose and a terrible one to discover from a
+       face that came back wrong. */
+    const refs = (!notSent && SB.Imagine && SB.Imagine.refsFor)
+      ? SB.Imagine.refsFor(P(), sh, role) : null;
+    const byKey = !!(refs && refs.byKey);
+    const carries = refs ? (byKey ? 0 : refs.carries) : Infinity;
+    const pics = SB.Refs.images(P(), sh, role);
+    let dropped = 0;
+    pics.forEach(function (e, i) {
+      const rowOut = notSent || i >= carries;
+      if (rowOut && !notSent) dropped++;
       const it = SB.el('div', 'pt-fe' + (e.kind === 'shot' ? ' is-shot' : '') +
-        (notSent ? ' not-sent' : ''));
+        (rowOut ? ' not-sent' : ''));
       /* No number on the video lane: the only numbered picture there is the
-         frame, and giving these one implied they went with it. */
-      it.appendChild(SB.el('span', 'feed-n', notSent ? '\u00b7' : String(e.n)));
+         frame, and giving these one implied they went with it. A still that
+         is not carried has no number in the call either. */
+      it.appendChild(SB.el('span', 'feed-n', rowOut ? '\u00b7' : String(e.n)));
 
       const t = SB.el('span', 'feed-thumb');
       const im3 = document.createElement('img');
@@ -1244,6 +1276,15 @@
         ? 'Not sent with the clip. The still was built from this and approved; the clip ' +
           'animates that frame. It is here because the video prompt was written knowing ' +
           'this is in the picture.'
+        : rowOut
+          ? (byKey
+            ? 'Not sent: an API-key push carries no reference picture at all. This one is ' +
+              'named in the prompt and reaches the model as words only. Sign in to ' +
+              'ImagineArt to send it, or drop it in by hand there.'
+            : 'Not sent: this push carries ' + carries + ' picture' +
+              (carries === 1 ? '' : 's') + ' and this is number ' + e.n + '. It reaches the ' +
+              'model as words only — drop it in by hand on ImagineArt if it has to be ' +
+              'matched exactly.')
         : (file
           ? file + ' — the full-size original, carried in this file'
           : 'No original for this one: the board\'s 854×480 copy is what gets fed. Drop the ' +
@@ -1251,6 +1292,21 @@
         '\n' + e.label + (e.role ? ' (' + e.role + ')' : '');
       wrap.appendChild(it);
     });
+
+    /* and said once in words as well, because a dimmed row is a thing you
+       notice only if you already knew to look */
+    if (dropped) {
+      const note = SB.el('div', 'pt-fe-note', byKey
+        ? 'signed out \u2014 no reference picture travels'
+        : 'only the first ' + carries + ' travel \u2014 ' + dropped + ' go as words');
+      note.title = byKey
+        ? 'Signed in to ImagineArt, this push would carry ' +
+          (carries || pics.length) + '. On an API key it carries none.'
+        : 'A still push hands over ' + carries + ' picture' + (carries === 1 ? '' : 's') +
+          '. The other ' + dropped + ' are described in the prompt but not supplied, so ' +
+          'the model works from the words for those.';
+      wrap.appendChild(note);
+    }
 
     /* things that are referenced but have no picture behind them still have to
        be said — they are numbered nowhere and feed nothing */

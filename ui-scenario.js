@@ -3576,9 +3576,38 @@
         t('nor on an empty card',
           !laneOf(made[3], 'image').querySelector('.badge.refs'), '');
 
-        /* a blocked push still says why -- that is an instruction, not a count */
-        t('a push that cannot run still explains itself beside the button',
-          !!footOf(made[0], 'video').querySelector('.push-why'), '');
+        /* A blocked push still says why. The old assertion only checked the
+           element existed -- it is appended on every lane and merely hidden,
+           so it could not fail, and it did not notice the note drifting two
+           elements away from the button it explains. */
+        const whyOf = function (sh, which) {
+          const f = footOf(sh, which);
+          const w = f && f.querySelector('.push-why');
+          if (!w) return '(absent)';
+          return (w.style.display === 'none' ? '(hidden)' : w.textContent || '(empty)');
+        };
+        const vFoot = footOf(made[0], 'video');
+        const vWhy = vFoot.querySelector('.push-why');
+        const vPush = vFoot.querySelector('.mini.push');
+        t('a clip with no frame is blocked and the row says why in words',
+          vPush.disabled && whyOf(made[0], 'video').length > 2 &&
+          whyOf(made[0], 'video').indexOf('(') !== 0,
+          whyOf(made[0], 'video') + ' / disabled=' + vPush.disabled);
+        t('and the reason is the element immediately before that button',
+          vWhy.nextElementSibling === vPush,
+          vWhy.nextElementSibling ? vWhy.nextElementSibling.className : '(last)');
+        /* the invariant, which holds whether or not this harness happens to
+           have a runnable push: a reason is shown exactly when the button it
+           sits beside is dark */
+        const pairsOk = [];
+        document.querySelectorAll('.pt-foot').forEach(function (f) {
+          const w = f.querySelector('.push-why'), b = f.querySelector('.mini.push');
+          if (!w || !b) return;
+          const shown = w.style.display !== 'none' && !!w.textContent;
+          if (shown !== !!b.disabled) pairsOk.push(b.textContent + '/' + w.textContent);
+        });
+        t('a reason is shown exactly where the push beside it is dark',
+          pairsOk.length === 0, pairsOk.join(', '));
 
         /* the pictures above are still the answer to "what travels" */
         t('the clip lane still shows the frame as its one reference',
@@ -3589,6 +3618,86 @@
         t('with no offer to download them as the clip\u2019s set',
           !Array.prototype.some.call(laneOf(made[0], 'video').querySelectorAll('button'),
             function (b) { return /Download for MXM/.test(b.textContent); }), '');
+
+        /* ---- what the still lane carries, said by the pictures ----
+         *
+         * The counting chip was removed because the panel above it shows the
+         * same thing in pictures. That was only true of the clip lane, which
+         * dims what it is not sending; the still lane numbered every
+         * reference as though every one travelled. These are the three cases
+         * the chip used to warn about. */
+        {
+          const feedOf = function (sh, which) {
+            return document.querySelector('.pt-feed[data-feed-cell="' + sh.id + ':' +
+              which + '"]');
+          };
+          const rowsOf = function (sh, which) {
+            const f = feedOf(sh, which);
+            return f ? Array.prototype.slice.call(f.querySelectorAll('.pt-fe')) : [];
+          };
+          const noteOf = function (sh, which) {
+            const f = feedOf(sh, which);
+            const n = f && f.querySelector('.pt-fe-note');
+            return n ? n.textContent : '';
+          };
+
+          const many = SB.Model.addShot(P(), sc.id, { type: 'Wide' });
+          const crowd = [];
+          for (let i = 0; i < 6; i++) {
+            const per = SB.Personas.add(P(), 'person');
+            per.name = 'Crowd ' + (i + 1);
+            SB.Personas.setImage(per, { ref: 'refpic', w: 64, h: 36 }, 'front', null);
+            crowd.push(per);
+          }
+          many.description = 'A crowd: ' + crowd.map(function (x) {
+            return SB.Refs.mark(x.id, x.name); }).join(', ') + '.';
+          many.personaIds = crowd.map(function (x) { return x.id; });
+          app.changed(true);
+          SB.PromptPanel.open();
+
+          const carried = SB.Imagine.refsFor(P(), many, 'image').carries;
+          const rows = rowsOf(many, 'image');
+          t('a card feeding more references than a push carries shows six rows',
+            rows.length === 6, rows.length + ' rows');
+          t('and dims the ones that do not travel',
+            rows.filter(function (r) { return /not-sent/.test(r.className); }).length ===
+              6 - carried,
+            rows.map(function (r) { return /not-sent/.test(r.className) ? 'x' : 'o'; }).join(''));
+          t('numbering only the ones that do, since the prompt numbers the call',
+            rows.slice(0, carried).every(function (r) {
+              return /^[0-9]+$/.test(r.querySelector('.feed-n').textContent); }) &&
+            rows.slice(carried).every(function (r) {
+              return r.querySelector('.feed-n').textContent === '\u00b7'; }),
+            rows.map(function (r) { return r.querySelector('.feed-n').textContent; }).join(''));
+          t('and says it once in words, which a dimmed row alone does not',
+            /only the first/.test(noteOf(many, 'image')) &&
+            new RegExp(String(6 - carried)).test(noteOf(many, 'image')),
+            noteOf(many, 'image'));
+
+          /* the key push, which carries no reference at all */
+          const wasT = SB.Imagine.transport();
+          SB.Imagine.setTransport('key');
+          SB.PromptPanel.close(); SB.PromptPanel.open();
+          t('an API-key push says plainly that no picture travels',
+            /signed out/.test(noteOf(many, 'image')), noteOf(many, 'image'));
+          t('and dims every one of them, not just the overflow',
+            rowsOf(many, 'image').every(function (r) { return /not-sent/.test(r.className); }),
+            rowsOf(many, 'image').map(function (r) {
+              return /not-sent/.test(r.className) ? 'x' : 'o'; }).join(''));
+          SB.Imagine.setTransport(wasT);
+          SB.PromptPanel.close(); SB.PromptPanel.open();
+
+          t('a card inside what a push carries is not dimmed and says nothing',
+            rowsOf(made[0], 'image').every(function (r) {
+              return !/not-sent/.test(r.className); }) && !noteOf(made[0], 'image'),
+            noteOf(made[0], 'image'));
+
+          SB.PromptPanel.close();
+          SB.Model.deleteShot(P(), many.id);
+          crowd.forEach(function (x) { SB.Personas.remove(P(), x.id); });
+          app.changed(true);
+          SB.PromptPanel.open();
+        }
 
         SB.PromptPanel.close();
         made.forEach(function (x) { SB.Model.deleteShot(P(), x.id); });

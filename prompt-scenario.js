@@ -759,9 +759,22 @@
         t('the format that names its own cast is not handed a second cast list',
           SB.Personas.block(P(), shots.a, h3b, 'video') === '',
           SB.Personas.forShot(P(), shots.a).length + ' cast');
-        t('and it is not told to leave the frame undescribed, which its own ' +
-          'template asks for',
-          !/Do NOT write it out again/i.test(h3sys), h3sys.slice(0, 200));
+        /* The frame block is part of the USER prompt, so a test that looked
+           for it in the system block passed by finding nothing and would have
+           passed with the change reverted. */
+        const h3user = SB.Prompts.jobsFor(shots.a, null, h3b, { video: true })[0].text;
+        t('H3 is still told what its opening frame shows',
+          /THE FIRST FRAME THIS CLIP ANIMATES/.test(h3user), h3user.slice(-400));
+        t('and told to describe that picture rather than not to describe it',
+          /describe THIS/.test(h3user) && !/Do NOT write it out again/i.test(h3user),
+          h3user.slice(-400));
+        const wanM = P().settings.models.filter(function (m) {
+          return m.kind === 'video' && !(SB.H3 && SB.H3.stock(m)); })[0];
+        if (wanM) {
+          const wanUser = SB.Prompts.jobsFor(shots.a, null, wanM, { video: true })[0].text;
+          t('while every other video model keeps the rule it was written for',
+            /Do NOT write it out again/i.test(wanUser), wanUser.slice(-300));
+        }
         t('and is promised no numbered photographs, because none are sent',
           !/image \d+ = /.test(h3sys), h3sys.slice(0, 200));
 

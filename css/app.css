@@ -1031,6 +1031,9 @@ button.linkish{
 .pt-fe.pt-frame .feed-who{color:var(--accent2)}
 .pt-fe.pt-frame.empty .feed-who{color:var(--danger)}
 /* marked on the lane, but not carried by the clip — the still already used it */
+.pt-fe-note{
+  font-size:10px;color:var(--accent2);padding:2px 0 0 22px;cursor:help;
+}
 .pt-fe.not-sent{opacity:.5}
 .pt-fe.not-sent .feed-n{color:var(--fg-dim)}
 .pt-fe{

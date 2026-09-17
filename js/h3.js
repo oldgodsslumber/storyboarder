@@ -84,7 +84,12 @@
      * moving the frame it was handed. The subjects are still named and still
      * described — in words, which is what a clip needs. */
     const out = [];
-    if (shot.image) {
+    /* The same test the upload makes. Gating on shot.image alone missed the
+     * board that holds an original with no proxy — a real legacy state — and
+     * imagine.js uploads that original as image 1 regardless. The frame went
+     * up with no <Picture 1> naming it, and any arrival riding with it went
+     * up unnamed too. */
+    if (shot.render || shot.image) {
       out.push({ n: 1, kind: 'frame', label: 'the first frame of this shot', feedN: null });
     }
     if (!out.length) return out;        // nothing to anchor the rest to
@@ -99,6 +104,16 @@
    * its description is the whole of what the model has to go on. */
   function subjects(p, shot) {
     const pics = pictures(p, shot);
+    const fr = SB.Personas.framing ? SB.Personas.framing(p, shot) : {
+      inFrame: function (id) {
+        return !(SB.Personas.enters ? SB.Personas.enters(shot, id)
+          : (shot.castEnters || []).indexOf(id) >= 0);
+      },
+      arrives: function (id) {
+        return SB.Personas.enters ? !!SB.Personas.enters(shot, id)
+          : (shot.castEnters || []).indexOf(id) >= 0;
+      }
+    };
     const out = [];
     SB.Refs.feed(p, shot, 'video').forEach(function (e) {
       if (e.kind !== 'subject') return;
@@ -109,8 +124,17 @@
         subject: e.subject,
         pictures: mine,
         description: tidy(e.subject && e.subject.description),
-        arrives: SB.Personas.enters ? !!SB.Personas.enters(shot, e.id)
-          : ((shot.castEnters || []).indexOf(e.id) >= 0)
+        /* The first-frame lane decides, not the arrival tick — the same
+         * answer personas.js gives its own cast block. Reading only the tick
+         * meant the ordinary way of writing an entrance (name them in the
+         * motion box) still claimed they were preserved from a frame they are
+         * not in, while somebody written INTO the frame and also ticked was
+         * declared absent from the picture built around them. */
+        arrives: fr.arrives(e.id),
+        /* separately from arriving: whether the opening picture holds them,
+         * which is the only thing that makes "preserved from <Picture 1>" a
+         * true sentence */
+        inFrame: fr.inFrame(e.id)
       });
     });
     return out;
@@ -198,14 +222,21 @@
         lines.push('<Subject ' + s.n + '> (appears in [Shot 1]): fully_preserved - ' + what +
           ' are retained exactly from ' + joinPics(s.pictures) + ', wherever this shot’s ' +
           'framing shows them.');
-      } else if (!s.arrives) {
+      } else if (s.inFrame && anchors(p, shot).length) {
         lines.push('<Subject ' + s.n + '> (appears in [Shot 1]): fully_preserved - ' + what +
           ' are retained exactly from <Picture 1>, wherever this shot’s framing shows them.');
       } else {
+        /* No picture of them anywhere in the call — either they walk in after
+         * the frame, or this card has no frame at all. Citing <Picture 1>
+         * here named a label the table does not define, which the format
+         * forbids and this module's own problems() flags; the writer was then
+         * asked to obey a request that broke its own rule. */
         lines.push('<Subject ' + s.n + '> (appears in [Shot 1]): newly_introduced - not in ' +
           'any supplied picture. ' + what.charAt(0).toUpperCase() + what.slice(1) +
           ' are given here in words and are the only record of them: follow them exactly, ' +
-          'and keep them identical from the moment they enter to the end of the shot.');
+          'and keep them identical ' + (s.arrives
+            ? 'from the moment they enter to the end of the shot.'
+            : 'from the first frame to the last.'));
       }
     });
     return lines.join('\n');
@@ -218,7 +249,9 @@
    */
   function taskTypes(p, shot) {
     const types = [];
-    if (shot.image) types.push('keyframe completion');
+    /* the same test pictures() makes, and the same one the upload makes: a
+       board can hold an original with no proxy */
+    if (shot.render || shot.image) types.push('keyframe completion');
     /* "reference generation" is true only when a reference photograph is
        actually in the call — which is now possible again, for somebody who
        arrives partway through and would otherwise be in no picture at all. */

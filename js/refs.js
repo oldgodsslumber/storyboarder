@@ -252,7 +252,7 @@
     return out;
   }
 
-  /* Just the pictures, in order — what "copy the image set" hands over. */
+  /* Just the pictures, in order — what "Download for MXM" hands over. */
   function images(p, shot, role) {
     const list = [];
     feed(p, shot, role).forEach(function (e) {

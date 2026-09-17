@@ -316,6 +316,34 @@
     return forShot(p, shot).filter(function (per) { return enters(shot, per.id); });
   }
 
+  /* Who the first frame has in it, and who walks in after it.
+   *
+   * Two code paths used to answer this separately and disagree. The cast
+   * block asked the first-frame lane and treated anybody named only for the
+   * motion as an arrival — which is what writing somebody into the motion box
+   * MEANS. The H3 scaffold asked only the explicit arrival mark, so the
+   * ordinary way of writing an entrance produced "retained exactly from
+   * <Picture 1>" about somebody who is not in <Picture 1>. One card, two
+   * opposite claims, shipped in the same request.
+   *
+   * inFrame is a question about the PICTURE and only the first-frame lane
+   * answers it. arrives is a question about the SHOT: the tick answers it,
+   * and so does being absent from that lane, because writing somebody only
+   * into the motion box is how you say they walk in. The tick wins where the
+   * two disagree — it is also what decides whether their photograph is
+   * uploaded, and the labels have to describe the call that is actually
+   * made. */
+  function framing(p, shot) {
+    const inFrame = {};
+    (SB.Refs ? SB.Refs.feed(p, shot, 'image') : []).forEach(function (e) {
+      if (e.kind === 'subject' && e.subject) inFrame[e.id] = 1;
+    });
+    return {
+      inFrame: function (id) { return !!inFrame[id] && !enters(shot, id); },
+      arrives: function (id) { return !inFrame[id] || enters(shot, id); }
+    };
+  }
+
   /* Everything of one kind, in board order. */
   function ofKind(p, kind) {
     return all(p).filter(function (x) { return kindOf(x).id === kind; });
@@ -355,13 +383,13 @@
       inFrame[e.id] = 1;
       framed.push(e.subject);
     });
-    const late = arriving(p, shot);
+    /* Named for the clip and not in the picture it opens on: they arrive.
+     * framing() is the one answer, shared with the H3 scaffold. */
+    const fr = framing(p, shot);
+    const late = [];
     const isLate = {};
-    late.forEach(function (x) { isLate[x.id] = 1; });
-    /* Named for the clip and not in the picture it opens on: that is what
-     * writing somebody into the motion box MEANS. They arrive. */
     cast.forEach(function (x) {
-      if (!inFrame[x.id] && !isLate[x.id]) { isLate[x.id] = 1; late.push(x); }
+      if (fr.arrives(x.id)) { isLate[x.id] = 1; late.push(x); }
     });
     /* And everyone the frame was built around is in it, whether or not the
      * clip's own words happen to mention them — the writer needs their names
@@ -775,7 +803,7 @@
     imagesOf: imagesOf, hero: hero, hasImage: hasImage,
     setImage: setImage, clearImage: clearImage, labelImage: labelImage,
     retiredOf: retiredOf, useRetired: useRetired, dropRetired: dropRetired,
-    forShot: forShot, toggleOnShot: toggleOnShot, block: block, generate: generate,
+    forShot: forShot, framing: framing, toggleOnShot: toggleOnShot, block: block, generate: generate,
     enters: enters, setEnters: setEnters, toggleEnters: toggleEnters,
     presentAtOpen: presentAtOpen, arriving: arriving, ARRIVAL_RE: ARRIVAL_RE,
     readsAsArrival: readsAsArrival,

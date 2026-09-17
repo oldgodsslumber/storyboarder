@@ -218,7 +218,7 @@ Three edits, each removing a hardcoded assumption the profile now answers.
 **3a. `personas.js:388` — the one-picture claim.**
 
 ```js
-// today, fires for every video job including H3:
+// today, fires for every video job except stock H3, which names its own cast:
 'The image-to-video call is given ONE picture — the first frame — so the video
  prompt must not refer to image numbers. Name people and things by name there.'
 ```

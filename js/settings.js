@@ -540,7 +540,7 @@
     }
 
     panels.imagine.appendChild(SB.el('div', 'pp-note',
-      'Where a finished prompt goes when you press ▶ in the Create panel. One press is ' +
+      'Where a finished prompt goes when you press 🖼️ Frame or 📽️ Video in the Create panel. One press is ' +
       'one generation — a still lands on the card like any other frame, a clip is kept in ' +
       'the board beside it.'));
 

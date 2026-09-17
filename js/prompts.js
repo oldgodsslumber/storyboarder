@@ -58,18 +58,40 @@
     return bits.join('\n\n');
   }
 
-  function frameBlock(shot) {
+  /* What the first frame shows, and what to do about it.
+   *
+   * Two different things, and they were bolted together: the CONTENT (the
+   * first-frame box and the prompt that was actually rendered) and the RULE
+   * (do not contradict it, do not write it out again). Suppressing the whole
+   * block for H3 — because that second bullet is the opposite of what the H3
+   * template asks for — threw the content away too, and left the one video
+   * format in the app with no idea what its own opening picture contains. It
+   * was then ordered to describe that picture's composition, appearance,
+   * environment and lighting, from nothing. That is the exact regression this
+   * block was written to end: a woman standing at the window on the phone
+   * coming back sitting on the couch.
+   *
+   * So the content is unconditional and the rule follows the format. */
+  function frameBlock(shot, opts) {
     const shows = frameShows(shot);
     if (!shows) return '';
+    const describes = !!(opts && opts.describes);
     return '\n=== THE FIRST FRAME THIS CLIP ANIMATES ===\n' +
       'The picture handed to the video model already shows the following. It is settled: ' +
       'everyone is already standing, sitting or holding what this says they are, and the ' +
       'shot opens exactly there.\n' +
       '- Do NOT contradict it. If the description of the action reads as though somebody is ' +
       'somewhere else, the picture wins and the movement has to start from where they are.\n' +
-      '- Do NOT write it out again. The model can see it; repeating the set, the wardrobe, ' +
-      'the light or the framing re-renders the shot instead of moving it. This block is here ' +
-      'so you know what is true, not so you can describe it.\n\n' + shows + '\n';
+      (describes
+        /* a format whose sections ARE the description of the frame */
+        ? '- Where your answer describes the shot — composition, each subject’s appearance ' +
+          'and position, the environment, the lighting — describe THIS. Every such detail ' +
+          'comes from what follows, not from your own invention. You are writing down a ' +
+          'picture that exists, not designing one.\n'
+        : '- Do NOT write it out again. The model can see it; repeating the set, the ' +
+          'wardrobe, the light or the framing re-renders the shot instead of moving it. ' +
+          'This block is here so you know what is true, not so you can describe it.\n') +
+      '\n' + shows + '\n';
   }
 
   function contextFor(shot, role) {
@@ -132,15 +154,14 @@
        tuned, and exactly the ones that would otherwise go on contradicting
        their own first frames. A template that places {{FRAME_SHOWS}} itself
        gets it there instead. */
-    /* Not for H3: "do not write the frame out again" is the opposite of what
-       its own template asks for — composition, appearance, environment and
-       lighting are sections of the format — and <Picture 1> plus
-       retention_analysis already establish the frame as the anchor. */
-    const placed = /\{\{FRAME_SHOWS\}\}/.test(m.videoTemplate || '') ||
-      !!(SB.H3 && SB.H3.stock(m));
+    const placed = /\{\{FRAME_SHOWS\}\}/.test(m.videoTemplate || '');
+    /* H3's own sections are a description of the opening picture, so it gets
+       the frame's content with the opposite rule attached: describe this one,
+       rather than do not describe it. */
+    const describes = !!(SB.H3 && SB.H3.stock(m));
     return '=== IMAGE-TO-VIDEO PROMPT — INSTRUCTIONS ===\n' +
       fill(m.videoTemplate, ctx) + extras(shot, m.videoTemplate) +
-      (placed ? '' : frameBlock(shot)) + '\n';
+      (placed ? '' : frameBlock(shot, { describes: describes })) + '\n';
   }
 
   /* The H3 job: two prose keys instead of one prompt, and the six sections
@@ -355,6 +376,9 @@
     cur[field] = value || '';
     cur.modelName = model.name;
     cur.at = Date.now();
+    /* Written now, so it matches the call as it stands now — whatever marked
+       the previous one out of date. */
+    delete cur.stale;
     shot.prompts[model.id] = cur;
   }
 

@@ -735,6 +735,141 @@ console.log('\n\u2014 H3 speaks one language \u2014');
   SB.Imagine = wasIM;
 }
 
+console.log('\n\u2014 H3 speaks one language \u2014');
+{
+  const M = SB.Model, R = SB.Refs, Per = SB.Personas;
+  const p = M.newProject();
+  const sc = p.scenes[0] || M.addScene(p, 0);
+  const pic = function (n) {
+    return SB.Blobs.image(p, 'data:image/gif;base64,R0lGODlhAQABAAAAAC' + n, 4, 3);
+  };
+  const nat = Per.add(p, { name: 'Nat', description: 'Forties, charcoal knit.' });
+  nat.image = pic('w');
+  const bob = Per.add(p, { name: 'Bob', description: 'Sixties, grey suit.' });
+  bob.image = pic('x');
+  const sh = M.addShot(p, sc.id, { type: 'Medium' });
+  sh.description = 'At the desk with ' + R.mark(nat.id, 'Nat') + '.';
+  sh.videoDescription = R.mark(bob.id, 'Bob') + ' comes in behind her.';
+  sh.image = pic('y');
+  sh.personaIds = [nat.id, bob.id];
+  Per.setEnters(sh, bob.id, true);
+  const h3 = p.settings.models.filter(function (m) {
+    return m.name === 'MiniMax H3 (Hailuo)';
+  })[0];
+
+  /* one cast block, not two vocabularies */
+  eq(Per.block(p, sh, h3, 'video'), '',
+    'H3 gets no second cast block — its label table is its cast block');
+  const other = { id: 'v', name: 'LTX (LTXV 2.3)', kind: 'video' };
+  eq(/IN THE SUPPLIED FRAME/.test(Per.block(p, sh, other, 'video')), true,
+    'while every other video model still gets one');
+
+  const scaf = SB.H3.scaffold(p, sh);
+
+  /* preserved FROM something, or said plainly */
+  eq(/<Subject 1>[^\n]*fully_preserved[^\n]*from <Picture 1>/.test(scaf.retention), true,
+    'somebody in the frame is preserved from the frame, and it says which');
+  eq(/<Subject 2>[^\n]*newly_introduced/.test(scaf.retention), true,
+    'and an arrival with no picture is newly_introduced, not preserved from nothing');
+  eq(/<Subject 2>[^\n]*only record of them/.test(scaf.retention), true,
+    'with the words named as the only record there is');
+
+  /* the task type follows what is supplied */
+  eq(scaf.taskTypes.join(), 'keyframe completion',
+    'a frame alone is keyframe completion and nothing else');
+
+  /* and when a picture does travel, it is bound */
+  const wasIM = SB.Imagine;
+  SB.Imagine = {
+    slugOf: function () { return 'seedance-2.5'; },
+    arrivalRefs: function () {
+      return { on: true, can: true,
+        people: [{ id: bob.id, label: 'Bob', img: bob.image, render: null }] };
+    }
+  };
+  const sent = SB.H3.scaffold(p, sh);
+  eq(/<Picture 2>/.test(sent.labels), true,
+    'an arrival whose picture is sent gets a <Picture N> of its own');
+  eq(/<Subject 2> is Bob, seen in <Picture 2>/.test(sent.definitions), true,
+    'bound to it in subject_definitions, which is what the format is for');
+  eq(/<Subject 2>[^\n]*fully_preserved[^\n]*from <Picture 2>/.test(sent.retention), true,
+    'and preserved from it rather than newly introduced');
+  eq(sent.taskTypes.join(), 'keyframe completion,reference generation',
+    'and the call is doing both jobs, so it says both');
+  eq(sent.names.indexOf('<Picture 2>') >= 0, true,
+    'the label is legal for the writer to use');
+  SB.Imagine = wasIM;
+}
+
+console.log('\n\u2014 H3 says only what is true of the call \u2014');
+{
+  const M = SB.Model, R = SB.Refs, Per = SB.Personas;
+  const p = M.newProject();
+  const sc = p.scenes[0] || M.addScene(p, 0);
+  const pic = function (n) {
+    return SB.Blobs.image(p, 'data:image/gif;base64,R0lGODlhAQABAAAAAC' + n, 4, 3);
+  };
+  const nat = Per.add(p, { name: 'Nat', description: 'Forties, charcoal knit.' });
+  const bob = Per.add(p, { name: 'Bob', description: 'Sixties, grey suit.' });
+
+  /* ---- a card with no frame at all ---- */
+  const bare = M.addShot(p, sc.id, { type: 'Wide' });
+  bare.description = 'The office, with ' + R.mark(nat.id, 'Nat') + ' at the desk.';
+  bare.personaIds = [nat.id];
+  const b1 = SB.H3.scaffold(p, bare);
+  eq(/<Picture 1>/.test(b1.labels), false, 'a card with no frame declares no picture');
+  eq(/<Picture 1>/.test(b1.retention), false,
+    'and never cites one in retention_analysis — the label would not exist');
+  eq(/newly_introduced/.test(b1.retention), true,
+    'it says the words are the whole record, which is the truth of that call');
+  eq(/from the first frame to the last/.test(b1.retention), true,
+    'and asks for them to hold across the shot, not from an entrance that never happens');
+  /* the app's own checker, asked only about labels: an answer that repeats
+     what the app wrote must not be accused of inventing one */
+  const lab = SB.H3.problems(b1, {
+    summary: 'x', detailed_description: b1.retention + ' word'.repeat(420)
+  }).filter(function (x) { return /<Picture|<Subject/.test(x); });
+  eq(lab.length, 0, 'and the format checker finds no invented label in what the app wrote');
+
+  /* ---- an original with no proxy: a real legacy board, and it still uploads ---- */
+  const legacy = M.addShot(p, sc.id, { type: 'Medium' });
+  legacy.description = 'At the desk with ' + R.mark(nat.id, 'Nat') + '.';
+  legacy.personaIds = [nat.id];
+  legacy.render = { serial: 1, ext: 'png' };
+  const l1 = SB.H3.scaffold(p, legacy);
+  eq(/<Picture 1> = the first frame/.test(l1.labels), true,
+    'a board holding an original with no proxy still declares its frame');
+  eq(l1.taskTypes.join(), 'keyframe completion',
+    'and is still doing the job a frame makes it');
+
+  /* ---- written into the motion box, which is how an entrance is written ---- */
+  const late = M.addShot(p, sc.id, { type: 'Two-shot' });
+  late.description = 'At the desk with ' + R.mark(nat.id, 'Nat') + '.';
+  late.videoDescription = R.mark(bob.id, 'Bob') + ' comes in behind her.';
+  late.personaIds = [nat.id, bob.id];
+  late.image = pic('y');
+  const t1 = SB.H3.scaffold(p, late);
+  eq(/<Subject 2>[^\n]*newly_introduced/.test(t1.retention), true,
+    'somebody named only for the motion is not claimed to be in the first frame');
+  eq(/<Subject 1>[^\n]*fully_preserved[^\n]*from <Picture 1>/.test(t1.retention), true,
+    'while the one the frame was built around is');
+  const cast = Per.block(p, late, { id: 'v', name: 'LTX', kind: 'video' }, 'video');
+  eq(/NOT IN THE SUPPLIED FRAME[\s\S]*Bob/.test(cast), true,
+    'and the plain cast block agrees \u2014 one answer, not two');
+
+  /* ---- and the mirror: in the frame AND ticked as arriving ---- */
+  const both = M.addShot(p, sc.id, { type: 'Close-up' });
+  both.description = R.mark(nat.id, 'Nat') + ' at the window.';
+  both.personaIds = [nat.id];
+  both.image = pic('z');
+  Per.setEnters(both, nat.id, true);
+  const m1 = SB.H3.scaffold(p, both);
+  eq(/ARRIVES DURING THE SHOT/.test(m1.labels), true,
+    'an explicit arrival mark is still honoured \u2014 it is what sends their picture');
+  eq(/<Subject 1>[^\n]*newly_introduced/.test(m1.retention), true,
+    'and retention follows the pictures the call carries, not the lane they were typed in');
+}
+
 console.log('\n— brand style —');
 {
   const B = SB.Brand;
