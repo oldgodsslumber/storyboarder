@@ -51,8 +51,33 @@
    * actually begins from carries the number a reader expects. The reference
    * images keep the feed's order underneath it, shifted by one.
    */
+  /* Whoever this card has chosen to send a picture of, if the model takes
+   * them. Asked of imagine.js, which owns the answer; empty where it is not
+   * loaded, which is every node test that does not need it. */
+  function sentArrivals(p, shot) {
+    const IM = SB.Imagine;
+    if (!IM || !IM.arrivalRefs || !IM.slugOf) return [];
+    const m = SB.Model.videoModel(p);
+    if (!m) return [];
+    const a = IM.arrivalRefs(p, shot, IM.slugOf(m));
+    return (a.on && a.can) ? a.people : [];
+  }
+
   function pictures(p, shot) {
-    /* One picture, because one picture is what is sent: this card's frame.
+    /* The pictures the CALL carries, in the order it carries them.
+     *
+     * The frame first, always. Then whoever the card has chosen to send with
+     * it: somebody who arrives partway through is in no frame, so their
+     * picture is the only thing the model can match them to — and a picture
+     * sent without a <Picture N> beside it is exactly what this format exists
+     * to prevent.
+     *
+     * Everything else a card marks stays out. The still was built from those
+     * and approved; naming them here would bind subjects to photographs the
+     * video call never receives.
+     *
+     * (the old note, still true of the marked references:)
+     * One picture, because one picture is what is sent: this card's frame.
      * The marked references built the still and were approved in it; naming
      * them here as <Picture 2>… bound subjects to photographs the call never
      * carries, and invited the model to rebuild the shot from them instead of
@@ -62,6 +87,10 @@
     if (shot.image) {
       out.push({ n: 1, kind: 'frame', label: 'the first frame of this shot', feedN: null });
     }
+    if (!out.length) return out;        // nothing to anchor the rest to
+    sentArrivals(p, shot).forEach(function (a) {
+      out.push({ n: out.length + 1, kind: 'arrival', label: a.label, id: a.id, feedN: null });
+    });
     return out;
   }
 
@@ -93,6 +122,18 @@
     return pictures(p, shot).filter(function (x) {
       return x.kind === 'frame' || x.kind === 'shot';
     });
+  }
+
+  /* The pictures of people, which are bound to a <Subject N> rather than
+   * standing on their own. */
+  function arrivalPics(p, shot) {
+    return pictures(p, shot).filter(function (x) { return x.kind === 'arrival'; });
+  }
+
+  /* <Picture N> for a subject, when their picture is in the call. */
+  function picFor(p, shot, id) {
+    const hit = arrivalPics(p, shot).filter(function (x) { return x.id === id; })[0];
+    return hit ? hit.n : 0;
   }
 
   function joinPics(list) {
@@ -147,11 +188,25 @@
      * wardrobe and the haircut of a man who was, in that frame, two hands. */
     subjects(p, shot).forEach(function (s) {
       const d = clause(s.description);
-      lines.push('<Subject ' + s.n + '> (appears in [Shot 1]): fully_preserved - ' +
-        (d ? d.charAt(0).toLowerCase() + d.slice(1) + ' are retained exactly wherever this ' +
-             'shot’s framing shows them.'
-           : 'identity, wardrobe and appearance are retained exactly wherever this shot’s ' +
-             'framing shows them.'));
+      const what = d ? d.charAt(0).toLowerCase() + d.slice(1) : 'identity, wardrobe and appearance';
+      /* fully_preserved is a claim about a SOURCE. It is true of somebody in
+       * the frame, and true of somebody whose picture is in the call — and it
+       * is a claim about nothing for an arrival described only in words, who
+       * is in no frame and has no picture. Saying it anyway taught the format
+       * to preserve something it had never been shown. */
+      if (s.pictures.length) {
+        lines.push('<Subject ' + s.n + '> (appears in [Shot 1]): fully_preserved - ' + what +
+          ' are retained exactly from ' + joinPics(s.pictures) + ', wherever this shot’s ' +
+          'framing shows them.');
+      } else if (!s.arrives) {
+        lines.push('<Subject ' + s.n + '> (appears in [Shot 1]): fully_preserved - ' + what +
+          ' are retained exactly from <Picture 1>, wherever this shot’s framing shows them.');
+      } else {
+        lines.push('<Subject ' + s.n + '> (appears in [Shot 1]): newly_introduced - not in ' +
+          'any supplied picture. ' + what.charAt(0).toUpperCase() + what.slice(1) +
+          ' are given here in words and are the only record of them: follow them exactly, ' +
+          'and keep them identical from the moment they enter to the end of the shot.');
+      }
     });
     return lines.join('\n');
   }
@@ -164,9 +219,10 @@
   function taskTypes(p, shot) {
     const types = [];
     if (shot.image) types.push('keyframe completion');
-    /* "reference generation" claimed the call was given reference photographs.
-       It is given the first frame and nothing else, so the only task type a
-       clip from this app performs is keyframe completion. */
+    /* "reference generation" is true only when a reference photograph is
+       actually in the call — which is now possible again, for somebody who
+       arrives partway through and would otherwise be in no picture at all. */
+    if (arrivalPics(p, shot).length) types.push('reference generation');
     return types;
   }
 
@@ -200,7 +256,7 @@
       taskTypes: taskTypes(p, shot),
       labels: labelTable(p, shot),
       /* every label that legally exists for this shot */
-      names: anch.map(function (a) { return '<Picture ' + a.n + '>'; })
+      names: pictures(p, shot).map(function (a) { return '<Picture ' + a.n + '>'; })
         .concat(subs.map(function (s) { return '<Subject ' + s.n + '>'; }))
     };
   }

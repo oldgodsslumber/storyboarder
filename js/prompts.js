@@ -132,7 +132,12 @@
        tuned, and exactly the ones that would otherwise go on contradicting
        their own first frames. A template that places {{FRAME_SHOWS}} itself
        gets it there instead. */
-    const placed = /\{\{FRAME_SHOWS\}\}/.test(m.videoTemplate || '');
+    /* Not for H3: "do not write the frame out again" is the opposite of what
+       its own template asks for — composition, appearance, environment and
+       lighting are sections of the format — and <Picture 1> plus
+       retention_analysis already establish the frame as the anchor. */
+    const placed = /\{\{FRAME_SHOWS\}\}/.test(m.videoTemplate || '') ||
+      !!(SB.H3 && SB.H3.stock(m));
     return '=== IMAGE-TO-VIDEO PROMPT — INSTRUCTIONS ===\n' +
       fill(m.videoTemplate, ctx) + extras(shot, m.videoTemplate) +
       (placed ? '' : frameBlock(shot)) + '\n';

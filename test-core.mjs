@@ -32,7 +32,7 @@ vm.createContext(sandbox);
 
 for (const f of ['js/util.js', 'js/focus.js', 'js/doc.js', 'js/blobs.js', 'js/geminimodels.js', 'js/providers.js',
   'js/brand.js', 'js/renders.js', 'js/imaginemodels.js', 'js/refs.js', 'js/personas.js', 'js/fields.js', 'js/model.js', 'js/store.js', 'js/pdf.js',
-  'js/coverage.js']) {
+  'js/coverage.js', 'js/h3.js']) {
   vm.runInContext(readFileSync(join(root, f), 'utf8'), sandbox, { filename: f });
 }
 const SB = sandbox.SB;
@@ -667,6 +667,72 @@ console.log('\n\u2014 what a synthetic drag cannot tell you \u2014');
      it starts, so shift-held-from-the-start could never begin one. */
   eq(board.indexOf("ev.shiftKey && ev.target.closest('.card-head')") > 0, true,
     'and the drag handle is left to the browser when shift is held');
+}
+
+console.log('\n\u2014 H3 speaks one language \u2014');
+{
+  const M = SB.Model, R = SB.Refs, Per = SB.Personas;
+  const p = M.newProject();
+  const sc = p.scenes[0] || M.addScene(p, 0);
+  const pic = function (n) {
+    return SB.Blobs.image(p, 'data:image/gif;base64,R0lGODlhAQABAAAAAC' + n, 4, 3);
+  };
+  const nat = Per.add(p, { name: 'Nat', description: 'Forties, charcoal knit.' });
+  nat.image = pic('w');
+  const bob = Per.add(p, { name: 'Bob', description: 'Sixties, grey suit.' });
+  bob.image = pic('x');
+  const sh = M.addShot(p, sc.id, { type: 'Medium' });
+  sh.description = 'At the desk with ' + R.mark(nat.id, 'Nat') + '.';
+  sh.videoDescription = R.mark(bob.id, 'Bob') + ' comes in behind her.';
+  sh.image = pic('y');
+  sh.personaIds = [nat.id, bob.id];
+  Per.setEnters(sh, bob.id, true);
+  const h3 = p.settings.models.filter(function (m) {
+    return m.name === 'MiniMax H3 (Hailuo)';
+  })[0];
+
+  /* one cast block, not two vocabularies */
+  eq(Per.block(p, sh, h3, 'video'), '',
+    'H3 gets no second cast block — its label table is its cast block');
+  const other = { id: 'v', name: 'LTX (LTXV 2.3)', kind: 'video' };
+  eq(/IN THE SUPPLIED FRAME/.test(Per.block(p, sh, other, 'video')), true,
+    'while every other video model still gets one');
+
+  const scaf = SB.H3.scaffold(p, sh);
+
+  /* preserved FROM something, or said plainly */
+  eq(/<Subject 1>[^\n]*fully_preserved[^\n]*from <Picture 1>/.test(scaf.retention), true,
+    'somebody in the frame is preserved from the frame, and it says which');
+  eq(/<Subject 2>[^\n]*newly_introduced/.test(scaf.retention), true,
+    'and an arrival with no picture is newly_introduced, not preserved from nothing');
+  eq(/<Subject 2>[^\n]*only record of them/.test(scaf.retention), true,
+    'with the words named as the only record there is');
+
+  /* the task type follows what is supplied */
+  eq(scaf.taskTypes.join(), 'keyframe completion',
+    'a frame alone is keyframe completion and nothing else');
+
+  /* and when a picture does travel, it is bound */
+  const wasIM = SB.Imagine;
+  SB.Imagine = {
+    slugOf: function () { return 'seedance-2.5'; },
+    arrivalRefs: function () {
+      return { on: true, can: true,
+        people: [{ id: bob.id, label: 'Bob', img: bob.image, render: null }] };
+    }
+  };
+  const sent = SB.H3.scaffold(p, sh);
+  eq(/<Picture 2>/.test(sent.labels), true,
+    'an arrival whose picture is sent gets a <Picture N> of its own');
+  eq(/<Subject 2> is Bob, seen in <Picture 2>/.test(sent.definitions), true,
+    'bound to it in subject_definitions, which is what the format is for');
+  eq(/<Subject 2>[^\n]*fully_preserved[^\n]*from <Picture 2>/.test(sent.retention), true,
+    'and preserved from it rather than newly introduced');
+  eq(sent.taskTypes.join(), 'keyframe completion,reference generation',
+    'and the call is doing both jobs, so it says both');
+  eq(sent.names.indexOf('<Picture 2>') >= 0, true,
+    'the label is legal for the writer to use');
+  SB.Imagine = wasIM;
 }
 
 console.log('\n— brand style —');

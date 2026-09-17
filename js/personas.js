@@ -455,6 +455,12 @@
      * subject has a reference image, for a call that carries the frame
      * alone. Three answers, no two alike. */
     if (role === 'video') {
+      /* Except for the one format that has a cast block of its own. H3 names
+       * its people as <Subject N>, binds them to pictures, and its template
+       * asks for their appearance — while this block uses plain names and
+       * says to write what they DO and not how they look. Sending both put
+       * two vocabularies and two opposite instructions in one request. */
+      if (SB.H3 && SB.H3.stock(model)) return '';
       return videoCastBlock(p, shot, cast, model);
     }
     /* One reference per subject, so one number — the ranges this used to

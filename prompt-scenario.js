@@ -747,18 +747,21 @@
         t('and the old look-restating rider line is gone',
           sys.indexOf('Hold the natural-light look') < 0, '');
 
-        /* A full-reference model is handed the frame like every other clip,
-           so it gets the same short block: who is in the picture, by name,
-           and no mapping to photographs that do not travel. */
+        /* H3 names its own cast — <Subject N>, bound to a picture, appearance
+           and all — so the short block is not sent alongside it. Two names for
+           one person and two opposite instructions about their look was the
+           request fighting itself. */
         const h3b = P().settings.models.filter(function (m) {
           return m.name === 'MiniMax H3 (Hailuo)'; })[0];
         P().settings.videoModelId = h3b.id;
         const h3sys = [SB.Brand.systemFor(P(), shots.a, 'video'),
           SB.Personas.block(P(), shots.a, h3b, 'video')].join('  ');
-        t('a full-reference model is told who is in the frame, when anyone is',
-          !SB.Personas.forShot(P(), shots.a).length ||
-          /WHO AND WHAT IS IN THE SUPPLIED FRAME/.test(h3sys),
+        t('the format that names its own cast is not handed a second cast list',
+          SB.Personas.block(P(), shots.a, h3b, 'video') === '',
           SB.Personas.forShot(P(), shots.a).length + ' cast');
+        t('and it is not told to leave the frame undescribed, which its own ' +
+          'template asks for',
+          !/Do NOT write it out again/i.test(h3sys), h3sys.slice(0, 200));
         t('and is promised no numbered photographs, because none are sent',
           !/image \d+ = /.test(h3sys), h3sys.slice(0, 200));
 
