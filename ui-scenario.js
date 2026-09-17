@@ -1509,8 +1509,10 @@
         SB.PromptPanel.open();
         await nap(80);
         const row = document.querySelector('.pt-row[data-shot="' + sh.id + '"]');
-        const gens = Array.prototype.filter.call(row.querySelectorAll('button'),
-          function (b) { return /generate/.test(b.textContent); });
+        /* found by what it is, not by what it says: the label is an emoji
+           and a noun now, and a test keyed on the word "generate" passed by
+           finding nothing at all. */
+        const gens = Array.prototype.slice.call(row.querySelectorAll('button[data-gen]'));
         t('generate is live on a card written only in a lane box',
           gens.length > 0 && gens.every(function (b) { return !b.disabled; }),
           gens.map(function (b) { return b.disabled; }).join(','));
@@ -3531,52 +3533,60 @@
         app.changed(true);
         SB.PromptPanel.open();
 
-        /* A row carries a badge per lane now, and they answer different
-           questions: the still says which reference picture travels, the clip
-           says it animates this card's frame. */
+        /* The corner names the two things it makes, in the order somebody
+           does them: write the prompt, then make the picture. What travels
+           with the push is shown as PICTURES directly above -- the corner
+           repeating it in words was one more thing to read and one more
+           thing to disagree with. */
         const laneOf = function (sh, which) {
           return document.querySelector('.pt-row[data-shot="' + sh.id + '"] ' +
             '.pt-prompt[data-lane="' + which + '"]');
         };
-        const chipIn = function (sh, which) {
+        const footOf = function (sh, which) {
           const cell = laneOf(sh, which);
-          const c = cell && cell.querySelector('.badge.refs');
-          return c ? c.textContent : '(none)';
+          return cell ? cell.querySelector('.pt-foot') : null;
         };
-        const chipOf = function (sh) { return chipIn(sh, 'image'); };
-        t('a card with one reference says it is sending it',
-          chipOf(made[0]) === 'sends 1 ref', chipOf(made[0]));
-        t('a subject with no reference frame is called out, not left silent',
-          chipOf(made[1]) === 'no refs', chipOf(made[1]));
-        t('and that one is a warning, because the words are all the model gets',
-          !!document.querySelector('.pt-row[data-shot="' + made[1].id + '"] .badge.refs.warn'), '');
-        t('a card feeding more than the push carries says one of them travels',
-          chipOf(made[2]) === 'sends 1 ref', chipOf(made[2]));
-        t('and names which one, since the prompt calls it image 1',
-          /Pictured/.test(document.querySelector('.pt-row[data-shot="' + made[2].id + '"] .badge.refs').title),
-          document.querySelector('.pt-row[data-shot="' + made[2].id + '"] .badge.refs').title.slice(0, 60));
-        t('an empty card says so without crying wolf',
-          chipOf(made[3]) === 'no refs' &&
-          !laneOf(made[3], 'image').querySelector('.badge.refs.warn'),
-          chipOf(made[3]));
+        const labels = function (sh, which) {
+          const f = footOf(sh, which);
+          if (!f) return '(no foot)';
+          return Array.prototype.map.call(f.querySelectorAll('.gen-label, button'),
+            function (b) { return b.textContent; }).join(' | ');
+        };
 
-        /* The clip's reference is the card's own frame, never the marks — that
-           separation is the whole reason the two lanes exist. */
-        t('the clip lane says it animates the frame, whatever is marked',
-          chipIn(made[0], 'video') === 'no frame' || chipIn(made[0], 'video') === 'animates the frame',
-          chipIn(made[0], 'video'));
-        t('and a card with no frame says exactly that, on the clip lane only',
-          chipIn(made[0], 'video') === 'no frame' &&
-          !!laneOf(made[0], 'video').querySelector('.badge.refs.warn'),
-          chipIn(made[0], 'video'));
-        t('the still lane is unaffected by it',
-          chipOf(made[0]) === 'sends 1 ref', chipOf(made[0]));
-        t('the clip lane shows the frame as its one reference',
+        t('the still corner says what it generates',
+          /Generate:/.test(labels(made[0], 'image')), labels(made[0], 'image'));
+        t('and names the prompt first, then the frame',
+          labels(made[0], 'image').indexOf('📝 Prompt') >= 0 &&
+          labels(made[0], 'image').indexOf('🖼️ Frame') >
+            labels(made[0], 'image').indexOf('📝 Prompt'),
+          labels(made[0], 'image'));
+        t('the clip corner offers a video, not a frame',
+          labels(made[0], 'video').indexOf('📽️ Video') >= 0 &&
+          labels(made[0], 'video').indexOf('🖼️ Frame') < 0,
+          labels(made[0], 'video'));
+        t('and the still corner never offers a video',
+          labels(made[0], 'image').indexOf('📽️ Video') < 0, labels(made[0], 'image'));
+
+        /* the counting chips are gone from both lanes */
+        t('no lane counts references at the corner any more',
+          !laneOf(made[0], 'image').querySelector('.badge.refs') &&
+          !laneOf(made[0], 'video').querySelector('.badge.refs'), '');
+        t('not even on a card whose subject has no reference picture',
+          !laneOf(made[1], 'image').querySelector('.badge.refs'), '');
+        t('nor on an empty card',
+          !laneOf(made[3], 'image').querySelector('.badge.refs'), '');
+
+        /* a blocked push still says why -- that is an instruction, not a count */
+        t('a push that cannot run still explains itself beside the button',
+          !!footOf(made[0], 'video').querySelector('.push-why'), '');
+
+        /* the pictures above are still the answer to "what travels" */
+        t('the clip lane still shows the frame as its one reference',
           !!laneOf(made[0], 'video').querySelector('.pt-fe.pt-frame'), '');
-        t('and marks the pictures it is not carrying',
+        t('and still marks the pictures it is not carrying',
           laneOf(made[0], 'video').querySelectorAll('.pt-fe.not-sent').length >= 1,
           laneOf(made[0], 'video').querySelectorAll('.pt-fe.not-sent').length);
-        t('with no offer to copy them as the clip\u2019s set',
+        t('with no offer to download them as the clip\u2019s set',
           !Array.prototype.some.call(laneOf(made[0], 'video').querySelectorAll('button'),
             function (b) { return /Download for MXM/.test(b.textContent); }), '');
 

@@ -866,7 +866,9 @@
   function paintPush(b, sh, m, role) {
     const IM = SB.Imagine;
     const job = IM.job(sh.id, role);
-    const noun = role === 'image' ? 'render' : 'shoot';
+    /* named for what comes out of it, not for the verb: the label beside it
+       already says Generate. */
+    const noun = role === 'image' ? '🖼️ Frame' : '📽️ Video';
     if (job && (job.state === 'working' || job.state === 'waiting')) {
       const secs = Math.round((Date.now() - job.started) / 1000);
       b.textContent = (job.state === 'waiting' ? 'waiting ' : 'sending ') +
@@ -879,7 +881,7 @@
     }
     b.classList.remove('running');
     b.classList.toggle('failed', !!(job && job.state === 'error'));
-    b.textContent = (job && job.state === 'error' ? '\u21ba retry' : '\u25b6 ' + noun);
+    b.textContent = (job && job.state === 'error' ? '\u21ba retry' : noun);
     const block = pushBlock(sh, m, role);
     b.disabled = !!block;
     /* The reason sits beside the button, not only in a tooltip — a button
@@ -952,7 +954,7 @@
       b.title = 'Writing this one now.';
       return;
     }
-    b.textContent = '\u2726 generate';
+    b.textContent = '📝 Prompt';
     /* Any of the three boxes — the same gate generateFor uses. This one said
        "write a description first" at a card that had already been written. */
     const hasDesc = SB.Model.described(sh);
@@ -1094,84 +1096,17 @@
     foot.appendChild(why);
 
     const push = pushBtn(sh, m, field, why);
-    if (push) foot.appendChild(push);
 
-    /* What this push will actually hand over, ALWAYS said -- not only when
-       there is a shortfall.
+    /* The corner names what the two buttons make, and nothing else.
      *
-     * This chip first appeared only when a card fed more references than the
-     * push could carry, which meant the ordinary case -- one subject, one
-     * reference -- showed nothing at all. So "no chip" could mean "sending
-     * one" or "there is nothing to send", and those are the two answers
-     * somebody staring at a wrong face most needs told apart. */
-    const refs = SB.Imagine && SB.Imagine.refsFor
-      ? SB.Imagine.refsFor(P(), sh, roleOf(field)) : null;
-    if (refs && refs.role === 'video') {
-      /* The clip's reference is this card's frame, and only that. */
-      let text, why, warn;
-      if (!refs.frame) {
-        text = 'no frame'; warn = true;
-        why = 'A clip animates this card\u2019s first frame and there is none yet. Render it ' +
-          'first \u2014 without it the model invents the shot from the words instead of moving ' +
-          'the picture you approved.';
-      } else if (refs.feed) {
-        text = 'animates the frame'; warn = false;
-        why = 'The full-size frame on this card is uploaded and animated. The ' + refs.feed +
-          ' reference picture' + (refs.feed === 1 ? '' : 's') + ' marked on this lane ' +
-          (refs.feed === 1 ? 'is' : 'are') + ' NOT sent with it: the still was built from ' +
-          'them and approved, and handing them to the video model too asks it to build the ' +
-          'shot again rather than move the one it was given.';
-      } else {
-        text = 'animates the frame'; warn = false;
-        why = 'The full-size frame on this card is uploaded and animated. That is the clip\u2019s ' +
-          'only reference, which is the point: the shot is not made twice.';
-      }
-      const chip = SB.el('span', 'badge refs' + (warn ? ' warn' : ' ok'), text);
-      chip.title = why;
-      foot.appendChild(chip);
-    } else if (refs) {
-      let text, why, warn;
-      if (refs.byKey && refs.feed) {
-        text = 'no refs sent'; warn = true;
-        why = 'An API-key push carries no reference picture at all, and the prompt describes ' +
-          refs.feed + ' of them as supplied. Sign in to ImagineArt to send the first one, or ' +
-          'drop them in by hand there.';
-      } else if (!refs.feed) {
-        text = 'no refs'; warn = !!refs.wordsOnly;
-        why = refs.wordsOnly
-          ? refs.wordsOnly + ' subject' + (refs.wordsOnly === 1 ? ' on this card has' : 's on this card have') +
-            ' no reference frame, so nothing is sent and the model works from the words alone. ' +
-            'Give them a reference in the References panel if they have to look the same every time.'
-          : 'Nothing is marked on this card, so the push carries the prompt and nothing else.';
-      } else if (refs.many && refs.carries > 1 && refs.carries >= refs.feed) {
-        text = 'sends ' + refs.carries + ' refs'; warn = false;
-        why = 'All ' + refs.carries + ' reference pictures on this card are uploaded with ' +
-          'this push, in the order the prompt names them, so every subject is matched to ' +
-          'its own picture.' +
-          (refs.wordsOnly ? ' ' + refs.wordsOnly + ' other subject' +
-            (refs.wordsOnly === 1 ? ' has' : 's have') + ' no reference frame, so ' +
-            (refs.wordsOnly === 1 ? 'it reaches' : 'they reach') + ' the model as words only.'
-            : '');
-      } else if (refs.feed > refs.carries) {
-        text = '1 of ' + refs.feed + ' refs'; warn = true;
-        why = 'This card feeds ' + refs.feed + ' reference pictures and a still push carries one \u2014 ' +
-          '\u201c' + ((refs.first && refs.first.label) || 'the first') + '\u201d, the one the prompt calls ' +
-          'image 1. The other ' + (refs.feed - refs.carries) + ' reach the model only as words. ' +
-          'Drop them in by hand on ImagineArt if they have to be matched exactly.';
-      } else {
-        text = 'sends 1 ref'; warn = false;
-        why = '\u201c' + ((refs.first && refs.first.label) || 'One reference') + '\u201d is uploaded ' +
-          'with this push and named as image 1 in the prompt.' +
-          (refs.wordsOnly ? ' ' + refs.wordsOnly + ' other subject' +
-            (refs.wordsOnly === 1 ? ' has' : 's have') + ' no reference frame, so ' +
-            (refs.wordsOnly === 1 ? 'it reaches' : 'they reach') + ' the model as words only.' : '');
-      }
-      const chip = SB.el('span', 'badge refs' + (warn ? ' warn' : ' ok'), text);
-      chip.title = why;
-      foot.appendChild(chip);
-    }
-
-    const gen = SB.Focus.costly(SB.el('button', 'mini primary', '\u2726 generate'));
+     * It used to carry a chip counting what the push would hand over --
+     * "sends 1 ref", "animates the frame". The references panel directly
+     * above now shows those same pictures, so the chip was answering a
+     * question already answered, in words, beside the pictures that answer
+     * it better. Worse, "animates the frame" sat next to a button whose job
+     * IS to animate the frame, so the row read as two different things. */
+    foot.appendChild(SB.el('span', 'gen-label', 'Generate:'));
+    const gen = SB.Focus.costly(SB.el('button', 'mini primary'));
     gen.dataset.gen = sh.id + ':' + field;
     paintGen(gen, sh, field);
     gen.onclick = function () {
@@ -1193,6 +1128,7 @@
       });
     };
     foot.appendChild(gen);
+    if (push) foot.appendChild(push);
 
     cell.appendChild(foot);
     return cell;

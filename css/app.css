@@ -1201,6 +1201,8 @@ body.comment-mode .frame{cursor:crosshair}
 }
 .mini.push.failed{border-color:var(--danger);color:var(--danger)}
 .pt-acct{flex:0 0 auto;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* plain text, deliberately not a badge: it labels the two buttons after it */
+.gen-label{flex:0 0 auto;font-size:11px;color:var(--fg-dim);padding:0 2px}
 /* why this row's push is dark, said on the row */
 .push-why{
   font-size:10px;color:var(--fg-dim);font-style:italic;max-width:15ch;
