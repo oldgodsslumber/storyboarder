@@ -1320,7 +1320,7 @@ body.comment-mode .frame{cursor:crosshair}
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-09-17 13:10 · b6a4e10+";</script>
+<script>window.SB_BUILD = "2026-09-17 13:16 · d4bb62f+";</script>
 
 <div id="app">
 
@@ -18490,7 +18490,7 @@ window.SB = window.SB || {};
     const imgs = role === 'video' ? [] : SB.Refs.images(P(), sh, role);
     if (imgs.length) {
       const full = imgs.filter(function (e) { return SB.Renders.has(P(), e.render); }).length;
-      const b = SB.el('button', 'mini', 'copy image set');
+      const b = SB.el('button', 'mini', 'Download for MXM');
       b.title = imgs.length + ' images, numbered in feed order' +
         (full ? ' — ' + full + ' full-size' : ' — all at board size');
       b.onclick = function () { SB.Board.saveFeed(sh, imgs, code); };

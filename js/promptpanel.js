@@ -1336,7 +1336,7 @@
     const imgs = role === 'video' ? [] : SB.Refs.images(P(), sh, role);
     if (imgs.length) {
       const full = imgs.filter(function (e) { return SB.Renders.has(P(), e.render); }).length;
-      const b = SB.el('button', 'mini', 'copy image set');
+      const b = SB.el('button', 'mini', 'Download for MXM');
       b.title = imgs.length + ' images, numbered in feed order' +
         (full ? ' — ' + full + ' full-size' : ' — all at board size');
       b.onclick = function () { SB.Board.saveFeed(sh, imgs, code); };

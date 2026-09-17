@@ -858,7 +858,7 @@
         SB.PromptPanel.open();
         const tBtn = Array.prototype.filter.call(
           document.querySelectorAll('.pt-row[data-shot="' + cShot.id + '"] button'),
-          function (b) { return /copy image set/.test(b.textContent); })[0];
+          function (b) { return /Download for MXM/.test(b.textContent); })[0];
         t('the table offers it instead', !!tBtn, tBtn ? tBtn.textContent : 'none');
         var threw = null;
         try { if (tBtn) tBtn.click(); } catch (e) { threw = e.message; }
@@ -2391,7 +2391,7 @@
           fLane().querySelector('.feed-n').textContent);
         t('and the image set can be handed over',
           Array.prototype.some.call(fLane().querySelectorAll('button'),
-            function (b) { return /copy image set/.test(b.textContent); }),
+            function (b) { return /Download for MXM/.test(b.textContent); }),
           fLane().textContent.slice(0, 90));
         SB.PromptPanel.close();
 
@@ -3578,7 +3578,7 @@
           laneOf(made[0], 'video').querySelectorAll('.pt-fe.not-sent').length);
         t('with no offer to copy them as the clip\u2019s set',
           !Array.prototype.some.call(laneOf(made[0], 'video').querySelectorAll('button'),
-            function (b) { return /copy image set/.test(b.textContent); }), '');
+            function (b) { return /Download for MXM/.test(b.textContent); }), '');
 
         SB.PromptPanel.close();
         made.forEach(function (x) { SB.Model.deleteShot(P(), x.id); });
