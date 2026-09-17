@@ -297,6 +297,13 @@
           add('originals', sh.render && sh.render.ref);
           add('clips', sh.video && sh.video.ref);
           (sh.videoAlts || []).forEach(function (r) { add('clips', r && r.ref); });
+          /* the other STILL takes are weight too, both halves of each */
+          (sh.imageAlts || []).forEach(function (r) {
+            if (!r) return;
+            add('proxies', refOf(r.image));
+            add('originals', r.render && r.render.ref);
+            if (isDangling(p, r.render)) out.dangling++;
+          });
           if (isLegacy(sh.render)) out.legacy++;
           if (isDangling(p, sh.render)) out.dangling++;
           if (isDangling(p, sh.video)) out.dangling++;

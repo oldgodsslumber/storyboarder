@@ -1182,13 +1182,30 @@
     /* Swapping two cards' pictures is alt-drag, and only alt-drag. The
        two-click route existed for when a modifier is not on your mind; it
        cost a button on every card to save a key on a rare gesture. */
+    /* ---- the whole card is the handle ----
+     *
+     * The head used to be the only place a card would drag from, which made
+     * every other inch of a card dead weight: you reached for it and it did
+     * not come. Now anything that is not an element you interact with grabs
+     * the card — the head, the labels, the padding, the background.
+     *
+     * But the card must not be STATICALLY draggable. A draggable ancestor is
+     * the classic way to kill text selection in its children: the browser
+     * starts a drag where the user meant to place a caret, and on some
+     * engines contenteditable inside a draggable element stops taking type.
+     * The card is full of editable boxes. So the card arms itself per press:
+     * mousedown decides, from where the press landed, whether THIS press may
+     * become a drag, and every release puts it back. */
+    const GRAB_NOT = 'button, select, input, textarea, [contenteditable], ' +
+      'img, video, .desc-box, .prompt-box, .clip-badge, .frame, .comments';
     c.addEventListener('mousedown', function (ev) {
+      c.draggable = !ev.target.closest(GRAB_NOT);
       if (ev.target.closest('button, select, input, textarea, [contenteditable]')) return;
-      /* The header is the drag handle, and preventDefault here cancels the
-       * browser's drag before it starts — so shift-drag could not even begin
-       * from the one place a drag begins. Range-select keeps the rest of the
-       * card; the handle's job is dragging. */
-      if (ev.shiftKey && ev.target.closest('.card-head')) return;
+      /* preventDefault on a grab zone cancels the browser's drag before it
+       * starts — so a modified drag could not even begin from the places a
+       * drag begins. Range-select keeps the interactive rest of the card;
+       * a handle's job is dragging. */
+      if (ev.shiftKey && c.draggable) return;
       if (ev.ctrlKey || ev.metaKey || ev.shiftKey) {
         ev.preventDefault();                       // no text selection while picking
         selectShot(sh.id, ev);
@@ -1197,12 +1214,9 @@
       if (isSelected(sh.id) && selection().length > 1) return;  // keep the group for a drag
       selectShot(sh.id, ev);
     });
-
-    /* --- head --- */
-    const head = SB.el('div', 'card-head');
-    head.draggable = true;
-    head.addEventListener('dragend', function () { unmark(); });
-    head.addEventListener('dragstart', function (ev) {
+    /* every way a press ends disarms it, so the next press decides afresh */
+    c.addEventListener('mouseup', function () { c.draggable = false; });
+    c.addEventListener('dragstart', function (ev) {
       ev.dataTransfer.setData(DND_SHOT, sh.id);
       /* copyMove, not move: a dropEffect outside effectAllowed is forced to
        * `none`, and `none` means the drop event never fires at all. Saying
@@ -1215,7 +1229,14 @@
         if (el) el.classList.add('dragging');
       });
     });
-    head.addEventListener('dragend', function () { c.classList.remove('dragging'); });
+    c.addEventListener('dragend', function () {
+      unmark();
+      c.classList.remove('dragging');
+      c.draggable = false;
+    });
+
+    /* --- head --- */
+    const head = SB.el('div', 'card-head');
 
     head.appendChild(SB.el('span', 'code', SB.Model.code(si, sj)));
     /* The number the full-size render is filed under. A serial means nothing on
@@ -1851,9 +1872,18 @@
    * original, feeding it to a clip, or opening it when the now-empty frame
    * is clicked. */
   function dropImage(sh) {
-    sh.image = null;
-    sh.render = null;
+    /* Removing the picture removes THIS take. Where the card holds others,
+       the newest of them steps up — the same promotion a clip's takes make,
+       so a card with takes never shows empty while still carrying three.
+       Emptying a card that holds several is done take by take, or from the
+       Reviewer, where each delete says which one it is. */
+    const had = SB.Model.stillTakeCount(sh);
+    SB.Model.dropStillTake(sh, null);
     SB.app.changed(true);
+    if (had > 1) {
+      SB.toast('Take removed — the newest of the other ' + (had - 1) +
+        ' shows now');
+    }
   }
 
   function frame(sh) {
@@ -1906,6 +1936,22 @@
       f.appendChild(play);
     }
 
+    /* And the same honesty for stills: three renders hiding behind one frame
+       is the problem takes exist to end. Only when there is something hidden. */
+    {
+      const n = SB.Model.stillTakeCount(sh);
+      if (n > 1) {
+        const tb = SB.el('button', 'take-badge', '\u00d7' + n);
+        tb.title = n + ' takes of this frame \u2014 open the Reviewer to compare, ' +
+          'choose or delete them';
+        tb.onclick = function (ev) {
+          ev.stopPropagation();
+          if (SB.Reviewer) SB.Reviewer.open(P(), sh);
+        };
+        f.appendChild(tb);
+      }
+    }
+
     const tools = SB.el('div', 'frame-tools');
     if (SB.app.commentMode && sh.image) {
       const dr = SB.el('button', 'mini', 'draw');
@@ -1943,6 +1989,11 @@
         SB.toast('This page is an old copy and the viewer did not load — reload it.', true);
         return;
       }
+      /* A shot opens the Reviewer — the picture full size with every take
+         beside it — because a shot is a thing you judge between versions of.
+         The Viewer keeps every other caller: references and persona frames
+         are one picture, and it is the right tool for one picture. */
+      if (SB.Reviewer) { SB.Reviewer.open(P(), sh); return; }
       const f2 = SB.Model.findShot(P(), sh.id);
       SB.Viewer.open(P(), [{
         img: sh.image, render: sh.render,
@@ -2101,13 +2152,20 @@
   function setImage(sh, src, made) {
     return SB.downscaleImage(src).then(function (img) {
       const proxy = SB.Blobs.image(P(), img.data, img.w, img.h);
+      /* The picture that was here joins the card's takes rather than being
+         overwritten — rendering a shot again is the ordinary case, and until
+         now the second landing silently deleted the first. Banked BEFORE the
+         slot changes hands, and the new render claims a serial of its own
+         below: the old file lives on under its old number, and two takes
+         filed under 0007 would write the same name twice into one export. */
+      SB.Model.keepStillTake(sh);
       sh.image = proxy;
+      sh.render = null;
       /* Always asynchronous — a generated still can land long after the click
          that asked for it, so it queues behind whatever is being typed. */
       SB.Focus.defer('image:' + sh.id, function () { SB.app.changed(true); });
 
-      const existing = sh.render;
-      return SB.Renders.keep(P(), src, existing, made).then(function (rec) {
+      return SB.Renders.keep(P(), src, null, made).then(function (rec) {
         if (!rec) return;
         const target = (sh.image && sh.image.ref === proxy.ref)
           ? sh : SB.Model.shotHolding(P(), proxy.ref);

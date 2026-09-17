@@ -261,6 +261,10 @@ body.marquee-on{user-select:none;cursor:crosshair}
   background:var(--accent2);color:var(--on-accent);font-size:10px;font-weight:700;
   padding:2px 8px;border-radius:9px;letter-spacing:.4px;pointer-events:none;z-index:2;
 }
+.card{cursor:grab}
+.card .desc-box,.card .prompt-box{cursor:text}
+.card .frame{cursor:zoom-in}
+.card .frame .drop-hint{cursor:pointer}
 .card-head{
   display:flex;align-items:center;gap:6px;padding:4px 6px;cursor:grab;
   background:color-mix(in srgb, var(--card-color) var(--card-tint-strong), var(--bg3));
@@ -996,6 +1000,36 @@ button.linkish{
 .viewer-step.prev{left:6px}
 .viewer-step.next{right:6px}
 
+/* ---- the Shot Reviewer: one take big, every take beside it ---- */
+.reviewer{display:flex;gap:14px;min-height:60vh;max-height:78vh}
+.rev-left{flex:1 1 auto;display:flex;flex-direction:column;gap:8px;min-width:0}
+.rev-stage{
+  flex:1 1 auto;display:flex;align-items:center;justify-content:center;
+  background:#000;border-radius:8px;overflow:hidden;min-height:0;
+}
+.rev-stage img{max-width:100%;max-height:100%;object-fit:contain;display:block}
+.rev-stage.is-proxy + .viewer-cap{color:var(--accent2)}
+.rev-col{flex:0 0 300px;display:flex;flex-direction:column;gap:10px;min-height:0}
+.rev-takes{flex:1 1 auto;overflow-y:auto;display:flex;flex-direction:column;gap:6px}
+.rev-take{
+  display:flex;align-items:center;gap:8px;padding:6px;border-radius:8px;
+  border:1px solid var(--line);background:var(--bg2);cursor:pointer;
+}
+.rev-take:hover{border-color:var(--line2)}
+.rev-take.cur{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.rev-take.on .rev-n{color:var(--accent)}
+.rev-thumb{flex:0 0 84px;height:48px;border-radius:4px;overflow:hidden;background:#000}
+.rev-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.rev-meta{flex:1 1 auto;min-width:0}
+.rev-n{font-size:12px;font-weight:600}
+.rev-what{font-size:10px;color:var(--fg-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rev-btns{display:flex;gap:4px;align-items:center}
+.rev-actions{display:flex;flex-direction:column;gap:6px;border-top:1px solid var(--line);padding-top:10px}
+@media (max-width: 900px){
+  .reviewer{flex-direction:column;max-height:none}
+  .rev-col{flex:1 1 auto}
+}
+
 .pt-lane{position:relative}
 /* What this push asks the model for, beside the button that sends it. The
    menus are the model's own lists, so an unlisted value cannot be chosen —
@@ -1227,6 +1261,14 @@ body.comment-mode .frame{cursor:crosshair}
 /* A card with a clip says so in the corner, and unlike the frame tools it is
    always visible: the clip is not in the project file, so this badge is the
    only sign it exists at all. */
+/* how many still takes hide behind this frame */
+.take-badge{
+  position:absolute;top:4px;left:4px;z-index:2;
+  background:color-mix(in srgb, var(--bg) 75%, transparent);
+  border:1px solid var(--line2);border-radius:9px;color:var(--fg-dim);
+  font-size:10px;font-weight:700;padding:1px 7px;cursor:pointer;
+}
+.take-badge:hover{border-color:var(--accent);color:var(--accent)}
 .clip-badge{
   position:absolute;left:4px;top:4px;z-index:2;
   min-width:22px;height:22px;border-radius:11px;cursor:pointer;
@@ -1325,7 +1367,7 @@ body.comment-mode .frame{cursor:crosshair}
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-09-17 13:43 · 7a38656+";</script>
+<script>window.SB_BUILD = "2026-09-17 14:08 · 989e2ff+";</script>
 
 <div id="app">
 
@@ -2493,6 +2535,12 @@ window.SB = window.SB || {};
            * next structural change delete the clips somebody deliberately
            * kept -- the exact failure the originals had before them. */
           (sh.videoAlts || []).forEach(mark);
+          /* and the other STILL takes, both halves of each */
+          (sh.imageAlts || []).forEach(function (r) {
+            if (!r) return;
+            mark(r.image);
+            mark(r.render);
+          });
         });
       });
     };
@@ -4200,6 +4248,13 @@ window.SB = window.SB || {};
           add('originals', sh.render && sh.render.ref);
           add('clips', sh.video && sh.video.ref);
           (sh.videoAlts || []).forEach(function (r) { add('clips', r && r.ref); });
+          /* the other STILL takes are weight too, both halves of each */
+          (sh.imageAlts || []).forEach(function (r) {
+            if (!r) return;
+            add('proxies', refOf(r.image));
+            add('originals', r.render && r.render.ref);
+            if (isDangling(p, r.render)) out.dangling++;
+          });
           if (isLegacy(sh.render)) out.legacy++;
           if (isDangling(p, sh.render)) out.dangling++;
           if (isDangling(p, sh.video)) out.dangling++;
@@ -10131,6 +10186,99 @@ window.SB = window.SB || {};
     return true;
   }
 
+  /* ---- still takes ----
+   *
+   * The same story stills lived through after clips: render a shot three
+   * times and the board remembered one, because setImage overwrote the proxy
+   * and the original on every landing. The take you liked second-best was
+   * gone the moment a better-lit worse one arrived.
+   *
+   * `shot.image` + `shot.render` stay the CHOSEN take and the only thing
+   * every reader looks at — board, feed, prompts, push, PDF, export.
+   * `imageAlts` is the rest: [{image, render, at}], each keeping its own
+   * proxy (thumbnails) and its own full-size record (judging, and feeding a
+   * model if it is ever chosen). Purely additive: a board that never kept
+   * one behaves exactly as it did. */
+  function stillTakes(shot) {
+    const out = [];
+    if (shot && (shot.image || shot.render)) {
+      out.push({ image: shot.image, render: shot.render, at: takenAt(shot), chosen: true });
+    }
+    ((shot && shot.imageAlts) || []).forEach(function (r) {
+      if (r && (r.image || r.render)) {
+        out.push({ image: r.image, render: r.render, at: r.at || 0, chosen: false, rec: r });
+      }
+    });
+    /* numbered by when they were made, not by where they sit: a take number
+       is a fact about the shoot, and the chosen one moves */
+    out.sort(function (x, y) { return (x.at || 0) - (y.at || 0); });
+    out.forEach(function (x, i) { x.n = i + 1; });
+    return out;
+  }
+
+  /* When the chosen still was taken. The render record carries a time; a
+     board-copy-only card gets 0 and sorts first, which is the only honest
+     place for a picture nobody dated. */
+  function takenAt(shot) {
+    return (shot.render && shot.render.at) || (shot.image && shot.image.at) || 0;
+  }
+
+  function stillTakeCount(shot) {
+    return (shot && (shot.image || shot.render) ? 1 : 0) +
+      (((shot && shot.imageAlts) || []).length);
+  }
+
+  /* A new still arrives: the chosen one joins the rest and the new one takes
+   * the slot, in ONE step — the two-step version is how clips once stranded
+   * takes on cards that could not show, export or delete them. The caller
+   * assigns image/render itself (setImage already owns that dance with the
+   * async original); this only banks what was there. */
+  function keepStillTake(shot) {
+    if (!shot || !(shot.image || shot.render)) return false;
+    shot.imageAlts = (shot.imageAlts || []).concat([{
+      image: shot.image || null, render: shot.render || null, at: takenAt(shot)
+    }]);
+    return true;
+  }
+
+  /* Swap a take into the chosen slot. The one that was chosen joins the rest
+   * rather than being thrown away — this is a choice, not a deletion. */
+  function useStillTake(shot, rec) {
+    if (!shot || !rec) return false;
+    const alts = (shot.imageAlts || []).slice();
+    const i = alts.indexOf(rec);
+    if (i < 0) return false;
+    alts.splice(i, 1);
+    if (shot.image || shot.render) {
+      alts.push({ image: shot.image || null, render: shot.render || null, at: takenAt(shot) });
+    }
+    shot.imageAlts = alts;
+    shot.image = rec.image || null;
+    shot.render = rec.render || null;
+    return true;
+  }
+
+  /* One take, gone. Removing the chosen one promotes the newest of what is
+   * left, so a card with takes never shows empty while still carrying three. */
+  function dropStillTake(shot, rec) {
+    if (!shot) return false;
+    if (!rec) {                                    // the chosen one
+      const rest = (shot.imageAlts || []).slice()
+        .sort(function (x, y) { return (y.at || 0) - (x.at || 0); });
+      const next = rest.shift() || null;
+      shot.image = next ? (next.image || null) : null;
+      shot.render = next ? (next.render || null) : null;
+      shot.imageAlts = rest;
+      return true;
+    }
+    const alts = (shot.imageAlts || []).slice();
+    const i = alts.indexOf(rec);
+    if (i < 0) return false;
+    alts.splice(i, 1);
+    shot.imageAlts = alts;
+    return true;
+  }
+
   function newShot(opts) {
     opts = opts || {};
     return {
@@ -10159,6 +10307,9 @@ window.SB = window.SB || {};
       /* Every other take of this shot, oldest kept first. `video` above is
        * the chosen one and stays the only thing the rest of the app reads. */
       videoAlts: [],
+      /* Every other STILL take: [{image, render, at}]. `image`/`render`
+       * below are the chosen one, same contract as the clips above. */
+      imageAlts: [],
       annotation: null,                 // {ref} — transparent PNG overlay
       /* What this card asks of the generator, where it differs from the
        * board: { duration, resolution, quality }. Sparse on purpose — a key
@@ -11051,9 +11202,10 @@ window.SB = window.SB || {};
   const CONTENT_KEYS = [
     'type', 'color', 'image', 'annotation', 'description',
     'imageDescription', 'videoDescription', 'shoot',
-    /* videoAlts is the other takes of `video`; leaving it out of the swap
-       separated the chosen take from the ones it was chosen against */
-    'videoAlts',
+    /* the alts are the other takes of `video` and of `image`; leaving them
+       out of the swap separated the chosen take from the ones it was chosen
+       against */
+    'videoAlts', 'imageAlts',
     'fields', 'prompts', 'personaIds', 'castEnters', 'comments', 'render', 'video'
   ];
 
@@ -11100,6 +11252,17 @@ window.SB = window.SB || {};
     } else {
       copy.render = null;
     }
+    /* and its other still takes with it, each under a serial of its own —
+       shared bytes, never a shared filename */
+    copy.imageAlts = (copy.imageAlts || []).map(function (r) {
+      if (r && r.render && r.render.ref) {
+        p.renderSeq = (p.renderSeq | 0) + 1;
+        return Object.assign({}, r, {
+          render: Object.assign({}, r.render, { serial: p.renderSeq })
+        });
+      }
+      return r;
+    });
     /* the clip was shot for the original, and its other takes with it */
     copy.video = null;
     copy.videoAlts = [];
@@ -11229,6 +11392,9 @@ window.SB = window.SB || {};
     DEFAULT_SHOT_TYPES: DEFAULT_SHOT_TYPES,
     DEFAULT_FRAMING: DEFAULT_FRAMING, framingFor: framingFor, guessFraming: guessFraming,
     takes: takes, takeCount: takeCount, addTake: addTake, repairTakes: repairTakes,
+    stillTakes: stillTakes, stillTakeCount: stillTakeCount,
+    keepStillTake: keepStillTake, useStillTake: useStillTake,
+    dropStillTake: dropStillTake,
     useTake: useTake, dropTake: dropTake,
     IMG_TPL: IMG_TPL, IMG_TPL_V1: IMG_TPL_V1,
     VID_TPL: VID_TPL, VID_TPL_V1: VID_TPL_V1, VID_TPL_V2: VID_TPL_V2,
@@ -12966,6 +13132,248 @@ window.SB = window.SB || {};
 
 </script>
 <script>
+/* ===== js/reviewer.js ===== */
+/* reviewer.js — every take of a shot, judged at full size.
+ *
+ * The Viewer answers "show me this picture properly". A shot needs a second
+ * question answered: "which of these do I keep?" — because rendering a shot
+ * several times is the ordinary case, and the takes now survive it. So a
+ * shot's frame opens this instead: the highlighted take full size on the
+ * left, every take the card holds down the right, and the three verbs that
+ * matter — use this one, delete it, make another.
+ *
+ * The Viewer's contract carries over whole: a picture changes only on an
+ * explicit act. Nothing in here swaps a picture as a side effect of looking.
+ */
+(function (SB) {
+  'use strict';
+
+  function fmtWhen(at) {
+    if (!at) return 'undated';
+    const d = new Date(at);
+    return d.toLocaleDateString() + ' ' + d.toLocaleTimeString().replace(/:\d\d(\s|$)/, '$1');
+  }
+
+  function madeLine(t) {
+    const made = t.render && t.render.made;
+    if (made) return made.model || made.slug || 'made here';
+    return 'added from a file';
+  }
+
+  function open(p, sh) {
+    const takes = SB.Model.stillTakes(sh);
+    if (!takes.length) return null;
+
+    /* the chosen one first on screen — it is what the board is showing */
+    let cur = takes.map(function (t) { return t.chosen; }).indexOf(true);
+    if (cur < 0) cur = takes.length - 1;
+
+    const wrap = SB.el('div', 'reviewer');
+
+    /* ---- left: the take, big enough to judge ---- */
+    const stage = SB.el('div', 'rev-stage');
+    const img = document.createElement('img');
+    stage.appendChild(img);
+    const cap = SB.el('div', 'viewer-cap');
+
+    const left = SB.el('div', 'rev-left');
+    left.appendChild(stage);
+    left.appendChild(cap);
+    wrap.appendChild(left);
+
+    /* ---- right: the takes, and what can be done to them ---- */
+    const col = SB.el('div', 'rev-col');
+    const listEl = SB.el('div', 'rev-takes');
+    col.appendChild(listEl);
+    const acts = SB.el('div', 'rev-actions');
+    col.appendChild(acts);
+    wrap.appendChild(col);
+
+    const codeOf = function () {
+      const f = SB.Model.findShot(p, sh.id);
+      return f ? f.code : '';
+    };
+
+    /* Choosing a different take changes the picture the clip animates and
+     * the picture the prompts were written about — so the written video
+     * prompt is out of date the moment the choice lands, and it says so
+     * instead of quietly describing the wrong picture. */
+    const staleVideo = function () {
+      const vm = SB.Model.videoModel(p);
+      const pr = vm && sh.prompts && sh.prompts[vm.id];
+      if (pr && pr.videoPrompt) pr.stale = 'the frame changed';
+    };
+
+    const onKey = function (e) {
+      if (!SB.isTopModal || !SB.isTopModal(m.root)) return;
+      if (e.key === 'ArrowDown') { move(1); e.preventDefault(); }
+      else if (e.key === 'ArrowUp') { move(-1); e.preventDefault(); }
+      else if (e.key === 'Enter') {
+        const use = listEl.querySelector('.rev-take.cur button.primary');
+        if (use) { use.click(); e.preventDefault(); }
+      } else if (e.key === 'Delete') {
+        const del = listEl.querySelector('.rev-take.cur button.danger');
+        if (del) { del.click(); e.preventDefault(); }
+      }
+    };
+
+    const m = SB.modal({
+      title: 'Shot ' + codeOf() + (sh.type ? ' · ' + sh.type : ''),
+      width: 'min(96vw, 1400px)',
+      body: wrap,
+      buttons: [{ label: 'Close', primary: true }],
+      onClose: function () { document.removeEventListener('keydown', onKey); }
+    });
+    m.root.classList.add('rev-back');
+    document.addEventListener('keydown', onKey);
+
+    function move(by) {
+      const list = SB.Model.stillTakes(sh);
+      if (!list.length) return;
+      cur = SB.clamp(cur + by, 0, list.length - 1);
+      paint();
+    }
+
+    function drawStage(t) {
+      const got = SB.Viewer.srcOf(p, { img: t.image, render: t.render });
+      img.src = got.src;
+      const line = function (el) {
+        const bits = ['take ' + t.n + (t.chosen ? ' — chosen' : '')];
+        if (el && el.naturalWidth) bits.push(el.naturalWidth + '×' + el.naturalHeight);
+        else if (t.image && t.image.w) bits.push(t.image.w + '×' + t.image.h);
+        if (got.full) {
+          bits.push('full-size original');
+          if (got.file) bits.push(got.file);
+          if (got.bytes) bits.push(Math.round(got.bytes / 1024) + ' KB');
+        } else {
+          /* said plainly, same as the Viewer: a board copy is what a model
+             would be fed, and that is worth knowing before judging a face */
+          bits.push('the board’s own copy — no full-size original in this file');
+        }
+        cap.textContent = bits.join(' · ');
+      };
+      img.onload = function () { line(img); };
+      line(null);
+      stage.classList.toggle('is-proxy', !got.full);
+    }
+
+    function row(t, i, count) {
+      const r = SB.el('div', 'rev-take' + (i === cur ? ' cur' : '') + (t.chosen ? ' on' : ''));
+      r.addEventListener('click', function () { cur = i; paint(); });
+
+      const th = SB.el('span', 'rev-thumb');
+      const ti = document.createElement('img');
+      ti.src = t.image ? SB.Blobs.src(p, t.image)
+        : (t.render ? SB.Renders.dataUrl(p, t.render) : '');
+      th.appendChild(ti);
+      r.appendChild(th);
+
+      const meta = SB.el('div', 'rev-meta');
+      meta.appendChild(SB.el('div', 'rev-n', 'take ' + t.n +
+        (t.chosen ? ' · chosen' : '')));
+      meta.appendChild(SB.el('div', 'rev-what', madeLine(t) + ' · ' + fmtWhen(t.at)));
+      r.appendChild(meta);
+
+      const btns = SB.el('div', 'rev-btns');
+      if (!t.chosen) {
+        const use = SB.el('button', 'mini primary', 'use this one');
+        use.title = 'Make this the take the board shows, the exports pick, and the clip animates.';
+        use.onclick = function (ev) {
+          ev.stopPropagation();
+          SB.Model.useStillTake(sh, t.rec);
+          staleVideo();
+          SB.app.changed(true);
+          SB.toast('Take ' + t.n + ' is the one on ' + (codeOf() || 'the card'));
+          paint();
+        };
+        btns.appendChild(use);
+      }
+      const del = SB.el('button', 'mini danger', '✕');
+      del.title = t.chosen
+        ? 'Delete this take. The newest of the rest steps up' +
+          (count === 1 ? ' — it is the last, so the card goes empty.' : '.')
+        : 'Delete this take. The bytes go with it.';
+      SB.armButton(del, 'delete take ' + t.n + '?', function () {
+        SB.Model.dropStillTake(sh, t.chosen ? null : t.rec);
+        if (t.chosen) staleVideo();
+        SB.app.changed(true);
+        SB.toast('Take ' + t.n + ' deleted' +
+          (t.chosen && count > 1 ? ' — the newest of the rest is chosen now' : ''));
+        if (SB.Model.stillTakeCount(sh) === 0) { m.close(); return; }
+        cur = 0;
+        paint();
+      });
+      del.addEventListener('click', function (ev) { ev.stopPropagation(); });
+      btns.appendChild(del);
+      r.appendChild(btns);
+      return r;
+    }
+
+    function actions() {
+      acts.innerHTML = '';
+      const IM = SB.Imagine;
+      const im = SB.Model.imageModel(p);
+
+      const again = SB.el('button', 'tb',
+        SB.Model.stillTakeCount(sh) ? '🖼️ render another take' : '🖼️ render it');
+      const why = IM && IM.whyNot ? IM.whyNot(p, sh, im, 'image') : null;
+      const busy = IM && IM.busy && IM.busy(sh.id, 'image');
+      again.disabled = !!why || !!busy || !IM;
+      again.title = why ? why.long
+        : busy ? 'ImagineArt is already working on this one.'
+          : 'Send the first-frame prompt to ' + (im && im.name) +
+            '. What is here is kept as another take.';
+      again.onclick = function () {
+        again.disabled = true;
+        again.textContent = 'sending…';
+        IM.run(sh, 'image').then(function () {
+          SB.toast('New take is on ' + (codeOf() || 'the card'));
+          cur = 0;
+          paint();
+        }).catch(function (e) {
+          SB.toast(e.message, true);
+          paint();
+        });
+      };
+      acts.appendChild(again);
+
+      const add = SB.el('button', 'tb', '+ add from file');
+      add.title = 'A picture you already have becomes the new chosen take; what is here is kept.';
+      add.onclick = function () {
+        SB.pickImageFile().then(function (f) {
+          if (!f) return;
+          return SB.Board.setImage(sh, f).then(function () {
+            cur = 0;
+            paint();
+          });
+        });
+      };
+      acts.appendChild(add);
+    }
+
+    function paint() {
+      const list = SB.Model.stillTakes(sh);
+      if (!list.length) { m.close(); return; }
+      /* newest first down the column: the take you just made is the one you
+         came to compare */
+      list.sort(function (x, y) { return (y.at || 0) - (x.at || 0); });
+      cur = SB.clamp(cur, 0, list.length - 1);
+      listEl.innerHTML = '';
+      list.forEach(function (t, i) { listEl.appendChild(row(t, i, list.length)); });
+      drawStage(list[cur]);
+      actions();
+    }
+
+    paint();
+    return m;
+  }
+
+  SB.Reviewer = { open: open };
+
+})(window.SB);
+
+</script>
+<script>
 /* ===== js/board.js ===== */
 /* board.js — scene list, scene blocks, shot cards, drag & drop. */
 (function (SB) {
@@ -14151,13 +14559,30 @@ window.SB = window.SB || {};
     /* Swapping two cards' pictures is alt-drag, and only alt-drag. The
        two-click route existed for when a modifier is not on your mind; it
        cost a button on every card to save a key on a rare gesture. */
+    /* ---- the whole card is the handle ----
+     *
+     * The head used to be the only place a card would drag from, which made
+     * every other inch of a card dead weight: you reached for it and it did
+     * not come. Now anything that is not an element you interact with grabs
+     * the card — the head, the labels, the padding, the background.
+     *
+     * But the card must not be STATICALLY draggable. A draggable ancestor is
+     * the classic way to kill text selection in its children: the browser
+     * starts a drag where the user meant to place a caret, and on some
+     * engines contenteditable inside a draggable element stops taking type.
+     * The card is full of editable boxes. So the card arms itself per press:
+     * mousedown decides, from where the press landed, whether THIS press may
+     * become a drag, and every release puts it back. */
+    const GRAB_NOT = 'button, select, input, textarea, [contenteditable], ' +
+      'img, video, .desc-box, .prompt-box, .clip-badge, .frame, .comments';
     c.addEventListener('mousedown', function (ev) {
+      c.draggable = !ev.target.closest(GRAB_NOT);
       if (ev.target.closest('button, select, input, textarea, [contenteditable]')) return;
-      /* The header is the drag handle, and preventDefault here cancels the
-       * browser's drag before it starts — so shift-drag could not even begin
-       * from the one place a drag begins. Range-select keeps the rest of the
-       * card; the handle's job is dragging. */
-      if (ev.shiftKey && ev.target.closest('.card-head')) return;
+      /* preventDefault on a grab zone cancels the browser's drag before it
+       * starts — so a modified drag could not even begin from the places a
+       * drag begins. Range-select keeps the interactive rest of the card;
+       * a handle's job is dragging. */
+      if (ev.shiftKey && c.draggable) return;
       if (ev.ctrlKey || ev.metaKey || ev.shiftKey) {
         ev.preventDefault();                       // no text selection while picking
         selectShot(sh.id, ev);
@@ -14166,12 +14591,9 @@ window.SB = window.SB || {};
       if (isSelected(sh.id) && selection().length > 1) return;  // keep the group for a drag
       selectShot(sh.id, ev);
     });
-
-    /* --- head --- */
-    const head = SB.el('div', 'card-head');
-    head.draggable = true;
-    head.addEventListener('dragend', function () { unmark(); });
-    head.addEventListener('dragstart', function (ev) {
+    /* every way a press ends disarms it, so the next press decides afresh */
+    c.addEventListener('mouseup', function () { c.draggable = false; });
+    c.addEventListener('dragstart', function (ev) {
       ev.dataTransfer.setData(DND_SHOT, sh.id);
       /* copyMove, not move: a dropEffect outside effectAllowed is forced to
        * `none`, and `none` means the drop event never fires at all. Saying
@@ -14184,7 +14606,14 @@ window.SB = window.SB || {};
         if (el) el.classList.add('dragging');
       });
     });
-    head.addEventListener('dragend', function () { c.classList.remove('dragging'); });
+    c.addEventListener('dragend', function () {
+      unmark();
+      c.classList.remove('dragging');
+      c.draggable = false;
+    });
+
+    /* --- head --- */
+    const head = SB.el('div', 'card-head');
 
     head.appendChild(SB.el('span', 'code', SB.Model.code(si, sj)));
     /* The number the full-size render is filed under. A serial means nothing on
@@ -14820,9 +15249,18 @@ window.SB = window.SB || {};
    * original, feeding it to a clip, or opening it when the now-empty frame
    * is clicked. */
   function dropImage(sh) {
-    sh.image = null;
-    sh.render = null;
+    /* Removing the picture removes THIS take. Where the card holds others,
+       the newest of them steps up — the same promotion a clip's takes make,
+       so a card with takes never shows empty while still carrying three.
+       Emptying a card that holds several is done take by take, or from the
+       Reviewer, where each delete says which one it is. */
+    const had = SB.Model.stillTakeCount(sh);
+    SB.Model.dropStillTake(sh, null);
     SB.app.changed(true);
+    if (had > 1) {
+      SB.toast('Take removed — the newest of the other ' + (had - 1) +
+        ' shows now');
+    }
   }
 
   function frame(sh) {
@@ -14875,6 +15313,22 @@ window.SB = window.SB || {};
       f.appendChild(play);
     }
 
+    /* And the same honesty for stills: three renders hiding behind one frame
+       is the problem takes exist to end. Only when there is something hidden. */
+    {
+      const n = SB.Model.stillTakeCount(sh);
+      if (n > 1) {
+        const tb = SB.el('button', 'take-badge', '\u00d7' + n);
+        tb.title = n + ' takes of this frame \u2014 open the Reviewer to compare, ' +
+          'choose or delete them';
+        tb.onclick = function (ev) {
+          ev.stopPropagation();
+          if (SB.Reviewer) SB.Reviewer.open(P(), sh);
+        };
+        f.appendChild(tb);
+      }
+    }
+
     const tools = SB.el('div', 'frame-tools');
     if (SB.app.commentMode && sh.image) {
       const dr = SB.el('button', 'mini', 'draw');
@@ -14912,6 +15366,11 @@ window.SB = window.SB || {};
         SB.toast('This page is an old copy and the viewer did not load — reload it.', true);
         return;
       }
+      /* A shot opens the Reviewer — the picture full size with every take
+         beside it — because a shot is a thing you judge between versions of.
+         The Viewer keeps every other caller: references and persona frames
+         are one picture, and it is the right tool for one picture. */
+      if (SB.Reviewer) { SB.Reviewer.open(P(), sh); return; }
       const f2 = SB.Model.findShot(P(), sh.id);
       SB.Viewer.open(P(), [{
         img: sh.image, render: sh.render,
@@ -15070,13 +15529,20 @@ window.SB = window.SB || {};
   function setImage(sh, src, made) {
     return SB.downscaleImage(src).then(function (img) {
       const proxy = SB.Blobs.image(P(), img.data, img.w, img.h);
+      /* The picture that was here joins the card's takes rather than being
+         overwritten — rendering a shot again is the ordinary case, and until
+         now the second landing silently deleted the first. Banked BEFORE the
+         slot changes hands, and the new render claims a serial of its own
+         below: the old file lives on under its old number, and two takes
+         filed under 0007 would write the same name twice into one export. */
+      SB.Model.keepStillTake(sh);
       sh.image = proxy;
+      sh.render = null;
       /* Always asynchronous — a generated still can land long after the click
          that asked for it, so it queues behind whatever is being typed. */
       SB.Focus.defer('image:' + sh.id, function () { SB.app.changed(true); });
 
-      const existing = sh.render;
-      return SB.Renders.keep(P(), src, existing, made).then(function (rec) {
+      return SB.Renders.keep(P(), src, null, made).then(function (rec) {
         if (!rec) return;
         const target = (sh.image && sh.image.ref === proxy.ref)
           ? sh : SB.Model.shotHolding(P(), proxy.ref);
@@ -23474,7 +23940,7 @@ window.SB = window.SB || {};
    * cached index.html is invisible until somebody presses the one control
    * that needed it and nothing happens. */
   const PARTS = ['Doc', 'Blobs', 'Renders', 'Refs', 'Personas', 'Fields', 'Model', 'Store',
-    'History', 'Editor', 'RefBox', 'Viewer', 'Board', 'ScriptMode', 'Comments', 'Prompts',
+    'History', 'Editor', 'RefBox', 'Viewer', 'Reviewer', 'Board', 'ScriptMode', 'Comments', 'Prompts',
     'Coverage', 'PromptPanel', 'PersonaPanel', 'Mentions', 'Settings', 'Versions', 'Brand',
     'Pdf', 'Imagine', 'H3', 'Providers'];
 

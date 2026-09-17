@@ -665,8 +665,16 @@ console.log('\n\u2014 what a synthetic drag cannot tell you \u2014');
 
   /* The other half: preventDefault on the drag handle cancels the drag before
      it starts, so shift-held-from-the-start could never begin one. */
-  eq(board.indexOf("ev.shiftKey && ev.target.closest('.card-head')") > 0, true,
-    'and the drag handle is left to the browser when shift is held');
+  eq(board.indexOf('ev.shiftKey && c.draggable') > 0, true,
+    'and an armed handle is left to the browser when shift is held');
+  /* The whole card is the handle now, armed per press — so the card must
+     never be statically draggable, or text selection dies in every editable
+     box inside it. */
+  eq(/const GRAB_NOT = /.test(board), true, 'the exception list exists');
+  eq(/c\.draggable = !ev\.target\.closest\(GRAB_NOT\)/.test(board), true,
+    'and each press decides whether it may become a drag');
+  eq(/c\.draggable = true/.test(board), false,
+    'nothing arms the card unconditionally');
 }
 
 console.log('\n\u2014 H3 speaks one language \u2014');
@@ -868,6 +876,74 @@ console.log('\n\u2014 H3 says only what is true of the call \u2014');
     'an explicit arrival mark is still honoured \u2014 it is what sends their picture');
   eq(/<Subject 1>[^\n]*newly_introduced/.test(m1.retention), true,
     'and retention follows the pictures the call carries, not the lane they were typed in');
+}
+
+console.log('\n\u2014 still takes \u2014');
+{
+  const M = SB.Model;
+  const p = M.newProject();
+  const sc = p.scenes[0] || M.addScene(p, 0);
+  const sh = M.addShot(p, sc.id, { type: 'Wide' });
+  const pic = function (n) {
+    return SB.Blobs.image(p, 'data:image/gif;base64,R0lGODlhAQABAAAAAC' + n, 4, 3);
+  };
+  const rec = function (n, at) {
+    return { ref: SB.Blobs.put(p, 'data:image/webp;base64,' + n.repeat(40)),
+      serial: at, ext: 'webp', w: 100, h: 60, bytes: 50, at: at };
+  };
+
+  eq(M.stillTakeCount(sh), 0, 'an empty card holds no takes');
+  eq(M.stillTakes(sh).length, 0, 'and lists none');
+
+  sh.image = pic('a'); sh.render = rec('A', 10);
+  eq(M.stillTakeCount(sh), 1, 'a picture is one take');
+
+  /* a landing banks what was there, in one step */
+  eq(M.keepStillTake(sh), true, 'the chosen one can be banked');
+  sh.image = pic('b'); sh.render = rec('B', 20);
+  eq(M.stillTakeCount(sh), 2, 'and the new landing makes two');
+  const takes = M.stillTakes(sh);
+  eq(takes.length, 2, 'both are listed');
+  eq(takes[0].n, 1, 'numbered by when they were made');
+  eq(takes[0].render.serial, 10, 'oldest first');
+  eq(takes[1].chosen, true, 'the newest is the chosen one');
+
+  /* use: the slots trade, nothing is thrown away */
+  const old = takes[0].rec;
+  eq(M.useStillTake(sh, old), true, 'a take can be chosen back');
+  eq(sh.render.serial, 10, 'and sits in the chosen slot');
+  eq(M.stillTakeCount(sh), 2, 'with the other kept, not deleted');
+
+  /* drop the chosen: the newest remaining steps up */
+  eq(M.dropStillTake(sh, null), true, 'the chosen take can be dropped');
+  eq(sh.render.serial, 20, 'and the newest of the rest steps up');
+  eq(M.stillTakeCount(sh), 1, 'one left');
+  eq(M.dropStillTake(sh, null), true, 'dropping the last one');
+  eq(sh.image, null, 'empties the card');
+  eq(M.stillTakeCount(sh), 0, 'completely');
+
+  /* the takes travel with the content, like the clip's do */
+  sh.image = pic('c'); sh.render = rec('C', 30);
+  M.keepStillTake(sh);
+  sh.image = pic('d'); sh.render = rec('D', 40);
+  const sh2 = M.addShot(p, sc.id, { type: 'Close-up' });
+  M.swapShotContent(p, sh.id, sh2.id);
+  eq(M.stillTakeCount(sh2), 2, 'a swap moves the takes with the picture');
+  eq(M.stillTakeCount(sh), 0, 'and leaves none behind');
+
+  /* a duplicate's takes get serials of their own */
+  const dup = M.duplicateShot(p, sh2.id, sc.id, 0);
+  eq(M.stillTakeCount(dup), 2, 'a duplicate carries the takes');
+  eq(dup.imageAlts[0].render.serial !== sh2.imageAlts[0].render.serial, true,
+    'under serials of their own \u2014 two cards must never file under one number');
+  eq(dup.imageAlts[0].render.ref, sh2.imageAlts[0].render.ref,
+    'while the bytes are shared, like every picture in the file');
+
+  /* the sweep keeps every take's bytes */
+  const altImg = sh2.imageAlts[0].image, altRen = sh2.imageAlts[0].render;
+  SB.Blobs.gc(p);
+  eq(!!SB.Blobs.src(p, altImg), true, 'a gc keeps a kept take\u2019s proxy');
+  eq(!!SB.Blobs.src(p, altRen), true, 'and its original');
 }
 
 console.log('\n— brand style —');

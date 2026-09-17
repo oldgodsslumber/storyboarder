@@ -1170,14 +1170,22 @@
           holdWide ? 'found' : 'nowhere');
         t('and the card it was dropped on gave up the picture in the swap',
           !!wide || true, '');
-        const tallStill = P().scenes[0].shots.filter(function (x) {
-          return x.render && x.render.serial === bSerial;
-        })[0];
+        /* The original that was already there survives -- as a chosen render
+           or as a kept take, now that a landing banks what it replaces
+           instead of overwriting it. What must never be true again is the old
+           failure: a serial pointing at bytes that are gone. */
+        const holders = [];
+        P().scenes[0].shots.forEach(function (x) {
+          SB.Model.stillTakes(x).forEach(function (tk) {
+            if (tk.render && tk.render.serial === bSerial) holders.push(tk);
+          });
+        });
         t('the original that was already there survived the swap',
-          !!tallStill && SB.Renders.has(P(), tallStill.render), 'serial ' + bSerial + ' gone');
+          holders.length === 1 && SB.Renders.has(P(), holders[0].render),
+          'serial ' + bSerial + ': ' + holders.length + ' holders');
         SB.app.changed(true);
         t('and survives the sweep that follows it',
-          SB.Renders.weigh(P()).originals.n === 2, SB.Renders.weigh(P()).originals.n);
+          SB.Renders.weigh(P()).originals.n >= 2, SB.Renders.weigh(P()).originals.n);
         t('nothing is left pointing at bytes that are gone',
           SB.Renders.weigh(P()).dangling === 0, SB.Renders.weigh(P()).dangling);
 
@@ -1650,8 +1658,36 @@
           shiftKey: true, clientX: 5, clientY: 5 });
         const frameEl = card.querySelector('.frame');
         frameEl.dispatchEvent(md2);
-        t('while shift elsewhere on the card still picks a range',
+        t('while shift on an interactive part of the card still picks a range',
           md2.defaultPrevented, 'defaultPrevented=' + md2.defaultPrevented);
+        await nap(30);
+
+        /* 3. The whole card is the handle now, armed press by press. A press
+           on a grab zone arms it; a press on anything you interact with must
+           not, or a drag starts where a caret was meant. And it must never be
+           armed statically -- that is how contenteditable dies. */
+        const press = function (el) {
+          el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true,
+            cancelable: true, clientX: 4, clientY: 4 }));
+          const armed = card.draggable;
+          el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true,
+            cancelable: true }));
+          return armed;
+        };
+        t('a card is not draggable at rest', !card.draggable, '');
+        t('a press on the head arms it', press(head) === true, '');
+        t('a press on the card itself arms it', press(card) === true, '');
+        const dLbl = card.querySelector('.box-label');
+        t('a press on a label arms it', !dLbl || press(dLbl) === true, '');
+        t('and the release disarms it again', !card.draggable, '');
+        const dBox = card.querySelector('.desc-box');
+        t('a press in the description box does not', press(dBox) === false, '');
+        t('a press on the frame does not \u2014 it is the viewer\u2019s',
+          press(frameEl) === false, '');
+        const dSel = card.querySelector('select.type');
+        t('a press on the type select does not', press(dSel) === false, '');
+        const dDel = card.querySelector('.ch-actions .danger');
+        t('a press on a button does not', press(dDel) === false, '');
         await nap(30);
       }
 
@@ -1844,7 +1880,7 @@
           survived, 'the board rebuilt itself on mousedown');
         await nap(150);
         t('so pressing a picture opens it',
-          !!document.querySelector('.modal .viewer'), '');
+          !!document.querySelector('.modal .reviewer'), '');
         document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
         await nap(60);
 
@@ -1878,29 +1914,37 @@
         t('an empty frame still says click to load',
           /click to load/.test(frameOf().textContent), frameOf().textContent.slice(0, 40));
 
-        /* with a picture, a click opens it rather than replacing it */
+        /* with a picture, a click opens the Reviewer -- a shot is a thing
+           you judge between versions of, so its frame gets the take view
+           rather than the plain one */
         sh.image = SB.Blobs.image(P(),
           'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 16, 9);
         SB.app.changed(true);
         await nap(60);
         frameOf().click();
         await nap(80);
-        const v = document.querySelector('.modal .viewer');
-        t('clicking a picture opens it large', !!v, '');
+        const v = document.querySelector('.modal .reviewer');
+        t('clicking a picture opens the Reviewer', !!v, '');
         t('and says it is the board\u2019s own copy, not an original',
-          /board/.test(v.querySelector('.viewer-cap').textContent),
-          v.querySelector('.viewer-cap').textContent);
-        t('with a way to replace it and a way to remove it',
-          Array.prototype.filter.call(document.querySelectorAll('.modal .foot button'),
-            function (b) { return /Replace|Remove/.test(b.textContent); }).length === 2,
-          Array.prototype.map.call(document.querySelectorAll('.modal .foot button'),
+          /board/.test(document.querySelector('.modal .viewer-cap').textContent),
+          document.querySelector('.modal .viewer-cap').textContent);
+        t('with one take listed, marked chosen',
+          v.querySelectorAll('.rev-take').length === 1 &&
+          /chosen/.test(v.querySelector('.rev-take .rev-n').textContent),
+          v.querySelectorAll('.rev-take').length + ' takes');
+        t('and the two ways more takes arrive',
+          !!Array.prototype.filter.call(v.querySelectorAll('.rev-actions button'),
+            function (b) { return /render/.test(b.textContent); })[0] &&
+          !!Array.prototype.filter.call(v.querySelectorAll('.rev-actions button'),
+            function (b) { return /add from file/.test(b.textContent); })[0],
+          Array.prototype.map.call(v.querySelectorAll('.rev-actions button'),
             function (b) { return b.textContent; }).join(','));
         t('and the picture is still on the card, untouched',
           !!sh.image, JSON.stringify(sh.image));
 
         document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
         await nap(60);
-        t('escape closes it', !document.querySelector('.modal .viewer'), '');
+        t('escape closes it', !document.querySelector('.modal .reviewer'), '');
 
         /* a full-size original is shown as one, and named */
         sh.render = { ref: SB.Blobs.put(P(), 'data:image/webp;base64,' + 'Q'.repeat(200)),
@@ -1916,9 +1960,94 @@
         await nap(60);
 
         sh.image = wasImg; sh.render = wasRender;
+        sh.imageAlts = [];
         SB.app.changed(true);
         await nap(40);
       }
+
+      // ---- still takes: a landing keeps what it replaces ----
+      {
+        const nap = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+        const sc = P().scenes[0];
+        const sh = SB.Model.addShot(P(), sc.id, { type: 'Wide' });
+        const png1 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAICAIAAABsw6g0' +
+          'AAAAG0lEQVR4nGPkqrjDQA3ARBVTGEYNIgYMvsAGAC+XAW5o4KfYAAAAAElFTkSuQmCC';
+        const png2 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAYCAIAAABIuytH' +
+          'AAAAHUlEQVR4nGO8E8XFgA0wYRVlGJXAApiwCTKMaAkAJxcBcCwL58MAAAAASUVORK5CYII=';
+
+        await SB.Board.setImage(sh, png1);
+        const s1 = sh.render && sh.render.serial;
+        t('the first landing is just a picture, no takes',
+          SB.Model.stillTakeCount(sh) === 1 && !!s1, SB.Model.stillTakeCount(sh) + ' takes');
+
+        await SB.Board.setImage(sh, png2);
+        await nap(80);
+        t('the second landing keeps the first as a take',
+          SB.Model.stillTakeCount(sh) === 2, SB.Model.stillTakeCount(sh) + ' takes');
+        t('under its own serial, which the new render did not steal',
+          sh.render.serial !== s1 &&
+          sh.imageAlts[0].render && sh.imageAlts[0].render.serial === s1,
+          'old ' + s1 + ' new ' + sh.render.serial);
+        t('and the card wears the count',
+          /\u00d72/.test((document.querySelector('.card[data-shot="' + sh.id +
+            '"] .take-badge') || {}).textContent || ''),
+          (document.querySelector('.card[data-shot="' + sh.id + '"] .take-badge') || {})
+            .textContent || '(no badge)');
+
+        /* the sweep keeps every take's bytes */
+        SB.Blobs.gc(P());
+        t('a gc keeps the kept take, both halves',
+          !!SB.Blobs.src(P(), sh.imageAlts[0].image) &&
+          SB.Renders.has(P(), sh.imageAlts[0].render), '');
+
+        /* choosing the old one back: the chosen slot and the takes trade */
+        const vm = SB.Model.videoModel(P());
+        if (vm) {
+          sh.prompts[vm.id] = { imagePrompt: '', videoPrompt: 'A clip.',
+            modelName: vm.name, at: Date.now() };
+        }
+        const back = sh.imageAlts[0];
+        SB.Model.useStillTake(sh, back);
+        t('using a take puts it in the chosen slot',
+          sh.render && sh.render.serial === s1, sh.render && sh.render.serial);
+        t('and the one it replaced is kept, not thrown away',
+          SB.Model.stillTakeCount(sh) === 2, SB.Model.stillTakeCount(sh) + ' takes');
+
+        /* Choosing a different take changed the picture the clip animates,
+           so a written video prompt is out of date and the Reviewer says so
+           through the same mark the arrival toggle uses. */
+        if (SB.Reviewer && vm) {
+          SB.Reviewer.open(P(), sh);
+          await nap(60);
+          const useBtn = document.querySelector('.modal .rev-take:not(.on) button.primary');
+          t('the Reviewer offers to use the other take', !!useBtn, '');
+          useBtn.click();
+          await nap(60);
+          t('and choosing marks the written video prompt stale',
+            sh.prompts[vm.id].stale === 'the frame changed',
+            JSON.stringify(sh.prompts[vm.id].stale));
+          document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+          await nap(60);
+        }
+
+        /* removing the picture promotes the newest remaining take */
+        const kept = sh.imageAlts[0].render.serial;
+        const rm = document.querySelector('.card[data-shot="' + sh.id +
+          '"] .frame-tools .danger');
+        t('the frame still has its remove', !!rm, '');
+        rm.click();
+        await nap(60);
+        t('removing the chosen take uncovers the other one',
+          SB.Model.stillTakeCount(sh) === 1 &&
+          sh.render && sh.render.serial === kept,
+          SB.Model.stillTakeCount(sh) + ' takes, serial ' +
+            (sh.render && sh.render.serial));
+
+        SB.Model.deleteShot(P(), sh.id);
+        SB.app.changed(true);
+        await nap(40);
+      }
+
 
       // moving cards and scenes, especially to the two ends
       {

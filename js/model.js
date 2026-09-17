@@ -422,6 +422,99 @@
     return true;
   }
 
+  /* ---- still takes ----
+   *
+   * The same story stills lived through after clips: render a shot three
+   * times and the board remembered one, because setImage overwrote the proxy
+   * and the original on every landing. The take you liked second-best was
+   * gone the moment a better-lit worse one arrived.
+   *
+   * `shot.image` + `shot.render` stay the CHOSEN take and the only thing
+   * every reader looks at — board, feed, prompts, push, PDF, export.
+   * `imageAlts` is the rest: [{image, render, at}], each keeping its own
+   * proxy (thumbnails) and its own full-size record (judging, and feeding a
+   * model if it is ever chosen). Purely additive: a board that never kept
+   * one behaves exactly as it did. */
+  function stillTakes(shot) {
+    const out = [];
+    if (shot && (shot.image || shot.render)) {
+      out.push({ image: shot.image, render: shot.render, at: takenAt(shot), chosen: true });
+    }
+    ((shot && shot.imageAlts) || []).forEach(function (r) {
+      if (r && (r.image || r.render)) {
+        out.push({ image: r.image, render: r.render, at: r.at || 0, chosen: false, rec: r });
+      }
+    });
+    /* numbered by when they were made, not by where they sit: a take number
+       is a fact about the shoot, and the chosen one moves */
+    out.sort(function (x, y) { return (x.at || 0) - (y.at || 0); });
+    out.forEach(function (x, i) { x.n = i + 1; });
+    return out;
+  }
+
+  /* When the chosen still was taken. The render record carries a time; a
+     board-copy-only card gets 0 and sorts first, which is the only honest
+     place for a picture nobody dated. */
+  function takenAt(shot) {
+    return (shot.render && shot.render.at) || (shot.image && shot.image.at) || 0;
+  }
+
+  function stillTakeCount(shot) {
+    return (shot && (shot.image || shot.render) ? 1 : 0) +
+      (((shot && shot.imageAlts) || []).length);
+  }
+
+  /* A new still arrives: the chosen one joins the rest and the new one takes
+   * the slot, in ONE step — the two-step version is how clips once stranded
+   * takes on cards that could not show, export or delete them. The caller
+   * assigns image/render itself (setImage already owns that dance with the
+   * async original); this only banks what was there. */
+  function keepStillTake(shot) {
+    if (!shot || !(shot.image || shot.render)) return false;
+    shot.imageAlts = (shot.imageAlts || []).concat([{
+      image: shot.image || null, render: shot.render || null, at: takenAt(shot)
+    }]);
+    return true;
+  }
+
+  /* Swap a take into the chosen slot. The one that was chosen joins the rest
+   * rather than being thrown away — this is a choice, not a deletion. */
+  function useStillTake(shot, rec) {
+    if (!shot || !rec) return false;
+    const alts = (shot.imageAlts || []).slice();
+    const i = alts.indexOf(rec);
+    if (i < 0) return false;
+    alts.splice(i, 1);
+    if (shot.image || shot.render) {
+      alts.push({ image: shot.image || null, render: shot.render || null, at: takenAt(shot) });
+    }
+    shot.imageAlts = alts;
+    shot.image = rec.image || null;
+    shot.render = rec.render || null;
+    return true;
+  }
+
+  /* One take, gone. Removing the chosen one promotes the newest of what is
+   * left, so a card with takes never shows empty while still carrying three. */
+  function dropStillTake(shot, rec) {
+    if (!shot) return false;
+    if (!rec) {                                    // the chosen one
+      const rest = (shot.imageAlts || []).slice()
+        .sort(function (x, y) { return (y.at || 0) - (x.at || 0); });
+      const next = rest.shift() || null;
+      shot.image = next ? (next.image || null) : null;
+      shot.render = next ? (next.render || null) : null;
+      shot.imageAlts = rest;
+      return true;
+    }
+    const alts = (shot.imageAlts || []).slice();
+    const i = alts.indexOf(rec);
+    if (i < 0) return false;
+    alts.splice(i, 1);
+    shot.imageAlts = alts;
+    return true;
+  }
+
   function newShot(opts) {
     opts = opts || {};
     return {
@@ -450,6 +543,9 @@
       /* Every other take of this shot, oldest kept first. `video` above is
        * the chosen one and stays the only thing the rest of the app reads. */
       videoAlts: [],
+      /* Every other STILL take: [{image, render, at}]. `image`/`render`
+       * below are the chosen one, same contract as the clips above. */
+      imageAlts: [],
       annotation: null,                 // {ref} — transparent PNG overlay
       /* What this card asks of the generator, where it differs from the
        * board: { duration, resolution, quality }. Sparse on purpose — a key
@@ -1342,9 +1438,10 @@
   const CONTENT_KEYS = [
     'type', 'color', 'image', 'annotation', 'description',
     'imageDescription', 'videoDescription', 'shoot',
-    /* videoAlts is the other takes of `video`; leaving it out of the swap
-       separated the chosen take from the ones it was chosen against */
-    'videoAlts',
+    /* the alts are the other takes of `video` and of `image`; leaving them
+       out of the swap separated the chosen take from the ones it was chosen
+       against */
+    'videoAlts', 'imageAlts',
     'fields', 'prompts', 'personaIds', 'castEnters', 'comments', 'render', 'video'
   ];
 
@@ -1391,6 +1488,17 @@
     } else {
       copy.render = null;
     }
+    /* and its other still takes with it, each under a serial of its own —
+       shared bytes, never a shared filename */
+    copy.imageAlts = (copy.imageAlts || []).map(function (r) {
+      if (r && r.render && r.render.ref) {
+        p.renderSeq = (p.renderSeq | 0) + 1;
+        return Object.assign({}, r, {
+          render: Object.assign({}, r.render, { serial: p.renderSeq })
+        });
+      }
+      return r;
+    });
     /* the clip was shot for the original, and its other takes with it */
     copy.video = null;
     copy.videoAlts = [];
@@ -1520,6 +1628,9 @@
     DEFAULT_SHOT_TYPES: DEFAULT_SHOT_TYPES,
     DEFAULT_FRAMING: DEFAULT_FRAMING, framingFor: framingFor, guessFraming: guessFraming,
     takes: takes, takeCount: takeCount, addTake: addTake, repairTakes: repairTakes,
+    stillTakes: stillTakes, stillTakeCount: stillTakeCount,
+    keepStillTake: keepStillTake, useStillTake: useStillTake,
+    dropStillTake: dropStillTake,
     useTake: useTake, dropTake: dropTake,
     IMG_TPL: IMG_TPL, IMG_TPL_V1: IMG_TPL_V1,
     VID_TPL: VID_TPL, VID_TPL_V1: VID_TPL_V1, VID_TPL_V2: VID_TPL_V2,

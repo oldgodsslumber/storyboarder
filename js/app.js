@@ -93,7 +93,7 @@
    * cached index.html is invisible until somebody presses the one control
    * that needed it and nothing happens. */
   const PARTS = ['Doc', 'Blobs', 'Renders', 'Refs', 'Personas', 'Fields', 'Model', 'Store',
-    'History', 'Editor', 'RefBox', 'Viewer', 'Board', 'ScriptMode', 'Comments', 'Prompts',
+    'History', 'Editor', 'RefBox', 'Viewer', 'Reviewer', 'Board', 'ScriptMode', 'Comments', 'Prompts',
     'Coverage', 'PromptPanel', 'PersonaPanel', 'Mentions', 'Settings', 'Versions', 'Brand',
     'Pdf', 'Imagine', 'H3', 'Providers'];
 

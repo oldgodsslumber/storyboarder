@@ -105,6 +105,12 @@
            * next structural change delete the clips somebody deliberately
            * kept -- the exact failure the originals had before them. */
           (sh.videoAlts || []).forEach(mark);
+          /* and the other STILL takes, both halves of each */
+          (sh.imageAlts || []).forEach(function (r) {
+            if (!r) return;
+            mark(r.image);
+            mark(r.render);
+          });
         });
       });
     };

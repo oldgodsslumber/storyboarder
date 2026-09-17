@@ -403,13 +403,29 @@ it will never make a card or scene reappear or vanish.
   sync. The card no longer lists what it feeds at all — the prompt table does, per lane — while each prompt is handed only its own lane, numbered from
   one. An older board has both boxes empty and behaves exactly as it always did.
 
-- **Clicking a picture shows it, it does not replace it.** A click on a card's frame — or on
-  a subject's reference frame — opens it large: the **full-size original** where the file
-  holds one and the board's own copy where it does not, saying which and at what size, with
-  ← → across the other pictures on the same subject. An **empty** frame still opens the file
-  picker, because there is nothing to look at. Replacing is only ever: drop a file on it,
-  **Replace…** inside the viewer, or the ✕. That trade used to go the other way, and on a
-  reference frame it was risking the only copy of somebody's face to get a better look at it.
+- **Clicking a picture shows it, it does not replace it.** A click on a **shot's** frame
+  opens the **Shot Reviewer**: the take full size on the left — the **full-size original**
+  where the file holds one, the board's own copy where it does not, saying which — and every
+  take the card holds down the right. A click on a subject's **reference** frame opens the
+  plain viewer, with ← → across the other pictures on the same subject. An **empty** frame
+  still opens the file picker, because there is nothing to look at. Replacing is only ever:
+  drop a file on it, add one inside the Reviewer, or the ✕. That trade used to go the other
+  way, and on a reference frame it was risking the only copy of somebody's face to get a
+  better look at it.
+- **A card keeps its still takes now, like its clips.** Rendering a shot again used to
+  overwrite it; now the picture that was there joins the card's takes, under its own file
+  number, and a **×N** badge on the frame says how many are hiding behind it. In the
+  Reviewer: click a take to see it big, **use this one** to make it the picture the board
+  shows and the clip animates, **✕** to delete one (deleting the chosen promotes the newest
+  of the rest), **render another take** to push the first-frame prompt again, **add from
+  file** for one you already have. ↑/↓ walk the takes, Enter chooses, Delete arms the
+  delete. Choosing a different take marks the card's written video prompt stale, because
+  the prompt was written about the other picture. The ✕ on the card's frame removes one
+  take at a time, newest first — nothing mass-deletes.
+- **Grab a card anywhere.** The header was the only drag handle; now anything on a card
+  that is not something you interact with — the labels, the padding, the background — picks
+  the whole card up. Text boxes still select text, the frame still opens the Reviewer,
+  buttons still press. Shift-drag and alt-drag work from anywhere a drag starts.
 - **Shift-drag duplicates a card.** Alt-drag already swaps two pictures, so a modifier that
   changes what the drop means is a gesture the board has. The copy takes everything —
   picture, all three description boxes, prompts, cast, shoot settings — with new ids, lands

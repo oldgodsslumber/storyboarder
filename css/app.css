@@ -255,6 +255,10 @@ body.marquee-on{user-select:none;cursor:crosshair}
   background:var(--accent2);color:var(--on-accent);font-size:10px;font-weight:700;
   padding:2px 8px;border-radius:9px;letter-spacing:.4px;pointer-events:none;z-index:2;
 }
+.card{cursor:grab}
+.card .desc-box,.card .prompt-box{cursor:text}
+.card .frame{cursor:zoom-in}
+.card .frame .drop-hint{cursor:pointer}
 .card-head{
   display:flex;align-items:center;gap:6px;padding:4px 6px;cursor:grab;
   background:color-mix(in srgb, var(--card-color) var(--card-tint-strong), var(--bg3));
@@ -990,6 +994,36 @@ button.linkish{
 .viewer-step.prev{left:6px}
 .viewer-step.next{right:6px}
 
+/* ---- the Shot Reviewer: one take big, every take beside it ---- */
+.reviewer{display:flex;gap:14px;min-height:60vh;max-height:78vh}
+.rev-left{flex:1 1 auto;display:flex;flex-direction:column;gap:8px;min-width:0}
+.rev-stage{
+  flex:1 1 auto;display:flex;align-items:center;justify-content:center;
+  background:#000;border-radius:8px;overflow:hidden;min-height:0;
+}
+.rev-stage img{max-width:100%;max-height:100%;object-fit:contain;display:block}
+.rev-stage.is-proxy + .viewer-cap{color:var(--accent2)}
+.rev-col{flex:0 0 300px;display:flex;flex-direction:column;gap:10px;min-height:0}
+.rev-takes{flex:1 1 auto;overflow-y:auto;display:flex;flex-direction:column;gap:6px}
+.rev-take{
+  display:flex;align-items:center;gap:8px;padding:6px;border-radius:8px;
+  border:1px solid var(--line);background:var(--bg2);cursor:pointer;
+}
+.rev-take:hover{border-color:var(--line2)}
+.rev-take.cur{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.rev-take.on .rev-n{color:var(--accent)}
+.rev-thumb{flex:0 0 84px;height:48px;border-radius:4px;overflow:hidden;background:#000}
+.rev-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.rev-meta{flex:1 1 auto;min-width:0}
+.rev-n{font-size:12px;font-weight:600}
+.rev-what{font-size:10px;color:var(--fg-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rev-btns{display:flex;gap:4px;align-items:center}
+.rev-actions{display:flex;flex-direction:column;gap:6px;border-top:1px solid var(--line);padding-top:10px}
+@media (max-width: 900px){
+  .reviewer{flex-direction:column;max-height:none}
+  .rev-col{flex:1 1 auto}
+}
+
 .pt-lane{position:relative}
 /* What this push asks the model for, beside the button that sends it. The
    menus are the model's own lists, so an unlisted value cannot be chosen —
@@ -1221,6 +1255,14 @@ body.comment-mode .frame{cursor:crosshair}
 /* A card with a clip says so in the corner, and unlike the frame tools it is
    always visible: the clip is not in the project file, so this badge is the
    only sign it exists at all. */
+/* how many still takes hide behind this frame */
+.take-badge{
+  position:absolute;top:4px;left:4px;z-index:2;
+  background:color-mix(in srgb, var(--bg) 75%, transparent);
+  border:1px solid var(--line2);border-radius:9px;color:var(--fg-dim);
+  font-size:10px;font-weight:700;padding:1px 7px;cursor:pointer;
+}
+.take-badge:hover{border-color:var(--accent);color:var(--accent)}
 .clip-badge{
   position:absolute;left:4px;top:4px;z-index:2;
   min-width:22px;height:22px;border-radius:11px;cursor:pointer;
