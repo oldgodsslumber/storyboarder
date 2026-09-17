@@ -1759,20 +1759,44 @@
 
   /* Why a push cannot happen yet, or '' if it can. Said in one place so the
    * button's tooltip and the Settings panel never disagree. */
-  function blocker(model) {
+  /* Has this slug actually generated something on this account?
+   *
+   * The account's model list is read out of a tool DESCRIPTION — a sentence
+   * ImagineArt writes, which the earlier work here established lags what the
+   * product really accepts. A slug that has produced a file is harder
+   * evidence than a paragraph, so it outranks it. */
+  function proven(slug, model) {
+    if (!slug) return false;
+    if (model && model.lastUsed && model.lastUsed.slug === slug) return true;
+    return worked().some(function (x) { return x && x.slug === slug; });
+  }
+
+  /* Why this model cannot be pushed, in both lengths at once.
+   *
+   * The short label used to be guessed from the long one with three regexes
+   * and an else — and the else was "no model set", which every reason that
+   * was not sign-in, org or key fell into. A model the account would not take
+   * therefore sent people to Settings → Models & templates to fix a slug that
+   * was already correct. */
+  function blockNote(model) {
     if (transport() === 'key') {
-      if (!apiKey()) return 'No ImagineArt API key — Settings → ImagineArt.';
+      if (!apiKey()) {
+        return { short: 'no key', long: 'No ImagineArt API key — Settings → ImagineArt.' };
+      }
     } else if (!isSignedIn()) {
-      return 'Not signed in to ImagineArt — Settings → ImagineArt.';
+      return { short: 'sign in',
+        long: 'Not signed in to ImagineArt — Settings → ImagineArt.' };
     } else if (!org()) {
       /* Caught here rather than at the press: every generation is billed to
        * an organization, so without one the button cannot work and should
        * not look as though it can. */
-      return 'No ImagineArt organization chosen — Settings → ImagineArt.';
+      return { short: 'pick an org',
+        long: 'No ImagineArt organization chosen — Settings → ImagineArt.' };
     }
     const slug = slugOf(model);
     if (!slug) {
-      return 'This model has no ImagineArt model set — Settings → Models & templates.';
+      return { short: 'no model set',
+        long: 'This model has no ImagineArt model set — Settings → Models & templates.' };
     }
     /* A board model with no mapping for THIS door falls back to the other
      * door's name, and the call then goes out carrying a model the account
@@ -1783,15 +1807,31 @@
       /* The ACCOUNT's own list, not the layered catalog — that one falls back
        * to the year-old REST names, and before the tools have been read it is
        * all there is. An empty list here means "not known yet", which is not
-       * the same as "not offered", so the check simply does not run. */
+       * the same as "not offered", so the check simply does not run.
+       *
+       * And it never overrules a slug that has actually worked. This list is
+       * scraped from a sentence, so it is a claim about the product, while a
+       * finished generation is a fact about it. MiniMax H3 is the case: it
+       * pushes, the push makes the app read the tools, and the sentence does
+       * not name it — so every press after the first one that worked was
+       * refused. */
       const known = modelsFromTool(model.kind === 'image' ? TOOL.image : TOOL.video);
-      if (known && known.length && known.indexOf(slug) < 0) {
-        return '“' + slug + '” is not one of the models your ImagineArt account takes. ' +
-          'Pick one it does in Settings → Models & templates — the account\u2019s own list ' +
-          'is under “What my account can do”.';
+      if (known && known.length && known.indexOf(slug) < 0 && !proven(slug, model)) {
+        return { short: 'not on your account',
+          long: '“' + slug + '” is not one of the models your ImagineArt account takes. ' +
+            'Pick one it does in Settings → Models & templates — the account\u2019s own ' +
+            'list is under “What my account can do”. If it has worked for you before, ' +
+            'push it once more: a model that generates is trusted over the account\u2019s ' +
+            'published list, which lags what the product accepts.' };
       }
     }
-    return '';
+    return null;
+  }
+
+  /* the long half on its own, for everything that only wants to know why */
+  function blocker(model) {
+    const n = blockNote(model);
+    return n ? n.long : '';
   }
 
   /* ---------------- which door ----------------
@@ -3252,13 +3292,7 @@
      * on the lane says it in as many words, but not worth stopping: it is the
      * pusher's own credits and their own call. */
 
-    const gate = blocker(model);
-    const gateNote = gate ? {
-      short: /signed in/.test(gate) ? 'sign in'
-        : /organization/.test(gate) ? 'pick an org'
-          : /API key/.test(gate) ? 'no key' : 'no model set',
-      long: gate
-    } : null;
+    const gateNote = blockNote(model);
     const pr = (shot.prompts || {})[model.id] || null;
     if (pr && (pr[field] || '').trim()) return gateNote;
 

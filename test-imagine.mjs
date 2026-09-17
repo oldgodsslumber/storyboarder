@@ -1599,5 +1599,86 @@ t('refreshing without an account says what to do instead',
     return true;
   })(), '');
 
+/* ---- a model that has worked is not "one your account does not take" ----
+ *
+ * The account's model list is scraped out of a tool DESCRIPTION -- prose,
+ * published by ImagineArt, and this file already establishes elsewhere that
+ * the published contract lags the product. Blocking on it alone meant a model
+ * could generate, be recorded as having generated, and then be refused on the
+ * next press because a sentence had not caught up. MiniMax H3 is the case:
+ * its slug is not in the video tool's list.
+ */
+{
+  const store2 = new Map();
+  sandbox.localStorage = {
+    getItem: k => (store2.has(k) ? store2.get(k) : null),
+    setItem: (k, v) => store2.set(k, String(v)),
+    removeItem: k => store2.delete(k)
+  };
+  sandbox.fetch = function (url, init) {
+    const msg = JSON.parse(init.body);
+    let result = {};
+    if (msg.method === 'initialize') result = { serverInfo: { name: 'i', version: '1' } };
+    else if (msg.method === 'tools/list') result = { tools: REAL_TOOLS };
+    else result = { content: [{ type: 'text', text: '{}' }] };
+    return Promise.resolve({ ok: true, status: 200, headers: { get: () => null },
+      text: () => Promise.resolve(JSON.stringify({ jsonrpc: '2.0', id: msg.id, result: result })) });
+  };
+  SB.Imagine.setTransport('oauth');
+  store2.set('sb.imagine.tokens', JSON.stringify({
+    access_token: 'tok', refresh_token: 'r', expires_at: Date.now() + 3600000, email: 'm@r' }));
+  await SB.Imagine.toolList(true);
+  SB.Imagine.setOrg({ id: 'org1', name: 'Org' });
+
+  const pG = SB.Model.newProject();
+  SB.app = { project: pG, changed() {} };
+  sandbox.SB.app = SB.app;
+  const scG = pG.scenes[0] || SB.Model.addScene(pG, 0);
+  const shG = SB.Model.addShot(pG, scG.id, { type: 'Wide' });
+
+  const h3 = pG.settings.models.filter(m => /MiniMax H3/.test(m.name))[0];
+  const slugH3 = SB.Imagine.slugOf(h3);
+  shG.prompts[h3.id] = { imagePrompt: '', videoPrompt: 'She turns.',
+    modelName: h3.name, at: Date.now() };
+  pG.settings.videoModelId = h3.id;
+
+  const known = SB.Imagine.modelsFromTool(SB.Imagine.TOOL.video);
+  t('the account names its video models, and H3 is not among them',
+    known.length > 0 && known.indexOf(slugH3) < 0,
+    known.length + ' models, H3 ' + (known.indexOf(slugH3) < 0 ? 'absent' : 'present'));
+
+  const cold = SB.Imagine.whyNot(pG, shG, h3, 'video');
+  t('so it is blocked -- but never as "no model set", which it is not',
+    !!cold && cold.short !== 'no model set', cold ? cold.short : '(clear)');
+  t('it says the account does not list it',
+    !!cold && cold.short === 'not on your account', cold ? cold.short : '(clear)');
+  t('and the long form says what to do about it',
+    !!cold && /worked for you before/.test(cold.long), cold ? cold.long.slice(-70) : '');
+
+  /* now it generates once -- which is what run() records on success */
+  SB.Imagine.noteWorked(slugH3, 'video');
+  const warm = SB.Imagine.whyNot(pG, shG, h3, 'video');
+  t('once it has actually generated, it is not refused again',
+    !warm, warm ? warm.short + ' / ' + warm.long.slice(0, 60) : '(clear)');
+
+  /* and a slug nobody has ever run is still caught */
+  const bogus = { id: 'm_bogus', name: 'Nonesuch', kind: 'video',
+    imagineSlug: 'not-a-real-model-at-all' };
+  pG.settings.models.push(bogus);
+  shG.prompts[bogus.id] = { imagePrompt: '', videoPrompt: 'x',
+    modelName: bogus.name, at: Date.now() };
+  const bad = SB.Imagine.whyNot(pG, shG, bogus, 'video');
+  t('a model that has never run and is not listed is still caught',
+    !!bad && bad.short === 'not on your account', bad ? bad.short : '(clear)');
+
+  /* and a model with no slug at all keeps the label that is actually true */
+  const blank = { id: 'm_blank', name: 'Blank', kind: 'video' };
+  shG.prompts[blank.id] = { imagePrompt: '', videoPrompt: 'x',
+    modelName: 'Blank', at: Date.now() };
+  const none = SB.Imagine.whyNot(pG, shG, blank, 'video');
+  t('while a model with no slug is the one thing "no model set" means',
+    !!none && none.short === 'no model set', none ? none.short : '(clear)');
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);
