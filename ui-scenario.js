@@ -2361,6 +2361,91 @@
         /* the same window as the still's, which is the point */
         t('in the same shape the picture takes get',
           !!box2.querySelector('.rev-stage') && !!box2.querySelector('.rev-col'), '');
+        /* ---- the sound does not outlive the window ----
+         *
+         * Taking an element out of the document does not stop the media in
+         * it: Chrome keeps a detached video playing, and this one loops, so
+         * there is no end for it to stop at. Every take click emptied the
+         * stage and every close removed the modal, each one leaving a clip
+         * running off-document with no way to reach it — you shot the next
+         * clip and could still hear the last one.
+         *
+         * Autoplay is blocked without a gesture in headless, so "is it
+         * paused" would pass whether or not this works. What is asserted is
+         * the teardown: the element that left the stage has had its source
+         * dropped, which is the thing that silences it. */
+        {
+          /* the window in FRONT — this scenario stacks several, and reading
+             the first .modal in the document read whichever was oldest */
+          const top = function (sel) {
+            const all = document.querySelectorAll('.modal');
+            const last = all[all.length - 1];
+            return last ? last.querySelector(sel) : null;
+          };
+          const topAll = function (sel) {
+            const all = document.querySelectorAll('.modal');
+            const last = all[all.length - 1];
+            return last ? last.querySelectorAll(sel) : [];
+          };
+
+          const aShot = SB.Model.addShot(P(), P().scenes[0].id, { type: 'Wide' });
+          aShot.video = {
+            ref: SB.Blobs.put(P(), 'data:video/mp4;base64,' + 'W'.repeat(300)),
+            serial: 801, ext: 'mp4', bytes: 280, dur: 3, at: Date.now()
+          };
+          aShot.videoAlts = [{
+            ref: SB.Blobs.put(P(), 'data:video/mp4;base64,' + 'X'.repeat(300)),
+            serial: 802, ext: 'mp4', bytes: 280, dur: 2, at: Date.now() - 90000
+          }];
+          SB.app.changed(true);
+          await pauseTop();
+
+          document.querySelector('.card[data-shot="' + aShot.id + '"] .clip-badge').click();
+          await pauseTop();
+
+          const v1 = top('.rev-stage video');
+          t('the clip reviewer puts a player on the stage', !!v1, 'no video');
+          t('with a source', !!(v1 && v1.getAttribute('src')), '');
+
+          const rowsA = topAll('.rev-take');
+          t('and both takes are listed', rowsA.length === 2, rowsA.length + ' takes');
+
+          /* walk to the other take: the stage is rebuilt */
+          rowsA[1].click();
+          await pauseTop();
+          t('changing take takes the old player out of the document',
+            !v1.isConnected, 'still attached');
+          t('and silences it rather than only detaching it',
+            !v1.getAttribute('src') && !v1.src, 'src=' + String(v1.src).slice(0, 24));
+          t('and it is not left running', v1.paused, 'paused=' + v1.paused);
+
+          const v2 = top('.rev-stage video');
+          t('while the take now showing has a player of its own',
+            !!v2 && v2 !== v1 && !!v2.getAttribute('src'), '');
+
+          /* and closing silences that one too, by every route out */
+          document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+          await pauseTop();
+          t('closing the window silences what was playing in it',
+            !v2.getAttribute('src') && !v2.src, 'src=' + String(v2.src).slice(0, 24));
+          /* A window that is OPEN may hold a playing clip — that is what it
+             is for. What must never happen is a clip held anywhere else:
+             detached, or inside a window that has been closed. */
+          t('and no clip is left holding a source outside an open window',
+            !Array.prototype.some.call(document.querySelectorAll('video'),
+              function (v) { return !!v.getAttribute('src') && !v.closest('.modal-back'); }),
+            Array.prototype.map.call(document.querySelectorAll('video'), function (v) {
+              const par = v.closest('.modal-back') ? 'in a modal' :
+                (v.parentNode && v.parentNode.className) || 'loose';
+              return par + (v.getAttribute('src') ? ' WITH src' : ' silent');
+            }).join(' | '));
+
+          SB.Model.deleteShot(P(), aShot.id);
+          SB.app.changed(true);
+          await pauseTop();
+        }
+
+
         Array.prototype.filter.call(document.querySelectorAll('.modal button'),
           function (b) { return b.textContent === 'Close'; })[0].click();
         await pauseTop();

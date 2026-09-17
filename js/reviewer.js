@@ -211,6 +211,22 @@
       return f ? f.code : '';
     };
 
+    /* Silence whatever is on the stage before anything replaces or removes
+     * it. A media element that is merely detached keeps playing — and with
+     * loop set there is no end for it to stop at — so the sound of a clip
+     * outlived the window it was in, and came back over the next one. */
+    const hush = function () {
+      const media = stage.querySelectorAll('video, audio');
+      Array.prototype.forEach.call(media, function (el) {
+        try {
+          el.pause();
+          el.removeAttribute('src');
+          el.srcObject = null;
+          el.load();                     // drops the decoder, not just the tag
+        } catch (e) { /* already gone */ }
+      });
+    };
+
     const onKey = function (e) {
       if (!SB.isTopModal || !SB.isTopModal(m.root)) return;
       if (e.key === 'ArrowDown') { move(1); e.preventDefault(); }
@@ -229,7 +245,12 @@
       width: 'min(96vw, 1400px)',
       body: wrap,
       buttons: [{ label: 'Close', primary: true }],
-      onClose: function () { document.removeEventListener('keydown', onKey); }
+      /* Escape, the backdrop and the Close button all arrive here, which is
+         why the silencing belongs at this one point rather than on a button. */
+      onClose: function () {
+        document.removeEventListener('keydown', onKey);
+        hush();
+      }
     });
     m.root.classList.add('rev-back');
     document.addEventListener('keydown', onKey);
@@ -406,6 +427,7 @@
 
     function empty() {
       listEl.innerHTML = '';
+      hush();
       stage.innerHTML = '';
       stage.appendChild(SB.el('div', 'rev-gone', kind === 'video'
         ? 'No clip on this card yet. Shoot one, or add a file you already have — dropping ' +
@@ -431,6 +453,7 @@
       cur = SB.clamp(cur, 0, list.length - 1);
       listEl.innerHTML = '';
       list.forEach(function (t, i) { listEl.appendChild(row(t, i, list.length)); });
+      hush();
       stage.innerHTML = '';
       M.stage(p, list[cur], stage, cap, sh);
       actions();
