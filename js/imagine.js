@@ -2802,7 +2802,12 @@
       SB.Focus.defer('clip:' + shot.id, function () { SB.app.changed(true); });
       return Promise.resolve({ kind: 'video', remoteOnly: true });
     }
-    return SB.Renders.keepVideo(p, got.blob, shot.video, made).then(function (saved) {
+    /* NOT shot.video: that is the take this one is about to displace, and
+       passing it as `existing` handed the new clip the old one's serial. A
+       card with three takes filed all three under 0001.mp4, so an export
+       wrote one file three times and kept whichever landed last — the same
+       collision the still side had, and the whole reason a serial exists. */
+    return SB.Renders.keepVideo(p, got.blob, null, made).then(function (saved) {
       /* The whole record, ref included. Rebuilding it field by field dropped
        * the ref once, which put the bytes in the file with nothing pointing at
        * them — so the clip played until the next structural change swept it
@@ -3660,7 +3665,15 @@
   }
 
   SB.Clip = {
-    open: openClip,
+    /* The Reviewer where it is loaded — a clip's takes are the same question
+       as a still's, and answering it in a cramped list of text rows while the
+       still got a full-screen column was two answers to one question. The old
+       window stays as the fallback for a page that failed to load the
+       module. */
+    open: function (p, shot) {
+      if (SB.Reviewer && SB.Reviewer.openClip) return SB.Reviewer.openClip(p, shot);
+      return openClip(p, shot);
+    },
     /* the old name, because a rename that breaks a caller silently is not
        worth the tidiness */
     play: openClip,
@@ -3700,7 +3713,8 @@
     ready: function (model) { return !blocker(model); },
     blocker: blocker, slugOf: slugOf, aspectOf: aspectOf,
     image: image, video: video, run: run, fetchClip: fetchClip,
-    whyNot: whyNot, promptFor: promptFor,
+    whyNot: whyNot, promptFor: promptFor, describeMade: describeMade,
+    notifyChange: notify,
     /* jobs */
     job: job, busy: busy, clear: clear, onChange: onChange, runningJobs: runningJobs,
     refsFor: refsFor,

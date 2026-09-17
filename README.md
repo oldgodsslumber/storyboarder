@@ -422,6 +422,11 @@ it will never make a card or scene reappear or vanish.
   delete. Choosing a different take marks the card's written video prompt stale, because
   the prompt was written about the other picture. The ✕ on the card's frame removes one
   take at a time (armed, and it says which one goes) — nothing mass-deletes.
+- **Clips get the same window.** The ▷ badge opens the Reviewer in clip mode: the take
+  playing full size on the left, every take the card holds down the right, with the same
+  use / save / delete and **📽️ shoot another take** / **+ add a clip from file**. Clip
+  takes have existed since before the Reviewer did; they were a list of text rows in a
+  small dialog, which was two answers to one question.
   Each take also has **⤓**, which saves that one out: the export writes the chosen
   take only, so without it a kept take was weight with no way out of the app.
 - **Grab a card anywhere.** The header was the only drag handle; now anything on a card

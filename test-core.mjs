@@ -1072,6 +1072,36 @@ console.log('\n\u2014 a take is dated, and an original finds its take \u2014');
   eq(a.imageAlts[0].render, before, 'with the original it already had');
 }
 
+console.log('\n\u2014 a clip take is a file of its own \u2014');
+{
+  /* finishVideo passed shot.video to keepVideo as `existing`, and keepVideo
+     reuses an existing serial. The take being displaced WAS shot.video, so
+     every clip shot on a card came back under the first one's number: three
+     takes all filed as 0001.mp4, and an export wrote one file three times,
+     keeping whichever landed last. Asserted against the source, because the
+     landing itself needs a live push. */
+  const im = readFileSync(join(root, 'js/imagine.js'), 'utf8');
+  eq(im.indexOf('keepVideo(p, got.blob, null, made)') > 0, true,
+    'a landing clip claims a serial of its own, not the one it displaces');
+  /* while a REFETCH of a clip already on the card keeps its number, which is
+     the one place reusing it is right */
+  eq(im.indexOf("keepVideo(p, expectMedia(b, 'video'), rec,") > 0, true,
+    'and fetching the bytes of one already there keeps the number it has');
+
+  /* and the model gives each take an identity of its own */
+  const M = SB.Model;
+  const p2 = M.newProject();
+  const sc2 = p2.scenes[0] || M.addScene(p2, 0);
+  const sh2 = M.addShot(p2, sc2.id, { type: 'Wide' });
+  [1, 2, 3].forEach(function (n) {
+    M.addTake(sh2, { ref: 'v' + n, serial: n, ext: 'mp4', bytes: 10, at: n * 100 });
+  });
+  eq(M.takeCount(sh2), 3, 'three shoots, three takes');
+  eq(new Set(M.takes(sh2).map(function (t) {
+    return SB.Renders.fileName(t.rec.serial, t.rec.ext);
+  })).size, 3, 'and three filenames, so an export writes three files');
+}
+
 console.log('\n— brand style —');
 {
   const B = SB.Brand;

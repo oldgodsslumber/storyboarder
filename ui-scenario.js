@@ -1986,7 +1986,7 @@
           !!Array.prototype.filter.call(v.querySelectorAll('.rev-actions button'),
             function (b) { return /render/.test(b.textContent); })[0] &&
           !!Array.prototype.filter.call(v.querySelectorAll('.rev-actions button'),
-            function (b) { return /add from file/.test(b.textContent); })[0],
+            function (b) { return /add a picture from file/.test(b.textContent); })[0],
           Array.prototype.map.call(v.querySelectorAll('.rev-actions button'),
             function (b) { return b.textContent; }).join(','));
         t('and the picture is still on the card, untouched',
@@ -2308,14 +2308,19 @@
 
         badge.click();
         await pauseTop();
-        const box = document.querySelector('.modal .clip-box');
+        const box = document.querySelector('.modal .reviewer');
         t('pressing it opens the review even with nothing to play', !!box, 'no modal');
-        t('which offers the two things that make sense',
-          /Add from a file/.test(box.textContent) && /Shoot it/.test(box.textContent),
-          box.textContent.slice(0, 80));
-        t('and carries the reason a shoot cannot run',
-          /prompt|sign in|organization|model/i.test(box.querySelector('.pp-note.warn').textContent),
-          box.querySelector('.pp-note.warn').textContent.slice(0, 60));
+        t('which says there is nothing yet rather than looking broken',
+          /No clip on this card yet/.test(box.textContent), box.textContent.slice(0, 80));
+        t('and offers the two things that make sense',
+          /shoot it/i.test(box.textContent) && /add a clip from file/i.test(box.textContent),
+          box.textContent.slice(-90));
+        t('and carries the reason a shoot cannot run, on the button',
+          /prompt|sign in|organization|model/i.test(
+            (Array.prototype.filter.call(box.querySelectorAll('.rev-actions button'),
+              function (b) { return /shoot/i.test(b.textContent); })[0] || {}).title || ''),
+          (Array.prototype.filter.call(box.querySelectorAll('.rev-actions button'),
+            function (b) { return /shoot/i.test(b.textContent); })[0] || {}).title || '(none)');
         Array.prototype.filter.call(document.querySelectorAll('.modal button'),
           function (b) { return b.textContent === 'Close'; })[0].click();
         await pauseTop();
@@ -2337,16 +2342,25 @@
           badge2.textContent);
         badge2.click();
         await pauseTop();
-        const box2 = document.querySelector('.modal .clip-box');
+        const box2 = document.querySelector('.modal .reviewer');
         t('the review plays it', !!box2.querySelector('video'), 'no video');
         t('says what made it', /Made here/.test(box2.textContent) && /Kling/.test(box2.textContent),
           box2.textContent.slice(0, 120));
         t('and shows the prompt it was made from',
           /She turns from the window/.test(box2.textContent), 'no prompt');
-        t('with all three things you might do to it',
-          /Shoot another take/.test(box2.textContent) &&
-          /Add another take/.test(box2.textContent) &&
-          /Remove/.test(box2.textContent), box2.textContent.slice(-80));
+        t('with the take listed, marked chosen',
+          box2.querySelectorAll('.rev-take').length === 1 &&
+          /chosen/.test(box2.querySelector('.rev-n').textContent),
+          box2.querySelectorAll('.rev-take').length + ' takes');
+        t('and every verb a clip needs',
+          /shoot another take/i.test(box2.textContent) &&
+          /add a clip from file/i.test(box2.textContent) &&
+          !!box2.querySelector('.rev-take .danger') &&
+          !!box2.querySelector('.rev-take button[title*="Save"]'),
+          box2.textContent.slice(-90));
+        /* the same window as the still's, which is the point */
+        t('in the same shape the picture takes get',
+          !!box2.querySelector('.rev-stage') && !!box2.querySelector('.rev-col'), '');
         Array.prototype.filter.call(document.querySelectorAll('.modal button'),
           function (b) { return b.textContent === 'Close'; })[0].click();
         await pauseTop();
