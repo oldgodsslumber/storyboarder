@@ -665,8 +665,13 @@ console.log('\n\u2014 what a synthetic drag cannot tell you \u2014');
 
   /* The other half: preventDefault on the drag handle cancels the drag before
      it starts, so shift-held-from-the-start could never begin one. */
-  eq(board.indexOf('ev.shiftKey && c.draggable') > 0, true,
-    'and an armed handle is left to the browser when shift is held');
+  eq(/if \(!c\.draggable\) ev\.preventDefault\(\);/.test(board), true,
+    'and an armed handle is left to the browser, so a modified drag can begin');
+  /* while the selection itself still happens on every surface -- an early
+     return here is what killed shift-click range-select on the whole body of
+     a card */
+  eq(board.indexOf('if (ev.shiftKey && c.draggable) return;') < 0, true,
+    'and nothing skips the range-select on a grab zone');
   /* The whole card is the handle now, armed per press — so the card must
      never be statically draggable, or text selection dies in every editable
      box inside it. */
@@ -899,7 +904,11 @@ console.log('\n\u2014 still takes \u2014');
   eq(M.stillTakeCount(sh), 1, 'a picture is one take');
 
   /* a landing banks what was there, in one step */
-  eq(M.keepStillTake(sh), true, 'the chosen one can be banked');
+  /* it hands back the record it banked, so an original still encoding can
+     find the take it belongs to */
+  const banked = M.keepStillTake(sh);
+  eq(!!(banked && banked.render && banked.render.serial === 10), true,
+    'the chosen one is banked, and the take is handed back');
   sh.image = pic('b'); sh.render = rec('B', 20);
   eq(M.stillTakeCount(sh), 2, 'and the new landing makes two');
   const takes = M.stillTakes(sh);
@@ -944,6 +953,123 @@ console.log('\n\u2014 still takes \u2014');
   SB.Blobs.gc(p);
   eq(!!SB.Blobs.src(p, altImg), true, 'a gc keeps a kept take\u2019s proxy');
   eq(!!SB.Blobs.src(p, altRen), true, 'and its original');
+}
+
+console.log('\n\u2014 takes on a board that predates them \u2014');
+{
+  const M = SB.Model;
+
+  /* the shape every board written before this build has: no imageAlts key */
+  const old = {
+    id: 'p_old', name: 'old', master: SB.Doc.make('INT. ROOM'),
+    scenes: [{ id: 'sc1', heading: 'INT. ROOM', shots: [
+      { id: 'sh1', type: 'Wide', description: 'a room',
+        image: { ref: 'r1', w: 4, h: 3 },
+        render: { ref: 'r2', serial: 3, ext: 'png', w: 40, h: 30, bytes: 9, at: 5 },
+        prompts: {}, comments: [] }
+    ] }],
+    blobs: { r1: 'data:image/gif;base64,AAAA', r2: 'data:image/png;base64,BBBB' },
+    settings: { models: [], modelSeeds: [] }, renderSeq: 0
+  };
+  M.migrate(old);
+  eq(Array.isArray(old.scenes[0].shots[0].imageAlts), true,
+    'migrate gives an old card the takes array it has never had');
+  /* CONTENT_KEYS carries imageAlts and SB.clone is JSON.parse(JSON.stringify),
+     which throws on undefined -- so without that line shift-drag duplicate
+     threw on every card of every board older than takes. */
+  let threw = '';
+  let dup = null;
+  try { dup = M.duplicateShot(old, 'sh1', 'sc1', 1); } catch (e) { threw = e.message; }
+  eq(threw, '', 'so duplicating one of its cards does not throw');
+  eq(!!dup, true, 'and produces a card');
+  eq(old.renderSeq >= 3, true,
+    'and migrate carried the counter past the serials the file already holds');
+
+  /* a counter left behind the serials living in the TAKES hands a new render
+     a number an alternate already owns -- two takes under one filename */
+  const behind = {
+    id: 'p_b', name: 'b', master: SB.Doc.make(''),
+    scenes: [{ id: 'sc1', heading: '', shots: [
+      { id: 'sh1', type: '', description: '', prompts: {}, comments: [],
+        image: { ref: 'r1', w: 4, h: 3 },
+        imageAlts: [
+          { image: { ref: 'r1', w: 4, h: 3 },
+            render: { ref: 'r2', serial: 7, ext: 'png', w: 4, h: 3, bytes: 9, at: 1 }, at: 1 },
+          { image: { ref: 'r1', w: 4, h: 3 },
+            render: { ref: 'r2', serial: 9, ext: 'png', w: 4, h: 3, bytes: 9, at: 2 }, at: 2 }
+        ] }
+    ] }],
+    blobs: { r1: 'data:image/gif;base64,AAAA', r2: 'data:image/png;base64,BBBB' },
+    settings: { models: [], modelSeeds: [] }, renderSeq: 0
+  };
+  M.migrate(behind);
+  eq(behind.renderSeq >= 9, true,
+    'a counter behind the serials in its takes is carried past them too');
+
+  /* a key that is not an array must not take the app down */
+  const junk = {
+    id: 'p_j', name: 'j', master: SB.Doc.make(''),
+    scenes: [{ id: 'sc1', heading: '', shots: [
+      { id: 'sh1', type: '', description: '', prompts: {}, comments: [],
+        imageAlts: 'nope' }
+    ] }],
+    blobs: {}, settings: { models: [], modelSeeds: [] }, renderSeq: 0
+  };
+  M.migrate(junk);
+  eq(Array.isArray(junk.scenes[0].shots[0].imageAlts), true,
+    'and neither does a value that is not a list at all');
+  eq(M.stillTakeCount(junk.scenes[0].shots[0]), 0, 'which then counts as none');
+}
+
+console.log('\n\u2014 a take is dated, and an original finds its take \u2014');
+{
+  const M = SB.Model;
+  const p = M.newProject();
+  const sc = p.scenes[0] || M.addScene(p, 0);
+  const sh = M.addShot(p, sc.id, { type: 'Wide' });
+  const pic = function (n) {
+    return SB.Blobs.image(p, 'data:image/gif;base64,R0lGODlhAQABAAAAAC' + n, 4, 3);
+  };
+
+  /* A board-copy-only picture used to be undated, because takenAt read an
+     `at` that Blobs.image has never set. Every such take sorted as 0: the
+     numbers moved under the user, and "the newest of the rest" promoted the
+     OLDEST, since a stable sort on equal keys keeps insertion order. */
+  sh.image = pic('a'); sh.imageAt = 1000;
+  M.keepStillTake(sh);
+  sh.image = pic('b'); sh.imageAt = 2000;
+  M.keepStillTake(sh);
+  sh.image = pic('c'); sh.imageAt = 3000;
+  const list = M.stillTakes(sh);
+  eq(list.length, 3, 'three board copies, three takes');
+  eq(list.map(function (t) { return t.at; }).join(), '1000,2000,3000',
+    'each dated by when its picture landed, original or not');
+  eq(list[2].chosen, true, 'the newest is the chosen one');
+
+  M.dropStillTake(sh, null);
+  eq(sh.imageAt, 2000, 'and dropping the chosen promotes the NEWEST of the rest');
+
+  /* an original still encoding lands on the take it belongs to, even after
+     a second picture has taken the chosen slot */
+  const p2 = M.newProject();
+  const sc2 = p2.scenes[0] || M.addScene(p2, 0);
+  const a = M.addShot(p2, sc2.id, { type: 'Wide' });
+  const pA = SB.Blobs.image(p2, 'data:image/gif;base64,R0lGODlhAQABAAAAACw', 4, 3);
+  a.image = pA; a.imageAt = 10;
+  M.keepStillTake(a);                          // pA becomes a take...
+  a.image = SB.Blobs.image(p2, 'data:image/gif;base64,R0lGODlhAQABAAAAACx', 4, 3);
+  a.render = null; a.imageAt = 20;             // ...and a second picture lands
+  const rec = { ref: 'x', serial: 4, ext: 'webp', w: 9, h: 9, bytes: 3, at: 10 };
+  eq(M.placeRender(p2, pA.ref, rec), true,
+    'the first picture\u2019s original still finds a home');
+  eq(a.imageAlts[0].render === rec, true, 'on the take that picture became');
+  eq(a.render, null, 'and not on the chosen slot, which is a different picture');
+
+  /* and it never overwrites an original that is already there */
+  const before = { ref: 'y', serial: 5, ext: 'webp', w: 9, h: 9, bytes: 3, at: 1 };
+  a.imageAlts[0].render = before;
+  eq(M.placeRender(p2, pA.ref, rec), false, 'a slot that already has one is left alone');
+  eq(a.imageAlts[0].render, before, 'with the original it already had');
 }
 
 console.log('\n— brand style —');

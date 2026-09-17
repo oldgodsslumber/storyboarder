@@ -1688,6 +1688,56 @@
         t('a press on the type select does not', press(dSel) === false, '');
         const dDel = card.querySelector('.ch-actions .danger');
         t('a press on a button does not', press(dDel) === false, '');
+
+        /* 4. Widening the grab zone must not cost Shift-click range-select.
+           The early return that let a drag begin from the handle skipped the
+           SELECTION too -- so shift on the head, the padding, the labels and
+           the code did nothing at all, on every part of a card somebody would
+           actually shift-click. */
+        const sc9 = P().scenes[0];
+        const shiftPick = function (el) {
+          SB.app.selectedShotId = sc9.shots[0].id;
+          document.querySelector('.card[data-shot="' + sc9.shots[0].id + '"]')
+            .dispatchEvent(new MouseEvent('mousedown', { bubbles: true,
+              cancelable: true, clientX: 4, clientY: 4 }));
+          document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+          el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true,
+            cancelable: true, shiftKey: true, clientX: 4, clientY: 4 }));
+          document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+          return (SB.Board.selection ? SB.Board.selection() : []).length;
+        };
+        if (sc9.shots.length > 2 && SB.Board.selection) {
+          const far = document.querySelector('.card[data-shot="' + sc9.shots[2].id + '"]');
+          t('shift-click on a card still takes the run between',
+            shiftPick(far) === 3, shiftPick(far) + ' selected');
+          const farHead = far.querySelector('.card-head');
+          t('and from its head, which is also a handle',
+            shiftPick(farHead) === 3, shiftPick(farHead) + ' selected');
+          const farLbl = far.querySelector('.box-label');
+          if (farLbl) {
+            t('and from a label', shiftPick(farLbl) === 3, shiftPick(farLbl) + ' selected');
+          }
+          /* and a shift-click on the frame picks the run WITHOUT throwing a
+             window in your face -- a modified click is a selection gesture */
+          const farFrame = far.querySelector('.frame');
+          shiftPick(farFrame);
+          farFrame.dispatchEvent(new MouseEvent('click', { bubbles: true,
+            cancelable: true, shiftKey: true }));
+          await nap(60);
+          t('shift-clicking a frame selects without opening the Reviewer',
+            !document.querySelector('.modal .reviewer'), '');
+          SB.Board.clearSelection && SB.Board.clearSelection();
+        }
+
+        /* 5. A release that never reaches the card still disarms it -- a card
+           left armed is a draggable ancestor over every editable box on it,
+           which is the thing the arming exists to avoid. */
+        card.dispatchEvent(new MouseEvent('mousedown', { bubbles: true,
+          cancelable: true, clientX: 4, clientY: 4 }));
+        t('a press on the body arms the card', card.draggable === true, '');
+        document.body.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+        t('and a release anywhere at all disarms it', card.draggable === false,
+          'draggable=' + card.draggable);
         await nap(30);
       }
 
@@ -2030,12 +2080,90 @@
           await nap(60);
         }
 
+        /* ---- the Reviewer opens on the take the board is showing ----
+         *
+         * `cur` indexed the ASCENDING list the model returns while paint()
+         * sorted a DESCENDING copy and used the same number, so the index was
+         * mirrored: opening a card whose newest take is the chosen one --
+         * which is every card you have just re-rendered -- showed the OLDEST
+         * take full size, captioned with its name, with Enter and Delete
+         * pointed at it. */
+        if (SB.Reviewer) {
+          SB.Reviewer.open(P(), sh);
+          await nap(80);
+          const rows = document.querySelectorAll('.modal .rev-take');
+          const curRow = document.querySelector('.modal .rev-take.cur');
+          const chosenRow = document.querySelector('.modal .rev-take.on');
+          t('the Reviewer opens on the take the board is showing',
+            !!curRow && curRow === chosenRow,
+            curRow ? curRow.querySelector('.rev-n').textContent : '(none)');
+          t('and the picture on the left is that one',
+            /chosen/.test(document.querySelector('.modal .viewer-cap').textContent),
+            document.querySelector('.modal .viewer-cap').textContent.slice(0, 40));
+          t('with the newest at the top of the column',
+            rows.length === 2 && rows[0] === chosenRow,
+            Array.prototype.map.call(rows, function (r) {
+              return r.querySelector('.rev-n').textContent; }).join(' | '));
+          /* every take can leave the app, which the export cannot do for it */
+          t('and each take offers a way out to a file',
+            rows[0].querySelector('button[title*="Save"]') &&
+            rows[1].querySelector('button[title*="Save"]'), '');
+          document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+          await nap(60);
+        }
+
+        /* ---- the two badges do not sit on each other ---- */
+        {
+          sh.video = { ref: SB.Blobs.put(P(), 'data:video/mp4;base64,AAAA'),
+            serial: 99, ext: 'mp4', bytes: 4, at: 1 };
+          SB.app.changed(true);
+          await nap(60);
+          const card = document.querySelector('.card[data-shot="' + sh.id + '"]');
+          const tb = card.querySelector('.take-badge');
+          const cb = card.querySelector('.clip-badge');
+          t('a card with takes and a clip wears both badges', !!tb && !!cb, '');
+          const tr = tb.getBoundingClientRect(), cr = cb.getBoundingClientRect();
+          t('and they do not overlap',
+            tr.right <= cr.left + 0.5 || cr.right <= tr.left + 0.5 ||
+            tr.bottom <= cr.top + 0.5 || cr.bottom <= tr.top + 0.5,
+            'take ' + Math.round(tr.left) + '-' + Math.round(tr.right) +
+            ' clip ' + Math.round(cr.left) + '-' + Math.round(cr.right));
+          /* only meaningful where the point is actually on screen -- a card
+             scrolled out of the viewport hits nothing at all */
+          const hit = document.elementFromPoint(Math.round(cr.left + cr.width / 2),
+            Math.round(cr.top + cr.height / 2));
+          t('so the clip badge is what you hit where it is drawn',
+            !hit || !/take-badge/.test(hit.className || ''),
+            (hit && hit.className) || '(off screen)');
+          sh.video = null;
+          SB.app.changed(true);
+          await nap(40);
+        }
+
+        /* ---- the frame's ✕ is armed, and takes one take ---- */
+        {
+          const before = SB.Model.stillTakeCount(sh);
+          const rm2 = document.querySelector('.card[data-shot="' + sh.id +
+            '"] .frame-tools .danger');
+          rm2.click();
+          await nap(40);
+          t('one press of the frame\u2019s remove arms it rather than deleting',
+            SB.Model.stillTakeCount(sh) === before && /remove/i.test(rm2.textContent),
+            rm2.textContent + ' / ' + SB.Model.stillTakeCount(sh) + ' takes');
+          t('and it names what goes, because a card can hold several',
+            /take/i.test(rm2.textContent), rm2.textContent);
+          document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape',
+            bubbles: true }));
+          await nap(40);
+        }
+
         /* removing the picture promotes the newest remaining take */
         const kept = sh.imageAlts[0].render.serial;
         const rm = document.querySelector('.card[data-shot="' + sh.id +
           '"] .frame-tools .danger');
         t('the frame still has its remove', !!rm, '');
-        rm.click();
+        rm.click();                       // arms
+        rm.click();                       // and confirms
         await nap(60);
         t('removing the chosen take uncovers the other one',
           SB.Model.stillTakeCount(sh) === 1 &&

@@ -456,7 +456,13 @@
      board-copy-only card gets 0 and sorts first, which is the only honest
      place for a picture nobody dated. */
   function takenAt(shot) {
-    return (shot.render && shot.render.at) || (shot.image && shot.image.at) || 0;
+    /* The original carries a time; a board-copy-only picture does not, and
+       reading `image.at` was reading a field Blobs.image has never set. So
+       every undated take sorted as 0: take numbers swapped under the user
+       mid-landing, and "the newest of the rest" promoted the OLDEST, because
+       a stable sort on equal keys keeps insertion order. setImage stamps
+       imageAt, so a picture is dated from the moment it lands. */
+    return (shot.render && shot.render.at) || shot.imageAt || 0;
   }
 
   function stillTakeCount(shot) {
@@ -471,10 +477,14 @@
    * async original); this only banks what was there. */
   function keepStillTake(shot) {
     if (!shot || !(shot.image || shot.render)) return false;
-    shot.imageAlts = (shot.imageAlts || []).concat([{
+    const rec = {
       image: shot.image || null, render: shot.render || null, at: takenAt(shot)
-    }]);
-    return true;
+    };
+    shot.imageAlts = (shot.imageAlts || []).concat([rec]);
+    /* handed back so the caller can find this take again — an original still
+       encoding has to land on the take it belongs to, not on whatever is in
+       the chosen slot by the time it arrives */
+    return rec;
   }
 
   /* Swap a take into the chosen slot. The one that was chosen joins the rest
@@ -491,6 +501,7 @@
     shot.imageAlts = alts;
     shot.image = rec.image || null;
     shot.render = rec.render || null;
+    shot.imageAt = rec.at || 0;          // its date comes with it
     return true;
   }
 
@@ -504,6 +515,7 @@
       const next = rest.shift() || null;
       shot.image = next ? (next.image || null) : null;
       shot.render = next ? (next.render || null) : null;
+      shot.imageAt = next ? (next.at || 0) : 0;
       shot.imageAlts = rest;
       return true;
     }
@@ -546,6 +558,10 @@
       /* Every other STILL take: [{image, render, at}]. `image`/`render`
        * below are the chosen one, same contract as the clips above. */
       imageAlts: [],
+      /* When the chosen picture landed. The original carries its own time,
+       * but a board-copy-only picture has none, and an undated take cannot be
+       * ordered against a dated one. */
+      imageAt: 0,
       annotation: null,                 // {ref} — transparent PNG overlay
       /* What this card asks of the generator, where it differs from the
        * board: { duration, resolution, quality }. Sparse on purpose — a key
@@ -873,6 +889,21 @@
         sh.videoAlts.forEach(function (r) {
           p.renderSeq = Math.max(p.renderSeq | 0, r.serial);
         });
+        /* The still takes claim from the same counter, and were the one
+           record list this sweep walked past. A board whose counter sat
+           behind the serials living in its alts handed a new render a number
+           an alternate already owned — two takes under one filename, which is
+           the whole thing a serial exists to prevent. */
+        sh.imageAlts = (Array.isArray(sh.imageAlts) ? sh.imageAlts : [])
+          .map(function (r) {
+            if (!r) return null;
+            const ren = goodRender(r.render);
+            if (!r.image && !ren) return null;
+            return { image: r.image || null, render: ren, at: r.at || 0 };
+          }).filter(Boolean);
+        sh.imageAlts.forEach(function (r) {
+          if (r.render) p.renderSeq = Math.max(p.renderSeq | 0, r.render.serial);
+        });
         repairTakes(sh);
         sh.personaIds = Array.isArray(sh.personaIds) ? sh.personaIds : [];
           sh.castEnters = (Array.isArray(sh.castEnters) ? sh.castEnters : [])
@@ -902,7 +933,13 @@
     (p.scenes || []).forEach(function (sc) {
       (sc.shots || []).forEach(function (sh) {
         if (!Array.isArray(sh.videoAlts)) sh.videoAlts = [];
-        repairTakes(sh);
+        /* And the still takes. Absent on every board written before them,
+           which is why this must run: CONTENT_KEYS carries imageAlts through
+           a duplicate, and SB.clone is JSON.parse(JSON.stringify(x)) — which
+           throws on undefined. Without this line, shift-drag duplicate threw
+           on every card of every board that predates takes. */
+        if (!Array.isArray(sh.imageAlts)) sh.imageAlts = [];
+        sh.imageAt = sh.imageAt || 0;
       });
     });
     /* Only what is missing: a line somebody has deliberately emptied stays
@@ -1101,6 +1138,25 @@
         sh.videoAlts.forEach(function (r) {
           p.renderSeq = Math.max(p.renderSeq | 0, r.serial);
         });
+        /* The still takes claim from that same counter, and are the other
+           record list this sweep would otherwise walk past: a board whose
+           counter sat behind the serials living in its takes handed a new
+           render a number one of them already owned — two takes under one
+           filename, the one thing a serial exists to prevent. */
+        sh.imageAlts = (Array.isArray(sh.imageAlts) ? sh.imageAlts : [])
+          .map(function (r) {
+            if (!r) return null;
+            const ren = goodRender(r.render);
+            if (!r.image && !ren) return null;
+            return { image: r.image || null, render: ren, at: r.at || 0 };
+          }).filter(Boolean);
+        sh.imageAlts.forEach(function (r) {
+          if (r.render) p.renderSeq = Math.max(p.renderSeq | 0, r.render.serial);
+        });
+        /* A picture's own date. Absent on every board written before takes,
+           and CONTENT_KEYS carries it through a duplicate — where SB.clone is
+           JSON.parse(JSON.stringify(x)) and undefined is not valid JSON. */
+        sh.imageAt = sh.imageAt || (sh.render && sh.render.at) || 0;
         repairTakes(sh);
         sh.personaIds = Array.isArray(sh.personaIds) ? sh.personaIds : [];
         /* Empty for every board written before this, which is the right answer:
@@ -1441,7 +1497,7 @@
     /* the alts are the other takes of `video` and of `image`; leaving them
        out of the swap separated the chosen take from the ones it was chosen
        against */
-    'videoAlts', 'imageAlts',
+    'videoAlts', 'imageAlts', 'imageAt',
     'fields', 'prompts', 'personaIds', 'castEnters', 'comments', 'render', 'video'
   ];
 
@@ -1604,6 +1660,34 @@
    * moves their contents between shot objects while the ids stay put. Looked
    * up by the blob reference, which is the one thing that travels WITH the
    * picture. */
+  /* File an original against the picture it was encoded from, wherever that
+   * picture now sits: the chosen slot, a take banked while it was encoding,
+   * or either of those on another card after a swap.
+   *
+   * shotHolding only ever looked at the chosen slot. Two landings in quick
+   * succession — a drop while a generation is in the air — banked the first
+   * as a take and then found nothing holding its proxy, so its original was
+   * dropped on the floor in silence and the take was board-copy-only for
+   * good. Never overwrites a slot that already has one: refs are content
+   * hashes, so two cards CAN hold the same bytes, and the one with its own
+   * original must not lose it. */
+  function placeRender(p, ref, rec) {
+    if (!ref || !rec) return false;
+    let done = false;
+    eachShot(p, function (sh) {
+      if (done) return;
+      const im = sh.image;
+      const r = im && (typeof im === 'string' ? im : im.ref);
+      if (r === ref && !sh.render) { sh.render = rec; done = true; return; }
+      (sh.imageAlts || []).forEach(function (a) {
+        if (done || !a || a.render) return;
+        const ar = a.image && (typeof a.image === 'string' ? a.image : a.image.ref);
+        if (ar === ref) { a.render = rec; done = true; }
+      });
+    });
+    return done;
+  }
+
   function shotHolding(p, ref) {
     if (!ref) return null;
     let hit = null;
@@ -1628,7 +1712,7 @@
     DEFAULT_SHOT_TYPES: DEFAULT_SHOT_TYPES,
     DEFAULT_FRAMING: DEFAULT_FRAMING, framingFor: framingFor, guessFraming: guessFraming,
     takes: takes, takeCount: takeCount, addTake: addTake, repairTakes: repairTakes,
-    stillTakes: stillTakes, stillTakeCount: stillTakeCount,
+    stillTakes: stillTakes, stillTakeCount: stillTakeCount, placeRender: placeRender,
     keepStillTake: keepStillTake, useStillTake: useStillTake,
     dropStillTake: dropStillTake,
     useTake: useTake, dropTake: dropTake,

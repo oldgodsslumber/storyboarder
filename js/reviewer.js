@@ -25,13 +25,23 @@
     return 'added from a file';
   }
 
+  /* The takes as this window shows them: newest first, because the take you
+   * just made is the one you came to compare. ONE definition, used by every
+   * reader — the index `cur` means nothing unless the list it indexes is the
+   * list on screen. */
+  function view(sh) {
+    const list = SB.Model.stillTakes(sh);
+    list.sort(function (x, y) { return (y.at || 0) - (x.at || 0); });
+    return list;
+  }
+
   function open(p, sh) {
-    const takes = SB.Model.stillTakes(sh);
+    const takes = view(sh);
     if (!takes.length) return null;
 
     /* the chosen one first on screen — it is what the board is showing */
     let cur = takes.map(function (t) { return t.chosen; }).indexOf(true);
-    if (cur < 0) cur = takes.length - 1;
+    if (cur < 0) cur = 0;
 
     const wrap = SB.el('div', 'reviewer');
 
@@ -93,7 +103,7 @@
     document.addEventListener('keydown', onKey);
 
     function move(by) {
-      const list = SB.Model.stillTakes(sh);
+      const list = view(sh);
       if (!list.length) return;
       cur = SB.clamp(cur + by, 0, list.length - 1);
       paint();
@@ -153,6 +163,24 @@
         };
         btns.appendChild(use);
       }
+      /* The one way a take could leave this app: the export writes the
+         chosen one only, so a kept take was weight with no way out. */
+      const save = SB.el('button', 'mini', '⤓');
+      save.title = 'Save this take to a file';
+      save.onclick = function (ev) {
+        ev.stopPropagation();
+        const got = SB.Viewer.srcOf(p, { img: t.image, render: t.render });
+        if (!got.src) return;
+        const a = document.createElement('a');
+        a.href = got.src;
+        a.download = got.file || ((SB.Renders.slug(codeOf() || 'shot') || 'shot') +
+          '-take' + t.n + (got.full ? '.png' : '-board.jpg'));
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      };
+      btns.appendChild(save);
+
       const del = SB.el('button', 'mini danger', '✕');
       del.title = t.chosen
         ? 'Delete this take. The newest of the rest steps up' +
@@ -217,11 +245,12 @@
     }
 
     function paint() {
-      const list = SB.Model.stillTakes(sh);
+      /* The card can go while this is open — deleted from the board behind
+         it. Writing to a shot the document no longer holds looks like it
+         worked and saves nothing. */
+      if (!SB.Model.findShot(p, sh.id)) { m.close(); return; }
+      const list = view(sh);
       if (!list.length) { m.close(); return; }
-      /* newest first down the column: the take you just made is the one you
-         came to compare */
-      list.sort(function (x, y) { return (y.at || 0) - (x.at || 0); });
       cur = SB.clamp(cur, 0, list.length - 1);
       listEl.innerHTML = '';
       list.forEach(function (t, i) { listEl.appendChild(row(t, i, list.length)); });

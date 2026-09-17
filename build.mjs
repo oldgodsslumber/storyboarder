@@ -2,6 +2,7 @@
  * usage: node build.mjs
  */
 import { readFileSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { execSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -27,7 +28,20 @@ const stamp = new Date().toISOString().replace('T', ' ').slice(0, 16) + ' · ' +
  * new button labels over old behavior, and a "the fix is not there" report
  * that was true and false at the same time. A changed query string is a URL
  * the cache has never seen, so HTML and assets move together or not at all. */
-const ver = sha.replace(/[^0-9a-z]/gi, '') || 'dev';
+/* Not the commit — the CONTENT. `git rev-parse HEAD` is the commit that
+   exists while the build runs, which is the one BEFORE the code being built,
+   because a build is what you commit. Every release therefore stamped its
+   assets with the previous release's hash, and a browser that already held
+   that version kept every cached file. A digest of the bytes about to ship
+   changes when, and only when, they do. */
+const assets = [...html.matchAll(/(?:src|href)="((?:js|css)\/[^"?]+)/g)]
+  .map(m2 => m2[1]);
+const digest = createHash('sha1');
+assets.sort().forEach(a => {
+  digest.update(a);
+  try { digest.update(readFileSync(join(root, a))); } catch { /* listed, absent */ }
+});
+const ver = digest.digest('hex').slice(0, 10);
 const stamped = html.replace(
   /(src|href)="((?:js|css)\/[^"?]+)(?:\?v=[^"]*)?"/g,
   (_, attr, path) => attr + '="' + path + '?v=' + ver + '"');

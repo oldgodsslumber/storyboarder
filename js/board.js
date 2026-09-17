@@ -1201,21 +1201,31 @@
     c.addEventListener('mousedown', function (ev) {
       c.draggable = !ev.target.closest(GRAB_NOT);
       if (ev.target.closest('button, select, input, textarea, [contenteditable]')) return;
-      /* preventDefault on a grab zone cancels the browser's drag before it
-       * starts — so a modified drag could not even begin from the places a
-       * drag begins. Range-select keeps the interactive rest of the card;
-       * a handle's job is dragging. */
-      if (ev.shiftKey && c.draggable) return;
       if (ev.ctrlKey || ev.metaKey || ev.shiftKey) {
-        ev.preventDefault();                       // no text selection while picking
+        /* preventDefault cancels the browser's drag before it starts, so a
+         * grab zone must not call it — shift-drag duplicates a card and has
+         * to be able to begin here. What is given up is only the suppression
+         * of text selection, and a grab zone is padding and labels.
+         *
+         * The selection itself happens either way. Skipping it on a grab
+         * zone — which is what an early return did — killed Shift-click
+         * range-select on the head, the padding, the labels and the code:
+         * every part of a card somebody would actually shift-click. */
+        if (!c.draggable) ev.preventDefault();
         selectShot(sh.id, ev);
         return;
       }
       if (isSelected(sh.id) && selection().length > 1) return;  // keep the group for a drag
       selectShot(sh.id, ev);
     });
-    /* every way a press ends disarms it, so the next press decides afresh */
+    /* Every way a press ends disarms it, so the next press decides afresh.
+     * On the document, not the card: a release outside the card — over a
+     * neighbour, over the gutter, outside the window — never reaches the
+     * card, and a card left armed is a draggable ancestor over every
+     * editable box on it, which is exactly what the arming exists to avoid.
+     * The board already knows this: the marquee carries the same note. */
     c.addEventListener('mouseup', function () { c.draggable = false; });
+    document.addEventListener('mouseup', function () { c.draggable = false; });
     c.addEventListener('dragstart', function (ev) {
       ev.dataTransfer.setData(DND_SHOT, sh.id);
       /* copyMove, not move: a dropEffect outside effectAllowed is forced to
@@ -1965,16 +1975,27 @@
     }
     if (sh.image || sh.render) {
       const rm = SB.el('button', 'mini danger', '✕');
-      rm.title = 'Remove image';
-      rm.onclick = function (ev) {
-        ev.stopPropagation();
+      const nTakes = SB.Model.stillTakeCount(sh);
+      rm.title = nTakes > 1
+        ? 'Remove this take — the newest of the other ' + (nTakes - 1) +
+          ' shows instead. The Reviewer removes any one of them.'
+        : 'Remove the image on this card';
+      /* Armed, because it destroys bytes and structural change is outside
+         undo (history.js). It was a single unlabelled click that silently
+         took one of several takes with it. */
+      SB.armButton(rm, nTakes > 1 ? 'remove take?' : 'remove image?', function () {
         dropImage(sh);
-      };
+      });
       tools.appendChild(rm);
     }
     f.appendChild(tools);
 
-    f.addEventListener('click', function () {
+    f.addEventListener('click', function (ev) {
+      /* A modified click is a SELECTION gesture, and the card's own handler
+         has already made the selection. Opening a window on top of it meant
+         shift-clicking a frame to pick a run left the Reviewer in your face,
+         to be dismissed after every press. */
+      if (ev && (ev.shiftKey || ev.ctrlKey || ev.metaKey)) return;
       /* A click used to open the file picker, so wanting a better look at a
          480p frame was the same gesture as replacing it. Now it opens the
          picture; an empty frame still picks, because there is nothing to
@@ -2157,22 +2178,31 @@
          now the second landing silently deleted the first. Banked BEFORE the
          slot changes hands, and the new render claims a serial of its own
          below: the old file lives on under its old number, and two takes
-         filed under 0007 would write the same name twice into one export. */
-      SB.Model.keepStillTake(sh);
+         filed under 0007 would write the same name twice into one export.
+
+         Unless it is the same picture. Blob refs are content hashes, so a
+         re-render that came back byte-identical is not a new take — banking
+         it gave the card two identical rows and a ✕ that appeared to do
+         nothing while quietly destroying one of them. */
+      const same = !!(sh.image && sh.image.ref === proxy.ref);
+      if (!same) SB.Model.keepStillTake(sh);
       sh.image = proxy;
-      sh.render = null;
+      if (!same) sh.render = null;
+      sh.imageAt = Date.now();
       /* Always asynchronous — a generated still can land long after the click
          that asked for it, so it queues behind whatever is being typed. */
       SB.Focus.defer('image:' + sh.id, function () { SB.app.changed(true); });
 
-      return SB.Renders.keep(P(), src, null, made).then(function (rec) {
+      return SB.Renders.keep(P(), src, same ? sh.render : null, made).then(function (rec) {
         if (!rec) return;
-        const target = (sh.image && sh.image.ref === proxy.ref)
-          ? sh : SB.Model.shotHolding(P(), proxy.ref);
-        if (!target) return;
-        target.render = rec;
+        /* Filed against the PICTURE, not the card and not the chosen slot:
+           by now a swap may have moved it to another card, and a second
+           landing may have banked it as a take. Both were addresses this
+           used to get wrong. */
+        if (!SB.Model.placeRender(P(), proxy.ref, rec)) return;
         SB.Store.touch();
-        SB.Board.refreshFeed(target.id);
+        const holder = SB.Model.shotHolding(P(), proxy.ref);
+        SB.Board.refreshFeed((holder || sh).id);
       }).catch(function (e) {
         /* The proxy is already on the card, so this is not a lost picture —
            but it IS a lost original, and that is exactly what used to happen

@@ -264,6 +264,7 @@ body.marquee-on{user-select:none;cursor:crosshair}
 .card{cursor:grab}
 .card .desc-box,.card .prompt-box{cursor:text}
 .card .frame{cursor:zoom-in}
+.card .comments{cursor:auto}
 .card .frame .drop-hint{cursor:pointer}
 .card-head{
   display:flex;align-items:center;gap:6px;padding:4px 6px;cursor:grab;
@@ -1028,6 +1029,10 @@ button.linkish{
 @media (max-width: 900px){
   .reviewer{flex-direction:column;max-height:none}
   .rev-col{flex:1 1 auto}
+  /* still bounded, or the list grows and puts "render another take" below
+     the fold of a dialog that does not look scrollable */
+  .rev-takes{max-height:38vh}
+  .rev-stage{min-height:34vh}
 }
 
 .pt-lane{position:relative}
@@ -1262,8 +1267,11 @@ body.comment-mode .frame{cursor:crosshair}
    always visible: the clip is not in the project file, so this badge is the
    only sign it exists at all. */
 /* how many still takes hide behind this frame */
+/* Top-RIGHT: the clip badge owns the top-left corner, and an identically
+   placed badge appended after it covered the only way in to shooting a
+   clip on any card holding more than one take. */
 .take-badge{
-  position:absolute;top:4px;left:4px;z-index:2;
+  position:absolute;top:4px;right:4px;z-index:2;
   background:color-mix(in srgb, var(--bg) 75%, transparent);
   border:1px solid var(--line2);border-radius:9px;color:var(--fg-dim);
   font-size:10px;font-weight:700;padding:1px 7px;cursor:pointer;
@@ -1367,7 +1375,7 @@ body.comment-mode .frame{cursor:crosshair}
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-09-17 14:08 · 989e2ff+";</script>
+<script>window.SB_BUILD = "2026-09-17 14:28 · a309e0d+";</script>
 
 <div id="app">
 
@@ -10220,7 +10228,13 @@ window.SB = window.SB || {};
      board-copy-only card gets 0 and sorts first, which is the only honest
      place for a picture nobody dated. */
   function takenAt(shot) {
-    return (shot.render && shot.render.at) || (shot.image && shot.image.at) || 0;
+    /* The original carries a time; a board-copy-only picture does not, and
+       reading `image.at` was reading a field Blobs.image has never set. So
+       every undated take sorted as 0: take numbers swapped under the user
+       mid-landing, and "the newest of the rest" promoted the OLDEST, because
+       a stable sort on equal keys keeps insertion order. setImage stamps
+       imageAt, so a picture is dated from the moment it lands. */
+    return (shot.render && shot.render.at) || shot.imageAt || 0;
   }
 
   function stillTakeCount(shot) {
@@ -10235,10 +10249,14 @@ window.SB = window.SB || {};
    * async original); this only banks what was there. */
   function keepStillTake(shot) {
     if (!shot || !(shot.image || shot.render)) return false;
-    shot.imageAlts = (shot.imageAlts || []).concat([{
+    const rec = {
       image: shot.image || null, render: shot.render || null, at: takenAt(shot)
-    }]);
-    return true;
+    };
+    shot.imageAlts = (shot.imageAlts || []).concat([rec]);
+    /* handed back so the caller can find this take again — an original still
+       encoding has to land on the take it belongs to, not on whatever is in
+       the chosen slot by the time it arrives */
+    return rec;
   }
 
   /* Swap a take into the chosen slot. The one that was chosen joins the rest
@@ -10255,6 +10273,7 @@ window.SB = window.SB || {};
     shot.imageAlts = alts;
     shot.image = rec.image || null;
     shot.render = rec.render || null;
+    shot.imageAt = rec.at || 0;          // its date comes with it
     return true;
   }
 
@@ -10268,6 +10287,7 @@ window.SB = window.SB || {};
       const next = rest.shift() || null;
       shot.image = next ? (next.image || null) : null;
       shot.render = next ? (next.render || null) : null;
+      shot.imageAt = next ? (next.at || 0) : 0;
       shot.imageAlts = rest;
       return true;
     }
@@ -10310,6 +10330,10 @@ window.SB = window.SB || {};
       /* Every other STILL take: [{image, render, at}]. `image`/`render`
        * below are the chosen one, same contract as the clips above. */
       imageAlts: [],
+      /* When the chosen picture landed. The original carries its own time,
+       * but a board-copy-only picture has none, and an undated take cannot be
+       * ordered against a dated one. */
+      imageAt: 0,
       annotation: null,                 // {ref} — transparent PNG overlay
       /* What this card asks of the generator, where it differs from the
        * board: { duration, resolution, quality }. Sparse on purpose — a key
@@ -10637,6 +10661,21 @@ window.SB = window.SB || {};
         sh.videoAlts.forEach(function (r) {
           p.renderSeq = Math.max(p.renderSeq | 0, r.serial);
         });
+        /* The still takes claim from the same counter, and were the one
+           record list this sweep walked past. A board whose counter sat
+           behind the serials living in its alts handed a new render a number
+           an alternate already owned — two takes under one filename, which is
+           the whole thing a serial exists to prevent. */
+        sh.imageAlts = (Array.isArray(sh.imageAlts) ? sh.imageAlts : [])
+          .map(function (r) {
+            if (!r) return null;
+            const ren = goodRender(r.render);
+            if (!r.image && !ren) return null;
+            return { image: r.image || null, render: ren, at: r.at || 0 };
+          }).filter(Boolean);
+        sh.imageAlts.forEach(function (r) {
+          if (r.render) p.renderSeq = Math.max(p.renderSeq | 0, r.render.serial);
+        });
         repairTakes(sh);
         sh.personaIds = Array.isArray(sh.personaIds) ? sh.personaIds : [];
           sh.castEnters = (Array.isArray(sh.castEnters) ? sh.castEnters : [])
@@ -10666,7 +10705,13 @@ window.SB = window.SB || {};
     (p.scenes || []).forEach(function (sc) {
       (sc.shots || []).forEach(function (sh) {
         if (!Array.isArray(sh.videoAlts)) sh.videoAlts = [];
-        repairTakes(sh);
+        /* And the still takes. Absent on every board written before them,
+           which is why this must run: CONTENT_KEYS carries imageAlts through
+           a duplicate, and SB.clone is JSON.parse(JSON.stringify(x)) — which
+           throws on undefined. Without this line, shift-drag duplicate threw
+           on every card of every board that predates takes. */
+        if (!Array.isArray(sh.imageAlts)) sh.imageAlts = [];
+        sh.imageAt = sh.imageAt || 0;
       });
     });
     /* Only what is missing: a line somebody has deliberately emptied stays
@@ -10865,6 +10910,25 @@ window.SB = window.SB || {};
         sh.videoAlts.forEach(function (r) {
           p.renderSeq = Math.max(p.renderSeq | 0, r.serial);
         });
+        /* The still takes claim from that same counter, and are the other
+           record list this sweep would otherwise walk past: a board whose
+           counter sat behind the serials living in its takes handed a new
+           render a number one of them already owned — two takes under one
+           filename, the one thing a serial exists to prevent. */
+        sh.imageAlts = (Array.isArray(sh.imageAlts) ? sh.imageAlts : [])
+          .map(function (r) {
+            if (!r) return null;
+            const ren = goodRender(r.render);
+            if (!r.image && !ren) return null;
+            return { image: r.image || null, render: ren, at: r.at || 0 };
+          }).filter(Boolean);
+        sh.imageAlts.forEach(function (r) {
+          if (r.render) p.renderSeq = Math.max(p.renderSeq | 0, r.render.serial);
+        });
+        /* A picture's own date. Absent on every board written before takes,
+           and CONTENT_KEYS carries it through a duplicate — where SB.clone is
+           JSON.parse(JSON.stringify(x)) and undefined is not valid JSON. */
+        sh.imageAt = sh.imageAt || (sh.render && sh.render.at) || 0;
         repairTakes(sh);
         sh.personaIds = Array.isArray(sh.personaIds) ? sh.personaIds : [];
         /* Empty for every board written before this, which is the right answer:
@@ -11205,7 +11269,7 @@ window.SB = window.SB || {};
     /* the alts are the other takes of `video` and of `image`; leaving them
        out of the swap separated the chosen take from the ones it was chosen
        against */
-    'videoAlts', 'imageAlts',
+    'videoAlts', 'imageAlts', 'imageAt',
     'fields', 'prompts', 'personaIds', 'castEnters', 'comments', 'render', 'video'
   ];
 
@@ -11368,6 +11432,34 @@ window.SB = window.SB || {};
    * moves their contents between shot objects while the ids stay put. Looked
    * up by the blob reference, which is the one thing that travels WITH the
    * picture. */
+  /* File an original against the picture it was encoded from, wherever that
+   * picture now sits: the chosen slot, a take banked while it was encoding,
+   * or either of those on another card after a swap.
+   *
+   * shotHolding only ever looked at the chosen slot. Two landings in quick
+   * succession — a drop while a generation is in the air — banked the first
+   * as a take and then found nothing holding its proxy, so its original was
+   * dropped on the floor in silence and the take was board-copy-only for
+   * good. Never overwrites a slot that already has one: refs are content
+   * hashes, so two cards CAN hold the same bytes, and the one with its own
+   * original must not lose it. */
+  function placeRender(p, ref, rec) {
+    if (!ref || !rec) return false;
+    let done = false;
+    eachShot(p, function (sh) {
+      if (done) return;
+      const im = sh.image;
+      const r = im && (typeof im === 'string' ? im : im.ref);
+      if (r === ref && !sh.render) { sh.render = rec; done = true; return; }
+      (sh.imageAlts || []).forEach(function (a) {
+        if (done || !a || a.render) return;
+        const ar = a.image && (typeof a.image === 'string' ? a.image : a.image.ref);
+        if (ar === ref) { a.render = rec; done = true; }
+      });
+    });
+    return done;
+  }
+
   function shotHolding(p, ref) {
     if (!ref) return null;
     let hit = null;
@@ -11392,7 +11484,7 @@ window.SB = window.SB || {};
     DEFAULT_SHOT_TYPES: DEFAULT_SHOT_TYPES,
     DEFAULT_FRAMING: DEFAULT_FRAMING, framingFor: framingFor, guessFraming: guessFraming,
     takes: takes, takeCount: takeCount, addTake: addTake, repairTakes: repairTakes,
-    stillTakes: stillTakes, stillTakeCount: stillTakeCount,
+    stillTakes: stillTakes, stillTakeCount: stillTakeCount, placeRender: placeRender,
     keepStillTake: keepStillTake, useStillTake: useStillTake,
     dropStillTake: dropStillTake,
     useTake: useTake, dropTake: dropTake,
@@ -13160,13 +13252,23 @@ window.SB = window.SB || {};
     return 'added from a file';
   }
 
+  /* The takes as this window shows them: newest first, because the take you
+   * just made is the one you came to compare. ONE definition, used by every
+   * reader — the index `cur` means nothing unless the list it indexes is the
+   * list on screen. */
+  function view(sh) {
+    const list = SB.Model.stillTakes(sh);
+    list.sort(function (x, y) { return (y.at || 0) - (x.at || 0); });
+    return list;
+  }
+
   function open(p, sh) {
-    const takes = SB.Model.stillTakes(sh);
+    const takes = view(sh);
     if (!takes.length) return null;
 
     /* the chosen one first on screen — it is what the board is showing */
     let cur = takes.map(function (t) { return t.chosen; }).indexOf(true);
-    if (cur < 0) cur = takes.length - 1;
+    if (cur < 0) cur = 0;
 
     const wrap = SB.el('div', 'reviewer');
 
@@ -13228,7 +13330,7 @@ window.SB = window.SB || {};
     document.addEventListener('keydown', onKey);
 
     function move(by) {
-      const list = SB.Model.stillTakes(sh);
+      const list = view(sh);
       if (!list.length) return;
       cur = SB.clamp(cur + by, 0, list.length - 1);
       paint();
@@ -13288,6 +13390,24 @@ window.SB = window.SB || {};
         };
         btns.appendChild(use);
       }
+      /* The one way a take could leave this app: the export writes the
+         chosen one only, so a kept take was weight with no way out. */
+      const save = SB.el('button', 'mini', '⤓');
+      save.title = 'Save this take to a file';
+      save.onclick = function (ev) {
+        ev.stopPropagation();
+        const got = SB.Viewer.srcOf(p, { img: t.image, render: t.render });
+        if (!got.src) return;
+        const a = document.createElement('a');
+        a.href = got.src;
+        a.download = got.file || ((SB.Renders.slug(codeOf() || 'shot') || 'shot') +
+          '-take' + t.n + (got.full ? '.png' : '-board.jpg'));
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      };
+      btns.appendChild(save);
+
       const del = SB.el('button', 'mini danger', '✕');
       del.title = t.chosen
         ? 'Delete this take. The newest of the rest steps up' +
@@ -13352,11 +13472,12 @@ window.SB = window.SB || {};
     }
 
     function paint() {
-      const list = SB.Model.stillTakes(sh);
+      /* The card can go while this is open — deleted from the board behind
+         it. Writing to a shot the document no longer holds looks like it
+         worked and saves nothing. */
+      if (!SB.Model.findShot(p, sh.id)) { m.close(); return; }
+      const list = view(sh);
       if (!list.length) { m.close(); return; }
-      /* newest first down the column: the take you just made is the one you
-         came to compare */
-      list.sort(function (x, y) { return (y.at || 0) - (x.at || 0); });
       cur = SB.clamp(cur, 0, list.length - 1);
       listEl.innerHTML = '';
       list.forEach(function (t, i) { listEl.appendChild(row(t, i, list.length)); });
@@ -14578,21 +14699,31 @@ window.SB = window.SB || {};
     c.addEventListener('mousedown', function (ev) {
       c.draggable = !ev.target.closest(GRAB_NOT);
       if (ev.target.closest('button, select, input, textarea, [contenteditable]')) return;
-      /* preventDefault on a grab zone cancels the browser's drag before it
-       * starts — so a modified drag could not even begin from the places a
-       * drag begins. Range-select keeps the interactive rest of the card;
-       * a handle's job is dragging. */
-      if (ev.shiftKey && c.draggable) return;
       if (ev.ctrlKey || ev.metaKey || ev.shiftKey) {
-        ev.preventDefault();                       // no text selection while picking
+        /* preventDefault cancels the browser's drag before it starts, so a
+         * grab zone must not call it — shift-drag duplicates a card and has
+         * to be able to begin here. What is given up is only the suppression
+         * of text selection, and a grab zone is padding and labels.
+         *
+         * The selection itself happens either way. Skipping it on a grab
+         * zone — which is what an early return did — killed Shift-click
+         * range-select on the head, the padding, the labels and the code:
+         * every part of a card somebody would actually shift-click. */
+        if (!c.draggable) ev.preventDefault();
         selectShot(sh.id, ev);
         return;
       }
       if (isSelected(sh.id) && selection().length > 1) return;  // keep the group for a drag
       selectShot(sh.id, ev);
     });
-    /* every way a press ends disarms it, so the next press decides afresh */
+    /* Every way a press ends disarms it, so the next press decides afresh.
+     * On the document, not the card: a release outside the card — over a
+     * neighbour, over the gutter, outside the window — never reaches the
+     * card, and a card left armed is a draggable ancestor over every
+     * editable box on it, which is exactly what the arming exists to avoid.
+     * The board already knows this: the marquee carries the same note. */
     c.addEventListener('mouseup', function () { c.draggable = false; });
+    document.addEventListener('mouseup', function () { c.draggable = false; });
     c.addEventListener('dragstart', function (ev) {
       ev.dataTransfer.setData(DND_SHOT, sh.id);
       /* copyMove, not move: a dropEffect outside effectAllowed is forced to
@@ -15342,16 +15473,27 @@ window.SB = window.SB || {};
     }
     if (sh.image || sh.render) {
       const rm = SB.el('button', 'mini danger', '✕');
-      rm.title = 'Remove image';
-      rm.onclick = function (ev) {
-        ev.stopPropagation();
+      const nTakes = SB.Model.stillTakeCount(sh);
+      rm.title = nTakes > 1
+        ? 'Remove this take — the newest of the other ' + (nTakes - 1) +
+          ' shows instead. The Reviewer removes any one of them.'
+        : 'Remove the image on this card';
+      /* Armed, because it destroys bytes and structural change is outside
+         undo (history.js). It was a single unlabelled click that silently
+         took one of several takes with it. */
+      SB.armButton(rm, nTakes > 1 ? 'remove take?' : 'remove image?', function () {
         dropImage(sh);
-      };
+      });
       tools.appendChild(rm);
     }
     f.appendChild(tools);
 
-    f.addEventListener('click', function () {
+    f.addEventListener('click', function (ev) {
+      /* A modified click is a SELECTION gesture, and the card's own handler
+         has already made the selection. Opening a window on top of it meant
+         shift-clicking a frame to pick a run left the Reviewer in your face,
+         to be dismissed after every press. */
+      if (ev && (ev.shiftKey || ev.ctrlKey || ev.metaKey)) return;
       /* A click used to open the file picker, so wanting a better look at a
          480p frame was the same gesture as replacing it. Now it opens the
          picture; an empty frame still picks, because there is nothing to
@@ -15534,22 +15676,31 @@ window.SB = window.SB || {};
          now the second landing silently deleted the first. Banked BEFORE the
          slot changes hands, and the new render claims a serial of its own
          below: the old file lives on under its old number, and two takes
-         filed under 0007 would write the same name twice into one export. */
-      SB.Model.keepStillTake(sh);
+         filed under 0007 would write the same name twice into one export.
+
+         Unless it is the same picture. Blob refs are content hashes, so a
+         re-render that came back byte-identical is not a new take — banking
+         it gave the card two identical rows and a ✕ that appeared to do
+         nothing while quietly destroying one of them. */
+      const same = !!(sh.image && sh.image.ref === proxy.ref);
+      if (!same) SB.Model.keepStillTake(sh);
       sh.image = proxy;
-      sh.render = null;
+      if (!same) sh.render = null;
+      sh.imageAt = Date.now();
       /* Always asynchronous — a generated still can land long after the click
          that asked for it, so it queues behind whatever is being typed. */
       SB.Focus.defer('image:' + sh.id, function () { SB.app.changed(true); });
 
-      return SB.Renders.keep(P(), src, null, made).then(function (rec) {
+      return SB.Renders.keep(P(), src, same ? sh.render : null, made).then(function (rec) {
         if (!rec) return;
-        const target = (sh.image && sh.image.ref === proxy.ref)
-          ? sh : SB.Model.shotHolding(P(), proxy.ref);
-        if (!target) return;
-        target.render = rec;
+        /* Filed against the PICTURE, not the card and not the chosen slot:
+           by now a swap may have moved it to another card, and a second
+           landing may have banked it as a take. Both were addresses this
+           used to get wrong. */
+        if (!SB.Model.placeRender(P(), proxy.ref, rec)) return;
         SB.Store.touch();
-        SB.Board.refreshFeed(target.id);
+        const holder = SB.Model.shotHolding(P(), proxy.ref);
+        SB.Board.refreshFeed((holder || sh).id);
       }).catch(function (e) {
         /* The proxy is already on the card, so this is not a lost picture —
            but it IS a lost original, and that is exactly what used to happen

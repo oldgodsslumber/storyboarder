@@ -421,7 +421,9 @@ it will never make a card or scene reappear or vanish.
   file** for one you already have. ↑/↓ walk the takes, Enter chooses, Delete arms the
   delete. Choosing a different take marks the card's written video prompt stale, because
   the prompt was written about the other picture. The ✕ on the card's frame removes one
-  take at a time, newest first — nothing mass-deletes.
+  take at a time (armed, and it says which one goes) — nothing mass-deletes.
+  Each take also has **⤓**, which saves that one out: the export writes the chosen
+  take only, so without it a kept take was weight with no way out of the app.
 - **Grab a card anywhere.** The header was the only drag handle; now anything on a card
   that is not something you interact with — the labels, the padding, the background — picks
   the whole card up. Text boxes still select text, the frame still opens the Reviewer,

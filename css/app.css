@@ -258,6 +258,7 @@ body.marquee-on{user-select:none;cursor:crosshair}
 .card{cursor:grab}
 .card .desc-box,.card .prompt-box{cursor:text}
 .card .frame{cursor:zoom-in}
+.card .comments{cursor:auto}
 .card .frame .drop-hint{cursor:pointer}
 .card-head{
   display:flex;align-items:center;gap:6px;padding:4px 6px;cursor:grab;
@@ -1022,6 +1023,10 @@ button.linkish{
 @media (max-width: 900px){
   .reviewer{flex-direction:column;max-height:none}
   .rev-col{flex:1 1 auto}
+  /* still bounded, or the list grows and puts "render another take" below
+     the fold of a dialog that does not look scrollable */
+  .rev-takes{max-height:38vh}
+  .rev-stage{min-height:34vh}
 }
 
 .pt-lane{position:relative}
@@ -1256,8 +1261,11 @@ body.comment-mode .frame{cursor:crosshair}
    always visible: the clip is not in the project file, so this badge is the
    only sign it exists at all. */
 /* how many still takes hide behind this frame */
+/* Top-RIGHT: the clip badge owns the top-left corner, and an identically
+   placed badge appended after it covered the only way in to shooting a
+   clip on any card holding more than one take. */
 .take-badge{
-  position:absolute;top:4px;left:4px;z-index:2;
+  position:absolute;top:4px;right:4px;z-index:2;
   background:color-mix(in srgb, var(--bg) 75%, transparent);
   border:1px solid var(--line2);border-radius:9px;color:var(--fg-dim);
   font-size:10px;font-weight:700;padding:1px 7px;cursor:pointer;
