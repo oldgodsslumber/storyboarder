@@ -1925,7 +1925,13 @@
       bi.className = 'shot-img pose-img';
       bi.src = SB.Blobs.src(P(), sh.pose.image);
       f.appendChild(bi);
-      f.appendChild(SB.el('div', 'pose-label', 'blocking · click to edit · drop an image to fill'));
+      /* Said in the corner, not across the picture: a label over the middle
+         of the frame got in the way of reading the blocking itself, which is
+         the whole point of showing it on a board being reviewed. */
+      const tag = SB.el('button', 'pose-badge', '⛹ blocking');
+      tag.title = 'This card’s 3D blocking — no still yet. Click to edit it; drop an image to fill the frame.';
+      tag.onclick = function (ev) { ev.stopPropagation(); SB.Pose.open(sh); };
+      f.appendChild(tag);
     } else {
       const hint = SB.el('div', 'drop-hint', 'drop / paste an image, or click to load');
       if (SB.Pose && SB.Pose.available()) {

@@ -4325,7 +4325,9 @@
         const fb = card(blocked).querySelector('.frame');
         t('an empty blocked card shows its blocking, dimmed', fb.classList.contains('blocked-empty') &&
           !!fb.querySelector('.pose-img') && !fb.querySelector('.pose-start'), fb.className);
-        t('and says it is a blocking, not a still', /blocking/.test((fb.querySelector('.pose-label') || {}).textContent || ''), '');
+        t('and says it is a blocking, in the corner', /blocking/.test((fb.querySelector('.pose-badge') || {}).textContent || ''),
+          (fb.querySelector('.pose-badge') || {}).textContent);
+        t('with nothing laid across the picture', !fb.querySelector('.pose-label'), '');
         const tools = [].map.call(fb.querySelectorAll('.frame-tools button'), function (b) { return b.textContent; });
         t('its tools edit and remove the blocking', tools.indexOf('⛹ edit') >= 0 && tools.indexOf('✕ ⛹') >= 0,
           JSON.stringify(tools));

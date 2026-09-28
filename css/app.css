@@ -1384,12 +1384,6 @@ body.comment-mode .frame{cursor:crosshair}
 /* an empty frame showing its blocking: clearly a placeholder, not a still */
 .frame.blocked-empty .pose-img{opacity:.55;filter:grayscale(1)}
 .frame.blocked-empty{cursor:pointer}
-.frame .pose-label{
-  position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:1;
-  background:color-mix(in srgb, var(--bg) 78%, transparent);color:var(--fg-dim);
-  border:1px dashed var(--line2);border-radius:6px;font-size:10.5px;padding:3px 8px;
-  white-space:nowrap;pointer-events:none;
-}
 .frame .drop-hint .pose-start{margin-top:6px}
 .rev-stale{font-size:10.5px;color:var(--accent2);margin-top:2px}
 /* the editor: Pose Bench full-screen over the board */

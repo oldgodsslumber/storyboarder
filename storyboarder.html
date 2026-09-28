@@ -1390,12 +1390,6 @@ body.comment-mode .frame{cursor:crosshair}
 /* an empty frame showing its blocking: clearly a placeholder, not a still */
 .frame.blocked-empty .pose-img{opacity:.55;filter:grayscale(1)}
 .frame.blocked-empty{cursor:pointer}
-.frame .pose-label{
-  position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:1;
-  background:color-mix(in srgb, var(--bg) 78%, transparent);color:var(--fg-dim);
-  border:1px dashed var(--line2);border-radius:6px;font-size:10.5px;padding:3px 8px;
-  white-space:nowrap;pointer-events:none;
-}
 .frame .drop-hint .pose-start{margin-top:6px}
 .rev-stale{font-size:10.5px;color:var(--accent2);margin-top:2px}
 /* the editor: Pose Bench full-screen over the board */
@@ -1413,7 +1407,7 @@ body.comment-mode .frame{cursor:crosshair}
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-09-28 15:33 · 642013f+";</script>
+<script>window.SB_BUILD = "2026-09-28 15:39 · 9d67d67+";</script>
 
 <div id="app">
 
@@ -16127,7 +16121,13 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
       bi.className = 'shot-img pose-img';
       bi.src = SB.Blobs.src(P(), sh.pose.image);
       f.appendChild(bi);
-      f.appendChild(SB.el('div', 'pose-label', 'blocking · click to edit · drop an image to fill'));
+      /* Said in the corner, not across the picture: a label over the middle
+         of the frame got in the way of reading the blocking itself, which is
+         the whole point of showing it on a board being reviewed. */
+      const tag = SB.el('button', 'pose-badge', '⛹ blocking');
+      tag.title = 'This card’s 3D blocking — no still yet. Click to edit it; drop an image to fill the frame.';
+      tag.onclick = function (ev) { ev.stopPropagation(); SB.Pose.open(sh); };
+      f.appendChild(tag);
     } else {
       const hint = SB.el('div', 'drop-hint', 'drop / paste an image, or click to load');
       if (SB.Pose && SB.Pose.available()) {
