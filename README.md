@@ -432,9 +432,14 @@ it will never make a card or scene reappear or vanish.
 - **Grab a card anywhere.** The header was the only drag handle; now anything on a card
   that is not something you interact with — the labels, the padding, the background — picks
   the whole card up. Text boxes still select text, the frame still opens the Reviewer,
-  buttons still press. Shift-drag and alt-drag work from anywhere a drag starts.
-- **Shift-drag duplicates a card.** Alt-drag already swaps two pictures, so a modifier that
-  changes what the drop means is a gesture the board has. The copy takes everything —
+  buttons still press. Alt-drag and Ctrl+Alt-drag work from anywhere a drag starts, the
+  picture included.
+- **Alt-drag duplicates a card** (hold Alt, press, drag, drop), as in Figma or Photoshop.
+  Select several cards first and Alt-drag one of them to copy the whole group at once, in
+  order, where you drop it. The drop mark turns green to show it is a copy. It works on the
+  board, on a scene's heading, and on a scene in the sidebar. (It used to be Shift-drag,
+  which never worked in Chrome: Chrome will not start a drag from a Shift-press.) The copy
+  takes everything —
   picture, all three description boxes, prompts, cast, shoot settings — with new ids, lands
   where you dropped it, and **shares** its picture rather than copying it (the store is keyed
   by content, so a duplicate costs nothing and deleting one card cannot take the other's
@@ -510,7 +515,8 @@ each run of cards where the scene changes.
 Dragging a card *moves* it, dialogue and all. To trade two shots over while each bit of
 dialogue stays where it is in the script, either:
 
-- **Alt-drag** one card onto another — the target says **⇄ swap pictures** instead of the
+- **Ctrl+Alt-drag** (Cmd+Option on a Mac) one card onto another — the target says
+  **⇄ swap pictures** instead of the
   usual move outline; or
 - click **⇄** in a card's header, then either press **⇄ on the other card** or click that card
   anywhere (Esc cancels). While one is armed, the other cards' ⇄ buttons light up as

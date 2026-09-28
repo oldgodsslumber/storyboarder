@@ -151,7 +151,7 @@ button,input,select,textarea{font:inherit;color:inherit}
 /* where the card or scene you are dragging will land */
 #dropMark{position:fixed;display:none;z-index:900;pointer-events:none;
   background:var(--accent2);border-radius:2px;box-shadow:0 0 8px var(--accent2)}
-/* shift-drag drops a copy rather than moving the card */
+/* alt-drag drops a copy rather than moving the card */
 #dropMark.copy{background:var(--ok);box-shadow:0 0 8px var(--ok)}
 .card.copy-target{outline:2px dashed var(--ok);outline-offset:2px}
 .scene-item.drop-shot{

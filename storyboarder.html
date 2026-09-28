@@ -157,7 +157,7 @@ button,input,select,textarea{font:inherit;color:inherit}
 /* where the card or scene you are dragging will land */
 #dropMark{position:fixed;display:none;z-index:900;pointer-events:none;
   background:var(--accent2);border-radius:2px;box-shadow:0 0 8px var(--accent2)}
-/* shift-drag drops a copy rather than moving the card */
+/* alt-drag drops a copy rather than moving the card */
 #dropMark.copy{background:var(--ok);box-shadow:0 0 8px var(--ok)}
 .card.copy-target{outline:2px dashed var(--ok);outline-offset:2px}
 .scene-item.drop-shot{
@@ -1407,7 +1407,7 @@ body.comment-mode .frame{cursor:crosshair}
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-09-28 18:41 · b650791+";</script>
+<script>window.SB_BUILD = "2026-09-28 18:45 · cd2a80c+";</script>
 
 <div id="app">
 
@@ -14656,9 +14656,19 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
     panel.addEventListener('scroll', onScroll);
   }
 
-  /* Which cards a drop should carry: the whole group if the dragged card is
-   * part of one, otherwise just the card. */
-  /* Shift-drag: the cards that were dragged, copied where they landed. */
+  /* What a card drop means, read at the DROP (a modifier let go on the way
+   * does not count):
+   *   Alt           copy the dragged cards where they land — the duplicate
+   *                 gesture of Figma, Photoshop and Illustrator;
+   *   Ctrl/Cmd+Alt  swap the two cards' pictures, dialogue staying put;
+   *   Shift         also copies, but only if pressed AFTER the drag began:
+   *                 Chrome never starts a drag from a Shift-press (Shift-press
+   *                 extends a text selection instead), which is why Shift-drag,
+   *                 the documented gesture, silently did nothing at all. */
+  function wantsSwap(ev) { return !!(ev.altKey && (ev.ctrlKey || ev.metaKey)); }
+  function wantsCopy(ev) { return !wantsSwap(ev) && !!(ev.altKey || ev.shiftKey); }
+
+  /* Alt-drag: the cards that were dragged, copied where they landed. */
   function doCopy(id, toSceneId, toIdx) {
     const ids = dragged(id);
     let at = typeof toIdx === 'number' ? toIdx : null;
@@ -14803,6 +14813,7 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
          * shortest way to reach a scene that is off-screen on the board */
         if (types.indexOf(DND_SHOT) >= 0) {
           ev.preventDefault();
+          ev.dataTransfer.dropEffect = wantsCopy(ev) ? 'copy' : 'move';
           it.classList.add('drop-shot');
           return;
         }
@@ -14827,7 +14838,7 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
         const shotId = ev.dataTransfer.getData(DND_SHOT);
         if (shotId) {
           ev.preventDefault();
-          if (ev.shiftKey) {
+          if (wantsCopy(ev)) {
             doCopy(shotId, sc.id, sc.shots.length);
             SB.toast('Copied into scene ' + (idx + 1));
             return;
@@ -15332,7 +15343,8 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
       ev.preventDefault();
       ev.stopPropagation();
       shots.classList.add('drag-over');
-      if (!ev.altKey) mark(shotHit(shots, ev), true);
+      ev.dataTransfer.dropEffect = wantsCopy(ev) ? 'copy' : 'move';
+      mark(shotHit(shots, ev), true, wantsCopy(ev));
     });
     shots.addEventListener('dragleave', function (ev) {
       if (!shots.contains(ev.relatedTarget)) { shots.classList.remove('drag-over'); unmark(); }
@@ -15347,7 +15359,7 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
       if (!id) return;
       /* the gap left of the first card means "first", not "last" */
       const hit = shotHit(shots, ev);
-      if (ev.shiftKey) {
+      if (wantsCopy(ev)) {
         doCopy(id, sc.id, kids(shots, 'card').length ? hit.idx : sc.shots.length);
         return;
       }
@@ -15377,7 +15389,7 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
       if (!id) return;
       /* every drop target answers the same gesture, or the one that does not
          is the one somebody lands on and it quietly does the destructive thing */
-      if (ev.shiftKey) { doCopy(id, sc.id, sc.shots.length); return; }
+      if (wantsCopy(ev)) { doCopy(id, sc.id, sc.shots.length); return; }
       SB.Model.moveShots(P(), dragged(id), sc.id, sc.shots.length);
       SB.app.changed(true);
     });
@@ -15550,14 +15562,16 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
     c.addEventListener('dragover', function (ev) {
       if (ev.dataTransfer.types.indexOf(DND_SHOT) < 0) return;
       ev.preventDefault(); ev.stopPropagation();
-      /* Alt turns the drop from "move this card here" into "swap the two
-       * pictures over, leave both bits of dialogue where they are". */
-      ev.dataTransfer.dropEffect = ev.shiftKey ? 'copy' : 'move';
-      c.classList.toggle('swap-target', !!ev.altKey && !ev.shiftKey);
-      c.classList.toggle('drag-over', !ev.altKey || !!ev.shiftKey);
-      c.classList.toggle('copy-target', !!ev.shiftKey);
-      if (ev.altKey && !ev.shiftKey) unmark();
-      else mark(shotHit(c.parentNode, ev), true, ev.shiftKey);
+      /* Ctrl+Alt turns the drop from "move this card here" into "swap the two
+       * pictures over, leave both bits of dialogue where they are"; Alt alone
+       * copies (wantsCopy). */
+      const swap = wantsSwap(ev), copy = wantsCopy(ev);
+      ev.dataTransfer.dropEffect = copy ? 'copy' : 'move';
+      c.classList.toggle('swap-target', swap);
+      c.classList.toggle('drag-over', !swap);
+      c.classList.toggle('copy-target', copy);
+      if (swap) unmark();
+      else mark(shotHit(c.parentNode, ev), true, copy);
     });
     c.addEventListener('dragleave', function () {
       c.classList.remove('drag-over');
@@ -15575,16 +15589,16 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
       if (!id) return;
       /* Read at the DROP, not at the dragstart: a modifier held on the way
          out and let go before landing should not still count. */
-      if (ev.shiftKey) { doCopy(id, sc.id, shotHit(c.parentNode, ev).idx); return; }
+      if (wantsCopy(ev)) { doCopy(id, sc.id, shotHit(c.parentNode, ev).idx); return; }
       if (id === sh.id) return;
-      if (ev.altKey) { doSwap(id, sh.id); return; }
+      if (wantsSwap(ev)) { doSwap(id, sh.id); return; }
       /* measured against every card in the scene, so a drop that lands a few
        * pixels off this one still means the edge it looks like it means */
       SB.Model.moveShots(P(), dragged(id), sc.id, shotHit(c.parentNode, ev).idx);
       SB.app.changed(true);
     });
 
-    /* Swapping two cards' pictures is alt-drag, and only alt-drag. The
+    /* Swapping two cards' pictures is Ctrl+Alt-drag, and only that. The
        two-click route existed for when a modifier is not on your mind; it
        cost a button on every card to save a key on a rare gesture. */
     /* ---- the whole card is the handle ----
@@ -15603,12 +15617,24 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
      * become a drag, and every release puts it back. */
     const GRAB_NOT = 'button, select, input, textarea, [contenteditable], ' +
       'img, video, .desc-box, .prompt-box, .clip-badge, .frame, .comments';
+    /* With Alt held the press is a duplicate (or swap) about to happen, so the
+       * picture grabs the card too — it is most of the card, and the first
+       * place anyone presses. Only the things you type in or press stay out. */
+    const GRAB_NOT_ALT = 'button, select, input, textarea, [contenteditable], ' +
+      '.desc-box, .prompt-box, .clip-badge, .comments';
     c.addEventListener('mousedown', function (ev) {
-      c.draggable = !ev.target.closest(GRAB_NOT);
+      c.draggable = !ev.target.closest(ev.altKey ? GRAB_NOT_ALT : GRAB_NOT);
       if (ev.target.closest('button, select, input, textarea, [contenteditable]')) return;
+      if (ev.altKey) {
+        /* keep a group for a group copy; otherwise this card alone. Never the
+           Ctrl toggle: Ctrl+Alt is the swap, and toggling the card out of the
+           selection on the way would drag the wrong cards. */
+        if (!(isSelected(sh.id) && selection().length > 1)) selectShot(sh.id, null);
+        return;
+      }
       if (ev.ctrlKey || ev.metaKey || ev.shiftKey) {
         /* preventDefault cancels the browser's drag before it starts, so a
-         * grab zone must not call it — shift-drag duplicates a card and has
+         * grab zone must not call it — a drag has
          * to be able to begin here. What is given up is only the suppression
          * of text selection, and a grab zone is padding and labels.
          *
@@ -15635,7 +15661,7 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
       ev.dataTransfer.setData(DND_SHOT, sh.id);
       /* copyMove, not move: a dropEffect outside effectAllowed is forced to
        * `none`, and `none` means the drop event never fires at all. Saying
-       * move here made every shift-drag a silent no-op. */
+       * move here made every copy-drag a silent no-op. */
       ev.dataTransfer.effectAllowed = 'copyMove';
       /* dragging one of a group takes the whole group */
       B.dragging = isSelected(sh.id) ? selection().slice() : [sh.id];
