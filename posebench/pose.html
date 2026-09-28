@@ -475,6 +475,7 @@
       <div class="field"><label for="camModel">Model</label>
         <select id="camModel"><option value="lite">Fast (6 MB)</option><option value="full" selected>Balanced (9 MB)</option><option value="heavy">Accurate (31 MB)</option></select></div>
       <label class="toggle"><span>Arrange like the photo<span class="d">Two or more people in a photo: place and turn them as it shows</span></span><input type="checkbox" id="camArrange" checked><i></i></label>
+      <label class="toggle"><span>Use unsure joints<span class="d">On: go with the model's best guess. Off: keep a joint as it was when the model is unsure</span></span><input type="checkbox" id="camTrust" checked><i></i></label>
       <label class="toggle"><span>Swap sides<span class="d">Figure acts as your reflection</span></span><input type="checkbox" id="camSwap"><i></i></label>
       <button class="btn grow" id="camReset" style="width:100%;margin-top:6px" title="Put the figure back to standing (a seated figure keeps its seat)">Reset figure to neutral</button>
       <input type="file" id="camFile" accept="image/*" hidden>
@@ -2439,8 +2440,11 @@ function retarget(f,pose,o={}){
   const ok=(...ks)=>ks.every(k=>vis[LM[k]]>=TH);
   const at=k=>P[LM[k]];
   const mid=(a,b)=>at(a).clone().add(at(b)).multiplyScalar(0.5);
-  const hipsSeen=ok('lHip','rHip');
-  const legsSeen=ok('lKn')||ok('rKn');
+  /* Whether the hips and legs are in the picture at all stays a strict question, whatever a joint's own threshold is:
+     it is what keeps a figure's legs still while someone sits at a desk in front of a webcam that cannot see them. */
+  const sure=(...ks)=>ks.every(k=>vis[LM[k]]>=VIS_OK);
+  const hipsSeen=sure('lHip','rHip');
+  const legsSeen=sure('lKn')||sure('rKn');
   const upper=o.body==='upper'||(o.body!=='full'&&(!!f.seat||!hipsSeen||!legsSeen));
   // remove the performer's overall turn (the figure keeps its facing). Without hips in view, the performer is taken
   // to face the camera, which is how people sit at a webcam — so a twist toward the side still reads as a twist.
@@ -2595,10 +2599,11 @@ function camDraw(poses,w,h){
   const list=(Array.isArray(poses)?poses:[poses]).filter(p=>p&&p.img);
   x.lineWidth=Math.max(2,w/220); x.lineCap='round';
   list.forEach((pose,k)=>{
-    const P=pose.img, good=i=>pose.v[i]>=0.3, col=PERSON_RGB[k%PERSON_RGB.length];
-    LM_BONES.forEach(([a,b])=>{x.strokeStyle=good(a)&&good(b)?'rgba('+col+',.95)':'rgba(160,165,175,.35)';
+    const P=pose.img, th=camThreshold(camS.photo), good=i=>pose.v[i]>=th, col=PERSON_RGB[k%PERSON_RGB.length];
+    const a_=i=>(0.45+0.5*Math.min(1,pose.v[i])).toFixed(2);
+    LM_BONES.forEach(([a,b])=>{x.strokeStyle=good(a)&&good(b)?'rgba('+col+','+a_(pose.v[a]<pose.v[b]?a:b)+')':'rgba(160,165,175,.35)';
       x.beginPath();x.moveTo(P[a].x*w,P[a].y*h);x.lineTo(P[b].x*w,P[b].y*h);x.stroke();});
-    P.forEach((p,i)=>{if(i>0&&i<11&&i!==7&&i!==8)return;x.fillStyle=good(i)?'rgb('+col+')':'rgba(160,165,175,.4)';
+    P.forEach((p,i)=>{if(i>0&&i<11&&i!==7&&i!==8)return;x.fillStyle=good(i)?'rgba('+col+','+a_(i)+')':'rgba(160,165,175,.4)';
       x.beginPath();x.arc(p.x*w,p.y*h,Math.max(2.5,w/160),0,7);x.fill();});
     if(list.length>1){
       const n=P[0];
@@ -2617,7 +2622,7 @@ function smoothWith(filters,pose,t){
 function camSmooth(pose,t){if(!camS.filters)camS.filters=[];return smoothWith(camS.filters,pose,t);}
 function camApply(pose,commitNow,o={}){
   if(!act||!pose)return null;
-  const r=retarget(act,$('camSwap').checked?swapPose(pose):pose,Object.assign({body:$('camBody').value},o));
+  const r=retarget(act,$('camSwap').checked?swapPose(pose):pose,Object.assign({body:$('camBody').value,threshold:camThreshold(false)},o));
   syncAxes();
   if(commitNow)commit();
   return r;
@@ -2685,7 +2690,7 @@ function arrangeLikePhoto(figs,people,W,H){
 }
 function camApplyMulti(people,figs,o){
   const res=people.map((pp,i)=>({fig:figs[i],r:retarget(figs[i],$('camSwap').checked?swapPose(pp.pose):pp.pose,
-    Object.assign({body:$('camBody').value},o))}));
+    Object.assign({body:$('camBody').value,threshold:camThreshold(false)},o))}));
   syncAxes();
   return res;
 }
@@ -2807,6 +2812,12 @@ function camSnap(){
 /* ---------- photos ---------- */
 // a photo is a deliberate still: parts the model is only fairly sure of are still worth using
 const PHOTO_VIS=0.3;
+/* How sure the model has to be before a joint is moved. By default it is taken at its word: its low-confidence
+ * guesses were usually right (an arm it could plainly see, marked unsure, was frozen live and set to neutral on a
+ * snap), so it goes with them. The floor only drops points it has essentially no idea about. Off = the cautious
+ * thresholds: 0.5 for the webcam, 0.3 for a photo. */
+const TRUST_FLOOR=0.02, TRUSTKEY='posebench.v2.camtrust';
+const camThreshold=photo=>$('camTrust').checked?TRUST_FLOOR:(photo?PHOTO_VIS:VIS_OK);
 async function camFromImage(src){
   camLiveStop(true);
   // a fresh element every time: re-reading the same file must still fire a load
@@ -2838,12 +2849,12 @@ async function camFromImage(src){
   if(!people.length){camTell('No person found in that picture — it needs a person, ideally head to toe.',true);return null;}
   let out;
   if(people.length===1){
-    const r=camApply(people[0].pose,true,{fresh:true,threshold:PHOTO_VIS}); camSay(r,'Posed from the photo:');
+    const r=camApply(people[0].pose,true,{fresh:true,threshold:camThreshold(true)}); camSay(r,'Posed from the photo:');
     out=Object.assign({people:1},r);
   }else{
     const figs=figsForPeople(people.length), arrange=$('camArrange').checked;
     if(arrange)arrangeLikePhoto(figs,people,W,H);
-    const res=camApplyMulti(people,figs,{fresh:true,threshold:PHOTO_VIS});
+    const res=camApplyMulti(people,figs,{fresh:true,threshold:camThreshold(true)});
     commit(); camSayMulti(res,'posed from the photo',arrange);
     out={people:people.length,figs:figs.map(f=>f.name),applied:res.map(x=>x.r.applied),missed:res.map(x=>x.r.missed)};
   }
@@ -2862,6 +2873,8 @@ function camReset(){
 }
 $('camOpen').onclick=camOpen;
 $('camReset').onclick=camReset;
+{const t=store.get(TRUSTKEY); if(t===false)$('camTrust').checked=false;
+  $('camTrust').onchange=e=>store.set(TRUSTKEY,e.target.checked);}
 $('camClose').onclick=camClose;
 $('camStart').onclick=camStart;
 $('camLive').onclick=camLiveToggle;

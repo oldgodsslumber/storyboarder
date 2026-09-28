@@ -207,6 +207,15 @@ Space), **From photo…** (you can also drop a picture on the panel), a Body swi
   - **Tested on:** the handshake photo (both men found, placed and turned toward each other), an overhead two-walker
     photo (one person readable; the other is too overlapped), and a synthetic two-person webcam stream (follow and
     snap).
+- **Trusting unsure joints (2026-09-28, after a user report):** the panel has a **Use unsure joints** switch,
+  on by default.
+  - **When it's on:** a joint moves whenever the model gives it any real estimate (`TRUST_FLOOR` 0.02). The problem
+    it fixes: an arm the model could plainly see, but marked low-confidence, was frozen in live follow and set to
+    neutral on a snap, although its guess was right.
+  - **When it's off:** the cautious thresholds come back: 0.5 for the webcam, 0.3 for photos.
+  - **What stays strict either way:** *whether the hips and legs are in view at all* (`sure()` at 0.5). That decision
+    keeps a figure's legs still while someone sits at a desk webcam that can't see them.
+  - **The preview:** joints drawn in colour are the ones being used, fainter the less sure the model is.
 - **Storyboarder embed:** the iframe is `allow="clipboard-write *; camera *"`. A plain `camera` is refused, because a
   srcdoc frame on a file:// page has an opaque origin.
 - **Next:** hands (HandLandmarker → forearm twist, wrist, finger shapes, a *point* shape), then two performers →
