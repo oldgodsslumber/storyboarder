@@ -894,7 +894,7 @@ What the card keeps (`shot.pose`) is:
 
 It is **not** the card's frame. The frame is where a still lands, so the next render would bank
 the blocking as a take and it would stop feeding. An empty blocked frame *shows* the blocking
-dimmed, labelled, and clickable to edit, until a still arrives.
+in full colour, labelled **⛹ blocking**, and clickable to edit, until a still arrives.
 
 On the still lane, the blocking is **image 1**, fed ahead of every mark. On its own it goes as
 the one picture a still carries; beside subjects it takes the first panel of the reference

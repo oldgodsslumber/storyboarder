@@ -1381,8 +1381,9 @@ body.comment-mode .frame{cursor:crosshair}
 }
 .pose-badge:hover{border-color:var(--accent);color:var(--accent)}
 .pose-badge.stale{border-color:var(--accent2);color:var(--accent2)}
-/* an empty frame showing its blocking: clearly a placeholder, not a still */
-.frame.blocked-empty .pose-img{opacity:.55;filter:grayscale(1)}
+/* an empty frame showing its blocking, at full strength: the mannequin colours are how "the tan one is Nat"
+   reads, and a dimmed greyscale copy hid them. The ⛹ blocking badge says it is not a still yet. */
+.frame.blocked-empty .pose-img{opacity:1;filter:none}
 .frame.blocked-empty{cursor:pointer}
 .frame .drop-hint .pose-start{margin-top:6px}
 .rev-stale{font-size:10.5px;color:var(--accent2);margin-top:2px}

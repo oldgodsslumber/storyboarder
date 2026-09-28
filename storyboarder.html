@@ -1387,8 +1387,9 @@ body.comment-mode .frame{cursor:crosshair}
 }
 .pose-badge:hover{border-color:var(--accent);color:var(--accent)}
 .pose-badge.stale{border-color:var(--accent2);color:var(--accent2)}
-/* an empty frame showing its blocking: clearly a placeholder, not a still */
-.frame.blocked-empty .pose-img{opacity:.55;filter:grayscale(1)}
+/* an empty frame showing its blocking, at full strength: the mannequin colours are how "the tan one is Nat"
+   reads, and a dimmed greyscale copy hid them. The ⛹ blocking badge says it is not a still yet. */
+.frame.blocked-empty .pose-img{opacity:1;filter:none}
 .frame.blocked-empty{cursor:pointer}
 .frame .drop-hint .pose-start{margin-top:6px}
 .rev-stale{font-size:10.5px;color:var(--accent2);margin-top:2px}
@@ -1407,7 +1408,7 @@ body.comment-mode .frame{cursor:crosshair}
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-09-28 18:52 · c8be6d0+";</script>
+<script>window.SB_BUILD = "2026-09-28 18:58 · 487809b+";</script>
 
 <div id="app">
 
@@ -16348,7 +16349,7 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
         f.appendChild(a);
       }
     } else if (SB.Pose && SB.Pose.has(sh)) {
-      /* No still yet, but a blocking: show it, dimmed and labelled, so a
+      /* No still yet, but a blocking: show it, labelled, so a
          freshly blocked board already reads as a storyboard. Shown, not
          held — the frame is still empty and the first still lands here. */
       f.classList.add('blocked-empty');

@@ -1971,7 +1971,7 @@
         f.appendChild(a);
       }
     } else if (SB.Pose && SB.Pose.has(sh)) {
-      /* No still yet, but a blocking: show it, dimmed and labelled, so a
+      /* No still yet, but a blocking: show it, labelled, so a
          freshly blocked board already reads as a storyboard. Shown, not
          held — the frame is still empty and the first still lands here. */
       f.classList.add('blocked-empty');
