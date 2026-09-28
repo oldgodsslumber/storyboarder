@@ -1010,8 +1010,15 @@ files, `prompt.txt` and `ORDER.txt`, and copies the prompt to the clipboard.
 - **Settings → Models → MiniMax Image** makes the card's own first-frame prompt the brief too, again
   with no writer. Edit its template and the writer takes over.
 - **Export → MiniMax packages, per shot** writes the same folders for every card in scope.
-- **The ImagineArt push is unchanged.** It sends MiniMax the frame alone, and its prompt is written
-  for that.
+- **Create on a MiniMax H3 board.** A card with 3D blocking is written as the full-reference call,
+  whether or not it has a still:
+  - **The files:** the video lane lists what the call carries — the clay clip or clay still, the
+    first frame if there is one, and each person's picture.
+  - **The prompt:** **Write** defines the blocking and ties each person to their clay figure. The
+    MiniMax package carries the same prompt, including any edit made on the card.
+  - **No push:** the ImagineArt push holds back for these cards (*MiniMax package*), because it can
+    only send the frame.
+  - **Unblocked cards** keep the frame-only H3 prompt and push exactly as before.
 
 ### Who is in the first frame
 

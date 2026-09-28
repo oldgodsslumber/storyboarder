@@ -3297,6 +3297,18 @@
 
     const gateNote = blockNote(model);
     const pr = (shot.prompts || {})[model.id] || null;
+    /* An H3 prompt written for the full-reference call names the clay clip and
+       the subject pictures; this push sends the frame alone, so the model would
+       be asked to follow files it never gets. That call goes out as a MiniMax
+       package instead. */
+    if (role === 'video' && pr && pr.route === 'mxm' && (pr[field] || '').trim()) {
+      return {
+        short: 'MiniMax package',
+        long: 'This H3 prompt is written for the full-reference call — the clay render' +
+          (shot.pose && shot.pose.perf ? ' clip' : '') + ', the pictures — which ImagineArt cannot send: it pushes the ' +
+          'frame alone. Use Export for MiniMax on this lane.'
+      };
+    }
     if (pr && (pr[field] || '').trim()) return gateNote;
 
     const others = Object.keys(shot.prompts || {}).filter(function (id) {

@@ -248,5 +248,38 @@ console.log('\n— Write: the H3 prose from the writer, against a stubbed local 
   delete SB.Pose;
 }
 
+console.log('\n— Create on a stock H3 board: a blocked card with no still —');
+{
+  const { p, sh, gus, nat } = board();
+  block(p, sh, gus, nat);                       // blocking only: no still on the card
+  const vm = p.settings.models.filter(m => m.name === SB.H3.NAME)[0];
+  p.settings.videoModelId = vm.id;
+  SB.Pose = { PASSES: [], perfLink: s => (s.pose && s.pose.perf) || null, perfOf: () => null, perfStale: () => false, stale: () => false };
+  eq(SB.Mxm.h3Card(p, sh), true, 'the card counts as the full-reference call');
+  const jobs = SB.Prompts.jobsFor(sh, null, vm, { image: false, video: true });
+  eq([jobs.length, jobs[0].route], [1, 'mxm'], 'Create writes it as the full-reference call, not frame-only');
+  has(jobs[0].text, '<Picture 1> = the grey clay render of this shot (layout and camera)', 'the blocking is in the label table');
+  has(jobs[0].text, 'is a grey clay render of THIS shot, fixing its camera, framing and positions', 'and the writer is told what it is');
+  has(jobs[0].text.split('=== THE MINIMAX')[1], 'This overrides the instruction above to state that the shot begins from <Picture 1>', 'the template’s "begins from <Picture 1>" is overridden when there is no still');
+  sandbox.fetch = (url, init) => Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve(JSON.stringify({ choices: [{ message: { content: JSON.stringify({
+    summary: '[reference generation] In the target video, <Subject 1> looks at a phone.',
+    detailed_description: 'The target video is photorealistic. ' + 'word '.repeat(200) + '\n[Shot 1] Framed as <Picture 1>, <Subject 1> looks down at the phone.' }) } }] })) });
+  p.settings.aiProvider = 'ooba';
+  SB.Store.setOoba({ url: 'http://127.0.0.1:5000/v1/', model: 'local', key: '' });
+  const r = await SB.Prompts.generateFor(sh, { image: false, video: true });
+  eq(r.written, ['videoPrompt'], 'Create writes the card’s video prompt');
+  const pr = sh.prompts[vm.id];
+  has(pr.videoPrompt, '<Picture 1> is an untextured grey clay render of this exact shot', 'and it defines the blocking');
+  has(pr.videoPrompt, 'In <Picture 1>, Gus is the tan figure on the left of frame.', 'binds the people to their figures');
+  eq(pr.route, 'mxm', 'marked as the full-reference call, so the frame-only push holds back');
+  eq(SB.Mxm.promptFor(p, sh, 'video').text, pr.videoPrompt, 'the MiniMax package carries the same prompt');
+  pr.videoPrompt += '\nMY EDIT'; pr.at = Date.now() + 1000;
+  eq(/MY EDIT/.test(SB.Mxm.promptFor(p, sh, 'video').text), true, 'an edit on the card reaches the package');
+  // a card with no blocking on the same board keeps the frame-only H3 prompt
+  const plain = SB.Model.addShot(p, p.scenes[0].id, { type: 'Wide' }); plain.description = 'An empty corridor.';
+  eq(SB.Prompts.jobsFor(plain, null, vm, { image: false, video: true })[0].route, undefined, 'an unblocked card keeps the frame-only H3 prompt');
+  delete SB.Pose;
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed\n');
 if (fail) process.exit(1);

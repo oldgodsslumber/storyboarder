@@ -73,6 +73,13 @@
 
   function poseOK(shot) { return !!(shot && shot.pose && shot.pose.scene && (shot.pose.render || shot.pose.image)); }
 
+  /* A card whose video prompt, on a stock H3 board, is the full-reference call:
+     it has a blocking, and the blocking is its reference. */
+  function h3Card(p, shot) {
+    const vm = SB.Model.videoModel(p);
+    return !!(SB.H3 && SB.H3.stock(vm) && poseOK(shot));
+  }
+
   /* The subjects this lane shows, in feed order, one picture each (the first:
      the one the subject is known by). A still leaves out whoever arrives later
      — their picture would put them in the frame. */
@@ -350,8 +357,10 @@
         'The motion comes from the shot description. Never describe clay or mannequins.');
     }
     if (sc.frame) L.push('- State that the shot begins from ' + sc.frame.h3 + '.');
-    else L.push('- There is no first-frame picture: do NOT write "begins from <Picture 1>"' +
-      (sc.clip ? '; say the shot follows ' + sc.clip.h3 + ' from its first frame.' : '.'));
+    else L.push('- There is NO first-frame picture in this call. This overrides the instruction above to state ' +
+      'that the shot begins from <Picture 1>: do not say it begins from any picture' +
+      (sc.clip ? '; say the shot follows ' + sc.clip.h3 + ' from its first frame.'
+        : sc.clay ? '; say its framing and positions are those of ' + sc.clay.h3 + ', the clay render.' : '.'));
     const binds = m.figures.filter(function (x) { return x.fig; });
     if (binds.length && sc.motion) {
       L.push('- The clay figures: ' + binds.map(function (x) {
@@ -420,6 +429,16 @@
     m = m || manifest(p, shot, lane);
     const s = stored(shot, lane);
     const fresh = lane === 'image' ? brief(m) : h3Prompt(m, null);
+    /* The card's own H3 prompt, written in Create for this same call — and
+       perhaps edited on the card since. The newer of the two wins. */
+    if (lane === 'video') {
+      const vm = SB.Model.videoModel(p);
+      const cp = vm && shot.prompts && shot.prompts[vm.id];
+      if (cp && cp.route === 'mxm' && (cp.videoPrompt || '').trim() && (!s || !s.prompt || (cp.at || 0) >= (s.at || 0))) {
+        const edited = s && s.prompt && cp.videoPrompt !== s.prompt;
+        return { text: cp.videoPrompt, source: edited ? 'edited' : 'writer', current: cp.mxmSig === m.sig };
+      }
+    }
     if (s && s.prompt && s.sig === m.sig) {
       return { text: s.prompt, source: s.edited ? 'edited' : s.written ? 'writer' : 'assembled', current: true };
     }
@@ -456,7 +475,7 @@
       m.warnings.forEach(function (w) { L.push('  - ' + w); });
     }
     if (!pr.current) {
-      L.push('  - This prompt was edited by hand before the card last changed; read it against the files.');
+      L.push('  - This prompt was written or edited before the card last changed; read it against the files.');
     }
     return L.join('\n') + '\n';
   }
@@ -587,7 +606,7 @@
       if (m.warnings.length || !pr.current) {
         const w = SB.el('ul', 'mxm-warn');
         m.warnings.forEach(function (x) { w.appendChild(SB.el('li', null, x)); });
-        if (!pr.current) w.appendChild(SB.el('li', null, 'This prompt was edited by hand before the card last changed — read it against the files, or Reset it.'));
+        if (!pr.current) w.appendChild(SB.el('li', null, 'This prompt was written or edited before the card last changed — read it against the files, or Write it again.'));
         body.appendChild(w);
       }
 
@@ -685,7 +704,7 @@
 
   SB.Mxm = {
     H3_LIMITS: H3, DEFAULT_STYLE: DEFAULT_STYLE, NEG_IMAGE: NEG_IMAGE, NEG_VIDEO: NEG_VIDEO,
-    settings: settings, manifest: manifest, brief: brief,
+    settings: settings, manifest: manifest, brief: brief, h3Card: h3Card,
     h3Scaffold: h3Scaffold, h3Rider: h3Rider, h3Fallback: h3Fallback, h3Prompt: h3Prompt,
     promptFor: promptFor, remember: remember, stored: stored,
     orderText: orderText, files: files, zip: zip, zipName: zipName, open: open,

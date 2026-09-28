@@ -239,7 +239,11 @@
       });
     }
     if (wantV) {
-      jobs.push(h3 ? h3Job(shot, vm) : {
+      /* A blocked card on a stock H3 board is the full-reference call: its
+         blocking (the clay clip, or the clay still) is the reference, so it
+         needs no first frame — and the prompt says what each file is. */
+      const full = h3 && SB.Mxm && SB.Mxm.h3Card(P(), shot);
+      jobs.push(full ? mxmVideoJob(shot, vm) : h3 ? h3Job(shot, vm) : {
         text: PREAMBLE + 'Return JSON with the key "videoPrompt".\n\n' + videoBlock(shot, vm),
         keys: ['videoPrompt'],
         system: sys('video', vm),
@@ -549,6 +553,14 @@
           }
           store(live, t.model, t.field, vals[t.field]);
           written.push(t.field);
+          /* which call a video prompt was written for: the full-reference one
+             cannot go through the frame-only push */
+          if (t.field === 'videoPrompt') {
+            const rec = live.prompts[t.model.id];
+            if (j.route) { rec.route = j.route; rec.mxmSig = j.manifest.sig; }
+            else { delete rec.route; delete rec.mxmSig; }
+          }
+          if (j.after) j.after(live, vals);
           /* One rewrite is all it gets. A move that survives it is not thrown
              away — the rest of the paragraph is usually right — but it is
              marked, so nobody ships a push in they never asked for. */
@@ -609,6 +621,36 @@
    * H3 template with the call's own label table — clip, first frame, subject
    * pictures — and a rider saying what each file is for. Stored on shot.mxm,
    * never on shot.prompts: the ImagineArt push keeps its frame-only prompt. */
+  /* The full-reference H3 job: what the MiniMax package's Write asks, and what
+   * the Create panel asks for a blocked card on a stock H3 board (a card whose
+   * blocking IS its reference — no still needed). One job, so the two can
+   * never write different prompts for the same call. */
+  function mxmVideoJob(shot, vm) {
+    const p = P();
+    const m = SB.Mxm.manifest(p, shot, 'video');
+    const sc = SB.Mxm.h3Scaffold(m);
+    const tm = { id: 'mxm', name: SB.H3.NAME, kind: 'video', videoTemplate: SB.Model.tplsFor(SB.H3.NAME).video };
+    return {
+      manifest: m, scaffold: sc, route: 'mxm',
+      text: PREAMBLE + 'Return JSON with the keys "summary" and "detailed_description".\n\n' +
+        videoBlock(shot, tm, sc) + '\n' + SB.Mxm.h3Rider(m, sc) + '\n',
+      keys: SB.H3.WRITTEN,
+      system: sysFor(shot, 'video', tm),
+      targets: vm ? [{ model: vm, field: 'videoPrompt' }] : [],
+      map: function (res) { return { videoPrompt: SB.H3.assemble(sc, res) }; },
+      /* the package carries the same text */
+      after: function (live, vals) {
+        SB.Mxm.remember(live, 'video', { prompt: vals.videoPrompt, sig: m.sig, written: true });
+      },
+      check: function (res) {
+        /* with a clip, the camera is the clip's: a move it describes is not one nobody asked for */
+        return SB.H3.problems(sc, res)
+          .concat(sc.clip ? [] : SB.Brand.moveProblems(p, shot, res.detailed_description))
+          .concat(SB.Brand.genderProblems(p, shot, res.detailed_description));
+      }
+    };
+  }
+
   function writeMxm(shot) {
     const p = P();
     const prov = SB.Providers.active();
@@ -617,21 +659,11 @@
       return Promise.reject(new Error('Write a description first \u2014 there is nothing to work from.'));
     }
     if (writing(shot.id, 'mxmVideo')) return Promise.reject(new Error('That prompt is already being written.'));
-    const m = SB.Mxm.manifest(p, shot, 'video');
-    const sc = SB.Mxm.h3Scaffold(m);
-    const tm = { id: 'mxm', name: SB.H3.NAME, kind: 'video', videoTemplate: SB.Model.tplsFor(SB.H3.NAME).video };
-    const job = {
-      text: PREAMBLE + 'Return JSON with the keys "summary" and "detailed_description".\n\n' +
-        videoBlock(shot, tm, sc) + '\n' + SB.Mxm.h3Rider(m, sc) + '\n',
-      keys: SB.H3.WRITTEN,
-      system: sysFor(shot, 'video', tm),
-      check: function (res) {
-        /* with a clip, the camera is the clip's: a move it describes is not one nobody asked for */
-        return SB.H3.problems(sc, res)
-          .concat(sc.clip ? [] : SB.Brand.moveProblems(p, shot, res.detailed_description))
-          .concat(SB.Brand.genderProblems(p, shot, res.detailed_description));
-      }
-    };
+    /* a stock H3 board's own video prompt for this card is the same call: keep it in step */
+    const vm = SB.Model.videoModel(p);
+    const same = !!(SB.H3.stock(vm) && SB.Mxm.h3Card(p, shot));
+    const job = mxmVideoJob(shot, same ? vm : null);
+    const m = job.manifest;
     const projectId = p.id, shotId = shot.id;
     markWriting(shotId, ['mxmVideo'], true);
     return callWriter(job.text, job.keys, job.system).then(function (res) {
@@ -639,8 +671,13 @@
     }).then(function (res) {
       const live = stillOpen(projectId, shotId);
       if (!live) throw new Error('That board is not open any more, so the prompt was not written.');
-      const text = SB.H3.assemble(sc, res);
+      const text = job.map(res).videoPrompt;
       SB.Mxm.remember(live, 'video', { prompt: text, sig: m.sig, written: true });
+      if (same) {
+        store(live, vm, 'videoPrompt', text);
+        live.prompts[vm.id].route = 'mxm';
+        live.prompts[vm.id].mxmSig = m.sig;
+      }
       markWriting(shotId, ['mxmVideo'], false);
       SB.Focus.defer('prompts:' + shotId, function () { SB.app.changed(true); });
       return text;
@@ -651,7 +688,7 @@
   }
 
   SB.Prompts = {
-    generateFor: generateFor, writeMxm: writeMxm, mxmImage: mxmImage,
+    generateFor: generateFor, writeMxm: writeMxm, mxmImage: mxmImage, mxmVideoJob: mxmVideoJob,
     writing: writing, writingAny: writingAny, onWriting: onWriting,
     jobsFor: jobsFor, fill: fill, raw: ask
   };

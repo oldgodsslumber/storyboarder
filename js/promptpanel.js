@@ -1189,6 +1189,20 @@
     return b;
   }
 
+  /* The MiniMax package for this lane (mxm.js). */
+  function mxmButton(wrap, sh, role) {
+    if (!SB.Mxm) return;
+    const m = SB.Mxm.manifest(P(), sh, role);
+    if (!m.assets.length && !SB.Model.described(sh)) return;
+    const b = SB.el('button', 'mini mxm-btn', 'Export for MiniMax');
+    b.title = (role === 'video' ? 'MiniMax H3 full reference' : 'MiniMax Image') + ': ' +
+      m.assets.length + ' file' + (m.assets.length === 1 ? '' : 's') +
+      ' in upload order, prompt.txt and ORDER.txt' +
+      (m.warnings.length ? ' — ' + m.warnings.length + ' thing' + (m.warnings.length === 1 ? '' : 's') + ' to check' : '');
+    b.onclick = function () { SB.Mxm.open(sh, role); };
+    wrap.appendChild(b);
+  }
+
   function feedList(sh, code, role) {
     const wrap = SB.el('div', 'pt-feed-list');
     const list = SB.Refs.feed(P(), sh, role);
@@ -1200,6 +1214,36 @@
      * moves the result. They stay on the list because they are still what
      * the WORDS of the video prompt were written against, but they are
      * shown for what they are. */
+    /* A blocked card on a stock H3 board: the call is the full-reference one,
+       and its files are the blocking's clay clip (or still), the first frame if
+       there is one, and each subject's picture — numbered as the prompt names
+       them and as the MiniMax package uploads them. */
+    if (role === 'video' && SB.Mxm && SB.Mxm.h3Card(P(), sh)) {
+      const m = SB.Mxm.manifest(P(), sh, 'video');
+      m.assets.forEach(function (a) {
+        const it = SB.el('div', 'pt-fe' + (a.kind === 'first-frame' ? ' pt-frame' : ''));
+        it.appendChild(SB.el('span', 'feed-n', String(a.n)));
+        const th = SB.el('span', 'feed-thumb');
+        const src = a.kind === 'clay-clip' || a.kind === 'clay-still' ? SB.Blobs.src(P(), sh.pose.image)
+          : a.kind === 'first-frame' ? SB.Blobs.src(P(), sh.image)
+            : (function () { const x = m.figures.filter(function (f) { return f.asset === a; })[0]; return x ? SB.Blobs.src(P(), x.img) : ''; })();
+        if (src) { const im = document.createElement('img'); im.src = src; th.appendChild(im); }
+        else th.textContent = a.kind === 'clay-clip' ? '▶' : '?';
+        it.appendChild(th);
+        it.appendChild(SB.el('span', 'feed-file', a.h3));
+        it.appendChild(SB.el('span', 'feed-who', a.kind === 'clay-clip' ? 'the blocking, animated (clay clip)'
+          : a.kind === 'clay-still' ? 'the blocking (clay render)' : a.role));
+        it.title = a.h3 + ' — ' + a.role + '. Goes up as ' + a.file + ' in the MiniMax package.';
+        it.classList.add('mxm-fe');
+        wrap.appendChild(it);
+      });
+      if (!m.frame) {
+        wrap.appendChild(SB.el('div', 'pt-none', 'no still needed — the blocking is the reference' +
+          (m.clip ? '' : '; record a performance in Pose Bench for the motion')));
+      }
+      mxmButton(wrap, sh, role);
+      return wrap;
+    }
     if (role === 'video') {
       const framed = !!(sh.render || sh.image);
       const head = SB.el('div', 'pt-fe pt-frame' + (framed ? '' : ' empty'));
@@ -1351,18 +1395,7 @@
        lane's is MiniMax H3 full reference (clip, first frame, subjects) — a
        different call from the ImagineArt push above, which carries the frame
        alone. */
-    if (SB.Mxm) {
-      const m = SB.Mxm.manifest(P(), sh, role);
-      if (m.assets.length || SB.Model.described(sh)) {
-        const b = SB.el('button', 'mini mxm-btn', 'Export for MiniMax');
-        b.title = (role === 'video' ? 'MiniMax H3 full reference' : 'MiniMax Image') + ': ' +
-          m.assets.length + ' file' + (m.assets.length === 1 ? '' : 's') +
-          ' in upload order, prompt.txt and ORDER.txt' +
-          (m.warnings.length ? ' — ' + m.warnings.length + ' thing' + (m.warnings.length === 1 ? '' : 's') + ' to check' : '');
-        b.onclick = function () { SB.Mxm.open(sh, role); };
-        wrap.appendChild(b);
-      }
-    }
+    mxmButton(wrap, sh, role);
     return wrap;
   }
 

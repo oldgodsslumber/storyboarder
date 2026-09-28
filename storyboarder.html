@@ -1427,7 +1427,7 @@ body.comment-mode .frame{cursor:crosshair}
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-09-28 20:20 · 073139a+";</script>
+<script>window.SB_BUILD = "2026-09-28 20:28 · 5af9fb8+";</script>
 
 <div id="app">
 
@@ -8072,6 +8072,18 @@ window.SB = window.SB || {};
 
     const gateNote = blockNote(model);
     const pr = (shot.prompts || {})[model.id] || null;
+    /* An H3 prompt written for the full-reference call names the clay clip and
+       the subject pictures; this push sends the frame alone, so the model would
+       be asked to follow files it never gets. That call goes out as a MiniMax
+       package instead. */
+    if (role === 'video' && pr && pr.route === 'mxm' && (pr[field] || '').trim()) {
+      return {
+        short: 'MiniMax package',
+        long: 'This H3 prompt is written for the full-reference call — the clay render' +
+          (shot.pose && shot.pose.perf ? ' clip' : '') + ', the pictures — which ImagineArt cannot send: it pushes the ' +
+          'frame alone. Use Export for MiniMax on this lane.'
+      };
+    }
     if (pr && (pr[field] || '').trim()) return gateNote;
 
     const others = Object.keys(shot.prompts || {}).filter(function (id) {
@@ -14584,6 +14596,13 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
 
   function poseOK(shot) { return !!(shot && shot.pose && shot.pose.scene && (shot.pose.render || shot.pose.image)); }
 
+  /* A card whose video prompt, on a stock H3 board, is the full-reference call:
+     it has a blocking, and the blocking is its reference. */
+  function h3Card(p, shot) {
+    const vm = SB.Model.videoModel(p);
+    return !!(SB.H3 && SB.H3.stock(vm) && poseOK(shot));
+  }
+
   /* The subjects this lane shows, in feed order, one picture each (the first:
      the one the subject is known by). A still leaves out whoever arrives later
      — their picture would put them in the frame. */
@@ -14861,8 +14880,10 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
         'The motion comes from the shot description. Never describe clay or mannequins.');
     }
     if (sc.frame) L.push('- State that the shot begins from ' + sc.frame.h3 + '.');
-    else L.push('- There is no first-frame picture: do NOT write "begins from <Picture 1>"' +
-      (sc.clip ? '; say the shot follows ' + sc.clip.h3 + ' from its first frame.' : '.'));
+    else L.push('- There is NO first-frame picture in this call. This overrides the instruction above to state ' +
+      'that the shot begins from <Picture 1>: do not say it begins from any picture' +
+      (sc.clip ? '; say the shot follows ' + sc.clip.h3 + ' from its first frame.'
+        : sc.clay ? '; say its framing and positions are those of ' + sc.clay.h3 + ', the clay render.' : '.'));
     const binds = m.figures.filter(function (x) { return x.fig; });
     if (binds.length && sc.motion) {
       L.push('- The clay figures: ' + binds.map(function (x) {
@@ -14931,6 +14952,16 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
     m = m || manifest(p, shot, lane);
     const s = stored(shot, lane);
     const fresh = lane === 'image' ? brief(m) : h3Prompt(m, null);
+    /* The card's own H3 prompt, written in Create for this same call — and
+       perhaps edited on the card since. The newer of the two wins. */
+    if (lane === 'video') {
+      const vm = SB.Model.videoModel(p);
+      const cp = vm && shot.prompts && shot.prompts[vm.id];
+      if (cp && cp.route === 'mxm' && (cp.videoPrompt || '').trim() && (!s || !s.prompt || (cp.at || 0) >= (s.at || 0))) {
+        const edited = s && s.prompt && cp.videoPrompt !== s.prompt;
+        return { text: cp.videoPrompt, source: edited ? 'edited' : 'writer', current: cp.mxmSig === m.sig };
+      }
+    }
     if (s && s.prompt && s.sig === m.sig) {
       return { text: s.prompt, source: s.edited ? 'edited' : s.written ? 'writer' : 'assembled', current: true };
     }
@@ -14967,7 +14998,7 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
       m.warnings.forEach(function (w) { L.push('  - ' + w); });
     }
     if (!pr.current) {
-      L.push('  - This prompt was edited by hand before the card last changed; read it against the files.');
+      L.push('  - This prompt was written or edited before the card last changed; read it against the files.');
     }
     return L.join('\n') + '\n';
   }
@@ -15098,7 +15129,7 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
       if (m.warnings.length || !pr.current) {
         const w = SB.el('ul', 'mxm-warn');
         m.warnings.forEach(function (x) { w.appendChild(SB.el('li', null, x)); });
-        if (!pr.current) w.appendChild(SB.el('li', null, 'This prompt was edited by hand before the card last changed — read it against the files, or Reset it.'));
+        if (!pr.current) w.appendChild(SB.el('li', null, 'This prompt was written or edited before the card last changed — read it against the files, or Write it again.'));
         body.appendChild(w);
       }
 
@@ -15196,7 +15227,7 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
 
   SB.Mxm = {
     H3_LIMITS: H3, DEFAULT_STYLE: DEFAULT_STYLE, NEG_IMAGE: NEG_IMAGE, NEG_VIDEO: NEG_VIDEO,
-    settings: settings, manifest: manifest, brief: brief,
+    settings: settings, manifest: manifest, brief: brief, h3Card: h3Card,
     h3Scaffold: h3Scaffold, h3Rider: h3Rider, h3Fallback: h3Fallback, h3Prompt: h3Prompt,
     promptFor: promptFor, remember: remember, stored: stored,
     orderText: orderText, files: files, zip: zip, zipName: zipName, open: open,
@@ -18490,7 +18521,11 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
       });
     }
     if (wantV) {
-      jobs.push(h3 ? h3Job(shot, vm) : {
+      /* A blocked card on a stock H3 board is the full-reference call: its
+         blocking (the clay clip, or the clay still) is the reference, so it
+         needs no first frame — and the prompt says what each file is. */
+      const full = h3 && SB.Mxm && SB.Mxm.h3Card(P(), shot);
+      jobs.push(full ? mxmVideoJob(shot, vm) : h3 ? h3Job(shot, vm) : {
         text: PREAMBLE + 'Return JSON with the key "videoPrompt".\n\n' + videoBlock(shot, vm),
         keys: ['videoPrompt'],
         system: sys('video', vm),
@@ -18800,6 +18835,14 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
           }
           store(live, t.model, t.field, vals[t.field]);
           written.push(t.field);
+          /* which call a video prompt was written for: the full-reference one
+             cannot go through the frame-only push */
+          if (t.field === 'videoPrompt') {
+            const rec = live.prompts[t.model.id];
+            if (j.route) { rec.route = j.route; rec.mxmSig = j.manifest.sig; }
+            else { delete rec.route; delete rec.mxmSig; }
+          }
+          if (j.after) j.after(live, vals);
           /* One rewrite is all it gets. A move that survives it is not thrown
              away — the rest of the paragraph is usually right — but it is
              marked, so nobody ships a push in they never asked for. */
@@ -18860,6 +18903,36 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
    * H3 template with the call's own label table — clip, first frame, subject
    * pictures — and a rider saying what each file is for. Stored on shot.mxm,
    * never on shot.prompts: the ImagineArt push keeps its frame-only prompt. */
+  /* The full-reference H3 job: what the MiniMax package's Write asks, and what
+   * the Create panel asks for a blocked card on a stock H3 board (a card whose
+   * blocking IS its reference — no still needed). One job, so the two can
+   * never write different prompts for the same call. */
+  function mxmVideoJob(shot, vm) {
+    const p = P();
+    const m = SB.Mxm.manifest(p, shot, 'video');
+    const sc = SB.Mxm.h3Scaffold(m);
+    const tm = { id: 'mxm', name: SB.H3.NAME, kind: 'video', videoTemplate: SB.Model.tplsFor(SB.H3.NAME).video };
+    return {
+      manifest: m, scaffold: sc, route: 'mxm',
+      text: PREAMBLE + 'Return JSON with the keys "summary" and "detailed_description".\n\n' +
+        videoBlock(shot, tm, sc) + '\n' + SB.Mxm.h3Rider(m, sc) + '\n',
+      keys: SB.H3.WRITTEN,
+      system: sysFor(shot, 'video', tm),
+      targets: vm ? [{ model: vm, field: 'videoPrompt' }] : [],
+      map: function (res) { return { videoPrompt: SB.H3.assemble(sc, res) }; },
+      /* the package carries the same text */
+      after: function (live, vals) {
+        SB.Mxm.remember(live, 'video', { prompt: vals.videoPrompt, sig: m.sig, written: true });
+      },
+      check: function (res) {
+        /* with a clip, the camera is the clip's: a move it describes is not one nobody asked for */
+        return SB.H3.problems(sc, res)
+          .concat(sc.clip ? [] : SB.Brand.moveProblems(p, shot, res.detailed_description))
+          .concat(SB.Brand.genderProblems(p, shot, res.detailed_description));
+      }
+    };
+  }
+
   function writeMxm(shot) {
     const p = P();
     const prov = SB.Providers.active();
@@ -18868,21 +18941,11 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
       return Promise.reject(new Error('Write a description first \u2014 there is nothing to work from.'));
     }
     if (writing(shot.id, 'mxmVideo')) return Promise.reject(new Error('That prompt is already being written.'));
-    const m = SB.Mxm.manifest(p, shot, 'video');
-    const sc = SB.Mxm.h3Scaffold(m);
-    const tm = { id: 'mxm', name: SB.H3.NAME, kind: 'video', videoTemplate: SB.Model.tplsFor(SB.H3.NAME).video };
-    const job = {
-      text: PREAMBLE + 'Return JSON with the keys "summary" and "detailed_description".\n\n' +
-        videoBlock(shot, tm, sc) + '\n' + SB.Mxm.h3Rider(m, sc) + '\n',
-      keys: SB.H3.WRITTEN,
-      system: sysFor(shot, 'video', tm),
-      check: function (res) {
-        /* with a clip, the camera is the clip's: a move it describes is not one nobody asked for */
-        return SB.H3.problems(sc, res)
-          .concat(sc.clip ? [] : SB.Brand.moveProblems(p, shot, res.detailed_description))
-          .concat(SB.Brand.genderProblems(p, shot, res.detailed_description));
-      }
-    };
+    /* a stock H3 board's own video prompt for this card is the same call: keep it in step */
+    const vm = SB.Model.videoModel(p);
+    const same = !!(SB.H3.stock(vm) && SB.Mxm.h3Card(p, shot));
+    const job = mxmVideoJob(shot, same ? vm : null);
+    const m = job.manifest;
     const projectId = p.id, shotId = shot.id;
     markWriting(shotId, ['mxmVideo'], true);
     return callWriter(job.text, job.keys, job.system).then(function (res) {
@@ -18890,8 +18953,13 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
     }).then(function (res) {
       const live = stillOpen(projectId, shotId);
       if (!live) throw new Error('That board is not open any more, so the prompt was not written.');
-      const text = SB.H3.assemble(sc, res);
+      const text = job.map(res).videoPrompt;
       SB.Mxm.remember(live, 'video', { prompt: text, sig: m.sig, written: true });
+      if (same) {
+        store(live, vm, 'videoPrompt', text);
+        live.prompts[vm.id].route = 'mxm';
+        live.prompts[vm.id].mxmSig = m.sig;
+      }
       markWriting(shotId, ['mxmVideo'], false);
       SB.Focus.defer('prompts:' + shotId, function () { SB.app.changed(true); });
       return text;
@@ -18902,7 +18970,7 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
   }
 
   SB.Prompts = {
-    generateFor: generateFor, writeMxm: writeMxm, mxmImage: mxmImage,
+    generateFor: generateFor, writeMxm: writeMxm, mxmImage: mxmImage, mxmVideoJob: mxmVideoJob,
     writing: writing, writingAny: writingAny, onWriting: onWriting,
     jobsFor: jobsFor, fill: fill, raw: ask
   };
@@ -20975,6 +21043,20 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
     return b;
   }
 
+  /* The MiniMax package for this lane (mxm.js). */
+  function mxmButton(wrap, sh, role) {
+    if (!SB.Mxm) return;
+    const m = SB.Mxm.manifest(P(), sh, role);
+    if (!m.assets.length && !SB.Model.described(sh)) return;
+    const b = SB.el('button', 'mini mxm-btn', 'Export for MiniMax');
+    b.title = (role === 'video' ? 'MiniMax H3 full reference' : 'MiniMax Image') + ': ' +
+      m.assets.length + ' file' + (m.assets.length === 1 ? '' : 's') +
+      ' in upload order, prompt.txt and ORDER.txt' +
+      (m.warnings.length ? ' — ' + m.warnings.length + ' thing' + (m.warnings.length === 1 ? '' : 's') + ' to check' : '');
+    b.onclick = function () { SB.Mxm.open(sh, role); };
+    wrap.appendChild(b);
+  }
+
   function feedList(sh, code, role) {
     const wrap = SB.el('div', 'pt-feed-list');
     const list = SB.Refs.feed(P(), sh, role);
@@ -20986,6 +21068,36 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
      * moves the result. They stay on the list because they are still what
      * the WORDS of the video prompt were written against, but they are
      * shown for what they are. */
+    /* A blocked card on a stock H3 board: the call is the full-reference one,
+       and its files are the blocking's clay clip (or still), the first frame if
+       there is one, and each subject's picture — numbered as the prompt names
+       them and as the MiniMax package uploads them. */
+    if (role === 'video' && SB.Mxm && SB.Mxm.h3Card(P(), sh)) {
+      const m = SB.Mxm.manifest(P(), sh, 'video');
+      m.assets.forEach(function (a) {
+        const it = SB.el('div', 'pt-fe' + (a.kind === 'first-frame' ? ' pt-frame' : ''));
+        it.appendChild(SB.el('span', 'feed-n', String(a.n)));
+        const th = SB.el('span', 'feed-thumb');
+        const src = a.kind === 'clay-clip' || a.kind === 'clay-still' ? SB.Blobs.src(P(), sh.pose.image)
+          : a.kind === 'first-frame' ? SB.Blobs.src(P(), sh.image)
+            : (function () { const x = m.figures.filter(function (f) { return f.asset === a; })[0]; return x ? SB.Blobs.src(P(), x.img) : ''; })();
+        if (src) { const im = document.createElement('img'); im.src = src; th.appendChild(im); }
+        else th.textContent = a.kind === 'clay-clip' ? '▶' : '?';
+        it.appendChild(th);
+        it.appendChild(SB.el('span', 'feed-file', a.h3));
+        it.appendChild(SB.el('span', 'feed-who', a.kind === 'clay-clip' ? 'the blocking, animated (clay clip)'
+          : a.kind === 'clay-still' ? 'the blocking (clay render)' : a.role));
+        it.title = a.h3 + ' — ' + a.role + '. Goes up as ' + a.file + ' in the MiniMax package.';
+        it.classList.add('mxm-fe');
+        wrap.appendChild(it);
+      });
+      if (!m.frame) {
+        wrap.appendChild(SB.el('div', 'pt-none', 'no still needed — the blocking is the reference' +
+          (m.clip ? '' : '; record a performance in Pose Bench for the motion')));
+      }
+      mxmButton(wrap, sh, role);
+      return wrap;
+    }
     if (role === 'video') {
       const framed = !!(sh.render || sh.image);
       const head = SB.el('div', 'pt-fe pt-frame' + (framed ? '' : ' empty'));
@@ -21137,18 +21249,7 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
        lane's is MiniMax H3 full reference (clip, first frame, subjects) — a
        different call from the ImagineArt push above, which carries the frame
        alone. */
-    if (SB.Mxm) {
-      const m = SB.Mxm.manifest(P(), sh, role);
-      if (m.assets.length || SB.Model.described(sh)) {
-        const b = SB.el('button', 'mini mxm-btn', 'Export for MiniMax');
-        b.title = (role === 'video' ? 'MiniMax H3 full reference' : 'MiniMax Image') + ': ' +
-          m.assets.length + ' file' + (m.assets.length === 1 ? '' : 's') +
-          ' in upload order, prompt.txt and ORDER.txt' +
-          (m.warnings.length ? ' — ' + m.warnings.length + ' thing' + (m.warnings.length === 1 ? '' : 's') + ' to check' : '');
-        b.onclick = function () { SB.Mxm.open(sh, role); };
-        wrap.appendChild(b);
-      }
-    }
+    mxmButton(wrap, sh, role);
     return wrap;
   }
 
