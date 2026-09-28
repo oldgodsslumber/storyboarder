@@ -171,6 +171,18 @@ Space), **From photo…** (you can also drop a picture on the panel), a Body swi
     stays seated, facing and mark are kept, swap sides mirrors, and each snap is one undo step.
   - Photo mode on the MediaPipe sample photo.
   - Live mode with `getUserMedia` stubbed to a `canvas.captureStream()`.
+- **Fresh vs live** (fixed 2026-09-28 after a user report):
+  - A photo or a snap is a **fresh** pose (`retarget(..., {fresh:true})`). Every joint in scope goes back to neutral
+    first, so a part the model can't see this time comes out neutral.
+  - Before this fix, low-confidence joints kept whatever the *previous* photo left. For example, a standing woman
+    whose right knee scored 0.49 kept the raised leg of the seated photo before her. It got worse with every photo:
+    "it only posed the top half".
+  - Live follow is not fresh: a joint that drops out for a frame stays where it was a moment ago.
+  - Photos also use a lower threshold (`PHOTO_VIS` 0.3, against 0.5 for the webcam), because a still is chosen
+    deliberately.
+  - The panel shows a busy overlay while downloading or reading, and a green ✓ result that lists what was copied and
+    what was set to neutral. It has a **Reset figure to neutral** button, and an unreadable file is reported in the
+    panel.
 - **Storyboarder embed:** the iframe is `allow="clipboard-write *; camera *"`. A plain `camera` is refused, because a
   srcdoc frame on a file:// page has an opaque origin.
 - **Next:** hands (HandLandmarker → forearm twist, wrist, finger shapes, a *point* shape), then two performers →

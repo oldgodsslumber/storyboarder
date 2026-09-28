@@ -187,6 +187,13 @@
     color:var(--muted-2);font-size:12px}
   #camPanel .cp-status{font-size:11px;color:var(--muted);line-height:1.45;min-height:30px;margin-bottom:6px}
   #camPanel .cp-status.warn{color:var(--accent-hi)}
+  #camPanel .cp-status.ok{color:#8fd19e}
+  #camPanel .cp-busy{position:absolute;inset:0;display:none;align-items:center;justify-content:center;gap:9px;background:rgba(12,13,16,.72);
+    color:var(--text);font-size:12.5px}
+  #camPanel .cp-busy.on{display:flex}
+  #camPanel .spin{width:16px;height:16px;border-radius:50%;border:2px solid rgba(255,255,255,.25);border-top-color:var(--accent);animation:spin .8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  #camPanel.busy .row .btn,#camPanel.busy #camReset{opacity:.45;pointer-events:none}
   #camLive.on{border-color:var(--danger);color:#ffb3aa;background:#3a2422}
   #toast{position:absolute;left:50%;bottom:92px;transform:translateX(-50%) translateY(8px);background:#2b2f37;border:1px solid var(--line);
     color:var(--text);font-size:12.5px;padding:8px 14px;border-radius:8px;opacity:0;transition:opacity .18s,transform .18s;pointer-events:none;z-index:9}
@@ -447,6 +454,7 @@
         <canvas id="camDraw"></canvas>
         <div class="cp-count" id="camCount"></div>
         <div class="cp-empty" id="camEmpty">Start the camera, or drop a photo here</div>
+        <div class="cp-busy" id="camBusy"><span class="spin"></span><span id="camBusyTxt">Reading the pose…</span></div>
       </div>
       <div class="cp-status" id="camStatus">Nothing leaves this computer: the pose is read in the browser.</div>
       <div class="row">
@@ -464,6 +472,7 @@
           <select id="camModel"><option value="lite">Fast (6 MB)</option><option value="full" selected>Balanced (9 MB)</option><option value="heavy">Accurate (31 MB)</option></select></div>
       </div>
       <label class="toggle"><span>Swap sides<span class="d">Figure acts as your reflection</span></span><input type="checkbox" id="camSwap"><i></i></label>
+      <button class="btn grow" id="camReset" style="width:100%;margin-top:6px" title="Put the figure back to standing (a seated figure keeps its seat)">Reset figure to neutral</button>
       <input type="file" id="camFile" accept="image/*" hidden>
     </div>
     <div id="fatal"><div><b>three.js didn't load.</b><br>Pose Bench pulls three.js r128 from cdnjs on first open —<br>check the network connection and reload.</div></div>
@@ -2320,9 +2329,10 @@ function limbFrame(f,root,midJ,du,df,bend){
   f.setA(midJ,'x',Math.acos(clamp(u.dot(d),-1,1))*RAD); f.clampJoint(midJ);
   return true;
 }
+const UPPER_JOINTS=['spine','chest','neck','head','lShoulder','lElbow','lWrist','rShoulder','rElbow','rWrist'];
 function retarget(f,pose,o={}){
-  const P=pose.p.map(v=>v.clone()), vis=pose.v;
-  const ok=(...ks)=>ks.every(k=>vis[LM[k]]>=VIS_OK);
+  const P=pose.p.map(v=>v.clone()), vis=pose.v, TH=o.threshold||VIS_OK;
+  const ok=(...ks)=>ks.every(k=>vis[LM[k]]>=TH);
   const at=k=>P[LM[k]];
   const mid=(a,b)=>at(a).clone().add(at(b)).multiplyScalar(0.5);
   const hipsSeen=ok('lHip','rHip');
@@ -2334,6 +2344,15 @@ function retarget(f,pose,o={}){
     const hl=at('lHip').clone().sub(at('rHip'));
     const yaw=Math.atan2(-hl.z,hl.x), Y=new V3(0,1,0);
     P.forEach(v=>v.applyAxisAngle(Y,-yaw));
+  }
+  /* A FRESH capture (a photo, a snap) is a new pose, not an edit of the last one. Everything in scope goes back to
+     neutral first, so a part the model could not see this time comes out neutral - not left over from the photo
+     before, which is how a standing woman kept the raised leg of the seated one before her. Live follow is not
+     fresh: there a joint that drops out for a frame is best left where it was a moment ago. */
+  if(o.fresh){
+    const st=PRESETS['Stand'];
+    (upper?UPPER_JOINTS:Object.keys(f.joints)).forEach(n=>{const v=st[n]||{};['x','y','z'].forEach(a=>f.setA(n,a,v[a]||0));});
+    if(!upper)f.joints.pelvis.pivot.position.copy(f.pelvisRest);
   }
   f.group.updateMatrixWorld(true);
   const gq=f.group.getWorldQuaternion(new Q());
@@ -2413,7 +2432,8 @@ function retarget(f,pose,o={}){
   }
   f.ground();
   figures.forEach(x=>{if(x!==f&&(x.look&&x.look.fig===f.id||x.goals.some(g=>g.fig===f.id)))resolveFig(x);});
-  return {applied,upper};
+  const scope=upper?['torso','head','left arm','right arm']:['hips','torso','head','left arm','right arm','left leg','right leg'];
+  return {applied,upper,missed:scope.filter(x=>applied.indexOf(x)<0)};
 }
 // Landmarks generated FROM a posed figure, in MediaPipe's own format — what the model would report for this rig.
 // Used to test retarget() round trips without a camera or a model in the loop.
@@ -2442,9 +2462,10 @@ function synthLandmarks(f){
 
 /* ---------- the panel ---------- */
 const camS={stream:null,live:false,raf:0,filters:null,last:null,recent:[],lastT:-1,counting:false,photo:false,hold:0};
-const camStatus=(m,warn)=>{const e=$('camStatus');e.textContent=m;e.classList.toggle('warn',!!warn);};
+const camStatus=(m,warn,good)=>{const e=$('camStatus');e.textContent=m;e.classList.toggle('warn',!!warn);e.classList.toggle('ok',!!good&&!warn);};
+function camBusy(on,text){$('camBusy').classList.toggle('on',!!on);$('camPanel').classList.toggle('busy',!!on);if(text)$('camBusyTxt').textContent=text;}
 // a message that answers something the user did stays up a moment; the per-frame idle line must not wipe it at once
-const camTell=(m,warn)=>{camStatus(m,warn);camS.hold=performance.now()+2600;};
+const camTell=(m,warn,good)=>{camStatus(m,warn,good);camS.hold=performance.now()+(good?6000:2600);};
 const camIdle=(m,warn)=>{if(performance.now()>camS.hold)camStatus(m,warn);};
 function camWho(){$('camWho').textContent=act?'→ '+act.name:'';}
 function camOpen(){$('camPanel').classList.add('open');camWho();}
@@ -2473,17 +2494,20 @@ function camSmooth(pose,t){
   if(!camS.filters)camS.filters=pose.p.map(()=>[new OneEuro(1.2,0.8),new OneEuro(1.2,0.8),new OneEuro(1.2,0.8)]);
   return {p:pose.p.map((v,i)=>new V3(camS.filters[i][0].f(v.x,t),camS.filters[i][1].f(v.y,t),camS.filters[i][2].f(v.z,t))),v:pose.v,img:pose.img};
 }
-function camApply(pose,commitNow){
+function camApply(pose,commitNow,o={}){
   if(!act||!pose)return null;
-  const r=retarget(act,$('camSwap').checked?swapPose(pose):pose,{body:$('camBody').value});
+  const r=retarget(act,$('camSwap').checked?swapPose(pose):pose,Object.assign({body:$('camBody').value},o));
   syncAxes();
   if(commitNow)commit();
   return r;
 }
 function camSay(r,verb){
   if(!r)return;
-  (verb==='Following:'?camIdle:camTell)(r.applied.length?verb+' '+r.applied.join(', ')+(r.upper?' (upper body only)':'')+' onto '+act.name+'.'
-    :'Nobody clear enough in view to copy — step back or turn toward the camera.',!r.applied.length);
+  const live=verb==='Following:';
+  if(!r.applied.length){(live?camIdle:camTell)('Nobody clear enough in view to copy — step back or turn toward the camera.',true);return;}
+  const missed=r.missed&&r.missed.length&&!live?' Not clear enough, so set to neutral: '+r.missed.join(', ')+'.':'';
+  const msg=(live?'Following: ':'✓ '+verb+' ')+r.applied.join(', ')+(r.upper?' (upper body only)':'')+' → '+act.name+'.'+missed;
+  if(live)camIdle(msg); else camTell(msg,false,true);
 }
 function camTick(){
   camS.raf=requestAnimationFrame(camTick);
@@ -2510,9 +2534,10 @@ async function camStart(){
   const v=$('camVideo'); v.srcObject=camS.stream; v.style.display='block'; v.classList.add('mirror'); $('camDraw').classList.add('mirror');
   try{await v.play();}catch(e){}
   $('camStart').textContent='■ Stop camera';
-  camStatus('Loading the pose model (first time: a few MB)…');
+  camBusy(true,MP.lm&&MP.model===$('camModel').value?'Starting…':'Downloading the pose model (first time only)…');
   try{await mpLoad($('camModel').value,'VIDEO');}
-  catch(e){camStatus('The pose model did not load: '+(e.message||e),true);return;}
+  catch(e){camBusy(false);camTell('The pose model did not load: '+(e.message||e),true);return;}
+  camBusy(false);
   camS.filters=null; camS.recent=[]; camS.lastT=-1;
   $('camLive').disabled=false; $('camSnap').disabled=false;
   camStatus('Camera on. Stand back for full body, or sit at the desk for upper body.');
@@ -2539,35 +2564,53 @@ function camSnap(){
     // average the last moment's frames: a snapshot should be the pose you held, not one jittery frame
     const avg={p:list[0].p.p.map((_,i)=>{const s=new V3();list.forEach(x=>s.add(x.p.p[i]));return s.divideScalar(list.length);}),
       v:list[list.length-1].p.v,img:list[list.length-1].p.img};
-    const r=camApply(avg,true); camSay(r,'Copied');
+    const r=camApply(avg,true,{fresh:true}); camSay(r,'Copied');
     const fl=$('flash'); fl.classList.remove('fire'); void fl.offsetWidth; fl.classList.add('fire');
   };
   step();
 }
+// a photo is a deliberate still: parts the model is only fairly sure of are still worth using
+const PHOTO_VIS=0.3;
 async function camFromImage(src){
   camLiveStop(true);
-  const img=$('camPhoto');
-  await new Promise((res,rej)=>{img.onload=res;img.onerror=()=>rej(new Error('that picture could not be read'));img.src=src;});
+  // a fresh element every time: re-reading the same file must still fire a load
+  const img=new Image();
+  try{await new Promise((res,rej)=>{img.onload=res;img.onerror=()=>rej(new Error('that file is not a picture this browser can read'));img.src=src;});}
+  catch(e){camTell('Could not read it: '+e.message,true);return null;}
   camS.photo=true;
   if(camS.stream)camStopStream();
-  img.style.display='block'; $('camEmpty').style.display='none'; $('camDraw').classList.remove('mirror');
-  camStatus('Loading the pose model…');
+  const shown=$('camPhoto'); shown.src=src; shown.style.display='block';
+  $('camEmpty').style.display='none'; $('camDraw').classList.remove('mirror'); camClear();
+  camBusy(true,MP.lm&&MP.model===$('camModel').value?'Reading the pose…':'Downloading the pose model (first time only)…');
   let res;
-  try{await mpLoad($('camModel').value,'IMAGE');res=MP.lm.detect(img);}
-  catch(e){camStatus('The pose model did not run: '+(e.message||e),true);return null;}
+  try{await mpLoad($('camModel').value,'IMAGE');camBusy(true,'Reading the pose…');res=MP.lm.detect(img);}
+  catch(e){camBusy(false);camTell('The pose model did not run: '+(e.message||e),true);return null;}
+  camBusy(false);
   const pose=readPose(res);
   camDraw(pose,img.naturalWidth,img.naturalHeight);
-  if(!pose){camStatus('No person found in that picture.',true);return null;}
-  const r=camApply(pose,true); camSay(r,'Copied');
+  if(!pose){camTell('No person found in that picture — it needs a person, ideally head to toe.',true);return null;}
+  const r=camApply(pose,true,{fresh:true,threshold:PHOTO_VIS}); camSay(r,'Posed from the photo:');
+  const fl=$('flash'); fl.classList.remove('fire'); void fl.offsetWidth; fl.classList.add('fire');
   return r;
 }
+function camReset(){
+  if(!act)return;
+  camLiveStop(false);
+  const f=act, st=PRESETS['Stand'];
+  // a seated figure keeps its seat and its legs; anyone else goes back to standing
+  (f.seat?UPPER_JOINTS:Object.keys(f.joints)).forEach(n=>{const v=st[n]||{};['x','y','z'].forEach(a=>f.setA(n,a,v[a]||0));});
+  if(!f.seat)f.joints.pelvis.pivot.position.copy(f.pelvisRest);
+  f.goals=[]; f.ground(); syncAxes(); commit();
+  camTell('↺ '+f.name+' is back to neutral.',false,true);
+}
 $('camOpen').onclick=camOpen;
+$('camReset').onclick=camReset;
 $('camClose').onclick=camClose;
 $('camStart').onclick=camStart;
 $('camLive').onclick=camLiveToggle;
 $('camSnap').onclick=camSnap;
 $('camPhotoBtn').onclick=()=>$('camFile').click();
-$('camFile').onchange=e=>{const f=e.target.files[0];e.target.value='';if(!f)return;const r=new FileReader();r.onload=()=>camFromImage(r.result);r.readAsDataURL(f);};
+$('camFile').onchange=e=>{const f=e.target.files[0];e.target.value='';if(!f)return;const r=new FileReader();r.onload=()=>camFromImage(r.result).catch(err=>camTell('That did not work: '+(err.message||err),true));r.readAsDataURL(f);};
 $('camModel').onchange=()=>{if(camS.stream)mpLoad($('camModel').value,'VIDEO').catch(e=>camStatus('The pose model did not load: '+(e.message||e),true));};
 {
   const pnl=$('camPanel');
@@ -2576,7 +2619,7 @@ $('camModel').onchange=()=>{if(camS.stream)mpLoad($('camModel').value,'VIDEO').c
   pnl.addEventListener('drop',e=>{e.preventDefault();pnl.classList.remove('dragover');
     const f=[...(e.dataTransfer.files||[])].find(x=>/^image\//.test(x.type));
     if(!f){camStatus('Drop a photo (JPG, PNG, WebP).',true);return;}
-    const r=new FileReader();r.onload=()=>camFromImage(r.result);r.readAsDataURL(f);});
+    const r=new FileReader();r.onload=()=>camFromImage(r.result).catch(err=>camTell('That did not work: '+(err.message||err),true));r.readAsDataURL(f);});
 }
 
 /* ================= storyboarder host mode =================
