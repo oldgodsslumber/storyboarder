@@ -527,6 +527,15 @@
       const im2 = document.createElement('img');
       im2.src = SB.Blobs.src(P(), sh.image);
       thumb.appendChild(im2);
+    } else if (SB.Pose && SB.Pose.has(sh)) {
+      /* No still yet, but a blocking: that IS this shot's picture until one
+         lands — the board shows it, and so does this. Labelled, so a clay
+         render is never mistaken for a finished frame. */
+      const im2 = document.createElement('img');
+      im2.src = SB.Blobs.src(P(), sh.pose.image);
+      thumb.appendChild(im2);
+      thumb.classList.add('blocking');
+      thumb.appendChild(SB.el('span', 'pt-thumb-tag', '⛹ blocking'));
     } else {
       thumb.classList.add('none');
       thumb.textContent = 'not rendered';
