@@ -86,10 +86,9 @@ Joint by joint, reusing Pose Bench's solvers:
 - **Pelvis**
   - hip line → yaw and roll;
   - hip midpoint to shoulder midpoint → pitch.
-  - Yaw is split: it goes to the figure's **turn** (option "follow facing"), or the figure keeps
-    its facing and only the body twists.
-  - Keeping facing is the default, so framing someone who is turning doesn't swing the whole
-    figure off its mark.
+  - Yaw never goes to the figure's **turn**: the figure keeps its facing, and the performer's
+    turn becomes body twist (pelvis, spine and chest share it, clamped). Framing someone who is
+    turning doesn't swing the whole figure off its mark; the camera moves instead.
 - **Spine and chest:** the shoulder line and the hips-to-shoulders direction, shared between
   waist and chest (`aimJoint`, the CCD already used for spine drags).
 - **Arms:** shoulder → elbow → wrist targets, **rescaled to our arm lengths**.
@@ -131,7 +130,7 @@ A **"Pose from camera"** button in the Pose section opens a floating panel over 
 - **Snap (3 s)**: a countdown, then one averaged capture. This is the hands-free way when you're
   standing back from the laptop. Space triggers it.
 - **Applies to:** the selected figure, with a one-click switch between figures. It never moves
-  or turns the figure unless "follow facing" is on.
+  or turns the figure. Its mark and facing are yours; the camera does the rest.
 - **Body:** full / upper. **Hands:** off / shapes. **Mirror:** on / off.
 - **From a photo…**: the same pipeline in IMAGE mode on a dropped picture, with the heavy
   model by default. This matches what Zhu's has.
@@ -216,9 +215,9 @@ Very little changes, which is the benefit of it living inside Pose Bench.
 
 ## Decisions to confirm
 
-1. **Pose only, or follow facing too?** The default keeps the figure on its mark and facing,
-   and applies the body's twist only (recommended for framing). The alternative lets the
-   figure turn when you turn.
+1. ~~Pose only, or follow facing too?~~ **Decided (2026-09-28): the figure keeps its mark and its
+   facing.** The performer's turn is applied as body twist only; the camera moves around the
+   figure independently, which is the point. There is no "follow facing" option in the first build.
 2. **Mirror on by default** (recommended: it matches the preview, so it feels natural), or
    anatomical (your right is the figure's left when you face each other).
 3. **Hands in the first build**, or body first and hands as a follow-up (recommended: body
