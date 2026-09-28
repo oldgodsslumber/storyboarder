@@ -4344,6 +4344,14 @@
         app.changed(true);
         const b2 = card(blocked).querySelector('.pose-badge');
         t('and a current one is not', !!b2 && !b2.classList.contains('stale'), b2 ? b2.className : 'no badge');
+        /* the editor frame must be allowed the camera (pose from webcam) — and as `camera *`, because a
+           srcdoc frame on a file:// page has an opaque origin that plain `camera` never matches */
+        SB.Pose.open(blocked);
+        const pf = document.querySelector('.pose-back iframe.pose-frame');
+        t('the blocking editor is allowed the camera, from any origin', !!pf && /camera \*/.test(pf.getAttribute('allow') || ''),
+          pf ? pf.getAttribute('allow') : 'no frame');
+        SB.Pose.close();
+        t('and closing it removes it', !document.querySelector('.pose-back'), '');
         SB.Model.deleteShot ? SB.Model.deleteShot(P(), blank.id) : null;
       })();
 

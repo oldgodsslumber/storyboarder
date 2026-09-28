@@ -171,6 +171,23 @@
   #flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none}
   #flash.fire{animation:flash .45s ease-out}
   @keyframes flash{0%{opacity:.7}100%{opacity:0}}
+  #camPanel{position:absolute;top:52px;left:14px;width:300px;background:rgba(27,30,36,.96);border:1px solid var(--line);border-radius:10px;
+    padding:10px;z-index:7;display:none;box-shadow:0 10px 30px rgba(0,0,0,.45);backdrop-filter:blur(4px)}
+  #camPanel.open{display:block}
+  #camPanel .cp-head{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:650;margin-bottom:8px}
+  #camPanel .cp-who{flex:1;font-weight:400;color:var(--muted);font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #camPanel .cp-view{position:relative;aspect-ratio:4/3;background:#0c0d10;border-radius:7px;overflow:hidden;margin-bottom:6px}
+  #camPanel.dragover .cp-view{outline:2px dashed var(--accent)}
+  #camPanel video,#camPanel img,#camPanel canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
+  #camPanel video,#camPanel img{display:none}
+  #camPanel .mirror{transform:scaleX(-1)}
+  #camPanel .cp-count{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:64px;font-weight:700;
+    color:#fff;text-shadow:0 2px 12px rgba(0,0,0,.6);pointer-events:none}
+  #camPanel .cp-empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:14px;
+    color:var(--muted-2);font-size:12px}
+  #camPanel .cp-status{font-size:11px;color:var(--muted);line-height:1.45;min-height:30px;margin-bottom:6px}
+  #camPanel .cp-status.warn{color:var(--accent-hi)}
+  #camLive.on{border-color:var(--danger);color:#ffb3aa;background:#3a2422}
   #toast{position:absolute;left:50%;bottom:92px;transform:translateX(-50%) translateY(8px);background:#2b2f37;border:1px solid var(--line);
     color:var(--text);font-size:12.5px;padding:8px 14px;border-radius:8px;opacity:0;transition:opacity .18s,transform .18s;pointer-events:none;z-index:9}
   #toast.show{opacity:1;transform:translateX(-50%)}
@@ -233,6 +250,7 @@
 
       <section class="sec">
         <h2>Pose</h2>
+        <button class="btn grow" id="camOpen" style="width:100%;margin-bottom:10px" title="Strike the pose yourself: the selected figure copies it from your webcam or a photo">◉ Pose from camera or photo</button>
         <div class="lbl">Work</div>
         <div class="grid g3" id="presets"></div>
         <div class="lbl" style="margin-top:10px">Two-person scenes</div>
@@ -421,6 +439,33 @@
     </div>
     <div id="flash"></div>
     <div id="toast"></div>
+    <div id="camPanel" role="dialog" aria-label="Pose from camera">
+      <div class="cp-head"><span>Pose from camera</span><span class="cp-who" id="camWho"></span><button class="btn icon" id="camClose" aria-label="Close">✕</button></div>
+      <div class="cp-view" id="camView">
+        <video id="camVideo" playsinline muted></video>
+        <img id="camPhoto" alt="">
+        <canvas id="camDraw"></canvas>
+        <div class="cp-count" id="camCount"></div>
+        <div class="cp-empty" id="camEmpty">Start the camera, or drop a photo here</div>
+      </div>
+      <div class="cp-status" id="camStatus">Nothing leaves this computer: the pose is read in the browser.</div>
+      <div class="row">
+        <button class="btn grow" id="camStart">▶ Start camera</button>
+        <button class="btn grow" id="camPhotoBtn">From photo…</button>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <button class="btn grow" id="camLive" disabled title="The figure copies you continuously; press again to stop and keep the pose">● Follow live</button>
+        <button class="btn primary grow" id="camSnap" disabled title="3-second countdown, then one steady capture (Space)">Snap in 3</button>
+      </div>
+      <div class="split" style="margin-top:8px">
+        <div class="field"><label for="camBody">Body</label>
+          <select id="camBody"><option value="auto">Auto</option><option value="full">Full body</option><option value="upper">Upper body only</option></select></div>
+        <div class="field"><label for="camModel">Model</label>
+          <select id="camModel"><option value="lite">Fast (6 MB)</option><option value="full" selected>Balanced (9 MB)</option><option value="heavy">Accurate (31 MB)</option></select></div>
+      </div>
+      <label class="toggle"><span>Swap sides<span class="d">Figure acts as your reflection</span></span><input type="checkbox" id="camSwap"><i></i></label>
+      <input type="file" id="camFile" accept="image/*" hidden>
+    </div>
     <div id="fatal"><div><b>three.js didn't load.</b><br>Pose Bench pulls three.js r128 from cdnjs on first open —<br>check the network connection and reload.</div></div>
   </main>
 
@@ -1431,7 +1476,7 @@ function refreshFigUI(){
   $('rHeight').value=Math.round(act.height*100); $('vHeight').textContent=act.heightCm()+' cm';
   $('rBulk').value=Math.round(act.bulk*100); $('vBulk').textContent=Math.round(act.bulk*100)+'%';
   $('handL').value=act.hands.l; $('handR').value=act.hands.r;
-  refreshLookSel(); refreshLinkSel(); syncFacing();
+  refreshLookSel(); refreshLinkSel(); camWho(); syncFacing();
 }
 function refreshAll(){refreshFigUI();refreshJointList();selectJoint(sel);}
 function addFigure(from){
@@ -2126,6 +2171,8 @@ addEventListener('keydown',e=>{
     return;
   }
   const mod=e.ctrlKey||e.metaKey;
+  // Space snaps while the camera panel is up — the whole point is not having to reach the laptop
+  if(e.key===' '&&!typing&&$('camPanel').classList.contains('open')&&camS.stream){e.preventDefault();camSnap();return;}
   if(mod&&(e.key==='z'||e.key==='Z')){if(typing)return;e.preventDefault();e.shiftKey?redo():undo();return;}
   if(mod&&(e.key==='y'||e.key==='Y')){if(typing)return;e.preventDefault();redo();return;}
   if(typing||mod||e.altKey)return;
@@ -2154,6 +2201,382 @@ function updateHud(){
   const multi=figures.length>1?`${act.name} · `:'';
   const h=hovered&&!(hovered.fig===act&&hovered.joint===sel)?`<span class="h">hover: ${labelOf(hovered.joint)}</span>`:'';
   $('hud').innerHTML=`${multi}<b>${labelOf(sel)}</b>${h}`;
+}
+
+/* ================= pose from camera / photo =================
+ * MediaPipe Pose Landmarker (@mediapipe/tasks-vision, Apache-2.0) reads 33 body landmarks from the webcam or a
+ * photo, in the browser — nothing is uploaded. retarget() turns them into this rig's joint rotations:
+ *   - DIRECTIONS, not positions: each segment's direction is taken, the figure keeps its own bone lengths, so any
+ *     performer can drive any build;
+ *   - the figure keeps its MARK and FACING: with the hips in view the performer's overall turn is removed and only
+ *     the twist between hips and shoulders is kept — the camera does the framing, not the figure;
+ *   - GATED: a joint whose landmarks the model is unsure of (visibility < 0.5) keeps its current angle, and a seated
+ *     figure or a webcam that cannot see the legs drives the upper body only;
+ *   - ANATOMICAL: the performer's right wrist drives the figure's right wrist; the preview is mirrored like a selfie
+ *     so that feels natural. "Swap sides" makes the figure their reflection instead.
+ * MediaPipe world space: x = image right, y = down, z = away from the camera, hips at the origin. For a performer
+ * facing the camera that is (x, -y, -z) in figure space (+X = the figure's left, +Y up, +Z forward). */
+const MP={ver:'1.0.1',vision:null,files:null,lm:null,model:null,mode:null,loading:null};
+MP.base='https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@'+MP.ver;
+const MP_MODELS={lite:'pose_landmarker_lite',full:'pose_landmarker_full',heavy:'pose_landmarker_heavy'};
+const mpModelUrl=m=>'https://storage.googleapis.com/mediapipe-models/pose_landmarker/'+MP_MODELS[m]+'/float16/latest/'+MP_MODELS[m]+'.task';
+const LM={nose:0,lEye:2,rEye:5,lEar:7,rEar:8,mouthL:9,mouthR:10,lSh:11,rSh:12,lEl:13,rEl:14,lWr:15,rWr:16,lPi:17,rPi:18,lIn:19,rIn:20,
+  lTh:21,rTh:22,lHip:23,rHip:24,lKn:25,rKn:26,lAn:27,rAn:28,lHe:29,rHe:30,lFt:31,rFt:32};
+// landmark pairs to swap for "swap sides" (every left index with its right twin)
+const LM_PAIRS=[[1,4],[2,5],[3,6],[7,8],[9,10],[11,12],[13,14],[15,16],[17,18],[19,20],[21,22],[23,24],[25,26],[27,28],[29,30],[31,32]];
+const LM_BONES=[[11,12],[11,13],[13,15],[12,14],[14,16],[11,23],[12,24],[23,24],[23,25],[25,27],[24,26],[26,28],[27,29],[29,31],[27,31],
+  [28,30],[30,32],[28,32],[15,19],[15,17],[17,19],[16,20],[16,18],[18,20],[0,7],[0,8]];
+const VIS_OK=0.5;
+// the nose tip sits below the ear line; a level head measures as looking this far down, so it is taken back out
+const NOSE_DROP=15*DEG;
+
+async function mpLoad(model,mode){
+  while(MP.loading){try{await MP.loading;}catch(e){}}
+  if(MP.lm&&MP.model===model){if(MP.mode!==mode){await MP.lm.setOptions({runningMode:mode});MP.mode=mode;}return MP.lm;}
+  MP.loading=(async()=>{
+    if(!MP.vision){
+      MP.vision=await import(MP.base+'/vision_bundle.mjs');
+      MP.files=await MP.vision.FilesetResolver.forVisionTasks(MP.base+'/wasm');
+    }
+    if(MP.lm){try{MP.lm.close();}catch(e){}MP.lm=null;}
+    const opts=d=>({baseOptions:{modelAssetPath:mpModelUrl(model),delegate:d},runningMode:mode,numPoses:1,
+      minPoseDetectionConfidence:0.5,minPosePresenceConfidence:0.5,minTrackingConfidence:0.5});
+    // the GPU delegate needs WebGL2 in a worker-friendly state; the CPU one always works, just slower
+    try{MP.lm=await MP.vision.PoseLandmarker.createFromOptions(MP.files,opts('GPU'));}
+    catch(e){MP.lm=await MP.vision.PoseLandmarker.createFromOptions(MP.files,opts('CPU'));}
+    MP.model=model; MP.mode=mode;
+  })();
+  try{await MP.loading;}finally{MP.loading=null;}
+  return MP.lm;
+}
+// one pose -> {p:[V3 in figure space], v:[visibility 0..1], img:[normalised image landmarks]}
+function readPose(res){
+  const w=res&&res.worldLandmarks&&res.worldLandmarks[0], im=res&&res.landmarks&&res.landmarks[0];
+  if(!w||w.length<33)return null;
+  const vis=i=>{const a=w[i].visibility, b=im&&im[i]?im[i].visibility:undefined;
+    const x=[a,b].filter(z=>typeof z==='number'); return x.length?Math.max(...x):1;};
+  return {p:w.map(l=>new V3(l.x,-l.y,-l.z)),v:w.map((_,i)=>vis(i)),img:im||null};
+}
+function swapPose(pose){
+  const p=pose.p.map(v=>v.clone()), v=pose.v.slice(), img=pose.img?pose.img.map(x=>Object.assign({},x)):null;
+  LM_PAIRS.forEach(([a,b])=>{[p[a],p[b]]=[p[b],p[a]];[v[a],v[b]]=[v[b],v[a]];if(img)[img[a],img[b]]=[img[b],img[a]];});
+  p.forEach(q=>{q.x=-q.x;});
+  return {p,v,img};
+}
+// the One-Euro filter: steady when still, quick when moving — the standard answer to landmark jitter
+class OneEuro{
+  constructor(minCut,beta){this.mc=minCut;this.b=beta;this.x=null;this.dx=0;this.t=0;}
+  static a(cut,dt){const r=2*Math.PI*cut*dt;return r/(r+1);}
+  f(v,t){
+    if(this.x===null){this.x=v;this.t=t;return v;}
+    const dt=Math.max(1e-3,(t-this.t)/1000); this.t=t;
+    this.dx+=OneEuro.a(1,dt)*((v-this.x)/dt-this.dx);
+    this.x+=OneEuro.a(this.mc+this.b*Math.abs(this.dx),dt)*(v-this.x);
+    return this.x;
+  }
+}
+function basisXY(X,Yg){const x=X.clone().normalize(),z=new V3().crossVectors(x,Yg).normalize(),y=new V3().crossVectors(z,x);
+  return new Q().setFromRotationMatrix(new THREE.Matrix4().makeBasis(x,y,z));}
+function basisXZ(X,Zg){const x=X.clone().normalize(),y=new V3().crossVectors(Zg,x).normalize(),z=new V3().crossVectors(x,y);
+  return new Q().setFromRotationMatrix(new THREE.Matrix4().makeBasis(x,y,z));}
+// share one world orientation between two stacked joints (spine+chest, neck+head): half each, limits permitting
+function splitTwo(f,a,b,qW){
+  const pa=f.joints[a].pivot; f.group.updateMatrixWorld(true);
+  const total=pa.parent.getWorldQuaternion(new Q()).invert().multiply(qW);
+  pa.quaternion.copy(new Q().slerp(total,0.5)); f.clampJoint(a);
+  setWorldQuat(f,b,qW);
+}
+// swing a two-bone limb around its root-to-end line so the middle joint points at `pole` (generic swivel)
+function swivelJ(f,A,B,C,eff,pole){
+  const sh=f.joints[A].pivot; f.group.updateMatrixWorld(true);
+  const S=sh.getWorldPosition(new V3()), E=f.joints[B].pivot.getWorldPosition(new V3()), H=f.joints[C].pivot.localToWorld(eff.clone());
+  const a=H.sub(S).normalize(), e=E.sub(S), p=pole.clone();
+  e.addScaledVector(a,-e.dot(a)); p.addScaledVector(a,-p.dot(a));
+  if(e.lengthSq()<1e-6||p.lengthSq()<1e-6)return;
+  e.normalize(); p.normalize();
+  const ang=Math.atan2(a.dot(new V3().crossVectors(e,p)),e.dot(p));
+  const wq=sh.getWorldQuaternion(new Q()), pq=sh.parent.getWorldQuaternion(new Q()).invert();
+  sh.quaternion.copy(pq.multiply(new Q().setFromAxisAngle(a,ang)).multiply(wq)); f.clampJoint(A);
+}
+/* A two-bone limb set EXACTLY from two measured directions. The upper segment's direction and the plane the middle
+ * joint bends in fix the root's whole orientation, so it is built rather than searched for. Euler XZY has two
+ * equivalent answers for most orientations, and near a T (arm straight out sideways) the one a solver drifts to can
+ * need more twist than the shoulder allows — a clamp then moved the arm 12° off. So both are tried and the one that
+ * fits the joint's limits is kept. bend: +1 when the middle joint folds forward (elbow), -1 backward (knee).
+ * Returns false for a straight limb, whose bend plane (and so its twist) is not measurable. */
+function limbFrame(f,root,midJ,du,df,bend){
+  const u=du.clone().normalize(), d=df.clone().normalize();
+  const zc=d.clone().addScaledVector(u,-d.dot(u));
+  if(zc.length()<0.08)return false;
+  const Y=u.clone().negate(), Z=zc.normalize().multiplyScalar(bend), X=new V3().crossVectors(Y,Z);
+  const j=f.joints[root], pv=j.pivot; f.group.updateMatrixWorld(true);
+  const local=pv.parent.getWorldQuaternion(new Q()).invert().multiply(new Q().setFromRotationMatrix(new THREE.Matrix4().makeBasis(X,Y,Z)));
+  const e1=new THREE.Euler().setFromQuaternion(local,'XZY');
+  const wrap=a=>Math.atan2(Math.sin(a),Math.cos(a));
+  const cands=[[e1.x,e1.y,e1.z],[wrap(e1.x+Math.PI),wrap(e1.y+Math.PI),wrap(Math.PI-e1.z)]];
+  const over=c=>{let o=0;[['x',c[0]],['y',c[1]],['z',c[2]]].forEach(([ax,v])=>{const a=v*RAD*j.sgn[ax],L=j.lim[ax];o+=Math.max(0,L[0]-a,a-L[1]);});return o;};
+  const best=cands.sort((a,b)=>over(a)-over(b))[0];
+  pv.rotation.set(best[0],best[1],best[2]); f.clampJoint(root);
+  f.setA(midJ,'x',Math.acos(clamp(u.dot(d),-1,1))*RAD); f.clampJoint(midJ);
+  return true;
+}
+function retarget(f,pose,o={}){
+  const P=pose.p.map(v=>v.clone()), vis=pose.v;
+  const ok=(...ks)=>ks.every(k=>vis[LM[k]]>=VIS_OK);
+  const at=k=>P[LM[k]];
+  const mid=(a,b)=>at(a).clone().add(at(b)).multiplyScalar(0.5);
+  const hipsSeen=ok('lHip','rHip');
+  const legsSeen=ok('lKn')||ok('rKn');
+  const upper=o.body==='upper'||(o.body!=='full'&&(!!f.seat||!hipsSeen||!legsSeen));
+  // remove the performer's overall turn (the figure keeps its facing). Without hips in view, the performer is taken
+  // to face the camera, which is how people sit at a webcam — so a twist toward the side still reads as a twist.
+  if(!upper&&hipsSeen){
+    const hl=at('lHip').clone().sub(at('rHip'));
+    const yaw=Math.atan2(-hl.z,hl.x), Y=new V3(0,1,0);
+    P.forEach(v=>v.applyAxisAngle(Y,-yaw));
+  }
+  f.group.updateMatrixWorld(true);
+  const gq=f.group.getWorldQuaternion(new Q());
+  const toW=v=>v.clone().applyQuaternion(gq);
+  const J=n=>f.joints[n].pivot.getWorldPosition(new V3());
+  const applied=[];
+  if(!upper){
+    setWorldQuat(f,'pelvis',gq.clone().multiply(basisXY(at('lHip').clone().sub(at('rHip')),new V3(0,1,0))));
+    applied.push('hips');
+  }
+  if(ok('lSh','rSh')){
+    const X=at('lSh').clone().sub(at('rSh'));
+    const Yv=hipsSeen?mid('lSh','rSh').sub(mid('lHip','rHip'))
+      :new V3(0,1,0).applyQuaternion(f.joints.chest.pivot.getWorldQuaternion(new Q())).applyQuaternion(gq.clone().invert());
+    const qc=gq.clone().multiply(basisXY(X,Yv));
+    splitTwo(f,'spine','chest',qc);
+    // Half-and-half is a guess about how the bend is shared; a figure built differently ends up with its shoulders
+    // off the measured line. So aim the waist to put the real shoulder midpoint on that line, then restore the chest.
+    if(hipsSeen)for(let it=0;it<2;it++){
+      const mh=J('lHip').add(J('rHip')).multiplyScalar(0.5), ms=J('lShoulder').add(J('rShoulder')).multiplyScalar(0.5);
+      aimJoint(f,'spine',ms,mh.clone().addScaledVector(toW(Yv.clone().normalize()),ms.distanceTo(mh)));
+      setWorldQuat(f,'chest',qc);
+    }
+    applied.push('torso');
+  }
+  {
+    const ears=ok('lEar','rEar'), eyes=ok('lEye','rEye');
+    if(ok('nose')&&(ears||eyes)){
+      const X=ears?at('lEar').clone().sub(at('rEar')):at('lEye').clone().sub(at('rEye'));
+      const base=ears?mid('lEar','rEar'):mid('lEye','rEye');
+      const fwd=at('nose').clone().sub(base);
+      if(ears)fwd.applyAxisAngle(X.clone().normalize(),-NOSE_DROP);
+      releaseFor(f,'head');
+      splitTwo(f,'neck','head',gq.clone().multiply(basisXZ(X,fwd)));
+      applied.push('head');
+    }
+  }
+  for(const [s,S,E,W,I,Pk] of [['l','lSh','lEl','lWr','lIn','lPi'],['r','rSh','rEl','rWr','rIn','rPi']]){
+    if(!ok(S,E))continue;
+    releaseFor(f,s+'Shoulder');
+    const duW=toW(at(E).clone().sub(at(S)).normalize());
+    const eT=J(s+'Shoulder').addScaledVector(duW,f.T.upperArm*f.height);
+    if(ok(W)){
+      const wT=eT.clone().addScaledVector(toW(at(W).clone().sub(at(E)).normalize()),f.T.forearm*f.height);
+      const dfW=wT.clone().sub(eT).normalize();
+      // a straight arm has no measurable bend plane: aim it, keeping the twist it has
+      if(!limbFrame(f,s+'Shoulder',s+'Elbow',duW,dfW,1))
+        for(let it=0;it<3;it++){
+          solveChain(f,[s+'Shoulder',s+'Elbow'],s+'Wrist',new V3(),wT);
+          swivelJ(f,s+'Shoulder',s+'Elbow',s+'Wrist',new V3(),duW);
+        }
+      if(ok(I,Pk)){
+        // palm from the index and pinky knuckles: fingers along F, across-palm a points to the thumb side
+        const F=toW(mid(I,Pk).sub(at(W)).normalize()), a=toW(at(I).clone().sub(at(Pk)).normalize());
+        orientHand(f,s,new V3().crossVectors(F,a).multiplyScalar(s==='l'?1:-1),F);
+      }
+    }else aimSwing(f,s+'Shoulder',J(s+'Elbow'),eT);
+    applied.push(s==='l'?'left arm':'right arm');
+  }
+  if(!upper)for(const [s,H,K,A,He,Ft] of [['l','lHip','lKn','lAn','lHe','lFt'],['r','rHip','rKn','rAn','rHe','rFt']]){
+    if(!ok(H,K))continue;
+    const duW=toW(at(K).clone().sub(at(H)).normalize());
+    const kT=J(s+'Hip').addScaledVector(duW,f.T.thigh*f.height);
+    if(ok(A)){
+      const aT=kT.clone().addScaledVector(toW(at(A).clone().sub(at(K)).normalize()),f.T.shin*f.height);
+      if(!limbFrame(f,s+'Hip',s+'Knee',duW,aT.clone().sub(kT).normalize(),-1))
+        for(let it=0;it<3;it++){
+          solveChain(f,[s+'Hip',s+'Knee'],s+'Ankle',new V3(),aT);
+          swivelJ(f,s+'Hip',s+'Knee',s+'Ankle',new V3(),duW);
+        }
+      if(ok(He,Ft)){
+        const F=toW(at(Ft).clone().sub(at(He)).normalize());
+        setWorldQuat(f,s+'Ankle',basisXZ(new V3().crossVectors(new V3(0,1,0),F),F));
+      }
+    }else aimSwing(f,s+'Hip',J(s+'Knee'),kT);
+    applied.push(s==='l'?'left leg':'right leg');
+  }
+  f.ground();
+  figures.forEach(x=>{if(x!==f&&(x.look&&x.look.fig===f.id||x.goals.some(g=>g.fig===f.id)))resolveFig(x);});
+  return {applied,upper};
+}
+// Landmarks generated FROM a posed figure, in MediaPipe's own format — what the model would report for this rig.
+// Used to test retarget() round trips without a camera or a model in the loop.
+function synthLandmarks(f){
+  f.group.updateMatrixWorld(true);
+  const gqi=f.group.getWorldQuaternion(new Q()).invert(), J=f.joints, h=f.T.head, k=f.T.hand;
+  const W=(n,x,y,z)=>J[n].pivot.localToWorld(new V3(x||0,y||0,z||0));
+  const pts=new Array(33);
+  pts[0]=W('head',0,0.065*h,0.1*h);
+  [[1,0.018],[2,0.032],[3,0.046]].forEach(([i,x])=>{pts[i]=W('head',x*h,0.1*h,0.082*h);});
+  [[4,-0.018],[5,-0.032],[6,-0.046]].forEach(([i,x])=>{pts[i]=W('head',x*h,0.1*h,0.082*h);});
+  pts[7]=W('head',0.078*h,0.095*h,-0.01*h); pts[8]=W('head',-0.078*h,0.095*h,-0.01*h);
+  pts[9]=W('head',0.02*h,0.04*h,0.085*h); pts[10]=W('head',-0.02*h,0.04*h,0.085*h);
+  for(const [s,sg,o] of [['l',1,0],['r',-1,1]]){
+    pts[11+o]=W(s+'Shoulder'); pts[13+o]=W(s+'Elbow'); pts[15+o]=W(s+'Wrist');
+    pts[17+o]=W(s+'Wrist',-sg*0.005*k,-0.08*k,-0.025*k);   // pinky knuckle
+    pts[19+o]=W(s+'Wrist',-sg*0.005*k,-0.085*k,0.025*k);   // index knuckle
+    pts[21+o]=W(s+'Wrist',-sg*0.01*k,-0.05*k,0.04*k);      // thumb
+    pts[23+o]=W(s+'Hip'); pts[25+o]=W(s+'Knee'); pts[27+o]=W(s+'Ankle');
+    pts[29+o]=W(s+'Ankle',0,-f.T.ankleH+0.01,-0.07*f.T.foot); pts[31+o]=W(s+'Ankle',0,-f.T.ankleH+0.01,0.16*f.T.foot);
+  }
+  const loc=pts.map(p=>p.sub(f.group.position).applyQuaternion(gqi));
+  const hip=loc[23].clone().add(loc[24]).multiplyScalar(0.5);
+  return {worldLandmarks:[loc.map(p=>{const q=p.clone().sub(hip);return {x:q.x,y:-q.y,z:-q.z,visibility:1};})]};
+}
+
+/* ---------- the panel ---------- */
+const camS={stream:null,live:false,raf:0,filters:null,last:null,recent:[],lastT:-1,counting:false,photo:false,hold:0};
+const camStatus=(m,warn)=>{const e=$('camStatus');e.textContent=m;e.classList.toggle('warn',!!warn);};
+// a message that answers something the user did stays up a moment; the per-frame idle line must not wipe it at once
+const camTell=(m,warn)=>{camStatus(m,warn);camS.hold=performance.now()+2600;};
+const camIdle=(m,warn)=>{if(performance.now()>camS.hold)camStatus(m,warn);};
+function camWho(){$('camWho').textContent=act?'→ '+act.name:'';}
+function camOpen(){$('camPanel').classList.add('open');camWho();}
+function camStopStream(){
+  cancelAnimationFrame(camS.raf); camS.raf=0;
+  if(camS.stream){camS.stream.getTracks().forEach(t=>t.stop());camS.stream=null;}
+  const v=$('camVideo'); v.srcObject=null; v.style.display='none';
+  $('camStart').textContent='▶ Start camera'; $('camLive').disabled=true; $('camSnap').disabled=true;
+  if(!camS.photo)$('camEmpty').style.display='';
+  camClear();
+}
+function camClose(){camLiveStop(true);camStopStream();$('camPanel').classList.remove('open');}
+function camClear(){const c=$('camDraw');c.getContext('2d').clearRect(0,0,c.width,c.height);}
+function camDraw(pose,w,h){
+  const c=$('camDraw'); if(c.width!==w||c.height!==h){c.width=w;c.height=h;}
+  const x=c.getContext('2d'); x.clearRect(0,0,w,h);
+  if(!pose||!pose.img)return;
+  const P=pose.img, good=i=>pose.v[i]>=VIS_OK;
+  x.lineWidth=Math.max(2,w/220); x.lineCap='round';
+  LM_BONES.forEach(([a,b])=>{x.strokeStyle=good(a)&&good(b)?'rgba(245,177,47,.95)':'rgba(160,165,175,.35)';
+    x.beginPath();x.moveTo(P[a].x*w,P[a].y*h);x.lineTo(P[b].x*w,P[b].y*h);x.stroke();});
+  P.forEach((p,i)=>{if(i>0&&i<11&&i!==7&&i!==8)return;x.fillStyle=good(i)?'#ffc757':'rgba(160,165,175,.4)';
+    x.beginPath();x.arc(p.x*w,p.y*h,Math.max(2.5,w/160),0,7);x.fill();});
+}
+function camSmooth(pose,t){
+  if(!camS.filters)camS.filters=pose.p.map(()=>[new OneEuro(1.2,0.8),new OneEuro(1.2,0.8),new OneEuro(1.2,0.8)]);
+  return {p:pose.p.map((v,i)=>new V3(camS.filters[i][0].f(v.x,t),camS.filters[i][1].f(v.y,t),camS.filters[i][2].f(v.z,t))),v:pose.v,img:pose.img};
+}
+function camApply(pose,commitNow){
+  if(!act||!pose)return null;
+  const r=retarget(act,$('camSwap').checked?swapPose(pose):pose,{body:$('camBody').value});
+  syncAxes();
+  if(commitNow)commit();
+  return r;
+}
+function camSay(r,verb){
+  if(!r)return;
+  (verb==='Following:'?camIdle:camTell)(r.applied.length?verb+' '+r.applied.join(', ')+(r.upper?' (upper body only)':'')+' onto '+act.name+'.'
+    :'Nobody clear enough in view to copy — step back or turn toward the camera.',!r.applied.length);
+}
+function camTick(){
+  camS.raf=requestAnimationFrame(camTick);
+  const v=$('camVideo');
+  if(!camS.stream||!MP.lm||MP.mode!=='VIDEO'||v.readyState<2||v.currentTime===camS.lastT)return;
+  camS.lastT=v.currentTime;
+  let res; const t=performance.now();
+  try{res=MP.lm.detectForVideo(v,t);}catch(e){return;}
+  const raw=readPose(res);
+  camDraw(raw,v.videoWidth,v.videoHeight);
+  if(!raw){camS.last=null;if(!camS.counting)camIdle('No one in view yet.',true);return;}
+  const sm=camSmooth(raw,t); camS.last=sm;
+  camS.recent.push({t,p:sm}); while(camS.recent.length&&t-camS.recent[0].t>450)camS.recent.shift();
+  if(camS.live){const r=camApply(sm,false);if(r&&!camS.counting)camSay(r,'Following:');}
+  else if(!camS.counting)camIdle('Ready — Follow live, or Snap in 3 (Space).');
+}
+async function camStart(){
+  if(camS.stream){camLiveStop(true);camStopStream();return;}
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){camStatus('This browser cannot open a camera here.',true);return;}
+  camStatus('Asking for the camera…');
+  try{camS.stream=await navigator.mediaDevices.getUserMedia({video:{width:{ideal:640},height:{ideal:480},facingMode:'user'},audio:false});}
+  catch(e){camStatus('No camera: '+(e.message||e.name||e)+(EMBED?' — the storyboard page has to allow the camera.':''),true);return;}
+  camS.photo=false; $('camPhoto').style.display='none'; $('camEmpty').style.display='none';
+  const v=$('camVideo'); v.srcObject=camS.stream; v.style.display='block'; v.classList.add('mirror'); $('camDraw').classList.add('mirror');
+  try{await v.play();}catch(e){}
+  $('camStart').textContent='■ Stop camera';
+  camStatus('Loading the pose model (first time: a few MB)…');
+  try{await mpLoad($('camModel').value,'VIDEO');}
+  catch(e){camStatus('The pose model did not load: '+(e.message||e),true);return;}
+  camS.filters=null; camS.recent=[]; camS.lastT=-1;
+  $('camLive').disabled=false; $('camSnap').disabled=false;
+  camStatus('Camera on. Stand back for full body, or sit at the desk for upper body.');
+  cancelAnimationFrame(camS.raf); camTick();
+}
+function camLiveStop(keep){
+  if(!camS.live)return;
+  camS.live=false; $('camLive').classList.remove('on'); $('camLive').textContent='● Follow live';
+  if(keep)commit();
+}
+function camLiveToggle(){
+  if(camS.live){camLiveStop(true);camTell('Stopped — the pose is kept. Frame it, or snap again.');return;}
+  camS.live=true; $('camLive').classList.add('on'); $('camLive').textContent='■ Stop following';
+}
+function camSnap(){
+  if(camS.counting||!camS.stream)return;
+  camLiveStop(true);
+  camS.counting=true; let n=3; const el=$('camCount');
+  const step=()=>{
+    if(n>0){el.textContent=n;camStatus('Hold the pose…');n--;setTimeout(step,1000);return;}
+    el.textContent=''; camS.counting=false;
+    const list=camS.recent.slice(-12);
+    if(!list.length){camStatus('Nobody in view at the moment of the snap.',true);return;}
+    // average the last moment's frames: a snapshot should be the pose you held, not one jittery frame
+    const avg={p:list[0].p.p.map((_,i)=>{const s=new V3();list.forEach(x=>s.add(x.p.p[i]));return s.divideScalar(list.length);}),
+      v:list[list.length-1].p.v,img:list[list.length-1].p.img};
+    const r=camApply(avg,true); camSay(r,'Copied');
+    const fl=$('flash'); fl.classList.remove('fire'); void fl.offsetWidth; fl.classList.add('fire');
+  };
+  step();
+}
+async function camFromImage(src){
+  camLiveStop(true);
+  const img=$('camPhoto');
+  await new Promise((res,rej)=>{img.onload=res;img.onerror=()=>rej(new Error('that picture could not be read'));img.src=src;});
+  camS.photo=true;
+  if(camS.stream)camStopStream();
+  img.style.display='block'; $('camEmpty').style.display='none'; $('camDraw').classList.remove('mirror');
+  camStatus('Loading the pose model…');
+  let res;
+  try{await mpLoad($('camModel').value,'IMAGE');res=MP.lm.detect(img);}
+  catch(e){camStatus('The pose model did not run: '+(e.message||e),true);return null;}
+  const pose=readPose(res);
+  camDraw(pose,img.naturalWidth,img.naturalHeight);
+  if(!pose){camStatus('No person found in that picture.',true);return null;}
+  const r=camApply(pose,true); camSay(r,'Copied');
+  return r;
+}
+$('camOpen').onclick=camOpen;
+$('camClose').onclick=camClose;
+$('camStart').onclick=camStart;
+$('camLive').onclick=camLiveToggle;
+$('camSnap').onclick=camSnap;
+$('camPhotoBtn').onclick=()=>$('camFile').click();
+$('camFile').onchange=e=>{const f=e.target.files[0];e.target.value='';if(!f)return;const r=new FileReader();r.onload=()=>camFromImage(r.result);r.readAsDataURL(f);};
+$('camModel').onchange=()=>{if(camS.stream)mpLoad($('camModel').value,'VIDEO').catch(e=>camStatus('The pose model did not load: '+(e.message||e),true));};
+{
+  const pnl=$('camPanel');
+  pnl.addEventListener('dragover',e=>{e.preventDefault();pnl.classList.add('dragover');});
+  pnl.addEventListener('dragleave',()=>pnl.classList.remove('dragover'));
+  pnl.addEventListener('drop',e=>{e.preventDefault();pnl.classList.remove('dragover');
+    const f=[...(e.dataTransfer.files||[])].find(x=>/^image\//.test(x.type));
+    if(!f){camStatus('Drop a photo (JPG, PNG, WebP).',true);return;}
+    const r=new FileReader();r.onload=()=>camFromImage(r.result);r.readAsDataURL(f);});
 }
 
 /* ================= storyboarder host mode =================
@@ -2314,7 +2737,7 @@ refreshPropUI();
   figures.forEach(f=>{if(f.look==='camera')aimHead(f,camera.position);});
   updateHandles();renderer.render(scene,camera);})();
 if(EMBED)try{window.parent.postMessage({type:'posebench:ready'},'*');}catch(e){}
-window.__pb={blockingText,get figures(){return figures;},get props(){return props;},get act(){return act;},cam,fitShot,setView,frameAll,PRESETS,WORK,SCENES,
+window.__pb={blockingText,retarget,synthLandmarks,readPose,camFromImage,mpLoad,camApply,camStart,camSnap,get camState(){return camS;},get figures(){return figures;},get props(){return props;},get act(){return act;},cam,fitShot,setView,frameAll,PRESETS,WORK,SCENES,
   camera,applyCam,selectJoint,solveChain,commit,applyNamed,goalFrame,eyePoint};
 })();
 </script>

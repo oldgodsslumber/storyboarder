@@ -102,7 +102,11 @@
        readable before its first line runs */
     fr.name = 'posebench-embed';
     fr.className = cls;
-    fr.setAttribute('allow', 'clipboard-write');
+    /* camera: Pose Bench can pose a figure from the webcam (pose_from_camera_plan.md). `camera *`, not
+       plain `camera`: the plain form means "the frame's own src origin", and a srcdoc frame on a file://
+       page has an opaque origin that nothing matches — so the camera was refused with the attribute in
+       place. The frame's content is this build's own Pose Bench, so any-origin is not a widening. */
+    fr.setAttribute('allow', 'clipboard-write *; camera *');
     fr.srcdoc = window.SB_POSEBENCH_SRC;
     return fr;
   }

@@ -136,3 +136,42 @@ The same file still runs on its own in a browser.
   It is plain English on purpose: it goes into the prompt writer's input.
 - Test harness for host mode: see the storyboarder's e2e flow (open from a card → link → Use → reopen identical →
   re-block marks older takes → passes render). `window.__pb.blockingText` is exposed for checks.
+
+## Pose from camera or photo (body, 2026-09-28)
+This is the **◉ Pose from camera or photo** button at the top of the Pose section. It opens a floating panel with a
+mirrored webcam preview and the detected skeleton drawn over it. It also has **Follow live**, **Snap in 3** (or press
+Space), **From photo…** (you can also drop a picture on the panel), a Body switch (auto / full / upper), a model choice
+(lite / full / heavy) and **Swap sides**. The plan is `pose_from_camera_plan.md` in the storyboarder repo.
+
+- **Model:** `@mediapipe/tasks-vision@1.0.1` (Apache-2.0), loaded with dynamic `import()` from jsdelivr. The models come
+  from `storage.googleapis.com/mediapipe-models/pose_landmarker/*`. The GPU delegate is tried first, then the CPU one.
+  Everything loads lazily on first use (about 21 MB with the full model) and runs in the browser. `mpLoad(model, mode)`
+  switches between VIDEO and IMAGE mode.
+- **Axes:** MediaPipe world coordinates `(x right, y down, z away)`, centred on the hips, become figure space as
+  `(x, -y, -z)`. Landmarks are anatomical, so the performer's right wrist drives the figure's right wrist.
+  - I confirmed this on a real photo: `left_shoulder` sits on the image's right, and the nose z is negative.
+  - Mannequin renders are *not* a valid test for this. A faceless mannequin reads as seen from behind, so the model
+    swaps its left/right labels.
+- **`retarget(f, pose, {body})`:**
+  - **Figure keeps its facing.** With the hips visible, the performer's overall turn (from the hip line) is removed;
+    with no hips visible, the performer is assumed to face the camera.
+  - **Pelvis:** roll from the hip line.
+  - **Torso:** `splitTwo` spine/chest from the shoulder line plus hips→shoulders, with a spine correction pass.
+  - **Head:** `splitTwo` neck/head from the ear line plus nose, with `NOSE_DROP` of 15°.
+  - **Limbs:** `limbFrame` builds the root's orientation *exactly* from both segment directions and picks whichever
+    of the two XZY Euler solutions fits the joint limits. A straight limb falls back to `solveChain` + `swivelJ`.
+  - **Palm:** from the index and pinky knuckles, via `orientHand`, which also sets forearm twist.
+  - **Feet:** from heel→toe.
+  - **Gating:** a landmark with visibility < 0.5 leaves its joint as it was. Body `auto` means upper body only when the
+    figure is seated or the hips/knees can't be seen.
+- **Tests (headless, no webcam):**
+  - `synthLandmarks(f)` makes MediaPipe-format landmarks *from* a posed rig. Round-tripping 18 presets from a Man onto
+    a shorter, turned Woman comes back within 3° per segment.
+  - Gating checks: upper body keeps the legs, hidden legs switch to auto-upper, a hidden arm keeps its angle, seated
+    stays seated, facing and mark are kept, swap sides mirrors, and each snap is one undo step.
+  - Photo mode on the MediaPipe sample photo.
+  - Live mode with `getUserMedia` stubbed to a `canvas.captureStream()`.
+- **Storyboarder embed:** the iframe is `allow="clipboard-write *; camera *"`. A plain `camera` is refused, because a
+  srcdoc frame on a file:// page has an opaque origin.
+- **Next:** hands (HandLandmarker → forearm twist, wrist, finger shapes, a *point* shape), then two performers →
+  two figures, then "match the webcam's view".

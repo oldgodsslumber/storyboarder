@@ -916,6 +916,16 @@ never stored in the board. **Export → 3D blocking, per shot** writes them to `
 with the scene JSON, for ComfyUI or VACE work. `pose_bench_plan.md` describes the ComfyUI
 route this is shaped for.
 
+**Pose from camera or photo.** Instead of dragging limbs, you can strike the pose yourself.
+**◉ Pose from camera or photo** (the top of the Pose section) shows a mirrored webcam preview.
+**Follow live** has the figure copy you continuously; **Snap in 3** (or Space) takes one steady capture
+after a countdown; **From photo…** reads a picture instead.
+
+The figure keeps its own build, its spot on the floor and its facing, so you pose once and then move
+the camera around it. A webcam that can't see your legs (sitting at the desk) drives only the upper
+body, and a seated figure stays seated. It runs Google's MediaPipe pose model in the browser, and
+no video leaves the machine. The first use downloads about 21 MB.
+
 Pose Bench's source is `posebench/pose.html`. It still opens on its own in a browser, and
 `node build.mjs` carries it into the app as `js/posebench-src.js`, which is generated.
 

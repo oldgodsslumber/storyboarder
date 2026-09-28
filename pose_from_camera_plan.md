@@ -1,6 +1,6 @@
 # Pose from camera — plan
 
-Status: **planned, not built.** Builds on `pose_bench_plan.md` (built on `V3-posebench`).
+Status: **body built** on `V3-posebench` (2026-09-28) — steps 1, 2, 3 and 5 of the order of work. **Hands (step 4) are next**, then two performers and matching the webcam's view. Builds on `pose_bench_plan.md` (built on `V3-posebench`).
 
 ## Why
 
@@ -218,7 +218,7 @@ Very little changes, which is the benefit of it living inside Pose Bench.
 1. ~~Pose only, or follow facing too?~~ **Decided (2026-09-28): the figure keeps its mark and its
    facing.** The performer's turn is applied as body twist only; the camera moves around the
    figure independently, which is the point. There is no "follow facing" option in the first build.
-2. **Mirror on by default** (recommended: it matches the preview, so it feels natural), or
-   anatomical (your right is the figure's left when you face each other).
-3. **Hands in the first build**, or body first and hands as a follow-up (recommended: body
-   first, since hands are the least reliable part from a laptop camera).
+2. **Decided:** your right hand moves the figure's right hand, and the preview is mirrored like a
+   selfie so that feels natural. A "swap sides" switch exists for the rare case you want the
+   figure to act as your reflection.
+3. **Decided:** body first, hands as the next build.
