@@ -16,7 +16,10 @@
   }
   *{box-sizing:border-box}
   html,body{height:100%;margin:0}
-  body{font-family:var(--font);color:var(--text);background:var(--bg);overflow:hidden;display:flex;
+  /* clip, not just hidden: a hidden overflow can still be scrolled by the browser — focusing a control that
+     sits below the fold scrolled the whole page up and everything vanished. clip makes the page unscrollable. */
+  html{overflow:hidden;overflow:clip}
+  body{font-family:var(--font);color:var(--text);background:var(--bg);overflow:hidden;overflow:clip;display:flex;
     user-select:none;-webkit-user-select:none}
   button{font-family:var(--font);color:var(--text);cursor:pointer;border:0;background:none}
   input,select{font-family:var(--font)}
@@ -96,8 +99,10 @@
   .note b{color:var(--accent-hi);font-weight:600}
 
   /* toggles */
-  .toggle{display:flex;align-items:center;justify-content:space-between;font-size:12.5px;padding:4px 0;cursor:pointer}
-  .toggle input{position:absolute;opacity:0;pointer-events:none}
+  .toggle{display:flex;align-items:center;justify-content:space-between;font-size:12.5px;padding:4px 0;cursor:pointer;position:relative}
+  /* kept inside its own label: with no positioned ancestor the hidden box sat against the PAGE, far below the
+     panel's scroll, and focusing it (clicking the switch) scrolled the whole page off-screen */
+  .toggle input{position:absolute;right:0;top:50%;margin:0;width:1px;height:1px;opacity:0;pointer-events:none}
   .toggle i{width:36px;height:20px;border-radius:12px;background:var(--panel-3);border:1px solid var(--line);position:relative;
     transition:background .15s;flex:0 0 36px}
   .toggle i::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--muted);
