@@ -6,7 +6,9 @@ Status: **built on `V3-posebench` (2026-09-28).** Decisions taken as recommended
 - the brief is assembled, and the H3 prose comes from the writer (with an assembled fallback);
 - the still is taken at the in-point.
 
-H3's limits were checked: whole seconds from 4 to 15, at most 9 images, 3 videos and 12 files.
+H3's limits were checked: whole seconds, at most 9 images, 3 videos and 12 files. The clip length
+range depends on the setup: MiniMax's site starts at 4 s, the team's setup at 3. So the range is a
+board setting (`settings.mxm.minS` / `maxS`), defaulting to 3–15 s.
 
 What was built differently from the plan below:
 - the full-reference H3 scaffold lives in `mxm.js` rather than as a route inside `h3.js`, so the

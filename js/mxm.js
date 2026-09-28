@@ -23,8 +23,10 @@
 (function (SB) {
   'use strict';
 
-  /* MiniMax H3: whole seconds, 4 to 15; up to 9 images, 3 videos, 12 files. */
-  const H3 = { minS: 4, maxS: 15, images: 9, videos: 3, files: 12 };
+  /* MiniMax H3: whole seconds; up to 9 images, 3 videos, 12 files. The shortest
+     and longest clip depend on the setup (MiniMax's own site starts at 4 s; the
+     team's goes down to 3), so those two are board settings, defaulting here. */
+  const H3 = { minS: 3, maxS: 15, images: 9, videos: 3, files: 12 };
 
   const DEFAULT_STYLE = 'photorealistic cinematic, documentary-style realism, natural light, ' +
     'shallow depth of field, soft contrast, subtle film grain';
@@ -52,7 +54,10 @@
   /* the board's MiniMax settings, with the defaults filled in */
   function settings(p) {
     const m = (p && p.settings && p.settings.mxm) || {};
+    const num = function (v, d) { v = Math.round(+v); return isFinite(v) && v > 0 ? v : d; };
+    const minS = num(m.minS, H3.minS);
     return {
+      minS: minS, maxS: Math.max(minS, num(m.maxS, H3.maxS)),
       style: tidy(m.style) || DEFAULT_STYLE,
       negImage: Array.isArray(m.negImage) && m.negImage.length ? m.negImage : NEG_IMAGE,
       negVideo: Array.isArray(m.negVideo) && m.negVideo.length ? m.negVideo : NEG_VIDEO
@@ -162,7 +167,8 @@
       blocked: poseOK(shot), frame: !!(shot.render || shot.image),
       style: st.style, negatives: lane === 'image' ? st.negImage : st.negVideo,
       aspect: (shot.pose && shot.pose.aspect) || (SB.Imagine && SB.Imagine.aspectOf ? SB.Imagine.aspectOf(p) : '16:9'),
-      duration: dur == null ? null : Math.min(H3.maxS, Math.max(H3.minS, Math.round(dur))),
+      minS: st.minS, maxS: st.maxS,
+      duration: dur == null ? null : Math.min(st.maxS, Math.max(st.minS, Math.round(dur))),
       clipSeconds: dur
     };
     m.warnings = warnings(p, shot, m);
@@ -206,10 +212,10 @@
       if (m.perf && m.perf.rec && Math.abs((m.perf.link.at || 0) - (m.perf.link.in || 0)) > 0.02) {
         w.push('The still was taken ' + (m.perf.link.at - m.perf.link.in).toFixed(1) + ' s into the clip, not at its start — reopen the blocking and Use again so the first frame and the clip begin together.');
       }
-      if (m.clipSeconds != null && m.clipSeconds < H3.minS) {
-        w.push('The clip is ' + m.clipSeconds.toFixed(1) + ' s; MiniMax H3 makes ' + H3.minS + ' s at least, so set ' + H3.minS + ' s and the action finishes early — or lengthen the range in Pose Bench.');
-      } else if (m.clipSeconds != null && m.clipSeconds > H3.maxS) {
-        w.push('The clip is ' + m.clipSeconds.toFixed(1) + ' s; MiniMax H3 makes ' + H3.maxS + ' s at most — split the card or trim the range in Pose Bench.');
+      if (m.clipSeconds != null && m.clipSeconds < m.minS - 0.5) {
+        w.push('The clip is ' + m.clipSeconds.toFixed(1) + ' s; this board’s MiniMax H3 makes ' + m.minS + ' s at least, so set ' + m.minS + ' s and the action finishes early — or lengthen the range in Pose Bench.');
+      } else if (m.clipSeconds != null && m.clipSeconds > m.maxS + 0.5) {
+        w.push('The clip is ' + m.clipSeconds.toFixed(1) + ' s; this board’s MiniMax H3 makes ' + m.maxS + ' s at most — split the card or trim the range in Pose Bench.');
       }
       const imgs = m.assets.filter(function (a) { return a.ext !== 'mp4'; }).length;
       if (imgs > H3.images) w.push(imgs + ' pictures; MiniMax H3 takes ' + H3.images + ' at most.');
@@ -433,7 +439,7 @@
     if (m.lane === 'video') {
       L.push('Duration: ' + (m.duration != null ? m.duration + ' s' +
         (Math.abs(m.clipSeconds - m.duration) > 0.05 ? ' (the clip is ' + m.clipSeconds.toFixed(1) + ' s)' : '')
-        : 'your choice (4–15 s) — this card has no performance clip'));
+        : 'your choice (' + m.minS + '–' + m.maxS + ' s) — this card has no performance clip'));
     }
     L.push('');
     L.push('Upload in this order:');
@@ -609,16 +615,26 @@
       nIn.value = (lane === 'image' ? s0.negImage : s0.negVideo).join(', ');
       const lab = function (t, el) { const l = SB.el('label', 'field'); l.appendChild(SB.el('span', null, t)); l.appendChild(el); return l; };
       st.appendChild(lab('Style', sIn));
+      const minIn = SB.el('input'), maxIn = SB.el('input');
+      minIn.type = maxIn.type = 'text'; minIn.size = maxIn.size = 4;
+      minIn.value = s0.minS; maxIn.value = s0.maxS;
+      if (lane === 'video') {
+        const row = SB.el('div', 'mxm-dur');
+        row.appendChild(lab('Shortest clip your H3 makes (s)', minIn));
+        row.appendChild(lab('Longest (s)', maxIn));
+        st.appendChild(row);
+      }
       st.appendChild(lab(lane === 'image' ? 'Negatives — first frame (comma-separated, without “no”)' : 'Negatives — video (comma-separated, without “no”)', nIn));
       const saveSt = function () {
         const cur = p.settings.mxm = Object.assign({}, p.settings.mxm || {});
         cur.style = tidy(sIn.value) === DEFAULT_STYLE ? '' : tidy(sIn.value);
         const list2 = nIn.value.split(',').map(tidy).filter(Boolean);
         cur[lane === 'image' ? 'negImage' : 'negVideo'] = list2;
+        if (lane === 'video') { cur.minS = Math.round(+minIn.value) || 0; cur.maxS = Math.round(+maxIn.value) || 0; }
         SB.app.changed(true);
         render();
       };
-      sIn.addEventListener('change', saveSt); nIn.addEventListener('change', saveSt);
+      [sIn, nIn, minIn, maxIn].forEach(function (el) { el.addEventListener('change', saveSt); });
       body.appendChild(st);
       body.dataset.sig = m.sig;
     };

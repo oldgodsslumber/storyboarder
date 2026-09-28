@@ -1098,6 +1098,11 @@
     ['negImage', 'negVideo'].forEach(function (k) {
       s.mxm[k] = Array.isArray(s.mxm[k]) ? s.mxm[k].map(String).filter(Boolean) : [];
     });
+    /* the H3 clip lengths this board's setup allows; 0 means the default */
+    ['minS', 'maxS'].forEach(function (k) {
+      const v = Math.round(+s.mxm[k]);
+      s.mxm[k] = isFinite(v) && v > 0 ? v : 0;
+    });
     if (typeof s.showVideoPrompt !== 'boolean') s.showVideoPrompt = false;
     /* Fill each export key on its own: a file written by an older build has
      * some of them, and replacing the whole object would throw away the

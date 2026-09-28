@@ -994,8 +994,9 @@ files, `prompt.txt` and `ORDER.txt`, and copies the prompt to the clipboard.
     frame"*).
   - **Write:** asks the writer model for the 350–500-word description, checked against the label
     table. Without it, a shorter assembled version goes out and ORDER.txt says so.
-  - **Limits:** H3 makes whole-second clips from 4 to 15 s and takes up to 9 pictures; the package
-    warns when a card falls outside them.
+  - **Limits:** H3 makes whole-second clips and takes up to 9 pictures. The shortest and longest clip
+    depend on the setup, so they're a board setting in the dialog (*Style and negatives*), defaulting
+    to 3–15 s. The package warns when a card falls outside them.
 - **Order of work:**
   1. Block the shot, and record or import a performance if it moves.
   2. Make the first frame on MiniMax Image and drop the chosen one on the card.
