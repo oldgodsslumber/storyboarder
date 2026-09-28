@@ -399,6 +399,7 @@
         <div class="field"><label for="capFmt">Format</label>
           <select id="capFmt"><option value="png">PNG</option><option value="jpeg">JPEG (smaller)</option></select></div>
         <label class="toggle"><span>Transparent background<span class="d">PNG only · hides floor &amp; grid</span></span><input type="checkbox" id="tAlpha"><i></i></label>
+        <label class="toggle"><span>Grid in captures<span class="d">Off: renders, clips and passes leave the floor grid out, even while you see it here</span></span><input type="checkbox" id="tCapGrid"><i></i></label>
         <div class="lbl" style="margin-top:9px">Also capture <span style="color:var(--muted-2)">· ControlNet / guide images</span></div>
         <div class="grid g4" id="passes">
           <button class="btn" data-pass="depth" title="Inverse depth, near = white (Depth ControlNet, Wan VACE depth)">Depth</button>
@@ -1462,7 +1463,8 @@ const SKEY='posebench.v2.scene', LKEY='posebench.v2.poses';
 // standalone tool's scene (file:// pages share one localStorage). Saved poses and pass choices stay shared.
 function saveScene(s){if(!EMBED)store.set(SKEY,s);}
 const hist={stack:[],i:-1};
-function snapScene(){return {v:2,figures:figures.map(f=>f.snap()),props:props.map(p=>p.snap()),active:act&&act.id,
+let capGrid=false;   // "Grid in captures": saved with the scene, so a card's clips and passes follow it
+function snapScene(){return {v:2,capGrid,figures:figures.map(f=>f.snap()),props:props.map(p=>p.snap()),active:act&&act.id,
   camera:{target:cam.target.toArray().map(v=>Math.round(v*1e4)/1e4),theta:cam.theta,phi:cam.phi,radius:cam.radius,mm:cam.mm,shot:cam.shot},
   bg:bgHex,keyAz,takes:takes.map(takeSnap)};}
 const poseKey=s=>JSON.stringify({f:s.figures,p:s.props,a:s.active});
@@ -1498,6 +1500,7 @@ function applySceneFile(s){
   loadFigures(s.figures.map(f=>Object.assign({},f,{id:f.id||uid()})),s.active,s.props);
   if(s.bg)setBg(s.bg);
   if(typeof s.keyAz==='number')setKey(s.keyAz);
+  capGrid=s.capGrid===true; $('tCapGrid').checked=capGrid;   // older scenes: off
   if(s.camera){const c=s.camera;cam.target.fromArray(c.target||[0,1,0]);cam.theta=c.theta;cam.phi=c.phi;cam.radius=c.radius;cam.shot=c.shot||'full';setLens(c.mm||35);applyCam();markShot();}
   else fitShot('full');
   if(typeof closeTimeline==='function'&&tl.take)closeTimeline();
@@ -1901,6 +1904,10 @@ function renderShot(outW,outH,region,opt){
     grid.visible=false; shadowPlane.visible=pass==='depth'&&$('tDepthFloor').checked;
     renderer.setClearColor(0x000000,1); unswap=swapPassMaterials(pass);
   }else if(transparent){grid.visible=false;shadowPlane.visible=false;renderer.setClearColor(bgHex,0);}
+  /* The floor grid is for working, not for the picture: an image or video model handed a render with the grid in it
+     draws the grid (it turned up in MiniMax outputs). So a capture leaves it out unless "Grid in captures" is on —
+     whatever the viewport's own Grid switch says. */
+  if(pass==='beauty'&&!capGrid)grid.visible=false;
   renderer.setPixelRatio(1); renderer.setSize(outW,outH,false);
   let url;
   try{
@@ -2230,6 +2237,7 @@ $('tShadow').onchange=e=>{shadowPlane.visible=e.target.checked;};
 $('tGrid').onchange=e=>{grid.visible=e.target.checked;};
 $('tHandles').onchange=e=>{showHandles=e.target.checked;};
 ['capAspect','capSize','tGuide','tThirds'].forEach(id=>$(id).addEventListener('change',updateGuide));
+$('tCapGrid').onchange=e=>{capGrid=e.target.checked;commit();};
 $('tAlpha').onchange=e=>{if(e.target.checked&&$('capFmt').value==='jpeg'){$('capFmt').value='png';toast('Transparent needs PNG — switched format');}};
 $('capFmt').onchange=e=>{if(e.target.value==='jpeg'&&$('tAlpha').checked){$('tAlpha').checked=false;toast('JPEG has no transparency — turned it off');}};
 $('capBtn').onclick=capture; $('capBtn2').onclick=capture; $('turnBtn').onclick=turnaround;
