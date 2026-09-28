@@ -375,6 +375,7 @@
           <button class="btn" data-pass="mask" title="Flat colour per figure (regional prompting, inpaint masks)">Mask</button>
         </div>
         <label class="toggle" style="margin-top:4px"><span>Floor in depth pass</span><input type="checkbox" id="tDepthFloor" checked><i></i></label>
+        <label class="toggle"><span>OpenPose: every face point<span class="d">Off = drop the ear/eyes turned away, like a detector (best for ControlNet)</span></span><input type="checkbox" id="tOpFace"><i></i></label>
         <label class="toggle"><span>Frame guide</span><input type="checkbox" id="tGuide" checked><i></i></label>
         <label class="toggle"><span>Rule of thirds</span><input type="checkbox" id="tThirds"><i></i></label>
         <div class="gap"></div>
@@ -1745,14 +1746,14 @@ const OP_COLORS=[[255,0,0],[255,85,0],[255,170,0],[255,255,0],[170,255,0],[85,25
 const OP_LIMBS=[[1,2],[1,5],[2,3],[3,4],[5,6],[6,7],[1,8],[8,9],[9,10],[1,11],[11,12],[12,13],[1,0],[0,14],[14,16],[0,15],[15,17]];
 // 0 nose 1 neck 2-4 R arm 5-7 L arm 8-10 R leg 11-13 L leg 14 R eye 15 L eye 16 R ear 17 L ear.
 // Face points that turn away from the camera are dropped, as a detector would, which is what tells a model where the head faces.
-function poseKeypoints(f){
+function poseKeypoints(f,allFace){
   f.group.updateMatrixWorld(true);
   const J=n=>f.joints[n].pivot.getWorldPosition(new V3());
   const head=f.joints.head.pivot, h=f.T.head;
   const HL=(x,y,z)=>head.localToWorld(new V3(x*h,y*h,z*h));
   const hq=head.getWorldQuaternion(new Q());
   const fwd=new V3(0,0,1).applyQuaternion(hq), left=new V3(1,0,0).applyQuaternion(hq), right=left.clone().negate();
-  const vis=(p,dir,th)=>dir.dot(camera.position.clone().sub(p).normalize())>th?p:null;
+  const vis=(p,dir,th)=>allFace||dir.dot(camera.position.clone().sub(p).normalize())>th?p:null;
   const ls=J('lShoulder'), rs=J('rShoulder');
   return [
     vis(HL(0,0.084,0.105),fwd,-0.05), ls.clone().add(rs).multiplyScalar(0.5),
@@ -1762,10 +1763,18 @@ function poseKeypoints(f){
     vis(HL(-0.08,0.092,-0.006),right,-0.25), vis(HL(0.08,0.092,-0.006),left,-0.25),
   ];
 }
-function renderPose(outW,outH,region){
-  const people=withShotCamera(outW,outH,region,()=>figures.map(f=>poseKeypoints(f).map(p=>{
-    if(!p)return null; const v=p.clone().project(camera);
-    if(v.z<-1||v.z>1||Math.abs(v.x)>1.02||Math.abs(v.y)>1.02)return null;
+/* Every body joint is drawn, including ones outside the frame: the canvas crops a limb at the edge the way the
+ * frame crops the body. Dropping off-frame joints used to take their whole limb with them - a medium shot lost both
+ * legs, a raised hand lost its forearm - although the rig knows exactly where they are. Only a point behind the
+ * camera is left out, since it has no place in the picture at all.
+ * Face points turned away from the camera are still dropped by default, because that is how a detector reports a
+ * turned head and how an OpenPose ControlNet reads which way someone faces; `allFace` keeps them all. */
+function renderPose(outW,outH,region,allFace){
+  const people=withShotCamera(outW,outH,region,()=>figures.map(f=>poseKeypoints(f,allFace).map(p=>{
+    if(!p)return null;
+    const cp=p.clone().applyMatrix4(camera.matrixWorldInverse);
+    if(cp.z>-camera.near)return null;
+    const v=p.clone().project(camera);
     return [(v.x+1)/2*outW,(1-v.y)/2*outH];
   })));
   const c=document.createElement('canvas'); c.width=outW; c.height=outH;
@@ -1791,7 +1800,7 @@ function withShotCamera(outW,outH,region,fn){
 // render one pass into a data URL; region = the part of the viewport to shoot (null = full frame at outW/outH aspect)
 function renderShot(outW,outH,region,opt){
   const pass=opt.pass||'beauty';
-  if(pass==='openpose')return renderPose(outW,outH,region);
+  if(pass==='openpose')return renderPose(outW,outH,region,opt.allFace!=null?!!opt.allFace:opAllFace());
   const transparent=pass==='beauty'&&!!opt.transparent, jpeg=pass==='beauty'&&opt.fmt==='jpeg'&&!transparent;
   const was={grid:grid.visible,shadow:shadowPlane.visible,handles:handles.visible,pr:renderer.getPixelRatio(),hov:hovered};
   hovered=null; figures.forEach(f=>f.highlight(null,null)); handles.visible=false;
@@ -1815,7 +1824,10 @@ function renderShot(outW,outH,region,opt){
   }
   return url;
 }
-const PKEY='posebench.v2.passes';
+const PKEY='posebench.v2.passes', OPFKEY='posebench.v2.opface';
+const opAllFace=()=>!!$('tOpFace').checked;
+$('tOpFace').checked=!!store.get(OPFKEY);
+$('tOpFace').onchange=e=>store.set(OPFKEY,e.target.checked);
 const passes=new Set(store.get(PKEY)||['depth','openpose']);
 const activePasses=()=>['beauty',...PASS_ORDER.filter(p=>passes.has(p))];
 function captureOpts(){return {transparent:$('tAlpha').checked,fmt:$('capFmt').value};}
