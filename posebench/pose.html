@@ -467,11 +467,14 @@
         <button class="btn primary grow" id="camSnap" disabled title="3-second countdown, then one steady capture (Space)">Snap in 3</button>
       </div>
       <div class="split" style="margin-top:8px">
+        <div class="field"><label for="camPeople">People</label>
+          <select id="camPeople"><option value="auto">Auto</option><option value="1">One</option><option value="2">Two</option></select></div>
         <div class="field"><label for="camBody">Body</label>
           <select id="camBody"><option value="auto">Auto</option><option value="full">Full body</option><option value="upper">Upper body only</option></select></div>
-        <div class="field"><label for="camModel">Model</label>
-          <select id="camModel"><option value="lite">Fast (6 MB)</option><option value="full" selected>Balanced (9 MB)</option><option value="heavy">Accurate (31 MB)</option></select></div>
       </div>
+      <div class="field"><label for="camModel">Model</label>
+        <select id="camModel"><option value="lite">Fast (6 MB)</option><option value="full" selected>Balanced (9 MB)</option><option value="heavy">Accurate (31 MB)</option></select></div>
+      <label class="toggle"><span>Arrange like the photo<span class="d">Two or more people in a photo: place and turn them as it shows</span></span><input type="checkbox" id="camArrange" checked><i></i></label>
       <label class="toggle"><span>Swap sides<span class="d">Figure acts as your reflection</span></span><input type="checkbox" id="camSwap"><i></i></label>
       <button class="btn grow" id="camReset" style="width:100%;margin-top:6px" title="Put the figure back to standing (a seated figure keeps its seat)">Reset figure to neutral</button>
       <input type="file" id="camFile" accept="image/*" hidden>
@@ -2237,10 +2240,15 @@ function updateHud(){
  *     so that feels natural. "Swap sides" makes the figure their reflection instead.
  * MediaPipe world space: x = image right, y = down, z = away from the camera, hips at the origin. For a performer
  * facing the camera that is (x, -y, -z) in figure space (+X = the figure's left, +Y up, +Z forward). */
-const MP={ver:'1.0.1',vision:null,files:null,lm:null,model:null,mode:null,loading:null};
+const MP={ver:'1.0.1',vision:null,files:null,lm:{},model:null,det:null,loading:null};
 MP.base='https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@'+MP.ver;
 const MP_MODELS={lite:'pose_landmarker_lite',full:'pose_landmarker_full',heavy:'pose_landmarker_heavy'};
 const mpModelUrl=m=>'https://storage.googleapis.com/mediapipe-models/pose_landmarker/'+MP_MODELS[m]+'/float16/latest/'+MP_MODELS[m]+'.task';
+// the person finder for photos (and webcams) with more than one person in them. The pose model is built for ONE
+// prominent person: asked for four it returned the same man three times and never found the second. So people are
+// found first, then each one's pose is read from their own crop. lite2 because lite0 missed one of two walkers;
+// int8 because it is small (7.5 MB) and fast on the CPU delegate — which it needs: on the GPU one it finds nothing.
+const DET_URL='https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite2/int8/latest/efficientdet_lite2.tflite';
 const LM={nose:0,lEye:2,rEye:5,lEar:7,rEar:8,mouthL:9,mouthR:10,lSh:11,rSh:12,lEl:13,rEl:14,lWr:15,rWr:16,lPi:17,rPi:18,lIn:19,rIn:20,
   lTh:21,rTh:22,lHip:23,rHip:24,lKn:25,rKn:26,lAn:27,rAn:28,lHe:29,rHe:30,lFt:31,rFt:32};
 // landmark pairs to swap for "swap sides" (every left index with its right twin)
@@ -2251,24 +2259,108 @@ const VIS_OK=0.5;
 // the nose tip sits below the ear line; a level head measures as looking this far down, so it is taken back out
 const NOSE_DROP=15*DEG;
 
-async function mpLoad(model,mode){
+async function mpVision(){
+  if(MP.vision)return;
+  MP.vision=await import(MP.base+'/vision_bundle.mjs');
+  MP.files=await MP.vision.FilesetResolver.forVisionTasks(MP.base+'/wasm');
+}
+// one load at a time: two clicks during a first download must not start two
+async function mpSerial(fn){
   while(MP.loading){try{await MP.loading;}catch(e){}}
-  if(MP.lm&&MP.model===model){if(MP.mode!==mode){await MP.lm.setOptions({runningMode:mode});MP.mode=mode;}return MP.lm;}
-  MP.loading=(async()=>{
-    if(!MP.vision){
-      MP.vision=await import(MP.base+'/vision_bundle.mjs');
-      MP.files=await MP.vision.FilesetResolver.forVisionTasks(MP.base+'/wasm');
-    }
-    if(MP.lm){try{MP.lm.close();}catch(e){}MP.lm=null;}
+  MP.loading=fn();
+  try{return await MP.loading;}finally{MP.loading=null;}
+}
+// One pose landmarker per running mode. The webcam's VIDEO one carries tracking state from frame to frame; photos,
+// and the per-person crops of a two-person frame, go through an IMAGE one so they never disturb it.
+async function mpLoad(model,mode){
+  if(MP.model===model&&MP.lm[mode])return MP.lm[mode];
+  await mpSerial(async()=>{
+    if(MP.model===model&&MP.lm[mode])return;
+    await mpVision();
+    if(MP.model!==model){Object.values(MP.lm).forEach(l=>{try{l.close();}catch(e){}});MP.lm={};MP.model=model;}
     const opts=d=>({baseOptions:{modelAssetPath:mpModelUrl(model),delegate:d},runningMode:mode,numPoses:1,
       minPoseDetectionConfidence:0.5,minPosePresenceConfidence:0.5,minTrackingConfidence:0.5});
-    // the GPU delegate needs WebGL2 in a worker-friendly state; the CPU one always works, just slower
-    try{MP.lm=await MP.vision.PoseLandmarker.createFromOptions(MP.files,opts('GPU'));}
-    catch(e){MP.lm=await MP.vision.PoseLandmarker.createFromOptions(MP.files,opts('CPU'));}
-    MP.model=model; MP.mode=mode;
-  })();
-  try{await MP.loading;}finally{MP.loading=null;}
-  return MP.lm;
+    // the GPU delegate needs WebGL2; the CPU one always works, just slower
+    try{MP.lm[mode]=await MP.vision.PoseLandmarker.createFromOptions(MP.files,opts('GPU'));}
+    catch(e){MP.lm[mode]=await MP.vision.PoseLandmarker.createFromOptions(MP.files,opts('CPU'));}
+  });
+  return MP.lm[mode];
+}
+const mpReady=(model,mode)=>MP.model===model&&!!MP.lm[mode];
+async function detLoad(){
+  if(MP.det)return MP.det;
+  await mpSerial(async()=>{
+    if(MP.det)return;
+    await mpVision();
+    MP.det=await MP.vision.ObjectDetector.createFromOptions(MP.files,{baseOptions:{modelAssetPath:DET_URL,delegate:'CPU'},
+      runningMode:'IMAGE',categoryAllowlist:['person'],scoreThreshold:0.3,maxResults:6});
+  });
+  return MP.det;
+}
+// The model's default confidence (0.5) misses people a still plainly shows — two men shaking hands, head to toe,
+// came back as nobody. A photo, or a crop the person finder is sure holds someone, gets a second, more trusting
+// look before being declared empty.
+async function poseDetect(lm,src,retry){
+  let r=lm.detect(src);
+  if(retry&&!(r.landmarks&&r.landmarks.length)){
+    await lm.setOptions({minPoseDetectionConfidence:0.2,minPosePresenceConfidence:0.2});
+    try{r=lm.detect(src);}finally{await lm.setOptions({minPoseDetectionConfidence:0.5,minPosePresenceConfidence:0.5});}
+  }
+  return r;
+}
+const hipImg=pose=>{const I=pose.img;return I?{x:(I[23].x+I[24].x)/2,y:(I[23].y+I[24].y)/2}:{x:0.5,y:0.5};};
+// read one person's pose from their own box: crop with some room around them, then map the image landmarks back to
+// the whole frame (world landmarks are hip-centred metres already, so they need nothing)
+const cropCanvas=document.createElement('canvas');
+async function poseInBox(lm,src,W,H,b,retry){
+  const pw=b.width*0.22, ph=b.height*0.12;
+  const x0=Math.max(0,b.originX-pw), y0=Math.max(0,b.originY-ph);
+  const x1=Math.min(W,b.originX+b.width+pw), y1=Math.min(H,b.originY+b.height+ph);
+  const cw=x1-x0, ch=y1-y0; if(cw<24||ch<24)return null;
+  cropCanvas.width=Math.round(cw); cropCanvas.height=Math.round(ch);
+  cropCanvas.getContext('2d').drawImage(src,x0,y0,cw,ch,0,0,cropCanvas.width,cropCanvas.height);
+  const pose=readPose(await poseDetect(lm,cropCanvas,retry));
+  if(!pose)return null;
+  if(pose.img)pose.img=pose.img.map(l=>Object.assign({},l,{x:(x0+l.x*cw)/W,y:(y0+l.y*ch)/H}));
+  return pose;
+}
+// the box a tracked person will be in next frame: where their landmarks were, with room to move
+function boxFromPose(pose,W,H){
+  const pts=pose.img.filter((_,i)=>pose.v[i]>=0.3);
+  if(pts.length<6)return null;
+  const xs=pts.map(p=>p.x*W), ys=pts.map(p=>p.y*H);
+  const x0=Math.min(...xs),x1=Math.max(...xs),y0=Math.min(...ys),y1=Math.max(...ys);
+  const mx=(x1-x0)*0.18+10, my=(y1-y0)*0.1+10;
+  return {originX:x0-mx,originY:y0-my,width:(x1-x0)+2*mx,height:(y1-y0)+2*my};
+}
+// every person in a frame, left to right (as the picture shows them, or as the mirrored preview does)
+async function findPeople(src,W,H,max,o={}){
+  const det=await detLoad(), lm=await mpLoad($('camModel').value,'IMAGE');
+  let boxes=o.boxes;
+  if(!boxes){
+    boxes=det.detect(src).detections.filter(d=>d.boundingBox.height>H*0.08)
+      .sort((a,b)=>b.categories[0].score-a.categories[0].score).slice(0,max+2).map(d=>d.boundingBox);
+  }
+  const people=[];
+  /* The whole picture, read as one person, gives that person's pose with all the context around them — a crop cut
+     next to someone else read a long-coated man's hidden legs as sitting down, where the whole photo stood him up.
+     So whoever the whole-picture read lands on takes that pose, and only the others are read from crops. */
+  let whole=null;
+  if(o.whole){const r=readPose(await poseDetect(lm,src,o.retry!==false));if(r)whole=r;}
+  const inBox=(pose,b)=>{const h=hipImg(pose);return h.x*W>=b.originX&&h.x*W<=b.originX+b.width&&h.y*H>=b.originY&&h.y*H<=b.originY+b.height;};
+  for(const b of boxes){
+    let pose=null;
+    if(whole&&inBox(whole,b)){pose=whole;whole=null;}
+    else pose=await poseInBox(lm,src,W,H,b,o.retry!==false);
+    if(!pose)continue;
+    const h=hipImg(pose);
+    // two overlapping boxes around one person give that person twice
+    if(people.some(q=>{const g=hipImg(q.pose);return Math.hypot(g.x-h.x,g.y-h.y)<0.04;}))continue;
+    people.push({pose,box:b});
+    if(people.length>=max)break;
+  }
+  people.sort((a,b)=>o.mirror?hipImg(b.pose).x-hipImg(a.pose).x:hipImg(a.pose).x-hipImg(b.pose).x);
+  return people;
 }
 // one pose -> {p:[V3 in figure space], v:[visibility 0..1], img:[normalised image landmarks]}
 function readPose(res){
@@ -2473,13 +2565,17 @@ function synthLandmarks(f){
 }
 
 /* ---------- the panel ---------- */
-const camS={stream:null,live:false,raf:0,filters:null,last:null,recent:[],lastT:-1,counting:false,photo:false,hold:0};
+const camS={stream:null,live:false,raf:0,filters:null,last:null,recent:[],lastT:-1,counting:false,photo:false,hold:0,
+  m:{boxes:null,frame:0,filters:[],recent:[],figs:null,busy:false}};
 const camStatus=(m,warn,good)=>{const e=$('camStatus');e.textContent=m;e.classList.toggle('warn',!!warn);e.classList.toggle('ok',!!good&&!warn);};
 function camBusy(on,text){$('camBusy').classList.toggle('on',!!on);$('camPanel').classList.toggle('busy',!!on);if(text)$('camBusyTxt').textContent=text;}
 // a message that answers something the user did stays up a moment; the per-frame idle line must not wipe it at once
 const camTell=(m,warn,good)=>{camStatus(m,warn,good);camS.hold=performance.now()+(good?6000:2600);};
 const camIdle=(m,warn)=>{if(performance.now()>camS.hold)camStatus(m,warn);};
-function camWho(){$('camWho').textContent=act?'→ '+act.name:'';}
+// 'auto' (photos: however many there are; the webcam: one), '1', '2'
+const camPeople=()=>$('camPeople').value;
+const camTwoLive=()=>camPeople()==='2';
+function camWho(){$('camWho').textContent=camTwoLive()?'→ two figures':(act?'→ '+act.name:'');}
 function camOpen(){$('camPanel').classList.add('open');camWho();}
 function camStopStream(){
   cancelAnimationFrame(camS.raf); camS.raf=0;
@@ -2491,21 +2587,34 @@ function camStopStream(){
 }
 function camClose(){camLiveStop(true);camStopStream();$('camPanel').classList.remove('open');}
 function camClear(){const c=$('camDraw');c.getContext('2d').clearRect(0,0,c.width,c.height);}
-function camDraw(pose,w,h){
+const PERSON_RGB=['245,177,47','90,209,230','190,150,255','143,209,158'];
+// one skeleton per person, each in its own colour, numbered in the order they are assigned to figures
+function camDraw(poses,w,h){
   const c=$('camDraw'); if(c.width!==w||c.height!==h){c.width=w;c.height=h;}
   const x=c.getContext('2d'); x.clearRect(0,0,w,h);
-  if(!pose||!pose.img)return;
-  const P=pose.img, good=i=>pose.v[i]>=VIS_OK;
+  const list=(Array.isArray(poses)?poses:[poses]).filter(p=>p&&p.img);
   x.lineWidth=Math.max(2,w/220); x.lineCap='round';
-  LM_BONES.forEach(([a,b])=>{x.strokeStyle=good(a)&&good(b)?'rgba(245,177,47,.95)':'rgba(160,165,175,.35)';
-    x.beginPath();x.moveTo(P[a].x*w,P[a].y*h);x.lineTo(P[b].x*w,P[b].y*h);x.stroke();});
-  P.forEach((p,i)=>{if(i>0&&i<11&&i!==7&&i!==8)return;x.fillStyle=good(i)?'#ffc757':'rgba(160,165,175,.4)';
-    x.beginPath();x.arc(p.x*w,p.y*h,Math.max(2.5,w/160),0,7);x.fill();});
+  list.forEach((pose,k)=>{
+    const P=pose.img, good=i=>pose.v[i]>=0.3, col=PERSON_RGB[k%PERSON_RGB.length];
+    LM_BONES.forEach(([a,b])=>{x.strokeStyle=good(a)&&good(b)?'rgba('+col+',.95)':'rgba(160,165,175,.35)';
+      x.beginPath();x.moveTo(P[a].x*w,P[a].y*h);x.lineTo(P[b].x*w,P[b].y*h);x.stroke();});
+    P.forEach((p,i)=>{if(i>0&&i<11&&i!==7&&i!==8)return;x.fillStyle=good(i)?'rgb('+col+')':'rgba(160,165,175,.4)';
+      x.beginPath();x.arc(p.x*w,p.y*h,Math.max(2.5,w/160),0,7);x.fill();});
+    if(list.length>1){
+      const n=P[0];
+      // the label is drawn un-mirrored even when the canvas is shown mirrored
+      x.save(); x.translate(n.x*w,Math.max(14,n.y*h-18));
+      if($('camDraw').classList.contains('mirror'))x.scale(-1,1);
+      x.font='bold '+Math.round(Math.max(12,w/40))+'px sans-serif'; x.textAlign='center';
+      x.fillStyle='rgb('+col+')'; x.fillText(String(k+1),0,0); x.restore();
+    }
+  });
 }
-function camSmooth(pose,t){
-  if(!camS.filters)camS.filters=pose.p.map(()=>[new OneEuro(1.2,0.8),new OneEuro(1.2,0.8),new OneEuro(1.2,0.8)]);
-  return {p:pose.p.map((v,i)=>new V3(camS.filters[i][0].f(v.x,t),camS.filters[i][1].f(v.y,t),camS.filters[i][2].f(v.z,t))),v:pose.v,img:pose.img};
+function smoothWith(filters,pose,t){
+  if(!filters.length)pose.p.forEach(()=>filters.push([new OneEuro(1.2,0.8),new OneEuro(1.2,0.8),new OneEuro(1.2,0.8)]));
+  return {p:pose.p.map((v,i)=>new V3(filters[i][0].f(v.x,t),filters[i][1].f(v.y,t),filters[i][2].f(v.z,t))),v:pose.v,img:pose.img};
 }
+function camSmooth(pose,t){if(!camS.filters)camS.filters=[];return smoothWith(camS.filters,pose,t);}
 function camApply(pose,commitNow,o={}){
   if(!act||!pose)return null;
   const r=retarget(act,$('camSwap').checked?swapPose(pose):pose,Object.assign({body:$('camBody').value},o));
@@ -2521,13 +2630,82 @@ function camSay(r,verb){
   const msg=(live?'Following: ':'✓ '+verb+' ')+r.applied.join(', ')+(r.upper?' (upper body only)':'')+' → '+act.name+'.'+missed;
   if(live)camIdle(msg); else camTell(msg,false,true);
 }
+
+/* ---------- several people ---------- */
+const figScreenX=f=>{f.group.updateMatrixWorld(true);return f.joints.pelvis.pivot.getWorldPosition(new V3()).project(camera).x;};
+function spawnBeside(ref){
+  const f=new Figure({color:FIG_COLORS[figures.length%FIG_COLORS.length][0]}); figures.push(f);
+  f.setPose(PRESETS['Stand']);
+  camera.updateMatrixWorld();
+  const right=new V3().setFromMatrixColumn(camera.matrixWorld,0); right.y=0; right.normalize();
+  f.group.position.copy(ref.group.position).addScaledVector(right,0.9); f.group.position.y=0;
+  f.turn=ref.turn; f.ground(true);
+  return f;
+}
+// n figures to take n people, ordered left to right as the camera sees them: the selected figure and its nearest
+// neighbours on screen, and new ones added to the right when the scene has too few
+function figsForPeople(n){
+  if(n<=1)return act?[act]:[];
+  let list=figures.slice();
+  if(list.length>n){
+    const ax=figScreenX(act);
+    list=list.sort((a,b)=>Math.abs(figScreenX(a)-ax)-Math.abs(figScreenX(b)-ax)).slice(0,n);
+  }
+  list.sort((a,b)=>figScreenX(a)-figScreenX(b));
+  while(list.length<n)list.push(spawnBeside(list[list.length-1]||act));
+  refreshFigUI();
+  return list;
+}
+/* Place and turn the figures as the photo shows the people, relative to THIS camera: the leftmost figure keeps its
+ * spot, the others go where the photo puts them. Distance comes from each person's torso — its length in metres
+ * (the model's world landmarks) against its length in the picture, through an assumed 45° vertical lens — which
+ * holds for someone seated as well as standing. Facing is each person's turn toward or away from the photographer. */
+const PHOTO_FOV_V=45*DEG;
+function arrangeLikePhoto(figs,people,W,H){
+  const tv=Math.tan(PHOTO_FOV_V/2), th=tv*W/H;
+  const est=people.map(({pose})=>{
+    const I=pose.img, P=pose.p;
+    const torsoM=Math.max(0.2,P[11].clone().add(P[12]).multiplyScalar(0.5).distanceTo(P[23].clone().add(P[24]).multiplyScalar(0.5)));
+    const sx=(I[11].x+I[12].x)/2*W, sy=(I[11].y+I[12].y)/2*H, hx=(I[23].x+I[24].x)/2*W, hy=(I[23].y+I[24].y)/2*H;
+    const D=torsoM/(2*tv*Math.max(Math.hypot(sx-hx,sy-hy)/H,1e-3));
+    const hl=P[23].clone().sub(P[24]);
+    return {D,X:((I[23].x+I[24].x)-1)*th*D,yaw:Math.atan2(-hl.z,hl.x)};
+  });
+  camera.updateMatrixWorld();
+  const right=new V3().setFromMatrixColumn(camera.matrixWorld,0); right.y=0; right.normalize();
+  const fwd=new V3().setFromMatrixColumn(camera.matrixWorld,2).negate(); fwd.y=0; fwd.normalize();
+  const base=figs[0].group.position.clone(), e0=est[0];
+  figs.forEach((f,i)=>{
+    const e=est[i], c=carryStart(f), was=f.turn;
+    const pos=base.clone().addScaledVector(right,e.X-e0.X).addScaledVector(fwd,e.D-e0.D); pos.y=0;
+    f.group.position.copy(pos);
+    f.turn=Math.atan2(camera.position.x-pos.x,camera.position.z-pos.z)*RAD+e.yaw*RAD;
+    carryApply(c,f.turn-was,f.group.position);
+  });
+}
+function camApplyMulti(people,figs,o){
+  const res=people.map((pp,i)=>({fig:figs[i],r:retarget(figs[i],$('camSwap').checked?swapPose(pp.pose):pp.pose,
+    Object.assign({body:$('camBody').value},o))}));
+  syncAxes();
+  return res;
+}
+function camSayMulti(res,how,arranged){
+  const who=res.map((x,i)=>x.fig.name+' ('+(res.length===2?(i?'right':'left'):'#'+(i+1))+')').join(', ');
+  const miss=res.filter(x=>x.r.missed&&x.r.missed.length).map(x=>x.fig.name+': '+x.r.missed.join(', '));
+  camTell('✓ '+res.length+' people '+how+' → '+who+'.'+(arranged?' Placed and turned like the photo.':'')+
+    (miss.length?' Set to neutral (not clear enough): '+miss.join('; ')+'.':''),false,true);
+}
+
+/* ---------- the webcam ---------- */
 function camTick(){
   camS.raf=requestAnimationFrame(camTick);
   const v=$('camVideo');
-  if(!camS.stream||!MP.lm||MP.mode!=='VIDEO'||v.readyState<2||v.currentTime===camS.lastT)return;
+  if(!camS.stream||v.readyState<2||v.currentTime===camS.lastT)return;
+  if(camTwoLive()){camTickTwo(v);return;}
+  const lm=MP.lm.VIDEO; if(!lm)return;
   camS.lastT=v.currentTime;
   let res; const t=performance.now();
-  try{res=MP.lm.detectForVideo(v,t);}catch(e){return;}
+  try{res=lm.detectForVideo(v,t);}catch(e){return;}
   const raw=readPose(res);
   camDraw(raw,v.videoWidth,v.videoHeight);
   if(!raw){camS.last=null;if(!camS.counting)camIdle('No one in view yet.',true);return;}
@@ -2535,6 +2713,39 @@ function camTick(){
   camS.recent.push({t,p:sm}); while(camS.recent.length&&t-camS.recent[0].t>450)camS.recent.shift();
   if(camS.live){const r=camApply(sm,false);if(r&&!camS.counting)camSay(r,'Following:');}
   else if(!camS.counting)camIdle('Ready — Follow live, or Snap in 3 (Space).');
+}
+/* Two performers: people are found every dozen frames and tracked in between by where their landmarks were. They
+ * are ordered as the mirrored preview shows them, so whoever is on the left of the preview drives the left figure.
+ * Poses only — the figures keep their spots and facing on the webcam; arranging is for photos. */
+function camTickTwo(v){
+  const m=camS.m;
+  if(m.busy||!MP.lm.IMAGE||!MP.det)return;
+  camS.lastT=v.currentTime; m.busy=true;
+  const W=v.videoWidth,H=v.videoHeight,t=performance.now();
+  const redetect=!m.boxes||m.boxes.length<2||m.frame%12===0;
+  m.frame++;
+  findPeople(v,W,H,2,{mirror:true,retry:false,whole:true,boxes:redetect?null:m.boxes}).then(people=>{
+    m.boxes=people.map(p=>boxFromPose(p.pose,W,H)).filter(Boolean);
+    camDraw(people.map(p=>p.pose),W,H);
+    if(!people.length){if(!camS.counting)camIdle('No one in view yet.',true);return;}
+    while(m.filters.length<people.length)m.filters.push([]);
+    const sm=people.map((p,i)=>smoothWith(m.filters[i],p.pose,t));
+    m.recent.push({t,people:sm}); while(m.recent.length&&t-m.recent[0].t>450)m.recent.shift();
+    if(camS.live&&m.figs){
+      const res=camApplyMulti(sm.map(pose=>({pose})),m.figs.slice(0,sm.length),{});
+      if(!camS.counting)camIdle('Following '+res.length+' '+(res.length===1?'person':'people')+' → '+res.map(x=>x.fig.name).join(' + ')+'.');
+    }else if(!camS.counting)camIdle(people.length===2?'Two people in view — Follow live, or Snap in 3 (Space).'
+      :'One person in view — the second needs to step into the picture.',people.length<2);
+  }).catch(()=>{}).finally(()=>{m.busy=false;});
+}
+async function camLoadFor(){
+  const model=$('camModel').value;
+  const need=camTwoLive()?(!mpReady(model,'IMAGE')||!MP.det):!mpReady(model,'VIDEO');
+  camBusy(true,need?'Downloading the '+(camTwoLive()?'pose model and person finder':'pose model')+' (first time only)…':'Starting…');
+  try{
+    if(camTwoLive()){await mpLoad(model,'IMAGE');await detLoad();}
+    else await mpLoad(model,'VIDEO');
+  }finally{camBusy(false);}
 }
 async function camStart(){
   if(camS.stream){camLiveStop(true);camStopStream();return;}
@@ -2546,13 +2757,13 @@ async function camStart(){
   const v=$('camVideo'); v.srcObject=camS.stream; v.style.display='block'; v.classList.add('mirror'); $('camDraw').classList.add('mirror');
   try{await v.play();}catch(e){}
   $('camStart').textContent='■ Stop camera';
-  camBusy(true,MP.lm&&MP.model===$('camModel').value?'Starting…':'Downloading the pose model (first time only)…');
-  try{await mpLoad($('camModel').value,'VIDEO');}
-  catch(e){camBusy(false);camTell('The pose model did not load: '+(e.message||e),true);return;}
-  camBusy(false);
+  try{await camLoadFor();}
+  catch(e){camTell('The pose model did not load: '+(e.message||e),true);return;}
   camS.filters=null; camS.recent=[]; camS.lastT=-1;
+  camS.m.filters=[]; camS.m.recent=[]; camS.m.boxes=null; camS.m.frame=0;
   $('camLive').disabled=false; $('camSnap').disabled=false;
-  camStatus('Camera on. Stand back for full body, or sit at the desk for upper body.');
+  camStatus(camTwoLive()?'Camera on. Two people: stand side by side, both in the picture.'
+    :'Camera on. Stand back for full body, or sit at the desk for upper body.');
   cancelAnimationFrame(camS.raf); camTick();
 }
 function camLiveStop(keep){
@@ -2562,8 +2773,12 @@ function camLiveStop(keep){
 }
 function camLiveToggle(){
   if(camS.live){camLiveStop(true);camTell('Stopped — the pose is kept. Frame it, or snap again.');return;}
+  if(camTwoLive()){camS.m.figs=figsForPeople(2);commit();}
   camS.live=true; $('camLive').classList.add('on'); $('camLive').textContent='■ Stop following';
 }
+// average the last moment's frames: a snapshot should be the pose you held, not one jittery frame
+const averagePoses=list=>({p:list[0].p.map((_,i)=>{const s=new V3();list.forEach(x=>s.add(x.p[i]));return s.divideScalar(list.length);}),
+  v:list[list.length-1].v,img:list[list.length-1].img});
 function camSnap(){
   if(camS.counting||!camS.stream)return;
   camLiveStop(true);
@@ -2571,16 +2786,25 @@ function camSnap(){
   const step=()=>{
     if(n>0){el.textContent=n;camStatus('Hold the pose…');n--;setTimeout(step,1000);return;}
     el.textContent=''; camS.counting=false;
-    const list=camS.recent.slice(-12);
-    if(!list.length){camStatus('Nobody in view at the moment of the snap.',true);return;}
-    // average the last moment's frames: a snapshot should be the pose you held, not one jittery frame
-    const avg={p:list[0].p.p.map((_,i)=>{const s=new V3();list.forEach(x=>s.add(x.p.p[i]));return s.divideScalar(list.length);}),
-      v:list[list.length-1].p.v,img:list[list.length-1].p.img};
-    const r=camApply(avg,true,{fresh:true}); camSay(r,'Copied');
+    if(camTwoLive()){
+      const frames=camS.m.recent.slice(-12);
+      const most=Math.max(0,...frames.map(f=>f.people.length));
+      const use=frames.filter(f=>f.people.length===most);
+      if(!most){camTell('Nobody in view at the moment of the snap.',true);return;}
+      const people=[...Array(most)].map((_,i)=>({pose:averagePoses(use.map(f=>f.people[i]))}));
+      const figs=figsForPeople(most);
+      const res=camApplyMulti(people,figs,{fresh:true}); commit(); camSayMulti(res,'copied',false);
+    }else{
+      const list=camS.recent.slice(-12);
+      if(!list.length){camTell('Nobody in view at the moment of the snap.',true);return;}
+      const r=camApply(averagePoses(list.map(x=>x.p)),true,{fresh:true}); camSay(r,'Copied');
+    }
     const fl=$('flash'); fl.classList.remove('fire'); void fl.offsetWidth; fl.classList.add('fire');
   };
   step();
 }
+
+/* ---------- photos ---------- */
 // a photo is a deliberate still: parts the model is only fairly sure of are still worth using
 const PHOTO_VIS=0.3;
 async function camFromImage(src){
@@ -2593,17 +2817,38 @@ async function camFromImage(src){
   if(camS.stream)camStopStream();
   const shown=$('camPhoto'); shown.src=src; shown.style.display='block';
   $('camEmpty').style.display='none'; $('camDraw').classList.remove('mirror'); camClear();
-  camBusy(true,MP.lm&&MP.model===$('camModel').value?'Reading the pose…':'Downloading the pose model (first time only)…');
-  let res;
-  try{await mpLoad($('camModel').value,'IMAGE');camBusy(true,'Reading the pose…');res=MP.lm.detect(img);}
-  catch(e){camBusy(false);camTell('The pose model did not run: '+(e.message||e),true);return null;}
+  const W=img.naturalWidth,H=img.naturalHeight, model=$('camModel').value, want=camPeople();
+  let people=[];
+  try{
+    camBusy(true,mpReady(model,'IMAGE')?'Reading the pose…':'Downloading the pose model (first time only)…');
+    const lm=await mpLoad(model,'IMAGE');
+    if(want!=='1'){
+      camBusy(true,MP.det?'Finding the people…':'Downloading the person finder (first time only)…');
+      people=await findPeople(img,W,H,want==='2'?2:4,{whole:true});
+    }
+    // one person (or the finder saw nobody): read the whole picture — more context for the model than a crop
+    if(people.length<2){
+      camBusy(true,'Reading the pose…');
+      const pose=readPose(await poseDetect(lm,img,true));
+      people=pose?[{pose}]:[];
+    }
+  }catch(e){camBusy(false);camTell('The pose model did not run: '+(e.message||e),true);return null;}
   camBusy(false);
-  const pose=readPose(res);
-  camDraw(pose,img.naturalWidth,img.naturalHeight);
-  if(!pose){camTell('No person found in that picture — it needs a person, ideally head to toe.',true);return null;}
-  const r=camApply(pose,true,{fresh:true,threshold:PHOTO_VIS}); camSay(r,'Posed from the photo:');
+  camDraw(people.map(p=>p.pose),W,H);
+  if(!people.length){camTell('No person found in that picture — it needs a person, ideally head to toe.',true);return null;}
+  let out;
+  if(people.length===1){
+    const r=camApply(people[0].pose,true,{fresh:true,threshold:PHOTO_VIS}); camSay(r,'Posed from the photo:');
+    out=Object.assign({people:1},r);
+  }else{
+    const figs=figsForPeople(people.length), arrange=$('camArrange').checked;
+    if(arrange)arrangeLikePhoto(figs,people,W,H);
+    const res=camApplyMulti(people,figs,{fresh:true,threshold:PHOTO_VIS});
+    commit(); camSayMulti(res,'posed from the photo',arrange);
+    out={people:people.length,figs:figs.map(f=>f.name),applied:res.map(x=>x.r.applied),missed:res.map(x=>x.r.missed)};
+  }
   const fl=$('flash'); fl.classList.remove('fire'); void fl.offsetWidth; fl.classList.add('fire');
-  return r;
+  return out;
 }
 function camReset(){
   if(!act)return;
@@ -2623,7 +2868,9 @@ $('camLive').onclick=camLiveToggle;
 $('camSnap').onclick=camSnap;
 $('camPhotoBtn').onclick=()=>$('camFile').click();
 $('camFile').onchange=e=>{const f=e.target.files[0];e.target.value='';if(!f)return;const r=new FileReader();r.onload=()=>camFromImage(r.result).catch(err=>camTell('That did not work: '+(err.message||err),true));r.readAsDataURL(f);};
-$('camModel').onchange=()=>{if(camS.stream)mpLoad($('camModel').value,'VIDEO').catch(e=>camStatus('The pose model did not load: '+(e.message||e),true));};
+$('camModel').onchange=()=>{if(camS.stream)camLoadFor().catch(e=>camTell('The pose model did not load: '+(e.message||e),true));};
+$('camPeople').onchange=()=>{camWho();camLiveStop(true);camS.m.boxes=null;camS.m.filters=[];camS.m.recent=[];
+  if(camS.stream)camLoadFor().catch(e=>camTell('Could not load: '+(e.message||e),true));};
 {
   const pnl=$('camPanel');
   pnl.addEventListener('dragover',e=>{e.preventDefault();pnl.classList.add('dragover');});
@@ -2792,7 +3039,7 @@ refreshPropUI();
   figures.forEach(f=>{if(f.look==='camera')aimHead(f,camera.position);});
   updateHandles();renderer.render(scene,camera);})();
 if(EMBED)try{window.parent.postMessage({type:'posebench:ready'},'*');}catch(e){}
-window.__pb={blockingText,retarget,synthLandmarks,readPose,camFromImage,mpLoad,camApply,camStart,camSnap,get camState(){return camS;},get figures(){return figures;},get props(){return props;},get act(){return act;},cam,fitShot,setView,frameAll,PRESETS,WORK,SCENES,
+window.__pb={blockingText,retarget,synthLandmarks,readPose,camFromImage,mpLoad,detLoad,findPeople,camApply,camStart,camSnap,get camState(){return camS;},get figures(){return figures;},get props(){return props;},get act(){return act;},cam,fitShot,setView,frameAll,PRESETS,WORK,SCENES,
   camera,applyCam,selectJoint,solveChain,commit,applyNamed,goalFrame,eyePoint};
 })();
 </script>

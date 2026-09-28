@@ -183,6 +183,30 @@ Space), **From photo…** (you can also drop a picture on the panel), a Body swi
   - The panel shows a busy overlay while downloading or reading, and a green ✓ result that lists what was copied and
     what was set to neutral. It has a **Reset figure to neutral** button, and an unreadable file is reported in the
     panel.
+- **Several people (2026-09-28):** the panel's **People** control can be Auto, One or Two.
+  - **Why not the pose model's own option:** asked for four people (`numPoses`), MediaPipe returned the *same* man three
+    times and never found the second. At its default confidence it also found nobody in a clear full-length handshake
+    photo.
+  - **What it does instead:** a person finder runs first, then one pose read per person.
+    - The finder is `ObjectDetector` with `efficientdet_lite2` in int8, 7.5 MB, on the CPU delegate. The GPU delegate
+      silently finds nothing with int8, and lite0 missed one of two walkers.
+    - `findPeople()` reads each person from their own padded crop (`poseInBox`), maps the landmarks back to the full
+      frame, and drops duplicates.
+    - With `whole:true`, the whole-picture read goes to whichever person it lands on. A crop cut beside someone else
+      read a long-coated man's hidden legs as seated.
+  - **Photos:** Auto finds up to four people. The people map to figures left to right on screen: the selected figure
+    and its nearest neighbours, plus new figures when there are too few (`figsForPeople`).
+  - **Arrange like the photo** (on by default) places and turns the figures relative to *this* camera
+    (`arrangeLikePhoto`). Distance comes from each person's torso: its length in metres, from the world landmarks,
+    against its length in the picture, through an assumed 45° vertical lens. Facing comes from the hip line.
+    Carried props move with each figure.
+  - **Webcam, Two:** people are found every 12 frames and tracked in between from their landmark boxes, then ordered as
+    the mirrored preview shows them. Poses only; figures keep their marks. Snap averages each person separately.
+  - **Single photos:** when nothing is found at 0.5, `poseDetect(..., retry)` looks again at 0.2 before saying "No
+    person found".
+  - **Tested on:** the handshake photo (both men found, placed and turned toward each other), an overhead two-walker
+    photo (one person readable; the other is too overlapped), and a synthetic two-person webcam stream (follow and
+    snap).
 - **Storyboarder embed:** the iframe is `allow="clipboard-write *; camera *"`. A plain `camera` is refused, because a
   srcdoc frame on a file:// page has an opaque origin.
 - **Next:** hands (HandLandmarker → forearm twist, wrist, finger shapes, a *point* shape), then two performers →

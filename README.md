@@ -925,6 +925,10 @@ The figure keeps its own build, its spot on the floor and its facing, so you pos
 the camera around it. A webcam that can't see your legs (sitting at the desk) drives only the upper
 body, and a seated figure stays seated. It runs Google's MediaPipe pose model in the browser, and
 no video leaves the machine. The first use downloads about 21 MB.
+**Two people:** a photo with several people poses one figure each, left to right, and
+places and turns them the way the photo shows. It adds figures if the scene has too few,
+and downloads a 7.5 MB person finder the first time. Set **People: Two** to have two
+performers drive two figures from the webcam.
 
 Pose Bench's source is `posebench/pose.html`. It still opens on its own in a browser, and
 `node build.mjs` carries it into the app as `js/posebench-src.js`, which is generated.

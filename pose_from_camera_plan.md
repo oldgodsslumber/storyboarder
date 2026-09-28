@@ -1,6 +1,6 @@
 # Pose from camera — plan
 
-Status: **body built** on `V3-posebench` (2026-09-28) — steps 1, 2, 3 and 5 of the order of work. **Hands (step 4) are next**, then two performers and matching the webcam's view. Builds on `pose_bench_plan.md` (built on `V3-posebench`).
+Status: **body built** on `V3-posebench` (2026-09-28) — steps 1, 2, 3 and 5 of the order of work. **Two people** (photos and webcam, step 6's first half) built the same day. **Hands (step 4) are next**, then matching the webcam's view. Builds on `pose_bench_plan.md` (built on `V3-posebench`).
 
 ## Why
 
