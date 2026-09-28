@@ -177,6 +177,24 @@
     const out = [];
     const seen = {};
 
+    /* The card's 3D blocking (pose.js) goes FIRST, ahead of every mark: it is
+     * the layout the whole frame is built on, and first is where the sheet
+     * puts its top-left panel and where a lone reference goes as the one
+     * picture a still carries. Still lane only — a clip animates the card's
+     * own frame, which by then already has the blocking in it. */
+    const blocked = role !== 'video' && shot.pose && shot.pose.image && shot.pose.scene;
+    if (blocked) {
+      out.push({
+        kind: 'pose', id: shot.id + ':pose', label: 'blocking', mentioned: false, as: 'reference',
+        /* `label` on the image is what images() hands on as the role —
+           "image 1 = blocking (layout)" in the mapping */
+        images: [Object.assign({}, shot.pose.image, { label: 'layout' })],
+        renders: [shot.pose.render || null],
+        pose: shot.pose,
+        why: 'the 3D blocking of this card — where everyone stands, how they are posed, and the camera'
+      });
+    }
+
     marked(p, shot, role).forEach(function (m) {
       if (seen[m.id]) return;
       seen[m.id] = 1;
@@ -247,8 +265,25 @@
        the files go in, and it is what the prompt's mapping promises */
     let n = 0;
     out.forEach(function (e) {
+      if (!e.as) e.as = 'reference';
       e.numbers = e.images.map(function () { return ++n; });
     });
+
+    /* CONTROLS: structural inputs (depth, pose skeleton, normals, per-figure
+     * mask) rendered from the blocking on demand. Listed so a control-capable
+     * route (ComfyUI, later) reads them from the same place as everything
+     * else — but they carry no pixels (`lazy`), take no image number, and
+     * images() never returns them, so nothing that sends pictures today sends
+     * these or counts them. Always after the numbering, for the same reason. */
+    if (blocked) {
+      (SB.Pose ? SB.Pose.PASSES : ['depth', 'openpose', 'normal', 'mask']).forEach(function (pass) {
+        out.push({
+          kind: 'pass', id: shot.id + ':' + pass, label: pass, mentioned: false, as: 'control',
+          pass: pass, lazy: true, images: [], renders: [], numbers: [],
+          why: 'rendered from the blocking when a control-capable route asks for it'
+        });
+      });
+    }
     return out;
   }
 

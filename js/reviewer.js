@@ -291,6 +291,13 @@
       meta.appendChild(SB.el('div', 'rev-n', 'take ' + t.n + (t.chosen ? ' · chosen' : '')));
       const at = t.at || (t.rec && t.rec.at) || 0;
       meta.appendChild(SB.el('div', 'rev-what', madeOf(t.rec || t) + ' · ' + fmtWhen(at)));
+      /* made before the card was re-blocked in 3D (pose.js): still a fine
+         take, but not one of the layout the card now asks for */
+      if (kind === 'image' && SB.Pose && SB.Pose.stale(sh, t.render || (t.rec && t.rec.render))) {
+        const st = SB.el('div', 'rev-stale', '⛹ earlier blocking');
+        st.title = 'Made before this card was re-blocked — the blocking is now v' + sh.pose.serial;
+        meta.appendChild(st);
+      }
       r.appendChild(meta);
 
       const btns = SB.el('div', 'rev-btns');

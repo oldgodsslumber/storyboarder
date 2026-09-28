@@ -2320,6 +2320,9 @@
         by: 'imagine', role: role, model: model.name, modelId: model.id,
         slug: slugNow, via: transport(), at: Date.now()
       };
+      /* which blocking this still was made from, so a take made before the
+         card was re-blocked can say so (SB.Pose.stale) */
+      if (role === 'image' && shot.pose && shot.pose.serial) made.pose = shot.pose.serial;
       const frameRef = (shot.image && shot.image.ref) || '';
 
       /* Ids, not objects. Everything this generation needs to find its way

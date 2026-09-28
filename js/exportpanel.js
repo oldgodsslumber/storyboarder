@@ -39,6 +39,7 @@
     clips: true,
     proxies: false,
     refsets: false,
+    blocking: false,       // the 3D blocking: scene + control passes, per blocked card
     shotlist: false,
     manifest: true,
     scope: 'board',        // 'board' | 'scene' | 'selected'
@@ -268,6 +269,10 @@
       }
     });
 
+    if (o.blocking && !o.madeOnly && SB.Pose) {
+      list.forEach(function (r) { blockingItems(p, r, items); });
+    }
+
     if (o.shotlist) {
       items.push({
         name: (SB.Renders.slug(p.name) || 'board') + '-shots.csv', kind: 'list',
@@ -307,6 +312,40 @@
       wide: items.some(function (it) { return /^\d+[A-Z]{2,}\d*[._]/.test(it.name); }),
       shots: list.length
     };
+  }
+
+  /* The card's 3D blocking (pose.js), in a folder of its own: the scene, which
+   * standalone Pose Bench reopens (Scene file → Import), the blocking picture,
+   * and its control passes — depth, OpenPose, normals, per-figure mask — for
+   * ComfyUI / VACE work. The passes are not stored in the board; they are
+   * rendered from the scene when written (`lazy`), once per card for all four. */
+  function blockingItems(p, r, items) {
+    const sh = r.shot;
+    if (!SB.Pose.has(sh)) return;
+    const dir = 'blocking/' + (SB.Renders.slug(r.code) || 'shot');
+    const base = { sub: dir, code: r.code, scene: r.sceneName, shot: sh, made: null };
+    const scene = SB.Pose.sceneOf(p, sh);
+    if (scene) {
+      const text = JSON.stringify(scene, null, 1);
+      items.push(Object.assign({ name: 'scene.posebench.json', kind: 'blocking scene', text: text,
+        bytes: textBytes(text) }, base));
+    }
+    const pic = SB.Renders.dataUrl(p, sh.pose.render) || SB.Blobs.src(p, sh.pose.image);
+    if (pic) {
+      items.push(Object.assign({ name: 'blocking.' + extOfUrl(pic), kind: 'blocking', data: pic,
+        bytes: bytesOf(pic), rec: sh.pose.render }, base));
+    }
+    let once = null;
+    const all = function () { return once || (once = SB.Pose.passes(sh)); };
+    SB.Pose.PASSES.forEach(function (pass) {
+      items.push(Object.assign({ name: pass + '.png', kind: 'control pass', bytes: 0,
+        lazy: function () {
+          return all().then(function (res) {
+            if (!res[pass]) throw new Error('Pose Bench returned no ' + pass + ' pass for ' + r.code);
+            return res[pass];
+          });
+        } }, base));
+    });
   }
 
   /* ---- the two text files ---- */
@@ -456,7 +495,11 @@
     const next = function () {
       if (i >= list.length) return Promise.resolve(i);
       const it = list[i++];
-      const done = dir ? writeTo(dir, it) : Promise.resolve(download(it));
+      /* a control pass is rendered only now, when it is about to be written */
+      const ready = (it.lazy && !it.data)
+        ? it.lazy().then(function (d) { it.data = d; })
+        : Promise.resolve();
+      const done = ready.then(function () { return dir ? writeTo(dir, it) : download(it); });
       return done.then(function () {
         if (onEach) onEach(i, list.length, it);
         return next();
@@ -579,6 +622,9 @@
       check('refsets', 'reference sets, per shot', 'numbered in feed order',
         opts.madeOnly ? 'Reference sets are what goes IN to a shot, so they are not part of ' +
           '“made in here”.' : ''),
+      check('blocking', '3D blocking, per shot',
+        'scene + depth, OpenPose, normal and mask passes — for ComfyUI',
+        opts.madeOnly ? 'The blocking is what goes IN to a shot, so it is not part of “made in here”.' : ''),
       check('shotlist', 'shot list', 'CSV: code, type, description, both prompts'),
       check('manifest', 'manifest', 'which model and prompt made each file')
     ]));

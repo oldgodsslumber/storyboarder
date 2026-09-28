@@ -650,6 +650,60 @@
      * entirely and rebuilt the room from scratch, which is the one thing the
      * source frame exists to prevent. So this is a constraint on the OUTPUT,
      * and it says which instructions above it cancels. */
+    /* The 3D blocking (pose.js). A mannequin picture is the most literal thing
+     * a model can be handed, so this says three things plainly: take the
+     * LAYOUT from it, never the mannequins; which mannequin is whom, by the
+     * colour Pose Bench gave it; and — for the door that sends no picture at
+     * all — the same layout in words. */
+    const blocking = (role === 'image' || role === 'both')
+      ? SB.Refs.feed(p, shot, 'image').filter(function (e) { return e.kind === 'pose' && e.images.length; })[0]
+      : null;
+    if (blocking && shot.pose) {
+      /* the name a linked subject has NOW, not the one it had when blocked */
+      const nowName = function (c) {
+        const per = find(p, c.personaId);
+        return per ? (per.name || 'unnamed') : (c.name || '');
+      };
+      const plan = (SB.Imagine && SB.Imagine.sheetPlan) ? SB.Imagine.sheetPlan(p, shot, 'image') : [];
+      const onSheet = plan.length > 1;
+      const whereOf = function (id) {
+        if (onSheet) {
+          const c = plan.filter(function (x) { return x.e.id === id; })[0];
+          return c ? 'the ' + c.panel + ' panel' : '';
+        }
+        const e = numbered.filter(function (x) { return x.id === id; })[0];
+        return e ? 'image ' + e.n : '';
+      };
+      lines.push('THE BLOCKING — ' + (whereOf(blocking.id) || 'image 1') + ' is a 3D blocking of this ' +
+        'exact shot: plain mannequins stand in for the people and simple grey shapes for the furniture.');
+      lines.push('Match its camera angle, lens and framing, and where each figure is, which way they ' +
+        'face, their pose and what they hold. Do NOT draw mannequins, grey shapes, a grid or a studio ' +
+        'floor — they are placeholders. The people are the ones described in this block, and the ' +
+        'place is the one the shot description gives.');
+      const who = (shot.pose.cast || []).map(function (c) {
+        const w = whereOf(c.personaId);
+        return 'the ' + (c.colorName || 'grey') + ' mannequin is ' +
+          nowName(c) + (w ? ' (' + w + ')' : '');
+      });
+      if (who.length) {
+        lines.push('In the blocking, ' + who.join('; ') + '. Any other mannequin is an extra.');
+      }
+      if (shot.pose.text) {
+        /* written with the names subjects had when it was blocked; a rename
+           since then must not leave the prompt using the old one */
+        let words = String(shot.pose.text);
+        (shot.pose.cast || []).forEach(function (c) {
+          const now = nowName(c);
+          if (c.name && now && now !== c.name) words = words.split(c.name + ' (the ').join(now + ' (the ');
+        });
+        lines.push('The blocking, in words:');
+        words.split('\n').forEach(function (l) { if (l.trim()) lines.push('  ' + l.trim()); });
+      }
+      lines.push('Where the shot description and the blocking disagree about where someone is or ' +
+        'which way they face, follow the blocking. The description still decides who they are, what ' +
+        'they wear and what is happening.');
+    }
+
     const shots = SB.Refs.feed(p, shot, role).filter(function (e) {
       return e.kind === 'shot' && e.images.length;
     });

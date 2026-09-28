@@ -1,6 +1,6 @@
 # Blocking a shot in 3D (Pose Bench) — plan
 
-Status: **planned, not built.**
+Status: **built** on `V3-posebench` (2026-09-28). Decisions taken: Pose Bench moved into this repo; the blocking takes the first sheet panel beside subjects; empty frames show it dimmed. H3 needed no change — it is a video-lane format, and the video lane animates the frame.
 
 ## Why
 

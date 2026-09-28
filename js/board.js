@@ -1916,8 +1916,43 @@
         a.src = SB.Blobs.src(P(), sh.annotation);
         f.appendChild(a);
       }
+    } else if (SB.Pose && SB.Pose.has(sh)) {
+      /* No still yet, but a blocking: show it, dimmed and labelled, so a
+         freshly blocked board already reads as a storyboard. Shown, not
+         held — the frame is still empty and the first still lands here. */
+      f.classList.add('blocked-empty');
+      const bi = document.createElement('img');
+      bi.className = 'shot-img pose-img';
+      bi.src = SB.Blobs.src(P(), sh.pose.image);
+      f.appendChild(bi);
+      f.appendChild(SB.el('div', 'pose-label', 'blocking · click to edit · drop an image to fill'));
     } else {
-      f.appendChild(SB.el('div', 'drop-hint', 'drop / paste an image, or click to load'));
+      const hint = SB.el('div', 'drop-hint', 'drop / paste an image, or click to load');
+      if (SB.Pose && SB.Pose.available()) {
+        const bl = SB.el('button', 'mini pose-start', '⛹ or block it in 3D');
+        bl.title = 'Pose mannequins and a camera for this shot. The blocking goes first in its references.';
+        bl.onclick = function (ev) { ev.stopPropagation(); SB.Pose.open(sh); };
+        hint.appendChild(SB.el('br'));
+        hint.appendChild(bl);
+      }
+      f.appendChild(hint);
+    }
+
+    /* The blocking badge: this card has a 3D layout feeding its still. It is
+       flagged when the picture showing was made from an earlier version of
+       it — re-blocking does not re-render, and a board has to say which
+       frames are behind. */
+    if (SB.Pose && SB.Pose.has(sh) && shown) {
+      const behind = SB.Pose.stale(sh, sh.render);
+      const pb = SB.el('button', 'pose-badge' + (behind ? ' stale' : ''),
+        '⛹' + (behind ? ' older' : ''));
+      pb.title = behind
+        ? 'This still was made from an earlier blocking — the blocking is now v' + sh.pose.serial +
+          '. Render again to use it. Click to open the blocking.'
+        : 'Blocked in 3D (v' + sh.pose.serial + ') — the layout reference fed first to this card’s still. ' +
+          'Click to edit it.';
+      pb.onclick = function (ev) { ev.stopPropagation(); SB.Pose.open(sh); };
+      f.appendChild(pb);
     }
 
     /* One clip control, in the same place, whatever the state — and the
@@ -1973,6 +2008,20 @@
         tools.appendChild(cl);
       }
     }
+    if (SB.Pose && SB.Pose.available()) {
+      const bk = SB.el('button', 'mini', SB.Pose.has(sh) ? '⛹ edit' : '⛹ block');
+      bk.title = SB.Pose.has(sh) ? 'Edit this card’s 3D blocking'
+        : 'Block this shot in 3D — mannequins and a camera, fed first to the still';
+      bk.onclick = function (ev) { ev.stopPropagation(); SB.Pose.open(sh); };
+      tools.appendChild(bk);
+      if (SB.Pose.has(sh)) {
+        const rb = SB.el('button', 'mini danger', '✕ ⛹');
+        rb.title = 'Remove the blocking from this card';
+        /* armed: the scene is the only copy of the posed figures */
+        SB.armButton(rb, 'remove blocking?', function () { SB.Pose.clear(sh); });
+        tools.appendChild(rb);
+      }
+    }
     if (sh.image || sh.render) {
       const rm = SB.el('button', 'mini danger', '✕');
       const nTakes = SB.Model.stillTakeCount(sh);
@@ -2003,6 +2052,8 @@
       /* Either one counts, the same way the frame draws either one — a
          picture the card is holding must be openable. */
       if (!sh.image && !sh.render) {
+        /* an empty frame showing its blocking opens the blocking */
+        if (SB.Pose && SB.Pose.has(sh)) { SB.Pose.open(sh); return; }
         SB.pickImageFile().then(function (file) { if (file) setImage(sh, file); });
         return;
       }

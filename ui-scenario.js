@@ -4309,6 +4309,42 @@
         t('with no caret anywhere a rebuild is immediate', straight === 1, straight);
       })();
 
+      // 3D blocking on the card (pose.js)
+      (function () {
+        const scId = P().scenes[0].id;
+        const blank = SB.Model.addShot(P(), scId, { type: 'Wide' });
+        const blocked = SB.Model.addShot(P(), scId, { type: 'Medium' });
+        const px = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+        blocked.pose = { serial: 2, scene: SB.Blobs.put(P(), 'data:application/json,%7B%7D'),
+          image: SB.Blobs.image(P(), px, 1, 1), render: { ref: SB.Blobs.put(P(), px), w: 1, h: 1 },
+          cast: [], text: '', lens: 35, aspect: '16:9', at: 1 };
+        app.changed(true);
+        const card = function (sh) { return document.querySelector('.card[data-shot="' + sh.id + '"]'); };
+        t('Pose Bench is carried in the build', SB.Pose.available(), typeof window.SB_POSEBENCH_SRC);
+        t('an empty card offers to block it in 3D', !!card(blank).querySelector('.pose-start'), '');
+        const fb = card(blocked).querySelector('.frame');
+        t('an empty blocked card shows its blocking, dimmed', fb.classList.contains('blocked-empty') &&
+          !!fb.querySelector('.pose-img') && !fb.querySelector('.pose-start'), fb.className);
+        t('and says it is a blocking, not a still', /blocking/.test((fb.querySelector('.pose-label') || {}).textContent || ''), '');
+        const tools = [].map.call(fb.querySelectorAll('.frame-tools button'), function (b) { return b.textContent; });
+        t('its tools edit and remove the blocking', tools.indexOf('⛹ edit') >= 0 && tools.indexOf('✕ ⛹') >= 0,
+          JSON.stringify(tools));
+        t('the blocking survives a structural change', SB.Blobs.has(P(), blocked.pose.scene), '');
+        /* a still made from blocking v1 on a card now at v2 */
+        blocked.image = SB.Blobs.image(P(), px, 1, 1);
+        blocked.render = { ref: SB.Blobs.put(P(), px), w: 1, h: 1, serial: 99, ext: 'png',
+          made: { by: 'imagine', role: 'image', pose: 1 } };
+        app.changed(true);
+        const badge = card(blocked).querySelector('.pose-badge');
+        t('a still from an earlier blocking is flagged on the card', !!badge && badge.classList.contains('stale'),
+          badge ? badge.className : 'no badge');
+        blocked.render.made.pose = 2;
+        app.changed(true);
+        const b2 = card(blocked).querySelector('.pose-badge');
+        t('and a current one is not', !!b2 && !b2.classList.contains('stale'), b2 ? b2.className : 'no badge');
+        SB.Model.deleteShot ? SB.Model.deleteShot(P(), blank.id) : null;
+      })();
+
       // comment mode
       app.commentMode = true;
       SB.Board.render();

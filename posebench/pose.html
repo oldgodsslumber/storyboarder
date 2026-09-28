@@ -1,0 +1,2322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pose Bench</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#1b1e24; --panel-2:#22262e; --panel-3:#2a2f38;
+    --line:#333a45; --line-soft:#272c34;
+    --text:#dbe0e8; --muted:#8b93a1; --muted-2:#6c7381;
+    --accent:#f5b12f; --accent-hi:#ffc757; --accent-dim:#6d5114;
+    --danger:#e06a5a;
+    --font:-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    --mono:"SF Mono",ui-monospace,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{font-family:var(--font);color:var(--text);background:var(--bg);overflow:hidden;display:flex;
+    user-select:none;-webkit-user-select:none}
+  button{font-family:var(--font);color:var(--text);cursor:pointer;border:0;background:none}
+  input,select{font-family:var(--font)}
+
+  /* ---------- rail ---------- */
+  #rail{width:320px;flex:0 0 320px;height:100%;background:var(--panel);border-right:1px solid var(--line);
+    display:flex;flex-direction:column;z-index:5}
+  #brand{padding:14px 18px 12px;border-bottom:1px solid var(--line);display:flex;align-items:baseline;gap:10px}
+  #brand h1{margin:0;font-size:17px;font-weight:650;letter-spacing:.2px}
+  #brand .sub{font-size:11.5px;color:var(--muted-2);font-family:var(--mono)}
+  #brand .x{margin-left:auto;display:none}
+  #scroll{overflow-y:auto;flex:1;padding:2px 0 30px}
+  #scroll::-webkit-scrollbar{width:9px}
+  #scroll::-webkit-scrollbar-thumb{background:#333a45;border-radius:6px;border:2px solid var(--panel)}
+  .sec{padding:13px 18px 14px;border-bottom:1px solid var(--line-soft)}
+  .sec h2{margin:0 0 10px;font-size:11.5px;font-weight:650;color:var(--muted);letter-spacing:.6px;text-transform:uppercase;
+    display:flex;align-items:center;justify-content:space-between}
+  .sec h2 .aside{text-transform:none;letter-spacing:0;font-weight:400;color:var(--muted-2);font-size:11px}
+  .row{display:flex;gap:6px;flex-wrap:wrap}
+  .gap{height:9px}
+  .btn{background:var(--panel-3);border:1px solid var(--line);border-radius:7px;padding:7px 9px;font-size:12.5px;line-height:1.05;
+    transition:background .12s,border-color .12s;display:inline-flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap}
+  .btn:hover{background:#323844;border-color:#414a58}
+  .btn:active{background:#2a2f38}
+  .btn:disabled{opacity:.4;cursor:default}
+  .btn.sel{border-color:var(--accent);color:var(--accent-hi);background:#2b2a20}
+  .btn.grow{flex:1}
+  .btn.primary{background:var(--accent);color:#211a06;border-color:var(--accent);font-weight:650}
+  .btn.primary:hover{background:var(--accent-hi)}
+  .btn.icon{padding:7px 8px;min-width:30px}
+  .pillrow{flex-wrap:nowrap}
+  .pillrow .btn{flex:1;padding:7px 4px}
+  .grid{display:grid;gap:6px}
+  .g3{grid-template-columns:repeat(3,1fr)} .g4{grid-template-columns:repeat(4,1fr)}
+  .grid .btn{padding:7px 3px;font-size:12px}
+  .swatches{display:flex;gap:7px;flex-wrap:wrap}
+  .sw{width:25px;height:25px;border-radius:6px;border:2px solid var(--line);cursor:pointer;padding:0}
+  .sw.sel{border-color:var(--accent);box-shadow:0 0 0 2px rgba(245,177,47,.2)}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+  .chip{display:inline-flex;align-items:center;gap:6px;padding:5px 10px 5px 7px;border-radius:14px;background:var(--panel-3);
+    border:1px solid var(--line);font-size:12px;cursor:pointer}
+  .chip i{width:11px;height:11px;border-radius:50%;display:inline-block;border:1px solid rgba(0,0,0,.35)}
+  .chip.sel{border-color:var(--accent);color:var(--accent-hi)}
+  .lbl{font-size:11px;color:var(--muted);margin:0 0 5px}
+
+  /* sliders */
+  .axis{margin:8px 0 10px}
+  .axis .lab{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--text);margin-bottom:5px}
+  .axis .lab .v{font-family:var(--mono);font-size:11.5px;color:var(--text)}
+  .axis .ends{display:flex;justify-content:space-between;font-size:10.5px;color:var(--muted-2);margin-top:3px}
+  .num{width:58px;background:var(--panel-2);border:1px solid var(--line);border-radius:5px;color:var(--text);
+    font-family:var(--mono);font-size:11.5px;padding:3px 5px;text-align:right}
+  .num:focus{outline:none;border-color:var(--accent)}
+  input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:4px;border-radius:3px;background:var(--panel-3);
+    outline:none;margin:0;cursor:pointer;display:block}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:15px;height:15px;border-radius:50%;
+    background:var(--accent);border:2px solid #17140b;cursor:grab}
+  input[type=range]::-moz-range-thumb{width:13px;height:13px;border-radius:50%;background:var(--accent);border:2px solid #17140b}
+  input[type=range]:focus-visible::-webkit-slider-thumb{box-shadow:0 0 0 3px rgba(245,177,47,.35)}
+  select{width:100%;background:var(--panel-3);color:var(--text);border:1px solid var(--line);border-radius:7px;
+    padding:7px 9px;font-size:12.5px;cursor:pointer}
+  .field{margin-bottom:9px}
+  .field>label{display:block;font-size:11px;color:var(--muted);margin-bottom:4px}
+  .split{display:flex;gap:8px}
+  .split>*{flex:1;min-width:0}
+  .jhead{display:flex;gap:6px;align-items:center;margin-bottom:4px}
+  .jhead select{flex:1}
+  .empty{font-size:12px;color:var(--muted-2);padding:4px 0}
+  details.more{margin-top:10px}
+  details.more summary{font-size:11.5px;color:var(--muted);cursor:pointer;padding:3px 0;list-style:none;display:flex;align-items:center;gap:6px}
+  details.more summary::-webkit-details-marker{display:none}
+  details.more summary::before{content:"›";display:inline-block;transition:transform .15s;font-size:13px}
+  details.more[open] summary::before{transform:rotate(90deg)}
+  details.more .grid{margin-top:7px}
+  .ptitle{display:flex;align-items:center;justify-content:space-between;font-size:12.5px;font-weight:600;margin-bottom:6px}
+  .note{font-size:11px;color:var(--muted-2);line-height:1.45;margin-top:6px}
+  .note b{color:var(--accent-hi);font-weight:600}
+
+  /* toggles */
+  .toggle{display:flex;align-items:center;justify-content:space-between;font-size:12.5px;padding:4px 0;cursor:pointer}
+  .toggle input{position:absolute;opacity:0;pointer-events:none}
+  .toggle i{width:36px;height:20px;border-radius:12px;background:var(--panel-3);border:1px solid var(--line);position:relative;
+    transition:background .15s;flex:0 0 36px}
+  .toggle i::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--muted);
+    transition:transform .15s,background .15s}
+  .toggle input:checked+i{background:var(--accent-dim)}
+  .toggle input:checked+i::after{transform:translateX(16px);background:var(--accent-hi)}
+  .toggle input:focus-visible+i{box-shadow:0 0 0 3px rgba(245,177,47,.35)}
+  .toggle .d{font-size:11px;color:var(--muted-2);display:block;margin-top:1px}
+
+  .lib{display:flex;flex-direction:column;gap:4px;margin-top:8px}
+  .lib .it{display:flex;align-items:center;gap:6px;font-size:12px;background:var(--panel-2);border:1px solid var(--line-soft);
+    border-radius:6px;padding:4px 4px 4px 9px}
+  .lib .it span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}
+  .lib .it span:hover{color:var(--accent-hi)}
+  .lib .it button{color:var(--muted-2);font-size:13px;padding:2px 6px;border-radius:4px}
+  .lib .it button:hover{color:var(--danger);background:var(--panel-3)}
+  .txt{flex:1;min-width:0;background:var(--panel-2);border:1px solid var(--line);border-radius:7px;color:var(--text);
+    font-size:12.5px;padding:6px 8px}
+  .txt:focus{outline:none;border-color:var(--accent)}
+  .tip{font-size:11.5px;color:var(--muted);line-height:1.55}
+  .tip b{color:#c3cad6;font-weight:600}
+  .keys{display:grid;grid-template-columns:auto 1fr;gap:3px 10px;font-size:11.5px;color:var(--muted)}
+  .keys kbd{font-family:var(--mono);font-size:10.5px;color:#c3cad6;background:var(--panel-3);border:1px solid var(--line);
+    border-radius:4px;padding:1px 5px;white-space:nowrap;justify-self:start}
+
+  /* ---------- stage ---------- */
+  #stage{flex:1;position:relative;min-width:0;overflow:hidden}
+  #view{display:block;width:100%;height:100%;touch-action:none;outline:none}
+  #guide{position:absolute;pointer-events:none;box-shadow:0 0 0 9999px rgba(8,9,12,.42);outline:1px solid rgba(255,255,255,.35);display:none}
+  #guide .th{position:absolute;inset:0;display:none;
+    background:
+      linear-gradient(to right,transparent calc(33.333% - .5px),rgba(255,255,255,.22) calc(33.333% - .5px),rgba(255,255,255,.22) calc(33.333% + .5px),transparent calc(33.333% + .5px),
+        transparent calc(66.666% - .5px),rgba(255,255,255,.22) calc(66.666% - .5px),rgba(255,255,255,.22) calc(66.666% + .5px),transparent calc(66.666% + .5px)),
+      linear-gradient(to bottom,transparent calc(33.333% - .5px),rgba(255,255,255,.22) calc(33.333% - .5px),rgba(255,255,255,.22) calc(33.333% + .5px),transparent calc(33.333% + .5px),
+        transparent calc(66.666% - .5px),rgba(255,255,255,.22) calc(66.666% - .5px),rgba(255,255,255,.22) calc(66.666% + .5px),transparent calc(66.666% + .5px))}
+  #guide.thirds .th{display:block}
+  #guide .gl{position:absolute;left:6px;bottom:5px;font-family:var(--mono);font-size:10.5px;color:rgba(255,255,255,.7)}
+  #hud{position:absolute;top:12px;left:14px;font-family:var(--mono);font-size:11px;color:#c3cad6;background:rgba(15,17,21,.6);
+    padding:6px 10px;border-radius:7px;pointer-events:none;backdrop-filter:blur(3px);border:1px solid rgba(255,255,255,.06);max-width:calc(100% - 330px)}
+  #hud b{color:var(--accent-hi);font-weight:600}
+  #hud .h{color:var(--muted);margin-left:8px}
+  #topbar{position:absolute;top:12px;right:14px;display:flex;gap:8px;align-items:center}
+  .fbtn{background:rgba(24,27,33,.78);color:var(--text);border:1px solid var(--line);backdrop-filter:blur(3px);
+    border-radius:8px;padding:8px 11px;font-size:12.5px;display:inline-flex;align-items:center;gap:6px}
+  .fbtn:hover{background:rgba(40,45,54,.9)}
+  .fbtn:disabled{opacity:.35;cursor:default}
+  .capbtn{background:var(--accent);color:#211a06;font-weight:650;font-size:13px;padding:9px 16px;border-radius:8px;
+    box-shadow:0 3px 14px rgba(245,177,47,.28)}
+  .capbtn:hover{background:var(--accent-hi)}
+  #tray{position:absolute;left:14px;right:14px;bottom:12px;display:none;gap:8px;align-items:flex-end;pointer-events:none}
+  #tray.has{display:flex}
+  #tray .strip{display:flex;gap:7px;overflow-x:auto;pointer-events:auto;padding:4px;background:rgba(15,17,21,.6);
+    border:1px solid rgba(255,255,255,.07);border-radius:10px;backdrop-filter:blur(3px);max-width:100%}
+  #tray .strip::-webkit-scrollbar{height:6px}
+  #tray .strip::-webkit-scrollbar-thumb{background:#3a414c;border-radius:4px}
+  #tray img{height:64px;border-radius:6px;display:block;cursor:pointer;border:1px solid rgba(255,255,255,.12);flex:0 0 auto;
+    background:repeating-conic-gradient(#3a3f47 0 25%,#2b2f36 0 50%) 0 0/12px 12px}
+  #tray img:hover{border-color:var(--accent)}
+  #tray .th{position:relative;flex:0 0 auto}
+  #tray .th.newset{margin-left:9px}
+  #tray .th span{position:absolute;left:4px;bottom:4px;font-family:var(--mono);font-size:9.5px;color:#e6e9ee;
+    background:rgba(0,0,0,.65);padding:1px 4px;border-radius:3px;pointer-events:none}
+  #tray .tact{display:flex;flex-direction:column;gap:5px;pointer-events:auto}
+  #viewer{position:absolute;inset:0;background:rgba(8,9,12,.9);display:none;flex-direction:column;z-index:8}
+  #viewer.open{display:flex}
+  #viewer .pic{flex:1;display:flex;align-items:center;justify-content:center;padding:24px;min-height:0}
+  #viewer img{max-width:100%;max-height:100%;border-radius:6px;box-shadow:0 10px 40px rgba(0,0,0,.6);
+    background:repeating-conic-gradient(#3a3f47 0 25%,#2b2f36 0 50%) 0 0/16px 16px}
+  #viewer .bar{display:flex;gap:8px;align-items:center;padding:12px 18px;border-top:1px solid var(--line);background:var(--panel)}
+  #viewer .fn{font-family:var(--mono);font-size:11.5px;color:var(--muted);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none}
+  #flash.fire{animation:flash .45s ease-out}
+  @keyframes flash{0%{opacity:.7}100%{opacity:0}}
+  #toast{position:absolute;left:50%;bottom:92px;transform:translateX(-50%) translateY(8px);background:#2b2f37;border:1px solid var(--line);
+    color:var(--text);font-size:12.5px;padding:8px 14px;border-radius:8px;opacity:0;transition:opacity .18s,transform .18s;pointer-events:none;z-index:9}
+  #toast.show{opacity:1;transform:translateX(-50%)}
+  #fatal{position:absolute;inset:0;display:none;align-items:center;justify-content:center;text-align:center;padding:30px;color:var(--muted);font-size:14px;line-height:1.6}
+  #fatal b{color:var(--danger)}
+  #railToggle{display:none}
+  @media(max-width:820px){
+    #rail{position:absolute;left:0;top:0;bottom:0;width:min(330px,92vw);transform:translateX(-102%);transition:transform .2s;box-shadow:0 0 40px rgba(0,0,0,.6)}
+    #rail.open{transform:none}
+    #brand .x{display:inline-flex}
+    #railToggle{display:inline-flex;position:absolute;top:12px;left:14px;z-index:6}
+    #hud{top:56px;max-width:calc(100% - 28px)}
+    #topbar .lbl-long{display:none}
+  }
+</style>
+</head>
+<body>
+  <aside id="rail" aria-label="Controls">
+    <div id="brand">
+      <h1>Pose Bench</h1><span class="sub">figure reference</span>
+      <button class="btn icon x" id="railClose" aria-label="Close controls">✕</button>
+    </div>
+    <div id="scroll">
+
+      <section class="sec">
+        <h2>Figures <span class="aside" id="figCount"></span></h2>
+        <div class="chips" id="figList"></div>
+        <div class="row">
+          <button class="btn grow" id="addFig">+ Add</button>
+          <button class="btn grow" id="dupFig">Duplicate</button>
+          <button class="btn grow" id="delFig">Remove</button>
+        </div>
+        <div class="gap"></div>
+        <div class="row pillrow" id="figType">
+          <button class="btn" data-type="male">Man</button>
+          <button class="btn" data-type="female">Woman</button>
+          <button class="btn" data-type="child">Child</button>
+        </div>
+        <div class="gap"></div>
+        <div class="swatches" id="figColors"></div>
+        <div class="axis" style="margin-top:12px">
+          <div class="lab"><span>Height</span><span class="v" id="vHeight">178 cm</span></div>
+          <input type="range" id="rHeight" min="80" max="120" value="100">
+        </div>
+        <div class="axis">
+          <div class="lab"><span>Build</span><span class="v" id="vBulk">100%</span></div>
+          <input type="range" id="rBulk" min="80" max="135" value="100">
+        </div>
+        <div class="axis">
+          <div class="lab"><span>Facing</span><input class="num" type="number" id="nTurn" step="1"></div>
+          <input type="range" id="rTurn" min="-180" max="180" value="0">
+        </div>
+        <div class="field" id="linkField" style="display:none"><label for="figLink">Who this is <span style="color:var(--muted-2)">· names them in the shot’s prompt</span></label><select id="figLink"></select></div>
+        <div class="field"><label for="lookSel">Look at</label><select id="lookSel"></select></div>
+        <div class="split">
+          <div class="field"><label for="handL">Left hand</label><select id="handL"><option value="relaxed">Relaxed</option><option value="grip">Grip</option><option value="flat">Flat</option></select></div>
+          <div class="field"><label for="handR">Right hand</label><select id="handR"><option value="relaxed">Relaxed</option><option value="grip">Grip</option><option value="flat">Flat</option></select></div>
+        </div>
+      </section>
+
+      <section class="sec">
+        <h2>Pose</h2>
+        <div class="lbl">Work</div>
+        <div class="grid g3" id="presets"></div>
+        <div class="lbl" style="margin-top:10px">Two-person scenes</div>
+        <div class="grid g3" id="scenes"></div>
+        <details class="more" id="moreBox"><summary>More poses</summary><div class="grid g3" id="presetsMore"></div></details>
+        <div class="gap"></div>
+        <div class="row">
+          <button class="btn grow" id="mirror">Mirror L↔R</button>
+          <button class="btn grow" id="resetPose">Reset pose</button>
+        </div>
+        <div class="gap"></div>
+        <label class="toggle"><span>Symmetric edits<span class="d">Sliders move both sides together</span></span><input type="checkbox" id="tSym"><i></i></label>
+        <label class="toggle"><span>Joint limits<span class="d">Keep joints anatomical</span></span><input type="checkbox" id="tLimits" checked><i></i></label>
+        <label class="toggle"><span>Keep on floor<span class="d">Lowest point touches the ground</span></span><input type="checkbox" id="tGround" checked><i></i></label>
+        <div class="gap"></div>
+        <div class="lbl">My poses</div>
+        <div class="row" style="flex-wrap:nowrap">
+          <input class="txt" id="poseName" placeholder="Name this pose…" maxlength="40">
+          <button class="btn" id="savePose">Save</button>
+        </div>
+        <div class="lib" id="lib"></div>
+      </section>
+
+      <section class="sec">
+        <h2>Props <span class="aside">drag to move · Q/E turn</span></h2>
+        <div class="grid g3" id="propAdd">
+          <button class="btn" data-prop="chair">Chair</button>
+          <button class="btn" data-prop="desk">Desk</button>
+          <button class="btn" data-prop="table">Table</button>
+          <button class="btn" data-prop="laptop">Laptop</button>
+          <button class="btn" data-prop="phone">Phone</button>
+          <button class="btn" data-prop="cup">Cup</button>
+        </div>
+        <div id="propPanel" style="margin-top:10px"></div>
+      </section>
+
+      <section class="sec">
+        <h2>Joint <span class="aside">click or drag the figure</span></h2>
+        <div class="jhead">
+          <button class="btn icon" id="jPrev" title="Previous joint ([)">‹</button>
+          <select id="jointSelect" aria-label="Selected joint"></select>
+          <button class="btn icon" id="jNext" title="Next joint (])">›</button>
+        </div>
+        <div id="axes"></div>
+        <button class="btn grow" id="resetJoint" style="width:100%">Reset this joint</button>
+      </section>
+
+      <section class="sec">
+        <h2>Camera</h2>
+        <div class="grid g4" id="views">
+          <button class="btn" data-view="front">Front</button>
+          <button class="btn" data-view="tqL">¾ L</button>
+          <button class="btn" data-view="sideL">Side L</button>
+          <button class="btn" data-view="back">Back</button>
+          <button class="btn" data-view="tqR">¾ R</button>
+          <button class="btn" data-view="sideR">Side R</button>
+          <button class="btn" data-view="high">High</button>
+          <button class="btn" data-view="low">Low</button>
+        </div>
+        <div class="gap"></div>
+        <div class="lbl">Shot size</div>
+        <div class="grid g4" id="shots">
+          <button class="btn" data-shot="wide">Wide</button>
+          <button class="btn" data-shot="full">Full</button>
+          <button class="btn" data-shot="medium">Medium</button>
+          <button class="btn" data-shot="close">Close</button>
+        </div>
+        <div class="axis" style="margin-top:12px">
+          <div class="lab"><span>Lens</span><span class="v" id="vLens">35mm</span></div>
+          <input type="range" id="rLens" min="14" max="135" value="35">
+        </div>
+      </section>
+
+      <section class="sec">
+        <h2>Scene</h2>
+        <div class="lbl">Background</div>
+        <div class="swatches" id="bgColors"></div>
+        <div class="axis" style="margin-top:12px">
+          <div class="lab"><span>Key light</span><span class="v" id="vKey">-40°</span></div>
+          <input type="range" id="rKey" min="-180" max="180" value="-40">
+          <div class="ends"><span>camera right</span><span>camera left</span></div>
+        </div>
+        <label class="toggle"><span>Floor shadow</span><input type="checkbox" id="tShadow" checked><i></i></label>
+        <label class="toggle"><span>Grid</span><input type="checkbox" id="tGrid" checked><i></i></label>
+        <label class="toggle"><span>Move / turn ring</span><input type="checkbox" id="tHandles" checked><i></i></label>
+      </section>
+
+      <section class="sec">
+        <h2>Capture</h2>
+        <div class="split">
+          <div class="field"><label for="capAspect">Aspect</label>
+            <select id="capAspect">
+              <option value="vp">Viewport</option>
+              <option value="1.7778" selected>16:9</option>
+              <option value="2.39">2.39:1 scope</option>
+              <option value="1.5">3:2</option>
+              <option value="1">1:1</option>
+              <option value="0.8">4:5</option>
+              <option value="0.6667">2:3</option>
+              <option value="0.5625">9:16</option>
+            </select></div>
+          <div class="field"><label for="capSize">Long edge</label>
+            <select id="capSize">
+              <option>480</option><option>768</option><option selected>1024</option><option>1536</option><option>2048</option><option>3072</option>
+            </select></div>
+        </div>
+        <div class="field"><label for="capFmt">Format</label>
+          <select id="capFmt"><option value="png">PNG</option><option value="jpeg">JPEG (smaller)</option></select></div>
+        <label class="toggle"><span>Transparent background<span class="d">PNG only · hides floor &amp; grid</span></span><input type="checkbox" id="tAlpha"><i></i></label>
+        <div class="lbl" style="margin-top:9px">Also capture <span style="color:var(--muted-2)">· ControlNet / guide images</span></div>
+        <div class="grid g4" id="passes">
+          <button class="btn" data-pass="depth" title="Inverse depth, near = white (Depth ControlNet, Wan VACE depth)">Depth</button>
+          <button class="btn" data-pass="openpose" title="OpenPose COCO-18 skeleton from the rig, with eyes/ears for head direction">OpenPose</button>
+          <button class="btn" data-pass="normal" title="Camera-space normals (Normal ControlNet)">Normal</button>
+          <button class="btn" data-pass="mask" title="Flat colour per figure (regional prompting, inpaint masks)">Mask</button>
+        </div>
+        <label class="toggle" style="margin-top:4px"><span>Floor in depth pass</span><input type="checkbox" id="tDepthFloor" checked><i></i></label>
+        <label class="toggle"><span>Frame guide</span><input type="checkbox" id="tGuide" checked><i></i></label>
+        <label class="toggle"><span>Rule of thirds</span><input type="checkbox" id="tThirds"><i></i></label>
+        <div class="gap"></div>
+        <div class="row">
+          <button class="btn primary grow" id="capBtn2">◉ Capture</button>
+          <button class="btn grow" id="turnBtn" title="Front, ¾, side and back of the selected figure in one sheet">Turnaround</button>
+        </div>
+        <div class="gap"></div>
+        <div class="tip"><b>Reference image</b> (H3, FLUX.2, Gemini…): neutral grey, eye-level <b>Front</b> + <b>¾</b>, or a <b>Turnaround</b>; prompt “match the pose, not the mannequin”.
+          <b>ControlNet / VACE:</b> feed the <b>Depth</b> or <b>OpenPose</b> pass instead — same camera, same frame.</div>
+      </section>
+
+      <section class="sec">
+        <h2>Scene file</h2>
+        <div class="row">
+          <button class="btn grow" id="exportBtn">Export</button>
+          <button class="btn grow" id="importBtn">Import</button>
+          <button class="btn grow" id="newBtn">New</button>
+        </div>
+        <input type="file" id="importFile" accept=".json,application/json" hidden>
+      </section>
+
+      <section class="sec" style="border-bottom:0">
+        <h2>Controls</h2>
+        <div class="keys">
+          <kbd>drag limb</kbd><span>pose it (hands &amp; feet use IK)</span>
+          <kbd>drag hips</kbd><span>crouch / shift, feet stay planted</span>
+          <kbd>drag ring</kbd><span>move figure · knob turns it</span>
+          <kbd>shift+drag</kbd><span>move figure on the floor</span>
+          <kbd>drag empty</kbd><span>orbit · alt+drag orbits anywhere</span>
+          <kbd>right-drag</kbd><span>pan · wheel zooms</span>
+          <kbd>ctrl+Z / Y</kbd><span>undo / redo</span>
+          <kbd>[ ]</kbd><span>previous / next joint</span>
+          <kbd>F · C · M</kbd><span>frame · capture · mirror</span>
+        </div>
+      </section>
+    </div>
+  </aside>
+
+  <main id="stage">
+    <canvas id="view" tabindex="0" aria-label="3D viewport"></canvas>
+    <div id="guide"><div class="th"></div><div class="gl" id="guideLbl"></div></div>
+    <button id="railToggle" class="fbtn">☰ Controls</button>
+    <div id="hud">—</div>
+    <div id="topbar">
+      <button class="fbtn" id="undoBtn" title="Undo (Ctrl+Z)">↶<span class="lbl-long"> Undo</span></button>
+      <button class="fbtn" id="redoBtn" title="Redo (Ctrl+Shift+Z)">↷<span class="lbl-long"> Redo</span></button>
+      <button class="capbtn" id="capBtn" title="Capture (C)">◉ Capture</button>
+      <button class="fbtn" id="hostCancel" style="display:none" title="Close without changing the card">Cancel</button>
+      <button class="capbtn" id="hostUse" style="display:none">Use for shot</button>
+    </div>
+    <div id="tray">
+      <div class="strip" id="strip"></div>
+      <div class="tact"><button class="fbtn" id="dlAll" title="Download every shot">⤓ All</button></div>
+    </div>
+    <div id="viewer" role="dialog" aria-label="Shot preview">
+      <div class="pic"><img id="vImg" alt="captured shot"></div>
+      <div class="bar">
+        <button class="btn icon" id="vPrev" aria-label="Previous shot">‹</button>
+        <button class="btn icon" id="vNext" aria-label="Next shot">›</button>
+        <span class="fn" id="vName"></span>
+        <button class="btn" id="vSend" style="display:none">Send to storyboard</button>
+        <button class="btn" id="vCopy">Copy</button>
+        <button class="btn primary" id="vDl">Download</button>
+        <button class="btn" id="vDlSet" style="display:none">Download set</button>
+        <button class="btn" id="vDel">Delete</button>
+        <button class="btn" id="vClose">Close</button>
+      </div>
+    </div>
+    <div id="flash"></div>
+    <div id="toast"></div>
+    <div id="fatal"><div><b>three.js didn't load.</b><br>Pose Bench pulls three.js r128 from cdnjs on first open —<br>check the network connection and reload.</div></div>
+  </main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+"use strict";
+(function(){
+const $=id=>document.getElementById(id);
+// the storyboarder mounts this page in an iframe named posebench-embed (see storyboarder js/pose.js)
+const EMBED=window.name==='posebench-embed';
+if(!window.THREE){ $('fatal').style.display='flex'; return; }
+
+const DEG=Math.PI/180, RAD=180/Math.PI;
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const V3=THREE.Vector3, Q=THREE.Quaternion;
+const lin=hex=>new THREE.Color(hex).convertSRGBToLinear();
+const store={get(k){try{return JSON.parse(localStorage.getItem(k));}catch(e){return null;}},
+             set(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}};
+
+/* ================= renderer / scene ================= */
+const canvas=$('view'), stage=$('stage');
+const renderer=new THREE.WebGLRenderer({canvas,antialias:true,alpha:true,preserveDrawingBuffer:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.outputEncoding=THREE.sRGBEncoding;
+renderer.toneMapping=THREE.ACESFilmicToneMapping; renderer.toneMappingExposure=0.92;
+renderer.shadowMap.enabled=true; renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+const scene=new THREE.Scene();
+const camera=new THREE.PerspectiveCamera(38,1,0.05,200);
+let bgHex='#6f757d';
+renderer.setClearColor(bgHex,1);
+
+scene.add(new THREE.HemisphereLight(0xf2f5fa,0x3c4048,0.42));
+const key=new THREE.DirectionalLight(0xffffff,1.25);
+key.castShadow=true; key.shadow.mapSize.set(2048,2048);
+Object.assign(key.shadow.camera,{near:0.5,far:30,left:-3.2,right:3.2,top:3.2,bottom:-3.2});
+key.shadow.bias=-0.0004; key.shadow.normalBias=0.015; key.shadow.radius=3;
+const fill=new THREE.DirectionalLight(0xd8e0ec,0.3);
+const rim=new THREE.DirectionalLight(0xffffff,0.55);
+[key,fill,rim].forEach(l=>{scene.add(l);scene.add(l.target);});
+let keyAz=-40;
+
+const shadowPlane=new THREE.Mesh(new THREE.PlaneGeometry(60,60),new THREE.ShadowMaterial({opacity:0.3}));
+shadowPlane.rotation.x=-Math.PI/2; shadowPlane.receiveShadow=true; scene.add(shadowPlane);
+const grid=new THREE.GridHelper(20,40,0x5c6470,0x474d57);
+grid.material.opacity=0.5; grid.material.transparent=true; grid.material.depthWrite=false; grid.position.y=0.001; scene.add(grid);
+
+/* ================= rig definition ================= */
+// Joint DOFs are stored in anatomical terms. [label, negative-end hint, positive-end hint, euler sign, min, max]
+// For left/right joints the y and z signs are further multiplied by side (+1 left, -1 right) so
+// the same numbers mean the same movement on both sides, and mirroring is just a name swap.
+const SPEC={
+  pelvis:  {label:'Hips',   dofs:{x:['Tilt','back','fwd',1,-30,35], z:['Lean','to R','to L',-1,-25,25], y:['Turn','to R','to L',1,-45,45]}},
+  spine:   {label:'Waist',  dofs:{x:['Bend','back','fwd',1,-30,55], z:['Lean','to R','to L',-1,-30,30], y:['Twist','to R','to L',1,-35,35]}},
+  chest:   {label:'Chest',  dofs:{x:['Bend','back','fwd',1,-25,40], z:['Lean','to R','to L',-1,-25,25], y:['Twist','to R','to L',1,-35,35]}},
+  neck:    {label:'Neck',   dofs:{x:['Nod','up','down',1,-40,45],   z:['Tilt','to R','to L',-1,-30,30], y:['Turn','to R','to L',1,-50,50]}},
+  head:    {label:'Head',   dofs:{x:['Nod','up','down',1,-35,35],   z:['Tilt','to R','to L',-1,-25,25], y:['Turn','to R','to L',1,-45,45]}},
+  Shoulder:{label:'shoulder',dofs:{x:['Raise forward','back','fwd',-1,-60,180], z:['Raise sideways','in','out',1,-30,180], y:['Twist','out','in',-1,-90,90]}},
+  Elbow:   {label:'elbow',  hinge:true, dofs:{x:['Bend','straight','bent',-1,0,150], y:['Forearm twist','out','in',-1,-80,90]}},
+  Wrist:   {label:'hand',   order:['z','x','y'], dofs:{z:['Flex','back','palm',-1,-70,80], x:['Tilt','pinky','thumb',-1,-25,30], y:['Twist','out','in',-1,-30,30]}},
+  Hip:     {label:'hip',    dofs:{x:['Raise forward','back','fwd',-1,-30,125], z:['Out to side','in','out',1,-30,75], y:['Twist','out','in',-1,-40,45]}},
+  Knee:    {label:'knee',   hinge:true, dofs:{x:['Bend','straight','bent',1,0,150], y:['Twist','out','in',-1,-15,15]}},
+  Ankle:   {label:'foot',   dofs:{x:['Point','toes up','toes down',1,-50,60], z:['Roll','out','in',-1,-20,30], y:['Turn','out','in',-1,-25,25]}},
+};
+const ORDER=['pelvis','spine','chest','neck','head','lShoulder','lElbow','lWrist','rShoulder','rElbow','rWrist','lHip','lKnee','lAnkle','rHip','rKnee','rAnkle'];
+const sideOf=n=>/^[lr][A-Z]/.test(n)?(n[0]==='l'?1:-1):0;
+const specOf=n=>SPEC[sideOf(n)?n.slice(1):n];
+const labelOf=n=>{const s=sideOf(n);return s?(s>0?'Left ':'Right ')+specOf(n).label:specOf(n).label;};
+const swapName=n=>sideOf(n)?(n[0]==='l'?'r':'l')+n.slice(1):n;
+// what a drag on each part moves (hands/feet: two-bone IK through elbow/knee)
+const CHAIN={spine:['spine'],chest:['spine','chest'],neck:['neck'],head:['neck','head']};
+for(const p of ['l','r']){
+  CHAIN[p+'Shoulder']=[p+'Shoulder']; CHAIN[p+'Elbow']=[p+'Shoulder',p+'Elbow']; CHAIN[p+'Wrist']=[p+'Shoulder',p+'Elbow'];
+  CHAIN[p+'Hip']=[p+'Hip']; CHAIN[p+'Knee']=[p+'Hip',p+'Knee']; CHAIN[p+'Ankle']=[p+'Hip',p+'Knee'];
+}
+
+// proportions in metres
+const TYPES={
+  male:  {name:'Man',  thigh:.45,shin:.43,ankleH:.075,hipDrop:.03, hipW:.092,pelvisUp:.09, spine:.15, chest:.25, neck:.085,head:1,  shW:.185,upperArm:.29,forearm:.26,hand:1,  foot:1,  g:1,  hipMesh:1,   waist:1.2, bust:false},
+  female:{name:'Woman',thigh:.43,shin:.40,ankleH:.07, hipDrop:.03, hipW:.094,pelvisUp:.085,spine:.145,chest:.225,neck:.085,head:.96,shW:.163,upperArm:.27,forearm:.24,hand:.9, foot:.9,  g:.88,hipMesh:1.16,waist:1.02,bust:true},
+  child: {name:'Child',thigh:.30,shin:.28,ankleH:.055,hipDrop:.025,hipW:.068,pelvisUp:.06, spine:.11, chest:.17, neck:.06, head:.9, shW:.122,upperArm:.19,forearm:.17,hand:.7, foot:.72, g:.72,hipMesh:1.05,waist:1.22,bust:false},
+};
+const baseHeight=T=>T.ankleH+T.shin+T.thigh+T.hipDrop+T.pelvisUp+T.spine+T.chest+T.neck+0.212*T.head;
+
+/* ================= geometry ================= */
+const SPH=new THREE.SphereGeometry(1,28,18);
+// hand shapes: finger block + thumb transforms for the LEFT hand (x and z-rotation mirror for the right)
+const HANDS={
+  relaxed:{f:[-0.006,-0.118,-0.002],fr:[0,0,-0.22],fs:[0.014,0.045,0.037],t:[-0.009,-0.056,0.041],tr:[0.55,0,-0.3]},
+  flat:   {f:[-0.001,-0.122,0],     fr:[0,0,-0.05],fs:[0.012,0.047,0.038],t:[-0.004,-0.06,0.043], tr:[0.3,0,-0.1]},
+  grip:   {f:[-0.026,-0.098,-0.002],fr:[0,0,-1.2], fs:[0.016,0.04,0.037], t:[-0.02,-0.066,0.038], tr:[0.25,0,-0.85]},
+};
+function latheGeo(y0,y1,rFn,capB,capT,n=30){
+  const pts=[];
+  for(let i=0;i<=n;i++){
+    const t=(1-Math.cos(Math.PI*i/n))/2; let env=1;
+    if(t<capB) env=Math.sqrt(Math.max(0,1-((capB-t)/capB)**2));
+    else if(t>1-capT) env=Math.sqrt(Math.max(0,1-((t-(1-capT))/capT)**2));
+    pts.push(new THREE.Vector2(Math.max(0.0004,rFn(t)*env),y0+(y1-y0)*t));
+  }
+  return new THREE.LatheGeometry(pts,28);
+}
+// tapered limb hanging down -Y from the pivot, ends tucked into the joint balls
+function limbGeo(L,r0,r1,bulge,at){
+  const top=r0*0.3,bot=r1*0.3,span=L+top+bot;
+  return latheGeo(-L-bot,top,t=>{const u=1-t;return r0+(r1-r0)*u+bulge*Math.exp(-(((u-at)/0.3)**2));},(r1*0.9)/span,(r0*0.9)/span);
+}
+
+/* ================= figure ================= */
+const FIG_COLORS=[['#a9afb8','Clay'],['#c99a6b','Wood'],['#e6e1d6','Ivory'],['#595e66','Graphite'],['#7f93d6','Blue'],['#d2826e','Coral'],['#8db890','Sage']];
+const BG_COLORS=[['#6f757d','Studio grey'],['#d9dce1','Light grey'],['#1c1f25','Dark'],['#ffffff','White'],['#00b140','Chroma green'],['#1f5fd0','Chroma blue']];
+const HL_SEL=lin('#8a5800'), HL_HOV=lin('#23272d');
+let figures=[], props=[], act=null, sel='chest', hovered=null, selProp=null;
+let limitsOn=true, symmetry=false, autoGround=true;
+const uid=()=>'f'+Math.random().toString(36).slice(2,8);
+
+class Figure{
+  constructor(o={}){
+    this.id=o.id||uid(); this.name=o.name||nextName();
+    this.type=o.type||'male'; this.color=o.color||FIG_COLORS[0][0];
+    this.bulk=o.bulk||1; this.height=o.height||1;
+    this.group=new THREE.Group(); this.group.rotation.order='YXZ'; scene.add(this.group);
+    this.joints={}; this.meshes=[]; this.geos=[]; this.mats=[]; this.handParts={};
+    // seat = chair prop id, look = {fig}|{prop}|'camera', goals = live hand targets (see resolveFig)
+    this.seat=null; this.look=null; this.goals=[]; this.hands={l:'relaxed',r:'relaxed'};
+    this.link=o.link||null;   // storyboarder subject (persona) id this figure stands for
+    this.build();
+  }
+  get turn(){return this.group.rotation.y*RAD;}
+  set turn(v){this.group.rotation.y=v*DEG;}
+  build(){
+    const keep=this.joints.pelvis?{pose:this.getPose(),pel:this.pelvisOffset()}:null;
+    this.geos.forEach(g=>g.dispose()); this.mats.forEach(m=>m.dispose());
+    this.group.clear(); this.joints={}; this.meshes=[]; this.geos=[]; this.mats=[];
+    const T=this.T=TYPES[this.type];
+    const pelvisY=T.ankleH+T.shin+T.thigh+T.hipDrop;
+    this.pelvisRest=new V3(0,pelvisY,0);
+    const J=(n,parent,x,y,z)=>this.makeJoint(n,parent?this.joints[parent].pivot:this.group,x,y,z);
+    J('pelvis',null,0,pelvisY,0);
+    J('spine','pelvis',0,T.pelvisUp,0);
+    J('chest','spine',0,T.spine,0);
+    J('neck','chest',0,T.chest,0);
+    J('head','neck',0,T.neck,0);
+    for(const [p,s] of [['l',1],['r',-1]]){
+      J(p+'Shoulder','chest',s*T.shW,T.chest*0.8,-0.008);
+      J(p+'Elbow',p+'Shoulder',0,-T.upperArm,0);
+      J(p+'Wrist',p+'Elbow',0,-T.forearm,0);
+      J(p+'Hip','pelvis',s*T.hipW,-T.hipDrop,0);
+      J(p+'Knee',p+'Hip',0,-T.thigh,0);
+      J(p+'Ankle',p+'Knee',0,-T.shin,0);
+    }
+    this.handParts={};
+    this.addMeshes(T,T.g*this.bulk);
+    this.setColor(this.color);
+    this.group.scale.setScalar(this.height);
+    this.setHand('l',this.hands.l); this.setHand('r',this.hands.r);
+    if(keep){this.setPose(keep.pose,keep.pel);}
+    reattachProps(this);
+  }
+  setHand(p,shape){
+    this.hands[p]=HANDS[shape]?shape:'relaxed';
+    const H=HANDS[this.hands[p]], hp=this.handParts[p]; if(!hp)return;
+    const {k,s,fingers,thumb}=hp;
+    fingers.position.set(H.f[0]*s*k,H.f[1]*k,H.f[2]*k); fingers.rotation.set(H.fr[0],H.fr[1],H.fr[2]*s); fingers.scale.set(H.fs[0]*k,H.fs[1]*k,H.fs[2]*k);
+    thumb.position.set(H.t[0]*s*k,H.t[1]*k,H.t[2]*k); thumb.rotation.set(H.tr[0],H.tr[1],H.tr[2]*s);
+  }
+  makeJoint(n,parent,x,y,z){
+    const p=new THREE.Group(); p.rotation.order='XZY'; p.position.set(x,y,z); parent.add(p);
+    const sp=specOf(n), side=sideOf(n), sgn={}, lim={};
+    for(const ax of ['x','y','z']){
+      const d=sp.dofs[ax];
+      sgn[ax]=d?d[3]*(side&&ax!=='x'?side:1):1;
+      lim[ax]=d?[d[4],d[5]]:[0,0];
+    }
+    const mat=new THREE.MeshStandardMaterial({roughness:0.62,metalness:0});
+    const ballMat=new THREE.MeshStandardMaterial({roughness:0.5,metalness:0});
+    this.mats.push(mat,ballMat);
+    this.joints[n]={name:n,pivot:p,side,spec:sp,sgn,lim,mat,ballMat};
+    return p;
+  }
+  addMesh(jn,geo,o={}){
+    const j=this.joints[jn];
+    const m=new THREE.Mesh(geo,o.ball?j.ballMat:j.mat);
+    if(o.pos)m.position.set(...o.pos);
+    if(o.scale)(typeof o.scale==='number'?m.scale.setScalar(o.scale):m.scale.set(...o.scale));
+    if(o.rot)m.rotation.set(...o.rot);
+    m.castShadow=true; m.receiveShadow=true;
+    m.userData={fig:this.id,joint:jn};
+    j.pivot.add(m); this.meshes.push(m);
+    if(geo!==SPH)this.geos.push(geo);
+    return m;
+  }
+  addMeshes(T,g){
+    // pelvis
+    const pr=0.105*g, prx=(T.hipW+0.07*g)*T.hipMesh;
+    this.addMesh('pelvis',latheGeo(-T.hipDrop-0.08*g,T.pelvisUp+0.02,t=>pr*(1-0.12*t),0.42,0.3),{scale:[prx/pr,1,0.82]});
+    // waist
+    const sr=0.1*g;
+    this.addMesh('spine',latheGeo(-0.035,T.spine+0.035,t=>sr*(1-0.09*Math.sin(Math.PI*t)),0.3,0.3),{scale:[T.waist,1,0.8]});
+    // ribcage / shoulders
+    const cr=0.128*g, csx=(T.shW-0.004)/(cr*0.965);
+    this.addMesh('chest',latheGeo(-0.035,T.chest+0.03,t=>cr*(0.8+0.2*Math.min(1,t/0.65)),0.18,0.32),{scale:[csx,1,0.84]});
+    if(T.bust) for(const s of [1,-1]) this.addMesh('chest',SPH,{pos:[s*0.05*g/0.88,T.chest*0.5,0.062*g],scale:[0.052*g,0.046*g,0.04*g],rot:[0,s*0.3,0]});
+    // neck + head
+    this.addMesh('neck',latheGeo(-0.02,T.neck+0.03,t=>0.043*g*(1-0.08*t),0.15,0.15));
+    const h=T.head;
+    this.addMesh('head',SPH,{pos:[0,0.108*h,-0.004*h],scale:[0.079*h,0.107*h,0.094*h]});
+    this.addMesh('head',SPH,{pos:[0,0.052*h,0.026*h],scale:[0.06*h,0.062*h,0.072*h]});
+    this.addMesh('head',SPH,{pos:[0,0.084*h,0.093*h],scale:[0.012*h,0.021*h,0.016*h],ball:true});
+    for(const s of [1,-1]) this.addMesh('head',SPH,{pos:[s*0.078*h,0.092*h,-0.006*h],scale:[0.012*h,0.024*h,0.018*h],ball:true});
+    for(const [p,s] of [['l',1],['r',-1]]){
+      // arm
+      this.addMesh(p+'Shoulder',limbGeo(T.upperArm,0.047*g,0.036*g,0.006*g,0.35));
+      this.addMesh(p+'Shoulder',SPH,{scale:0.052*g,ball:true});
+      this.addMesh(p+'Elbow',limbGeo(T.forearm,0.04*g,0.027*g,0.007*g,0.2));
+      this.addMesh(p+'Elbow',SPH,{scale:0.037*g,ball:true});
+      const k=T.hand*(0.85+0.15*this.bulk);
+      this.addMesh(p+'Wrist',SPH,{scale:0.027*g,ball:true});
+      this.addMesh(p+'Wrist',SPH,{pos:[0,-0.05*k,0.004*k],scale:[0.018*k,0.05*k,0.041*k]});
+      const fingers=this.addMesh(p+'Wrist',SPH,{});
+      const thumb=this.addMesh(p+'Wrist',SPH,{scale:[0.012*k,0.03*k,0.012*k]});
+      this.handParts[p]={fingers,thumb,k,s};
+      // leg
+      this.addMesh(p+'Hip',limbGeo(T.thigh,0.075*g,0.05*g,0.01*g,0.28));
+      this.addMesh(p+'Hip',SPH,{scale:0.062*g,ball:true});
+      this.addMesh(p+'Knee',limbGeo(T.shin,0.05*g,0.033*g,0.012*g,0.3));
+      this.addMesh(p+'Knee',SPH,{scale:0.049*g,ball:true});
+      const f=T.foot;
+      this.addMesh(p+'Ankle',SPH,{scale:0.035*g,ball:true});
+      this.addMesh(p+'Ankle',SPH,{pos:[0,-T.ankleH+0.034*f,0.045*f],scale:[0.044*g/T.g*T.foot,0.036*f,0.125*f]});
+    }
+  }
+  setColor(hex){
+    this.color=hex;
+    const c=lin(hex), b=c.clone().multiplyScalar(0.72);
+    for(const n in this.joints){this.joints[n].mat.color.copy(c);this.joints[n].ballMat.color.copy(b);}
+  }
+  highlight(selName,hovName){
+    for(const n in this.joints){
+      const j=this.joints[n], e=n===selName?HL_SEL:(n===hovName?HL_HOV:null);
+      j.mat.emissive.copy(e||BLACK); j.ballMat.emissive.copy(e||BLACK);
+    }
+  }
+  // anatomical degrees
+  getA(n,ax){const j=this.joints[n];return j.pivot.rotation[ax]*RAD*j.sgn[ax];}
+  setA(n,ax,v){const j=this.joints[n];if(!j.spec.dofs[ax])v=0;j.pivot.rotation[ax]=v*DEG*j.sgn[ax];}
+  clampJoint(n){
+    if(!limitsOn)return;
+    const j=this.joints[n];
+    for(const ax of ['x','y','z']){const L=j.lim[ax],v=this.getA(n,ax);if(v<L[0]||v>L[1])this.setA(n,ax,clamp(v,L[0],L[1]));}
+  }
+  getPose(){
+    const o={};
+    for(const n in this.joints){o[n]={};for(const ax of ['x','y','z']){const v=Math.round(this.getA(n,ax)*100)/100;if(v)o[n][ax]=v;}}
+    return o;
+  }
+  setPose(map,pel){
+    for(const n in this.joints){const v=(map&&map[n])||{};for(const ax of ['x','y','z'])this.setA(n,ax,v[ax]||0);}
+    const p=pel||[0,0,0]; this.joints.pelvis.pivot.position.copy(this.pelvisRest).add(new V3(p[0],p[1],p[2]));
+  }
+  pelvisOffset(){const d=this.joints.pelvis.pivot.position.clone().sub(this.pelvisRest);return [d.x,d.y,d.z].map(v=>Math.round(v*1e4)/1e4);}
+  mirror(){
+    const cur=this.getPose(), out={};
+    for(const n in cur){const v=cur[n];
+      if(sideOf(n))out[swapName(n)]={x:v.x||0,y:v.y||0,z:v.z||0};
+      else out[n]={x:v.x||0,y:-(v.y||0),z:-(v.z||0)};}
+    const p=this.pelvisOffset(); this.setPose(out,[-p[0],p[1],p[2]]);
+  }
+  ground(force){
+    if(this.seat){placeOnSeat(this);return;}
+    if(!autoGround&&!force)return;
+    this.group.updateMatrixWorld(true);
+    let min=Infinity; const v=_v;
+    for(const m of this.meshes){
+      const pos=m.geometry.attributes.position, mw=m.matrixWorld;
+      for(let i=0;i<pos.count;i+=2){v.fromBufferAttribute(pos,i).applyMatrix4(mw);if(v.y<min)min=v.y;}
+    }
+    if(isFinite(min)){this.group.position.y-=min;this.group.updateMatrixWorld(true);}
+  }
+  box(names){
+    this.group.updateMatrixWorld(true);
+    const b=new THREE.Box3();
+    for(const m of this.meshes) if(!names||names.includes(m.userData.joint)) b.expandByObject(m);
+    return b;
+  }
+  heightCm(){return Math.round(baseHeight(this.T)*this.height*100);}
+  snap(){
+    const p=this.group.position;
+    return {id:this.id,name:this.name,type:this.type,color:this.color,bulk:this.bulk,height:this.height,
+      pos:[p.x,p.y,p.z].map(v=>Math.round(v*1e4)/1e4),turn:Math.round(this.turn*100)/100,pelvis:this.pelvisOffset(),pose:this.getPose(),
+      seat:this.seat,look:this.look,goals:this.goals,hands:Object.assign({},this.hands),link:this.link};
+  }
+  load(s){
+    this.name=s.name||this.name;
+    const rebuild=s.type!==this.type||s.bulk!==this.bulk;
+    this.type=s.type||'male'; this.bulk=s.bulk||1; this.color=s.color||this.color; this.height=s.height||1;
+    this.seat=s.seat||null; this.look=s.look||null; this.goals=JSON.parse(JSON.stringify(s.goals||[])); this.link=s.link||null;
+    this.hands=Object.assign({l:'relaxed',r:'relaxed'},s.hands);
+    if(rebuild)this.build(); else {this.setColor(this.color);this.group.scale.setScalar(this.height);this.setHand('l',this.hands.l);this.setHand('r',this.hands.r);}
+    this.setPose(s.pose,s.pelvis);
+    const p=s.pos||[0,0,0]; this.group.position.set(p[0],p[1],p[2]); this.turn=s.turn||0;
+  }
+  dispose(){this.geos.forEach(g=>g.dispose());this.mats.forEach(m=>m.dispose());scene.remove(this.group);}
+}
+const BLACK=new THREE.Color(0), _v=new V3();
+function nextName(){let i=1;while(figures.some(f=>f.name==='Figure '+i))i++;return 'Figure '+i;}
+const figById=id=>figures.find(f=>f.id===id);
+
+/* ================= presets (anatomical degrees) ================= */
+const ARMS_DOWN={lShoulder:{z:9,x:3},rShoulder:{z:9,x:3},lElbow:{x:12},rElbow:{x:12},lHip:{z:3},rHip:{z:3}};
+const P=o=>Object.assign({},JSON.parse(JSON.stringify(ARMS_DOWN)),o);
+const PRESETS={
+  'Stand':P({}),
+  'T-pose':{lShoulder:{z:90},rShoulder:{z:90},lHip:{z:3},rHip:{z:3}},
+  'Contrapposto':P({pelvis:{z:6,y:-5},spine:{z:-3},chest:{z:-5,y:6},neck:{z:4,y:-6},lHip:{x:10,z:4,y:-8},lKnee:{x:16},lAnkle:{x:4},rHip:{z:-3},
+    lShoulder:{z:8,x:-4},rShoulder:{z:12,x:6},lElbow:{x:10},rElbow:{x:18}}),
+  'Walk':{pelvis:{y:6},chest:{y:-9},lHip:{x:24},lKnee:{x:6},lAnkle:{x:-8},rHip:{x:-16},rKnee:{x:18},rAnkle:{x:14},
+    rShoulder:{x:22,z:7},rElbow:{x:28},lShoulder:{x:-20,z:7},lElbow:{x:14},neck:{y:-3}},
+  'Run':{spine:{x:14},chest:{x:4,y:-10},pelvis:{y:8},neck:{x:-12},lHip:{x:62},lKnee:{x:82},lAnkle:{x:-4},rHip:{x:-18},rKnee:{x:100},rAnkle:{x:28},
+    rShoulder:{x:52,z:8},rElbow:{x:95},lShoulder:{x:-42,z:8},lElbow:{x:90}},
+  'Sit':{lHip:{x:90,z:4},rHip:{x:90,z:4},lKnee:{x:90},rKnee:{x:90},spine:{x:4},lShoulder:{x:22,z:6},rShoulder:{x:22,z:6},lElbow:{x:55},rElbow:{x:55}},
+  'Kneel':{rHip:{x:-4},rKnee:{x:92},rAnkle:{x:50},lHip:{x:88,z:4},lKnee:{x:92},spine:{x:4},lShoulder:{x:18,z:6},lElbow:{x:60},rShoulder:{z:8},rElbow:{x:10}},
+  'Crouch':{lHip:{x:104,z:14,y:-8},rHip:{x:104,z:14,y:-8},lKnee:{x:132},rKnee:{x:132},lAnkle:{x:-26},rAnkle:{x:-26},spine:{x:22},chest:{x:14},neck:{x:-26},
+    lShoulder:{x:42,z:12},rShoulder:{x:42,z:12},lElbow:{x:42},rElbow:{x:42}},
+  'Reach up':P({rShoulder:{x:168,z:12},rElbow:{x:6},chest:{z:-4,x:-4},neck:{x:-18},head:{x:-12},lHip:{z:4},rHip:{z:2},rAnkle:{x:12}}),
+  'Point':P({rShoulder:{x:88,z:4,y:-8},rElbow:{x:4},rWrist:{z:-6},chest:{y:-8},neck:{y:-10},lShoulder:{z:10,x:-4}}),
+  'Wave':P({rShoulder:{z:78,x:12,y:-80},rElbow:{x:88},rWrist:{z:-10},neck:{y:-8,z:4},chest:{z:4}}),
+  'Hands on hips':P({lShoulder:{z:50,x:-4,y:88},rShoulder:{z:50,x:-4,y:88},lElbow:{x:92},rElbow:{x:92},lWrist:{z:12,x:-10},rWrist:{z:12,x:-10},chest:{x:-4}}),
+  'Guard':{pelvis:{y:-22},chest:{y:12},spine:{x:8},lHip:{x:18,z:10,y:-10},lKnee:{x:26},rHip:{x:-12,z:10,y:-10},rKnee:{x:24},rAnkle:{x:10},
+    lShoulder:{x:58,z:22,y:-10},lElbow:{x:122},rShoulder:{x:40,z:26,y:-8},rElbow:{x:134},neck:{x:12,y:10}},
+  'Think':P({lShoulder:{x:30,z:8,y:40},lElbow:{x:102},rShoulder:{x:32,z:14,y:10},rElbow:{x:148},rWrist:{z:34},neck:{x:10,z:-5},head:{x:6,z:-6},chest:{x:4}}),
+  'Look back':P({pelvis:{y:10},spine:{y:18},chest:{y:26},neck:{y:40},head:{y:34},lShoulder:{z:10,x:-8},rShoulder:{z:10,x:8}}),
+};
+
+/* ================= props ================= */
+// Props face +Z like a figure; the "user side" of a desk or laptop is local -Z.
+const PROP_LABEL={chair:'Chair',desk:'Desk',table:'Table',laptop:'Laptop',phone:'Phone',cup:'Cup'};
+const BOXG=new THREE.BoxGeometry(1,1,1), CYLG=new THREE.CylinderGeometry(1,1,1,28), TORG=new THREE.TorusGeometry(1,0.28,8,18,Math.PI);
+const propById=id=>props.find(p=>p.id===id);
+class Prop{
+  constructor(o={}){
+    this.id=o.id||uid(); this.type=o.type; this.owner=o.owner||null; this.on=o.on||null; this.attach=null;
+    this.seatH=o.seatH||0.46; this.topH=o.topH||0.73;
+    this.group=new THREE.Group(); this.group.rotation.order='YXZ'; scene.add(this.group);
+    this.mat=new THREE.MeshStandardMaterial({color:lin('#8e949c'),roughness:0.7,metalness:0});
+    this.dark=new THREE.MeshStandardMaterial({color:lin('#2b2f35'),roughness:0.35,metalness:0});
+    this.meshes=[]; this.build();
+    if(o.pos)this.group.position.fromArray(o.pos);
+    if(o.turn)this.turn=o.turn;
+  }
+  get turn(){return this.group.rotation.y*RAD;}
+  set turn(v){this.group.rotation.y=v*DEG;}
+  add(geo,pos,scale,o={}){
+    const m=new THREE.Mesh(geo,o.dark?this.dark:this.mat);
+    m.position.set(...pos); m.scale.set(...scale); if(o.rot)m.rotation.set(...o.rot);
+    m.castShadow=true; m.receiveShadow=true; m.userData={prop:this.id};
+    (o.parent||this.group).add(m); this.meshes.push(m); return m;
+  }
+  build(){
+    for(const c of [...this.group.children])this.group.remove(c);
+    this.meshes=[];
+    const t=this.type;
+    if(t==='chair'){
+      const h=this.seatH;
+      this.add(BOXG,[0,h-0.035,0],[0.48,0.07,0.46]);
+      this.add(BOXG,[0,h+0.27,-0.245],[0.44,0.42,0.05],{rot:[-0.14,0,0]});
+      this.add(CYLG,[0,(h-0.07+0.08)/2,0],[0.028,h-0.15,0.028]);
+      for(let i=0;i<5;i++){const a=i*2*Math.PI/5;
+        this.add(BOXG,[Math.sin(a)*0.15,0.06,Math.cos(a)*0.15],[0.05,0.035,0.3],{rot:[0,a,0]});
+        this.add(SPH,[Math.sin(a)*0.29,0.025,Math.cos(a)*0.29],[0.025,0.025,0.025],{dark:true});}
+    }else if(t==='desk'){
+      const h=this.topH;
+      this.add(BOXG,[0,h-0.015,0],[1.3,0.03,0.68]);
+      for(const x of [-0.6,0.6])for(const z of [-0.29,0.29])this.add(BOXG,[x,(h-0.03)/2,z],[0.04,h-0.03,0.04]);
+    }else if(t==='table'){
+      const h=this.topH;
+      this.add(CYLG,[0,h-0.015,0],[0.42,0.03,0.42]); this.add(CYLG,[0,(h-0.03)/2,0],[0.035,h-0.03,0.035]); this.add(CYLG,[0,0.012,0],[0.24,0.024,0.24]);
+    }else if(t==='laptop'){
+      this.add(BOXG,[0,0.009,0],[0.32,0.018,0.22]);
+      this.add(BOXG,[0,0.0185,-0.02],[0.28,0.002,0.1],{dark:true});
+      const hinge=new THREE.Group(); hinge.position.set(0,0.018,0.11); hinge.rotation.x=0.28; this.group.add(hinge); this.hinge=hinge;
+      this.add(BOXG,[0,0.105,0],[0.32,0.21,0.008],{parent:hinge});
+      this.add(BOXG,[0,0.105,-0.0045],[0.29,0.18,0.002],{parent:hinge,dark:true});
+    }else if(t==='phone'){
+      // thickness on X, width on Y, length on Z; screen on the -X face
+      this.add(BOXG,[0,0,0],[0.008,0.072,0.15]);
+      this.add(BOXG,[-0.0045,0,0],[0.002,0.066,0.14],{dark:true});
+    }else if(t==='cup'){
+      this.add(CYLG,[0,0,0],[0.04,0.1,0.04]); this.add(CYLG,[0,0.049,0],[0.034,0.004,0.034],{dark:true});
+      this.add(TORG,[0.04,0,0],[0.026,0.026,0.026],{rot:[0,0,-Math.PI/2]});
+    }
+  }
+  anchor(name){
+    this.group.updateMatrixWorld(true);
+    if(this.type==='laptop'&&name==='look')return this.hinge.localToWorld(new V3(0,0.1,-0.01));
+    const L={keysL:[0.075,0.02,-0.035],keysR:[-0.075,0.02,-0.035]}[name]||[0,0,0];
+    return this.group.localToWorld(new V3(...L));
+  }
+  // hold in a hand: parented to the wrist pivot so it follows every pose change
+  attachTo(f,side){
+    const s=side==='l'?1:-1, k=f.T.hand*(0.85+0.15*f.bulk);
+    f.joints[side+'Wrist'].pivot.add(this.group); this.attach={fig:f.id,side};
+    this.group.scale.setScalar(1/f.height);
+    if(this.type==='phone'){this.group.position.set(-s*(0.019*k+0.006),-0.066*k,0.02*k);this.group.rotation.set(0,0,s>0?0:Math.PI);}
+    else {this.group.position.set(-s*(0.019*k+0.04),-0.07*k,0.006);this.group.rotation.set(Math.PI/2,0,0);}
+  }
+  detach(){
+    if(!this.attach)return;
+    this.group.updateMatrixWorld(true);
+    const p=this.group.getWorldPosition(new V3());
+    scene.add(this.group); this.group.position.set(p.x,Math.max(0.01,p.y),p.z); this.group.rotation.set(0,0,0); this.group.scale.setScalar(1);
+    this.attach=null;
+  }
+  highlight(on){this.mat.emissive.copy(on?HL_SEL:BLACK);}
+  snap(){
+    const p=this.group.position;
+    const r=v=>Math.round(v*1e5)/1e5, q=this.group.quaternion;
+    return {id:this.id,type:this.type,owner:this.owner,on:this.on,attach:this.attach,seatH:this.seatH,topH:this.topH,
+      pos:[p.x,p.y,p.z].map(v=>Math.round(v*1e4)/1e4),turn:Math.round(this.turn*100)/100,
+      // held props keep their exact grip (e.g. a phone aligned ear-to-mouth)
+      grip:this.attach?{p:[p.x,p.y,p.z].map(r),q:[q.x,q.y,q.z,q.w].map(r)}:undefined};
+  }
+  dispose(){if(this.group.parent)this.group.parent.remove(this.group);this.mat.dispose();this.dark.dispose();}
+}
+function reattachProps(f){props.forEach(p=>{if(p.attach&&p.attach.fig===f.id)p.attachTo(f,p.attach.side);});}
+function removeProp(p){
+  figures.forEach(f=>{
+    if(f.seat===p.id)f.seat=null;
+    f.goals=f.goals.filter(g=>g.prop!==p.id);
+    if(f.look&&f.look.prop===p.id)f.look=null;
+  });
+  props.forEach(q=>{if(q.on===p.id)q.on=null;});
+  p.dispose(); props=props.filter(q=>q!==p); if(selProp===p)selProp=null;
+}
+// everything that travels with a figure when it is moved or turned
+function carriedBy(f){
+  const set=new Set(props.filter(p=>!p.attach&&p.owner===f.id));
+  const ch=f.seat&&propById(f.seat); if(ch)set.add(ch);
+  props.forEach(p=>{if(!p.attach&&p.on&&[...set].some(q=>q.id===p.on))set.add(p);});
+  return [...set];
+}
+function sceneBoxFor(f){
+  const b=f.box(); carriedBy(f).forEach(p=>b.expandByObject(p.group)); return b;
+}
+
+/* ================= seating ================= */
+function minY(f,joints){
+  f.group.updateMatrixWorld(true);
+  let min=Infinity;
+  for(const m of f.meshes){
+    if(joints&&!joints.includes(m.userData.joint))continue;
+    const pos=m.geometry.attributes.position, mw=m.matrixWorld;
+    for(let i=0;i<pos.count;i+=2){_v.fromBufferAttribute(pos,i).applyMatrix4(mw);if(_v.y<min)min=_v.y;}
+  }
+  return min;
+}
+// office chair gas lift: seat top a little below knee height so the feet land flat
+const autoSeatH=f=>clamp((f.T.shin+f.T.ankleH)*f.height-0.03,0.34,0.52);
+function placeOnSeat(f){
+  const ch=propById(f.seat); if(!ch){f.seat=null;return;}
+  f.group.rotation.y=ch.group.rotation.y;
+  f.group.updateMatrixWorld(true); ch.group.updateMatrixWorld(true);
+  const pel=f.joints.pelvis.pivot.getWorldPosition(new V3()), want=ch.group.localToWorld(new V3(0,0,-0.02));
+  f.group.position.x+=want.x-pel.x; f.group.position.z+=want.z-pel.z;
+  f.group.position.y+=ch.group.position.y+ch.seatH-minY(f,['pelvis','lHip','rHip']);
+  f.group.updateMatrixWorld(true);
+}
+function fitFeet(f){
+  const gq=f.group.getWorldQuaternion(new Q());
+  for(const s of ['l','r']){
+    let best=null;
+    for(let fl=40;fl<=112;fl+=2){
+      f.setA(s+'Knee','x',fl); setWorldQuat(f,s+'Ankle',gq);
+      const y=minY(f,[s+'Ankle']), c=Math.abs(y)+Math.abs(fl-88)*0.0004;
+      if(!best||c<best.c)best={c,fl};
+    }
+    f.setA(s+'Knee','x',best.fl); setWorldQuat(f,s+'Ankle',gq);
+  }
+}
+function seatFigure(f,ch){
+  f.seat=ch.id;
+  const h=autoSeatH(f); if(Math.abs(ch.seatH-h)>1e-3){ch.seatH=h;ch.build();if(selProp===ch)ch.highlight(true);}
+  placeOnSeat(f); fitFeet(f); placeOnSeat(f);
+}
+
+/* ================= look-at ================= */
+const eyePoint=f=>f.joints.head.pivot.localToWorld(new V3(0,0.1*f.T.head,0.07*f.T.head));
+function lookTarget(f){
+  const L=f.look; if(!L)return null;
+  if(L==='camera')return camera.position.clone();
+  if(L.fig){const o=figById(L.fig);if(!o||o===f)return null;o.group.updateMatrixWorld(true);return eyePoint(o);}
+  if(L.prop){const p=propById(L.prop);return p?p.anchor('look'):null;}
+  return null;
+}
+// neck takes about half the turn, the head the rest; solved in closed form per joint for the XZY order
+function aimHead(f,t){
+  for(let it=0;it<2;it++) for(const [n,share] of [['neck',0.5],['head',1]]){
+    f.group.updateMatrixWorld(true);
+    const p=f.joints[n].pivot;
+    const d=t.clone().sub(eyePoint(f)).applyQuaternion(p.parent.getWorldQuaternion(new Q()).invert()).normalize();
+    // rotation of this joint relative to where it points now: combine with current angles
+    const yaw=Math.asin(clamp(d.x,-1,1))*RAD, pitch=Math.atan2(-d.y,d.z)*RAD;
+    f.setA(n,'y',yaw*share); f.setA(n,'x',pitch*share); f.clampJoint(n);
+  }
+}
+
+/* ================= hand goals ================= */
+function figAxes(f){
+  const q=f.group.getWorldQuaternion(new Q());
+  return {fwd:new V3(0,0,1).applyQuaternion(q),left:new V3(1,0,0).applyQuaternion(q),up:new V3(0,1,0)};
+}
+// A goal gives a palm position, palm normal N and finger direction F in world space
+function goalFrame(f,g){
+  const s=g.side==='l'?1:-1, A=figAxes(f), out=A.left.clone().multiplyScalar(s), h=f.height, up=A.up;
+  f.group.updateMatrixWorld(true);
+  const J=n=>f.joints[n].pivot.getWorldPosition(new V3());
+  const sh=J(g.side+'Shoulder');
+  switch(g.kind){
+    case 'type':{
+      const lp=propById(g.prop); if(!lp)return null;
+      const fw=new V3(0,0,1).applyQuaternion(lp.group.getWorldQuaternion(new Q()));
+      return {pos:lp.anchor(g.side==='l'?'keysL':'keysR').add(new V3(0,0.028,0)),N:new V3(0,-1,0),F:fw.clone().add(new V3(0,-0.35,0)),eff:0.085};
+    }
+    case 'ear':{
+      const hp=f.joints.head.pivot, hq=hp.getWorldQuaternion(new Q()), hh=f.T.head;
+      const hl=new V3(s,0,0).applyQuaternion(hq), hf=new V3(0,0,1).applyQuaternion(hq), hu=new V3(0,1,0).applyQuaternion(hq);
+      const ear=hp.localToWorld(new V3(s*0.08*hh,0.085*hh,0.005*hh));
+      // palm on the ear, fingers up and back, so the forearm drops and the elbow points down-forward;
+      // the phone itself is aligned ear-to-mouth separately (alignHeldPhone)
+      return {pos:ear.addScaledVector(hl,0.04*h).addScaledVector(hu,-0.015*h).addScaledVector(hf,0.01*h),N:hl.clone().negate(),
+        F:hu.clone().multiplyScalar(0.75).addScaledVector(hf,-0.5),eff:0.055,phoneZ:hu.clone().multiplyScalar(-0.8).addScaledVector(hf,0.6)};
+    }
+    case 'view': case 'text':{
+      // anchored on the neck base, not the eyes: the eyes move when the head looks down at the phone
+      const eye=eyePoint(f), base=J('neck').addScaledVector(A.fwd,0.3*h).addScaledVector(up,-0.14*h);
+      const pos=base.addScaledVector(out,(g.kind==='text'?0.042:0.018)*h);
+      return {pos,N:eye.clone().sub(pos).normalize(),F:out.clone().negate(),eff:0.06,phoneZ:up.clone()};
+    }
+    case 'lap':{
+      const hip=J(g.side+'Hip'), kn=J(g.side+'Knee');
+      return {pos:hip.clone().lerp(kn,0.62).add(new V3(0,0.085*f.T.g*f.bulk*h+0.018,0)).addScaledVector(out,-0.01),
+        N:new V3(0,-1,0),F:kn.clone().sub(hip).normalize(),eff:0.06};
+    }
+    case 'gesture':{
+      const lo=g.low?1:0;
+      const pos=sh.clone().addScaledVector(A.fwd,(0.36-0.06*lo)*h).addScaledVector(out,(0.2-0.06*lo)*h).addScaledVector(up,-(0.2+0.12*lo)*h);
+      return {pos,N:up.clone().multiplyScalar(0.85).addScaledVector(out,-0.3).addScaledVector(A.fwd,0.15),F:A.fwd.clone().addScaledVector(out,0.55),eff:0.06};
+    }
+    case 'cup':{
+      const pos=sh.clone().addScaledVector(A.fwd,0.3*h).addScaledVector(out,-0.08*h).addScaledVector(up,-0.17*h);
+      return {pos,N:out.clone().negate(),F:A.fwd.clone(),eff:0.06};
+    }
+    case 'shake':{
+      const o=figById(g.fig); if(!o)return null; o.group.updateMatrixWorld(true);
+      const osh=o.joints.rShoulder.pivot.getWorldPosition(new V3());
+      const to=osh.clone().sub(sh).setY(0).normalize();
+      const N=new V3().crossVectors(up,to).multiplyScalar(-s);
+      const mid=sh.clone().add(osh).multiplyScalar(0.5); mid.y=(sh.y+osh.y)/2-0.4*h;
+      return {pos:mid.addScaledVector(N,-0.02),N,F:to.clone().addScaledVector(up,-0.15),eff:0.06};
+    }
+    case 'cross':{
+      // forearms folded in front of the lower chest, each hand tucked toward the other arm; right arm on top
+      const c=J('chest').lerp(J('neck'),0.45), top=g.side==='r';
+      const pos=c.addScaledVector(A.fwd,(0.15+(top?0.05:0))*h+0.1*f.T.g*f.bulk).addScaledVector(out,-0.13*h).addScaledVector(up,(top?0.0:-0.03)*h);
+      return {pos,N:A.fwd.clone().multiplyScalar(-0.8).addScaledVector(out,-0.4),F:out.clone().negate().addScaledVector(A.fwd,-0.25),eff:0.05};
+    }
+  }
+  return null;
+}
+// orient the hand: forearm twist takes the roll around the forearm, the wrist the rest
+function orientHand(f,side,N,F){
+  const s=side==='l'?1:-1;
+  const X=N.clone().normalize().multiplyScalar(-s);
+  const Y=F.clone().addScaledVector(X,-F.dot(X)).normalize().negate();
+  if(Y.lengthSq()<0.5)return;
+  const Z=new V3().crossVectors(X,Y);
+  const qd=new Q().setFromRotationMatrix(new THREE.Matrix4().makeBasis(X,Y,Z));
+  const el=f.joints[side+'Elbow'].pivot; f.group.updateMatrixWorld(true);
+  const ql=el.getWorldQuaternion(new Q()).invert().multiply(qd);
+  let tw=2*Math.atan2(ql.y,ql.w); tw=Math.atan2(Math.sin(tw),Math.cos(tw));
+  el.rotation.y+=tw; f.clampJoint(side+'Elbow');
+  setWorldQuat(f,side+'Wrist',qd);
+}
+function solveHandGoal(f,g){
+  const fr=goalFrame(f,g); if(!fr)return;
+  const k=f.T.hand*(0.85+0.15*f.bulk), eff=new V3(0,-fr.eff*k,0);
+  const pole=poleFor(f,g);
+  for(let it=0;it<3;it++){
+    solveChain(f,[g.side+'Shoulder',g.side+'Elbow'],g.side+'Wrist',eff,fr.pos);
+    swivel(f,g.side,eff,pole);
+    orientHand(f,g.side,fr.N,fr.F);
+  }
+  if(fr.phoneZ)alignHeldPhone(f,g.side,fr,k);
+}
+// which way the elbow should point for each kind of goal: [down, forward, outward]
+const POLES={type:[1,0,0.45],ear:[0.75,0.6,0.35],view:[1,0,0.3],text:[1,0,0.35],lap:[0.5,-0.6,0.4],gesture:[1,0,0.35],
+  cup:[1,0,0.35],shake:[1,0,0.35],cross:[0.35,0,1]};
+function poleFor(f,g){
+  const A=figAxes(f), P=POLES[g.kind]||[1,0,0.3], out=A.left.clone().multiplyScalar(g.side==='l'?1:-1);
+  return new V3(0,-P[0],0).addScaledVector(A.fwd,P[1]).addScaledVector(out,P[2]).normalize();
+}
+// swing the whole arm around the shoulder-to-hand line so the elbow points at the pole (hand stays put)
+function swivel(f,side,eff,pole){
+  const sh=f.joints[side+'Shoulder'].pivot; f.group.updateMatrixWorld(true);
+  const S=sh.getWorldPosition(new V3()), E=f.joints[side+'Elbow'].pivot.getWorldPosition(new V3());
+  const H=f.joints[side+'Wrist'].pivot.localToWorld(eff.clone());
+  const a=H.sub(S).normalize(), e=E.sub(S), p=pole.clone();
+  e.addScaledVector(a,-e.dot(a)); p.addScaledVector(a,-p.dot(a));
+  if(e.lengthSq()<1e-6||p.lengthSq()<1e-6)return;
+  e.normalize(); p.normalize();
+  const ang=Math.atan2(a.dot(new V3().crossVectors(e,p)),e.dot(p));
+  const wq=sh.getWorldQuaternion(new Q()), pq=sh.parent.getWorldQuaternion(new Q()).invert();
+  sh.quaternion.copy(pq.multiply(new Q().setFromAxisAngle(a,ang)).multiply(wq)); f.clampJoint(side+'Shoulder');
+}
+// the phone sits against the palm with its screen facing the way the palm faces, long axis along phoneZ
+function alignHeldPhone(f,side,fr,k){
+  const p=props.find(q=>q.type==='phone'&&q.attach&&q.attach.fig===f.id&&q.attach.side===side); if(!p)return;
+  const w=f.joints[side+'Wrist'].pivot; f.group.updateMatrixWorld(true);
+  const N=fr.N.clone().normalize(), X=N.clone().negate();
+  const Z=fr.phoneZ.clone().addScaledVector(X,-fr.phoneZ.dot(X)).normalize();
+  if(Z.lengthSq()<0.5)return;
+  const Y=new V3().crossVectors(Z,X);
+  const qd=new Q().setFromRotationMatrix(new THREE.Matrix4().makeBasis(X,Y,Z));
+  const pos=w.localToWorld(new V3(0,-fr.eff*k,0)).addScaledVector(N,0.019*k*f.height+0.005);
+  p.group.quaternion.copy(w.getWorldQuaternion(new Q()).invert().multiply(qd));
+  p.group.position.copy(w.worldToLocal(pos));
+}
+function resolveFig(f){
+  if(f.goals.length){
+    const passes=f.goals.some(g=>g.kind==='cross')?3:1;
+    for(let i=0;i<passes;i++)f.goals.forEach(g=>solveHandGoal(f,g));
+  }
+  const t=lookTarget(f); if(t)aimHead(f,t);
+}
+function resolveAll(){figures.forEach(f=>{if(f.goals.length||f.look)resolveFig(f);});}
+// the user took manual control of a limb: drop the live goal that was driving it
+function releaseFor(f,joint){
+  const side=sideOf(joint), part=side?joint.slice(1):joint;
+  if(side&&['Shoulder','Elbow','Wrist'].includes(part)){const sd=side>0?'l':'r';f.goals=f.goals.filter(g=>g.side!==sd);}
+  if(joint==='neck'||joint==='head')f.look=null;
+}
+
+/* ================= work presets ================= */
+const SEAT_BASE={pelvis:{x:-4},spine:{x:6},chest:{x:2},lHip:{x:88,z:6,y:4},rHip:{x:88,z:6,y:4},lKnee:{x:88},rKnee:{x:88},
+  lShoulder:{x:18,z:8,y:10},rShoulder:{x:18,z:8,y:10},lElbow:{x:55,y:40},rElbow:{x:55,y:40}};
+const LAP={side:'l',kind:'lap'};
+const WORK={
+  'Stand':{},
+  'Laptop':{seat:true,desk:true,laptop:true,hands:{l:'flat',r:'flat'},look:{prop:'laptop'},
+    base:{spine:{x:12},chest:{x:6},lShoulder:{x:28,z:14,y:24},rShoulder:{x:28,z:14,y:24},lElbow:{x:95,y:75},rElbow:{x:95,y:75}},
+    goals:[{side:'l',kind:'type',prop:'laptop'},{side:'r',kind:'type',prop:'laptop'}]},
+  'Seated talk':{seat:true,look:'other',
+    base:{spine:{x:2},rShoulder:{x:25,z:14,y:-10},rElbow:{x:95,y:-30}},goals:[LAP,{side:'r',kind:'gesture',low:true}]},
+  'Phone call':{props:[{type:'phone',side:'r'}],hands:{r:'grip'},base:{neck:{z:-5},rShoulder:{x:45,z:28,y:25},rElbow:{x:140,y:40}},goals:[{side:'r',kind:'ear'}]},
+  'Call · seated':{seat:true,props:[{type:'phone',side:'r'}],hands:{r:'grip'},base:{neck:{z:-5},rShoulder:{x:45,z:28,y:25},rElbow:{x:140,y:40}},goals:[{side:'r',kind:'ear'},LAP]},
+  'Reading phone':{props:[{type:'phone',side:'r'}],hands:{r:'grip'},look:{prop:'phone'},base:{chest:{x:4},rShoulder:{x:30,z:8,y:30},rElbow:{x:110,y:80}},goals:[{side:'r',kind:'view'}]},
+  'Reading · seated':{seat:true,props:[{type:'phone',side:'r'}],hands:{r:'grip'},look:{prop:'phone'},base:{spine:{x:8},rShoulder:{x:30,z:8,y:30},rElbow:{x:110,y:80}},goals:[{side:'r',kind:'view'},LAP]},
+  'Texting':{props:[{type:'phone',side:'r'}],hands:{l:'grip',r:'grip'},look:{prop:'phone'},
+    base:{chest:{x:4},lShoulder:{x:30,z:8,y:30},rShoulder:{x:30,z:8,y:30},lElbow:{x:110,y:80},rElbow:{x:110,y:80}},goals:[{side:'r',kind:'text'},{side:'l',kind:'text'}]},
+  'Presenting':{look:'camera',hands:{r:'flat'},base:{chest:{y:8},rShoulder:{x:30,z:20,y:-20},rElbow:{x:60}},goals:[{side:'r',kind:'gesture'}]},
+  'Arms crossed':{base:{chest:{x:-3},lShoulder:{x:30,z:22,y:55},rShoulder:{x:34,z:22,y:55},lElbow:{x:118},rElbow:{x:118}},goals:[{side:'l',kind:'cross'},{side:'r',kind:'cross'}]},
+  'Coffee':{props:[{type:'cup',side:'r'}],hands:{r:'grip'},base:{rShoulder:{x:20,z:10,y:10},rElbow:{x:110}},goals:[{side:'r',kind:'cup'}]},
+};
+function clearRig(f){
+  props.filter(p=>p.owner===f.id||(p.attach&&p.attach.fig===f.id)).forEach(removeProp);
+  f.seat=null; f.goals=[]; f.look=null; f.setHand('l','relaxed'); f.setHand('r','relaxed');
+}
+function otherLook(f){
+  f.group.updateMatrixWorld(true);
+  const me=f.joints.pelvis.pivot.getWorldPosition(new V3());
+  let best=null,bd=Infinity;
+  figures.forEach(o=>{if(o===f)return;const d=o.joints.pelvis.pivot.getWorldPosition(new V3()).distanceTo(me);if(d<bd){bd=d;best=o;}});
+  return best?{fig:best.id}:null;
+}
+// build a work preset on a figure: props first, then the seat, then live goals + look
+function applyWork(f,def){
+  clearRig(f);
+  f.setPose(Object.assign({},JSON.parse(JSON.stringify(ARMS_DOWN)),def.seat?SEAT_BASE:{},def.base||{}));
+  const A=figAxes(f), ids={};
+  if(def.seat){
+    f.group.updateMatrixWorld(true);
+    const pel=f.joints.pelvis.pivot.getWorldPosition(new V3());
+    const ch=new Prop({type:'chair',owner:f.id,pos:[pel.x,0,pel.z],turn:f.turn}); props.push(ch); ids.chair=ch.id;
+    seatFigure(f,ch);
+    if(def.desk){
+      const dh=ch.seatH+0.27, dp=ch.group.position.clone().addScaledVector(A.fwd,0.62);
+      const d=new Prop({type:'desk',owner:f.id,topH:dh,pos:dp.toArray(),turn:f.turn}); props.push(d); ids.desk=d.id;
+      if(def.laptop){
+        const lp=dp.clone().addScaledVector(A.fwd,-0.15); lp.y=dh;
+        const l=new Prop({type:'laptop',owner:f.id,on:d.id,pos:lp.toArray(),turn:f.turn}); props.push(l); ids.laptop=l.id;
+      }
+    }
+  }else f.ground(true);
+  for(const pd of def.props||[]){const p=new Prop({type:pd.type,owner:f.id});props.push(p);p.attachTo(f,pd.side);ids[pd.type]=p.id;}
+  for(const s of ['l','r'])f.setHand(s,(def.hands&&def.hands[s])||'relaxed');
+  f.goals=(def.goals||[]).map(g=>Object.assign({},g,g.prop?{prop:ids[g.prop]}:{}));
+  f.look=def.look==='other'?otherLook(f):def.look==='camera'?'camera':def.look&&def.look.prop?{prop:ids[def.look.prop]}:null;
+  resolveFig(f); f.ground();
+}
+function applyAngles(f,map){clearRig(f);f.setPose(map);f.ground();}
+function spawnFigureNear(){
+  const f=new Figure({type:'male',color:FIG_COLORS[figures.length%FIG_COLORS.length][0]}); figures.push(f);
+  f.setPose(PRESETS['Stand']);
+  return f;
+}
+// put b on the floor at dist along a's facing (+off degrees), facing back toward a
+function placeFacing(a,b,dist,off){
+  const A=figAxes(a), dir=A.fwd.clone().applyAxisAngle(new V3(0,1,0),(off||0)*DEG);
+  clearRig(b);
+  a.group.updateMatrixWorld(true);
+  const pa=a.joints.pelvis.pivot.getWorldPosition(new V3()); pa.y=0;
+  b.group.position.copy(pa.addScaledVector(dir,dist)); b.turn=a.turn+180+(off||0);
+  b.group.position.y=0; b.setPose(PRESETS['Stand']); b.ground(true);
+}
+const SCENES={
+  'Conversation':()=>{
+    const a=act, b=figures.find(f=>f!==a)||spawnFigureNear(a);
+    clearRig(a); placeFacing(a,b,1.45,18); a.turn+=18; a.group.updateMatrixWorld(true);
+    applyWork(a,WORK['Seated talk']); applyWork(b,WORK['Seated talk']);
+    a.look={fig:b.id}; b.look={fig:a.id}; resolveFig(a); resolveFig(b);
+  },
+  'Across the desk':()=>{
+    const a=act, b=figures.find(f=>f!==a)||spawnFigureNear(a);
+    applyWork(a,WORK['Laptop']);
+    const desk=props.find(p=>p.type==='desk'&&p.owner===a.id), A=figAxes(a);
+    clearRig(b);
+    const bp=desk.group.position.clone().addScaledVector(A.fwd,0.34+0.5); bp.y=0;
+    b.group.position.copy(bp); b.turn=a.turn+180; b.setPose(PRESETS['Stand']);
+    applyWork(b,WORK['Seated talk']);
+    a.look={fig:b.id}; b.look={fig:a.id}; resolveFig(a); resolveFig(b);
+  },
+  'Handshake':()=>{
+    const a=act, b=figures.find(f=>f!==a)||spawnFigureNear(a);
+    applyWork(a,WORK['Stand']); placeFacing(a,b,0.82,0); applyWork(b,WORK['Stand']);
+    for(const [f,o] of [[a,b],[b,a]]){
+      f.setPose(Object.assign({},PRESETS['Stand'],{rShoulder:{x:30,z:8,y:-10},rElbow:{x:40,y:-20}}));
+      f.setHand('r','grip'); f.goals=[{side:'r',kind:'shake',fig:o.id}]; f.look={fig:o.id};
+    }
+    resolveFig(a); resolveFig(b); resolveFig(a); resolveFig(b);
+  },
+};
+function applyNamed(n){
+  if(!act)return false;
+  if(SCENES[n]){SCENES[n]();refreshAll();frameAll();}
+  else if(WORK[n])applyWork(act,WORK[n]);
+  else if(PRESETS[n])applyAngles(act,PRESETS[n]);
+  else return false;
+  syncAxes(); refreshFigUI(); refreshPropUI(); commit(); return true;
+}
+
+/* ================= camera ================= */
+const cam={target:new V3(0,1,0),theta:0.7,phi:1.45,radius:4,mm:35,shot:'full'};
+function setLens(mm){cam.mm=mm;camera.fov=2*Math.atan(12/mm)*RAD;camera.updateProjectionMatrix();$('vLens').textContent=mm+'mm';$('rLens').value=mm;}
+function applyCam(){
+  const t=cam.target,r=cam.radius,ph=cam.phi,th=cam.theta;
+  camera.position.set(t.x+r*Math.sin(ph)*Math.sin(th),t.y+r*Math.cos(ph),t.z+r*Math.sin(ph)*Math.cos(th));
+  camera.lookAt(t);
+  placeLights();
+}
+function sceneCenter(){
+  if(!figures.length)return new V3(0,0.9,0);
+  const c=new V3(); figures.forEach(f=>c.add(f.group.position)); c.divideScalar(figures.length); c.y=0.9; return c;
+}
+function placeLights(){
+  const c=sceneCenter(), a=cam.theta+keyAz*DEG;
+  key.position.set(c.x+Math.sin(a)*4,5.4,c.z+Math.cos(a)*4); key.target.position.copy(c);
+  const af=cam.theta-keyAz*DEG*0.8;
+  fill.position.set(c.x+Math.sin(af)*4,2.0,c.z+Math.cos(af)*4); fill.target.position.copy(c);
+  const ar=a+Math.PI*0.85;
+  rim.position.set(c.x+Math.sin(ar)*4,3.6,c.z+Math.cos(ar)*4); rim.target.position.copy(c);
+}
+const VIEWS={front:0,tqL:40,sideL:90,back:180,tqR:-40,sideR:-90};
+function setView(v){
+  const turn=act?act.turn:0;
+  if(v==='high'){cam.phi=0.92;}
+  else if(v==='low'){cam.phi=1.86;}
+  else {cam.theta=(turn+VIEWS[v])*DEG; if(cam.phi<1.2||cam.phi>1.7)cam.phi=1.5;}
+  fitShot(cam.shot);
+}
+// fraction of the viewport the capture frame occupies, so fitting frames the *capture*, not the window
+function frameInfo(){
+  const w=stage.clientWidth,h=stage.clientHeight,g=guideRect();
+  return {asp:g.w/g.h,tanV:Math.tan(camera.fov*DEG/2)*(g.h/h)};
+}
+function fitShot(kind){
+  cam.shot=kind; markShot();
+  if(!act){applyCam();return;}
+  const f=act, b=sceneBoxFor(f), fi=frameInfo();
+  let y0=b.min.y,y1=b.max.y,cx,cz,halfW;
+  const head=f.box(['head']), chest=f.box(['chest','lShoulder','rShoulder']);
+  const c=b.getCenter(new V3()), sz=b.getSize(new V3());
+  if(kind==='wide'){
+    const all=new THREE.Box3(); figures.forEach(x=>all.union(sceneBoxFor(x)));
+    const ac=all.getCenter(new V3()), as=all.getSize(new V3());
+    y0=-0.15; y1=Math.max(all.max.y,1)*1.3; cx=ac.x; cz=ac.z; halfW=Math.max(as.x,as.z)/2*1.5+0.7;
+  }else if(kind==='medium'){
+    const pel=f.joints.pelvis.pivot.getWorldPosition(new V3());
+    y0=pel.y-0.12*f.height; y1=head.max.y+0.03; const cc=chest.getCenter(new V3()); cx=cc.x; cz=cc.z;
+    halfW=Math.max(chest.getSize(new V3()).x,chest.getSize(new V3()).z)/2*1.25;
+  }else if(kind==='close'){
+    y0=chest.max.y-0.16*f.height; y1=head.max.y+0.035; const hc=head.getCenter(new V3()); cx=hc.x; cz=hc.z; halfW=0.2*f.height;
+  }else{
+    cx=c.x; cz=c.z; halfW=Math.max(sz.x,sz.z)/2;
+  }
+  const hv=(y1-y0)/2*1.1, hh=halfW*1.12;
+  const dist=Math.max(hv/fi.tanV,hh/(fi.tanV*fi.asp))+halfW*0.6;
+  cam.target.set(cx,(y0+y1)/2,cz); cam.radius=clamp(dist,0.3,60);
+  applyCam();
+}
+function frameAll(){
+  const all=new THREE.Box3(); figures.forEach(x=>all.union(sceneBoxFor(x)));
+  if(all.isEmpty())return;
+  const c=all.getCenter(new V3()), s=all.getSize(new V3()), fi=frameInfo();
+  const hv=s.y/2*1.12, hh=Math.max(s.x,s.z)/2*1.12;
+  cam.target.copy(c); cam.radius=Math.max(hv/fi.tanV,hh/(fi.tanV*fi.asp))+Math.max(s.x,s.z)*0.4;
+  applyCam();
+}
+
+/* ================= handles (move ring + turn knob) ================= */
+const handles=new THREE.Group(); scene.add(handles);
+const ringMat=new THREE.MeshBasicMaterial({color:0xf5b12f,transparent:true,opacity:0.55,depthWrite:false,side:THREE.DoubleSide});
+const ring=new THREE.Mesh(new THREE.RingGeometry(0.40,0.425,64),ringMat); ring.rotation.x=-Math.PI/2; handles.add(ring);
+const ringPick=new THREE.Mesh(new THREE.RingGeometry(0.33,0.49,48),new THREE.MeshBasicMaterial({transparent:true,opacity:0,depthWrite:false,side:THREE.DoubleSide}));
+ringPick.rotation.x=-Math.PI/2; ringPick.userData.handle='move'; handles.add(ringPick);
+const knob=new THREE.Mesh(new THREE.ConeGeometry(0.035,0.09,16),new THREE.MeshBasicMaterial({color:0xffc757}));
+knob.rotation.x=Math.PI/2; knob.scale.set(1,1,0.35); knob.position.set(0,0.01,0.48); knob.userData.handle='turn'; handles.add(knob);
+const knobPick=new THREE.Mesh(new THREE.SphereGeometry(0.1,12,8),new THREE.MeshBasicMaterial({transparent:true,opacity:0,depthWrite:false}));
+knobPick.position.copy(knob.position); knobPick.userData.handle='turn'; handles.add(knobPick);
+let showHandles=true;
+function updateHandles(){
+  handles.visible=!!act&&showHandles;
+  if(!act)return;
+  const p=act.joints.pelvis.pivot.getWorldPosition(new V3());
+  handles.position.set(p.x,0.004,p.z); handles.rotation.y=act.group.rotation.y;
+  handles.scale.setScalar(act.height*(act.type==='child'?0.8:1));
+}
+
+/* ================= IK ================= */
+const _a=new V3(),_b=new V3(),_c=new V3(),_q1=new Q(),_q2=new Q(),_q3=new Q();
+function aimJoint(f,n,eff,target){
+  const p=f.joints[n].pivot; f.group.updateMatrixWorld(true);
+  const pj=p.getWorldPosition(_c);
+  const a=_a.copy(eff).sub(pj), b=_b.copy(target).sub(pj);
+  if(a.lengthSq()<1e-8||b.lengthSq()<1e-8)return;
+  a.normalize(); b.normalize();
+  const dq=_q1.setFromUnitVectors(a,b);
+  const wq=p.getWorldQuaternion(_q2), pq=p.parent.getWorldQuaternion(_q3).invert();
+  p.quaternion.copy(pq.multiply(dq).multiply(wq));
+  f.clampJoint(n);
+}
+// Aim a ball joint (shoulder / hip) without touching its twist: solve the XZY swing angles analytically so the
+// effector direction lands on the target direction. Keeps IK from spinning the arm around its own axis.
+const _Y=new V3(0,1,0);
+function aimSwing(f,n,eff,target){
+  const p=f.joints[n].pivot, r=p.rotation; f.group.updateMatrixWorld(true);
+  const pj=p.getWorldPosition(new V3());
+  const t=target.clone().sub(pj).applyQuaternion(p.parent.getWorldQuaternion(new Q()).invert());
+  const u=p.worldToLocal(eff.clone());
+  if(t.lengthSq()<1e-8||u.lengthSq()<1e-8)return;
+  t.normalize(); u.normalize().applyAxisAngle(_Y,r.y);
+  const A=u.x, B=-u.y, R=Math.hypot(A,B); if(R<1e-6)return;
+  const phi=Math.atan2(B,A), del=Math.acos(clamp(t.x/R,-1,1));
+  const near=(a,ref)=>a+Math.round((ref-a)/(2*Math.PI))*2*Math.PI;
+  const z1=near(phi+del,r.z), z2=near(phi-del,r.z);
+  const z=Math.abs(z1-r.z)<=Math.abs(z2-r.z)?z1:z2;
+  const vy=u.x*Math.sin(z)+u.y*Math.cos(z), vz=u.z;
+  const x=near(Math.atan2(t.z,t.y)-Math.atan2(vz,vy),r.x);
+  r.x=x; r.z=z; f.clampJoint(n);
+}
+const aim=(f,n,eff,target)=>(sideOf(n)&&!f.joints[n].spec.hinge&&!n.endsWith('Wrist')&&!n.endsWith('Ankle')?aimSwing:aimJoint)(f,n,eff,target);
+function setWorldQuat(f,n,q){
+  const p=f.joints[n].pivot; f.group.updateMatrixWorld(true);
+  p.quaternion.copy(p.parent.getWorldQuaternion(_q3).invert().multiply(q)); f.clampJoint(n);
+}
+function solveChain(f,chain,effJ,effLocal,target){
+  const effW=()=>{f.group.updateMatrixWorld(true);return f.joints[effJ].pivot.localToWorld(effLocal.clone());};
+  const B=chain.length===2&&f.joints[chain[1]].spec.hinge?chain[1]:null;
+  if(B){
+    const A=chain[0];
+    for(let it=0;it<4;it++){
+      f.group.updateMatrixWorld(true);
+      const pa=f.joints[A].pivot.getWorldPosition(new V3()), pb=f.joints[B].pivot.getWorldPosition(new V3()), pe=effW();
+      const a=pa.distanceTo(pb), b=pb.distanceTo(pe);
+      const d=clamp(pa.distanceTo(target),Math.abs(a-b)+1e-4,a+b-1e-4);
+      const gNow=pa.clone().sub(pb).angleTo(pe.clone().sub(pb));
+      const gWant=Math.acos(clamp((a*a+b*b-d*d)/(2*a*b),-1,1));
+      f.setA(B,'x',f.getA(B,'x')+(gNow-gWant)*RAD); f.clampJoint(B);
+      aim(f,A,effW(),target);
+    }
+  }else{
+    for(let it=0;it<8;it++) for(let i=chain.length-1;i>=0;i--) aim(f,chain[i],effW(),target);
+  }
+}
+
+/* ================= history / persistence ================= */
+const SKEY='posebench.v2.scene', LKEY='posebench.v2.poses';
+// Embedded in the storyboarder the scene belongs to a card, not to this browser: never autosave it over the
+// standalone tool's scene (file:// pages share one localStorage). Saved poses and pass choices stay shared.
+function saveScene(s){if(!EMBED)store.set(SKEY,s);}
+const hist={stack:[],i:-1};
+function snapScene(){return {v:2,figures:figures.map(f=>f.snap()),props:props.map(p=>p.snap()),active:act&&act.id,
+  camera:{target:cam.target.toArray().map(v=>Math.round(v*1e4)/1e4),theta:cam.theta,phi:cam.phi,radius:cam.radius,mm:cam.mm,shot:cam.shot},
+  bg:bgHex,keyAz};}
+const poseKey=s=>JSON.stringify({f:s.figures,p:s.props,a:s.active});
+function commit(){
+  const s=snapScene(), k=poseKey(s);
+  if(hist.stack[hist.i]!==k){hist.stack=hist.stack.slice(0,hist.i+1);hist.stack.push(k);if(hist.stack.length>150)hist.stack.shift();hist.i=hist.stack.length-1;}
+  saveScene(s); updUndo();
+}
+function saveView(){const s=EMBED?null:store.get(SKEY);if(s){const n=snapScene();s.camera=n.camera;s.bg=n.bg;s.keyAz=n.keyAz;saveScene(s);}}
+function loadFigures(list,activeId,propList){
+  // props are rebuilt from scratch every time: cheap, and attachments need the figures to exist first
+  props.forEach(p=>p.dispose()); props=[]; selProp=null;
+  const keep=new Set(list.map(s=>s.id));
+  figures.filter(f=>!keep.has(f.id)).forEach(f=>f.dispose());
+  figures=figures.filter(f=>keep.has(f.id));
+  list.forEach(s=>{let f=figById(s.id);if(!f){f=new Figure({id:s.id,name:s.name,type:s.type,color:s.color,bulk:s.bulk,height:s.height});figures.push(f);}f.load(s);});
+  figures.sort((a,b)=>list.findIndex(s=>s.id===a.id)-list.findIndex(s=>s.id===b.id));
+  (propList||[]).forEach(s=>{
+    const p=new Prop(s); props.push(p);
+    const f=s.attach&&figById(s.attach.fig);
+    if(f){p.attachTo(f,s.attach.side);if(s.grip){p.group.position.fromArray(s.grip.p);p.group.quaternion.fromArray(s.grip.q);}}
+  });
+  act=figById(activeId)||figures[0]||null;
+  refreshAll(); refreshPropUI();
+}
+function undo(){if(hist.i<=0)return;hist.i--;const s=JSON.parse(hist.stack[hist.i]);loadFigures(s.f,s.a,s.p);saveScene(snapScene());updUndo();}
+function redo(){if(hist.i>=hist.stack.length-1)return;hist.i++;const s=JSON.parse(hist.stack[hist.i]);loadFigures(s.f,s.a,s.p);saveScene(snapScene());updUndo();}
+function updUndo(){$('undoBtn').disabled=hist.i<=0;$('redoBtn').disabled=hist.i>=hist.stack.length-1;}
+function applySceneFile(s){
+  if(!s||!Array.isArray(s.figures)||!s.figures.length)throw new Error('not a Pose Bench scene');
+  figures.forEach(f=>f.dispose()); figures=[]; act=null;
+  loadFigures(s.figures.map(f=>Object.assign({},f,{id:f.id||uid()})),s.active,s.props);
+  if(s.bg)setBg(s.bg);
+  if(typeof s.keyAz==='number')setKey(s.keyAz);
+  if(s.camera){const c=s.camera;cam.target.fromArray(c.target||[0,1,0]);cam.theta=c.theta;cam.phi=c.phi;cam.radius=c.radius;cam.shot=c.shot||'full';setLens(c.mm||35);applyCam();markShot();}
+  else fitShot('full');
+}
+
+/* ================= selection / joint panel ================= */
+function activate(f){act=f;refreshFigUI();refreshJointList();buildAxes();highlightAll();}
+function selectJoint(n){
+  if(!act||!act.joints[n])n='chest';
+  sel=n; $('jointSelect').value=n; buildAxes(); highlightAll();
+}
+function highlightAll(){figures.forEach(f=>f.highlight(f===act?sel:null,hovered&&hovered.fig===f?hovered.joint:null));updateHud();}
+function refreshJointList(){
+  const s=$('jointSelect'); s.innerHTML='';
+  ORDER.forEach(n=>{const o=document.createElement('option');o.value=n;o.textContent=labelOf(n);s.appendChild(o);});
+  s.value=sel;
+}
+const axisEls={};
+function buildAxes(){
+  const box=$('axes'); box.innerHTML='';
+  for(const k in axisEls)delete axisEls[k];
+  if(!act){box.innerHTML='<div class="empty">No figure selected.</div>';return;}
+  const sp=specOf(sel), order=sp.order||['x','z','y'];
+  for(const ax of order){
+    const d=sp.dofs[ax]; if(!d)continue;
+    const wrap=document.createElement('div'); wrap.className='axis';
+    const L=limitsOn?[d[4],d[5]]:[-180,180];
+    wrap.innerHTML=`<div class="lab"><span>${d[0]}</span><input class="num" type="number" step="1" min="${L[0]}" max="${L[1]}" aria-label="${d[0]} degrees"></div>
+      <input type="range" min="${L[0]}" max="${L[1]}" step="0.5" aria-label="${d[0]}"><div class="ends"><span>${d[1]}</span><span>${d[2]}</span></div>`;
+    const num=wrap.querySelector('.num'), rng=wrap.querySelector('input[type=range]');
+    const set=v=>{
+      v=clamp(v,L[0],L[1]); releaseFor(act,sel); act.setA(sel,ax,v);
+      if(symmetry&&sideOf(sel)){releaseFor(act,swapName(sel));act.setA(swapName(sel),ax,v);}
+      resolveFig(act); act.ground(); figures.forEach(o=>{if(o!==act&&o.look&&o.look.fig===act.id)resolveFig(o);});
+      syncAxes(ax);
+    };
+    rng.addEventListener('input',()=>set(parseFloat(rng.value)));
+    rng.addEventListener('change',commit);
+    num.addEventListener('change',()=>{const v=parseFloat(num.value);if(!isNaN(v)){set(v);commit();}});
+    rng.addEventListener('dblclick',()=>{set(0);commit();});
+    axisEls[ax]={num,rng};
+    box.appendChild(wrap);
+  }
+  syncAxes();
+}
+function syncAxes(skip){
+  if(!act)return;
+  for(const ax in axisEls){
+    const v=Math.round(act.getA(sel,ax)*10)/10, e=axisEls[ax];
+    if(ax!==skip||document.activeElement!==e.num)e.num.value=Math.round(v);
+    if(document.activeElement!==e.rng||ax!==skip)e.rng.value=v;
+  }
+  syncFacing();
+}
+function syncFacing(){
+  if(!act)return;
+  let t=((act.turn+180)%360+360)%360-180; t=Math.round(t);
+  $('rTurn').value=t; if(document.activeElement!==$('nTurn'))$('nTurn').value=t;
+}
+
+/* ================= figure panel ================= */
+function refreshFigUI(){
+  const list=$('figList'); list.innerHTML='';
+  figures.forEach(f=>{
+    const c=document.createElement('button'); c.className='chip'+(f===act?' sel':'');
+    c.innerHTML=`<i style="background:${f.color}"></i>${f.name}`;
+    c.onclick=()=>{activate(f);};
+    list.appendChild(c);
+  });
+  $('figCount').textContent=figures.length>1?figures.length+' in scene':'';
+  $('delFig').disabled=figures.length<=1;
+  if(!act)return;
+  document.querySelectorAll('#figType .btn').forEach(b=>b.classList.toggle('sel',b.dataset.type===act.type));
+  document.querySelectorAll('#figColors .sw').forEach(s=>s.classList.toggle('sel',s.dataset.c===act.color));
+  $('rHeight').value=Math.round(act.height*100); $('vHeight').textContent=act.heightCm()+' cm';
+  $('rBulk').value=Math.round(act.bulk*100); $('vBulk').textContent=Math.round(act.bulk*100)+'%';
+  $('handL').value=act.hands.l; $('handR').value=act.hands.r;
+  refreshLookSel(); refreshLinkSel(); syncFacing();
+}
+function refreshAll(){refreshFigUI();refreshJointList();selectJoint(sel);}
+function addFigure(from){
+  const s=from?from.snap():null;
+  if(s){s.seat=null;s.goals=[];s.look=null;}
+  const n=figures.length;
+  const f=new Figure({type:s?s.type:'male',color:s?s.color:FIG_COLORS[n%FIG_COLORS.length][0],bulk:s?s.bulk:1,height:s?s.height:1});
+  figures.push(f);
+  if(s){s.id=f.id;s.name=f.name;f.load(s);} else f.setPose(PRESETS['Stand']);
+  // place beside the others, facing the scene centre
+  const base=act?act.group.position:new V3();
+  const right=act?new V3(Math.cos(act.group.rotation.y),0,-Math.sin(act.group.rotation.y)):new V3(1,0,0);
+  f.group.position.set(base.x-right.x*0.9,0,base.z-right.z*0.9);
+  if(!s)f.turn=act?act.turn:0;
+  f.ground(true);
+  activate(f); commit();
+}
+
+/* ================= pointer interaction ================= */
+const ray=new THREE.Raycaster(), ndc=new THREE.Vector2();
+function setRay(x,y){const r=canvas.getBoundingClientRect();ndc.set(((x-r.left)/r.width)*2-1,-((y-r.top)/r.height)*2+1);ray.setFromCamera(ndc,camera);}
+function pick(x,y){
+  setRay(x,y);
+  const t=[]; if(handles.visible)t.push(knobPick,ringPick);
+  figures.forEach(f=>t.push(...f.meshes));
+  props.forEach(p=>t.push(...p.meshes));
+  const hits=ray.intersectObjects(t,false);
+  // handles win only when nothing of a figure is closer in front of them
+  return hits[0]||null;
+}
+function planeHit(plane){const p=new V3();return ray.ray.intersectPlane(plane,p)?p:null;}
+const pointers=new Map();
+let drag=null;
+canvas.addEventListener('pointerdown',e=>{
+  canvas.focus({preventScroll:true});
+  canvas.setPointerCapture(e.pointerId);
+  pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(pointers.size===2){
+    const [a,b]=[...pointers.values()];
+    drag={mode:'pinch',d:Math.hypot(a.x-b.x,a.y-b.y),mx:(a.x+b.x)/2,my:(a.y+b.y)/2};
+    return;
+  }
+  if(pointers.size>2)return;
+  const base={sx:e.clientX,sy:e.clientY,lx:e.clientX,ly:e.clientY,moved:false};
+  if(e.button===1||e.button===2){drag=Object.assign(base,{mode:'pan'});return;}
+  const hit=e.altKey?null:pick(e.clientX,e.clientY);
+  if(!hit){drag=Object.assign(base,{mode:'orbit'});return;}
+  let ud=hit.object.userData;
+  if(ud.handle){
+    const plane=new THREE.Plane(new V3(0,1,0),0);
+    const p=planeHit(plane)||hit.point.clone();
+    if(ud.handle==='move') drag=Object.assign(base,{mode:'move',fig:act,plane,off:act.group.position.clone().sub(p),carry:carryStart(act)});
+    else { const c=act.group.position; drag=Object.assign(base,{mode:'turn',fig:act,plane,a0:Math.atan2(p.x-c.x,p.z-c.z),t0:act.turn,carry:carryStart(act)}); }
+    return;
+  }
+  if(ud.prop){
+    const pr=propById(ud.prop);
+    // a held prop is a handle for the hand holding it
+    if(pr.attach){ud={fig:pr.attach.fig,joint:pr.attach.side+'Wrist'};}
+    else{
+      selectProp(pr);
+      const plane=new THREE.Plane(new V3(0,1,0),-hit.point.y), p=planeHit(plane)||hit.point.clone();
+      drag=Object.assign(base,{mode:'prop',prop:pr,plane,off:pr.group.position.clone().sub(p),carry:propCarryStart(pr)});
+      return;
+    }
+  }
+  const f=figById(ud.fig);
+  if(f!==act)activate(f);
+  if(selProp)selectProp(null);
+  selectJoint(ud.joint);
+  if(e.shiftKey){
+    // slide on a horizontal plane at the grabbed point's height so the figure tracks the cursor
+    const plane=autoGround||f.seat?new THREE.Plane(new V3(0,1,0),-hit.point.y):new THREE.Plane().setFromNormalAndCoplanarPoint(camera.getWorldDirection(new V3()).negate(),hit.point);
+    const p=planeHit(plane)||hit.point.clone();
+    drag=Object.assign(base,{mode:'move',fig:f,plane,off:f.group.position.clone().sub(p),carry:carryStart(f)});
+    return;
+  }
+  const plane=new THREE.Plane().setFromNormalAndCoplanarPoint(camera.getWorldDirection(new V3()).negate(),hit.point);
+  if(ud.joint==='pelvis'&&f.seat){drag=Object.assign(base,{mode:'orbit'});return;}
+  releaseFor(f,ud.joint);
+  if(ud.joint==='pelvis'){
+    f.group.updateMatrixWorld(true);
+    const feet={};
+    for(const s of ['l','r']){const an=f.joints[s+'Ankle'].pivot;feet[s]={pos:an.getWorldPosition(new V3()),q:an.getWorldQuaternion(new Q())};}
+    drag=Object.assign(base,{mode:'crouch',fig:f,plane,h0:hit.point.clone(),p0:f.joints.pelvis.pivot.getWorldPosition(new V3()),feet});
+    return;
+  }
+  const chain=CHAIN[ud.joint];
+  const j=f.joints[ud.joint];
+  const d=Object.assign(base,{mode:'ik',fig:f,plane,chain,effJ:ud.joint,effLocal:j.pivot.worldToLocal(hit.point.clone())});
+  if(ud.joint.endsWith('Ankle'))d.footQ=j.pivot.getWorldQuaternion(new Q());
+  drag=d;
+});
+canvas.addEventListener('pointermove',e=>{
+  if(pointers.has(e.pointerId))pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(!drag){hover(e);return;}
+  if(drag.mode==='pinch'){
+    if(pointers.size<2)return;
+    const [a,b]=[...pointers.values()], d=Math.hypot(a.x-b.x,a.y-b.y), mx=(a.x+b.x)/2, my=(a.y+b.y)/2;
+    cam.radius=clamp(cam.radius*drag.d/Math.max(d,1),0.3,60); pan(mx-drag.mx,my-drag.my);
+    drag.d=d; drag.mx=mx; drag.my=my; applyCam(); return;
+  }
+  const dx=e.clientX-drag.lx, dy=e.clientY-drag.ly; drag.lx=e.clientX; drag.ly=e.clientY;
+  if(!drag.moved&&Math.hypot(e.clientX-drag.sx,e.clientY-drag.sy)<3)return;
+  drag.moved=true;
+  const m=drag.mode;
+  if(m==='orbit'){cam.theta-=dx*0.0075;cam.phi=clamp(cam.phi-dy*0.0075,0.06,Math.PI-0.06);applyCam();return;}
+  if(m==='pan'){pan(dx,dy);applyCam();return;}
+  setRay(e.clientX,e.clientY);
+  const f=drag.fig;
+  if(m==='move'){const p=planeHit(drag.plane);if(p){const n=p.add(drag.off);
+    f.group.position.set(n.x,autoGround||f.seat?f.group.position.y:n.y,n.z);
+    carryApply(drag.carry,0,f.group.position);resolveAll();}}
+  else if(m==='turn'){const p=planeHit(drag.plane);if(p){const c=f.group.position;let t=drag.t0+(Math.atan2(p.x-c.x,p.z-c.z)-drag.a0)*RAD;if(e.shiftKey)t=Math.round(t/15)*15;
+    f.turn=t;carryApply(drag.carry,t-drag.t0,c);syncFacing();resolveAll();}}
+  else if(m==='prop'){const p=planeHit(drag.plane);if(p){const n=p.add(drag.off),pr=drag.prop;
+    const d=new V3(n.x-pr.group.position.x,0,n.z-pr.group.position.z);
+    pr.group.position.add(d); drag.carry.items.forEach(it=>it.obj.position.add(d)); resolveAll(); syncAxes();}}
+  else if(m==='crouch'){
+    const p=planeHit(drag.plane); if(!p)return;
+    const w=drag.p0.clone().add(p.sub(drag.h0));
+    f.group.updateMatrixWorld(true);
+    f.joints.pelvis.pivot.position.copy(f.group.worldToLocal(w));
+    for(const s of ['l','r']){
+      solveChain(f,[s+'Hip',s+'Knee'],s+'Ankle',new V3(),drag.feet[s].pos);
+      setWorldQuat(f,s+'Ankle',drag.feet[s].q);
+    }
+    syncAxes();
+  }
+  else if(m==='ik'){
+    const p=planeHit(drag.plane); if(!p)return;
+    solveChain(f,drag.chain,drag.effJ,drag.effLocal,p);
+    if(drag.footQ)setWorldQuat(f,drag.effJ,drag.footQ);
+    if(!drag.effJ.endsWith('Ankle')&&!drag.effJ.endsWith('Knee'))f.ground();
+    figures.forEach(o=>{if(o!==f&&o.look&&o.look.fig===f.id)resolveFig(o);});
+    resolveFig(f);
+    syncAxes();
+  }
+});
+// figure moves/turns carry their chair, desk, laptop...; snapshot start transforms so turning is exact
+function carryStart(f){
+  return {items:carriedBy(f).map(p=>({obj:p.group,p0:p.group.position.clone(),t0:p.group.rotation.y})),f0:f.group.position.clone()};
+}
+function carryApply(c,dTurn,center){
+  const dr=dTurn*DEG;
+  c.items.forEach(it=>{
+    const rel=it.p0.clone().sub(c.f0).applyAxisAngle(new V3(0,1,0),dr);
+    it.obj.position.set(center.x+rel.x,it.p0.y,center.z+rel.z);
+    it.obj.rotation.y=it.t0+dr;
+  });
+}
+// dragging a prop carries what sits on it: laptop on a desk, a figure on a chair
+function propCarryStart(pr){
+  const items=props.filter(q=>q.on===pr.id&&!q.attach).map(q=>({obj:q.group}));
+  figures.forEach(f=>{if(f.seat===pr.id)items.push({obj:f.group});});
+  return {items};
+}
+function endDrag(e){
+  pointers.delete(e.pointerId);
+  if(!drag)return;
+  if(drag.mode==='pinch'){if(pointers.size<2){drag=null;saveView();}return;}
+  const d=drag; drag=null;
+  if(!d.moved){if(d.mode==='orbit'&&selProp)selectProp(null);return;}
+  if(d.mode==='orbit'||d.mode==='pan'){saveView();return;}
+  if(d.fig){d.fig.ground();}
+  syncAxes(); commit();
+}
+canvas.addEventListener('pointerup',endDrag);
+canvas.addEventListener('pointercancel',endDrag);
+canvas.addEventListener('lostpointercapture',e=>{if(pointers.has(e.pointerId))endDrag(e);});
+canvas.addEventListener('contextmenu',e=>e.preventDefault());
+canvas.addEventListener('pointerleave',()=>{if(!drag&&hovered){hovered=null;highlightAll();canvas.style.cursor='';}});
+canvas.addEventListener('wheel',e=>{e.preventDefault();cam.radius=clamp(cam.radius*Math.exp(e.deltaY*0.0012),0.3,60);applyCam();clearTimeout(wheelT);wheelT=setTimeout(saveView,400);},{passive:false});
+let wheelT;
+function pan(dx,dy){
+  const s=cam.radius*Math.tan(camera.fov*DEG/2)*2/Math.max(1,stage.clientHeight);
+  const right=new V3().setFromMatrixColumn(camera.matrix,0), up=new V3().setFromMatrixColumn(camera.matrix,1);
+  cam.target.addScaledVector(right,-dx*s).addScaledVector(up,dy*s);
+}
+let hoverRaf=0;
+function hover(e){
+  if(hoverRaf)return; const x=e.clientX,y=e.clientY,alt=e.altKey;
+  hoverRaf=requestAnimationFrame(()=>{hoverRaf=0;
+    const h=alt?null:pick(x,y); const ud=h&&h.object.userData;
+    const next=ud&&ud.joint?{fig:figById(ud.fig),joint:ud.joint}:null;
+    canvas.style.cursor=ud?(ud.handle==='turn'?'ew-resize':ud.handle==='move'?'move':'grab'):'';
+    if((next&&next.joint)!==(hovered&&hovered.joint)||(next&&next.fig)!==(hovered&&hovered.fig)){hovered=next;highlightAll();}
+  });
+}
+
+/* ================= capture ================= */
+function capAspect(){const v=$('capAspect').value;return v==='vp'?null:parseFloat(v);}
+function guideRect(){
+  const W=stage.clientWidth,H=stage.clientHeight,a=capAspect();
+  if(!a)return {x:0,y:0,w:W,h:H};
+  if(a<W/H){const w=H*a;return {x:(W-w)/2,y:0,w,h:H};}
+  const h=W/a; return {x:0,y:(H-h)/2,w:W,h};
+}
+function updateGuide(){
+  const g=$('guide'), a=capAspect(), r=guideRect();
+  const on=!!a&&$('tGuide').checked;
+  g.style.display=on?'block':'none';
+  g.classList.toggle('thirds',$('tThirds').checked);
+  if(!a&&$('tThirds').checked){g.style.display='block';g.style.boxShadow='none';g.style.outline='none';}
+  else {g.style.boxShadow='';g.style.outline='';}
+  Object.assign(g.style,{left:r.x+'px',top:r.y+'px',width:r.w+'px',height:r.h+'px'});
+  const [w,h]=outSize(r.w/r.h);
+  $('guideLbl').textContent=`${$('capAspect').selectedOptions[0].text.split(' ')[0]} · ${w}×${h}`;
+}
+function outSize(asp){const L=parseInt($('capSize').value,10);return asp>=1?[L,Math.round(L/asp)]:[Math.round(L*asp),L];}
+/* ---------- control passes: depth / normal / mask (GPU) and openpose (2D, from the rig) ---------- */
+// Raw ShaderMaterials skip tone mapping and sRGB encoding, so the values written are exactly the values computed.
+const PASS_ORDER=['depth','openpose','normal','mask'];
+const VS_FLAT='void main(){gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}';
+const depthMat=new THREE.ShaderMaterial({uniforms:{uNear:{value:1},uFar:{value:10}},
+  vertexShader:'varying float vD;void main(){vec4 mv=modelViewMatrix*vec4(position,1.0);vD=-mv.z;gl_Position=projectionMatrix*mv;}',
+  // inverse depth, near = white, like MiDaS / Depth Anything output that depth ControlNets are trained on
+  fragmentShader:'uniform float uNear,uFar;varying float vD;void main(){float v=(1.0/max(vD,1e-3)-1.0/uFar)/(1.0/uNear-1.0/uFar);gl_FragColor=vec4(vec3(clamp(v,0.0,1.0)),1.0);}'});
+const normalMat=new THREE.ShaderMaterial({
+  vertexShader:'varying vec3 vN;void main(){vN=normalize(normalMatrix*normal);gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
+  // camera-space normals: red = right, green = up, blue = toward camera
+  fragmentShader:'varying vec3 vN;void main(){gl_FragColor=vec4(normalize(vN)*0.5+0.5,1.0);}'});
+const MASK_COLORS=[[1,0,0],[0,1,0],[0,0,1],[1,1,0],[1,0,1],[0,1,1],[1,0.5,0],[0.5,0,1]];
+function swapPassMaterials(pass){
+  const undo=[], tmp=[];
+  const set=(m,mat)=>{undo.push([m,m.material]);m.material=mat;};
+  figures.forEach((f,i)=>{
+    let mat=pass==='depth'?depthMat:normalMat;
+    if(pass==='mask'){
+      mat=new THREE.ShaderMaterial({uniforms:{uC:{value:new V3(...MASK_COLORS[i%MASK_COLORS.length])}},vertexShader:VS_FLAT,
+        fragmentShader:'uniform vec3 uC;void main(){gl_FragColor=vec4(uC,1.0);}'});
+      tmp.push(mat);
+    }
+    f.meshes.forEach(m=>set(m,mat));
+  });
+  // props: same depth/normal treatment; one neutral grey in the mask so they never read as a person
+  let pm=pass==='depth'?depthMat:normalMat;
+  if(pass==='mask'){pm=new THREE.ShaderMaterial({uniforms:{uC:{value:new V3(0.5,0.5,0.5)}},vertexShader:VS_FLAT,
+    fragmentShader:'uniform vec3 uC;void main(){gl_FragColor=vec4(uC,1.0);}'});tmp.push(pm);}
+  props.forEach(p=>p.meshes.forEach(m=>set(m,pm)));
+  if(pass==='depth')set(shadowPlane,depthMat);
+  return ()=>{undo.forEach(([m,mat])=>{m.material=mat;});tmp.forEach(m=>m.dispose());};
+}
+// normalise depth to the figures, so they use most of the grey range whatever the camera distance
+function setDepthRange(){
+  const inv=camera.matrixWorldInverse, v=new V3(); let lo=Infinity,hi=0;
+  figures.forEach(f=>{const b=sceneBoxFor(f);for(let i=0;i<8;i++){
+    v.set(i&1?b.max.x:b.min.x,i&2?b.max.y:b.min.y,i&4?b.max.z:b.min.z).applyMatrix4(inv);
+    const d=-v.z; if(d>0){lo=Math.min(lo,d);hi=Math.max(hi,d);}}});
+  if(!isFinite(lo)){lo=0.5;hi=10;}
+  depthMat.uniforms.uNear.value=Math.max(0.05,lo*0.85);
+  depthMat.uniforms.uFar.value=hi+Math.max(1.5,(hi-lo)*2);
+}
+// OpenPose COCO-18 body format, drawn the way controlnet_aux / DWPose draw it
+const OP_COLORS=[[255,0,0],[255,85,0],[255,170,0],[255,255,0],[170,255,0],[85,255,0],[0,255,0],[0,255,85],[0,255,170],[0,255,255],
+  [0,170,255],[0,85,255],[0,0,255],[85,0,255],[170,0,255],[255,0,255],[255,0,170],[255,0,85]];
+const OP_LIMBS=[[1,2],[1,5],[2,3],[3,4],[5,6],[6,7],[1,8],[8,9],[9,10],[1,11],[11,12],[12,13],[1,0],[0,14],[14,16],[0,15],[15,17]];
+// 0 nose 1 neck 2-4 R arm 5-7 L arm 8-10 R leg 11-13 L leg 14 R eye 15 L eye 16 R ear 17 L ear.
+// Face points that turn away from the camera are dropped, as a detector would, which is what tells a model where the head faces.
+function poseKeypoints(f){
+  f.group.updateMatrixWorld(true);
+  const J=n=>f.joints[n].pivot.getWorldPosition(new V3());
+  const head=f.joints.head.pivot, h=f.T.head;
+  const HL=(x,y,z)=>head.localToWorld(new V3(x*h,y*h,z*h));
+  const hq=head.getWorldQuaternion(new Q());
+  const fwd=new V3(0,0,1).applyQuaternion(hq), left=new V3(1,0,0).applyQuaternion(hq), right=left.clone().negate();
+  const vis=(p,dir,th)=>dir.dot(camera.position.clone().sub(p).normalize())>th?p:null;
+  const ls=J('lShoulder'), rs=J('rShoulder');
+  return [
+    vis(HL(0,0.084,0.105),fwd,-0.05), ls.clone().add(rs).multiplyScalar(0.5),
+    rs,J('rElbow'),J('rWrist'), ls,J('lElbow'),J('lWrist'),
+    J('rHip'),J('rKnee'),J('rAnkle'), J('lHip'),J('lKnee'),J('lAnkle'),
+    vis(HL(-0.032,0.1,0.082),fwd,0.2), vis(HL(0.032,0.1,0.082),fwd,0.2),
+    vis(HL(-0.08,0.092,-0.006),right,-0.25), vis(HL(0.08,0.092,-0.006),left,-0.25),
+  ];
+}
+function renderPose(outW,outH,region){
+  const people=withShotCamera(outW,outH,region,()=>figures.map(f=>poseKeypoints(f).map(p=>{
+    if(!p)return null; const v=p.clone().project(camera);
+    if(v.z<-1||v.z>1||Math.abs(v.x)>1.02||Math.abs(v.y)>1.02)return null;
+    return [(v.x+1)/2*outW,(1-v.y)/2*outH];
+  })));
+  const c=document.createElement('canvas'); c.width=outW; c.height=outH;
+  const ctx=c.getContext('2d'); ctx.fillStyle='#000'; ctx.fillRect(0,0,outW,outH);
+  const k=Math.max(1,Math.max(outW,outH)/1024), sw=4*k, r=4*k;
+  const rgb=(c,m)=>`rgb(${Math.round(c[0]*m)},${Math.round(c[1]*m)},${Math.round(c[2]*m)})`;
+  for(const kp of people) OP_LIMBS.forEach(([a,b],i)=>{
+    const A=kp[a],B=kp[b]; if(!A||!B)return;
+    ctx.fillStyle=rgb(OP_COLORS[i],0.6); ctx.beginPath();
+    ctx.ellipse((A[0]+B[0])/2,(A[1]+B[1])/2,Math.max(Math.hypot(A[0]-B[0],A[1]-B[1])/2,0.5),sw,Math.atan2(B[1]-A[1],B[0]-A[0]),0,2*Math.PI);
+    ctx.fill();
+  });
+  for(const kp of people) kp.forEach((p,i)=>{if(!p)return;ctx.fillStyle=rgb(OP_COLORS[i],1);ctx.beginPath();ctx.arc(p[0],p[1],r,0,2*Math.PI);ctx.fill();});
+  return c.toDataURL('image/png');
+}
+function withShotCamera(outW,outH,region,fn){
+  const W=stage.clientWidth,H=stage.clientHeight;
+  if(region){camera.aspect=W/H;camera.setViewOffset(W,H,region.x,region.y,region.w,region.h);}
+  else camera.aspect=outW/outH;
+  camera.updateProjectionMatrix(); camera.updateMatrixWorld();
+  try{return fn();}finally{camera.clearViewOffset();camera.aspect=W/H;camera.updateProjectionMatrix();}
+}
+// render one pass into a data URL; region = the part of the viewport to shoot (null = full frame at outW/outH aspect)
+function renderShot(outW,outH,region,opt){
+  const pass=opt.pass||'beauty';
+  if(pass==='openpose')return renderPose(outW,outH,region);
+  const transparent=pass==='beauty'&&!!opt.transparent, jpeg=pass==='beauty'&&opt.fmt==='jpeg'&&!transparent;
+  const was={grid:grid.visible,shadow:shadowPlane.visible,handles:handles.visible,pr:renderer.getPixelRatio(),hov:hovered};
+  hovered=null; figures.forEach(f=>f.highlight(null,null)); handles.visible=false;
+  let unswap=null;
+  if(pass!=='beauty'){
+    grid.visible=false; shadowPlane.visible=pass==='depth'&&$('tDepthFloor').checked;
+    renderer.setClearColor(0x000000,1); unswap=swapPassMaterials(pass);
+  }else if(transparent){grid.visible=false;shadowPlane.visible=false;renderer.setClearColor(bgHex,0);}
+  renderer.setPixelRatio(1); renderer.setSize(outW,outH,false);
+  let url;
+  try{
+    url=withShotCamera(outW,outH,region,()=>{
+      if(pass==='depth')setDepthRange();
+      renderer.render(scene,camera);
+      return canvas.toDataURL(jpeg?'image/jpeg':'image/png',0.92);
+    });
+  }finally{
+    if(unswap)unswap();
+    grid.visible=was.grid; shadowPlane.visible=was.shadow; handles.visible=was.handles; renderer.setClearColor(bgHex,1);
+    renderer.setPixelRatio(was.pr); hovered=was.hov; resize(); highlightAll();
+  }
+  return url;
+}
+const PKEY='posebench.v2.passes';
+const passes=new Set(store.get(PKEY)||['depth','openpose']);
+const activePasses=()=>['beauty',...PASS_ORDER.filter(p=>passes.has(p))];
+function captureOpts(){return {transparent:$('tAlpha').checked,fmt:$('capFmt').value};}
+let setN=0;
+function capture(){
+  const r=guideRect(), [w,h]=outSize(r.w/r.h), o=captureOpts(), reg=capAspect()?r:null;
+  const set={id:stamp()+(++setN>1?'-'+setN:''),kind:'pose'};
+  const list=activePasses();
+  list.forEach(p=>addShot(renderShot(w,h,reg,Object.assign({},o,{pass:p})),w,h,set,p));
+  shotFeedback(`Captured ${w}×${h}`+(list.length>1?` · ${list.length} passes`:''));
+}
+// four 2:3 panels (front, 3/4, side, back); long edge = one panel's height
+function turnaroundViews(pw,ph,pass,o){
+  const saved={t:cam.target.clone(),th:cam.theta,ph:cam.phi,r:cam.radius};
+  const b=sceneBoxFor(act), c=b.getCenter(new V3()), s=b.getSize(new V3());
+  const tanV=Math.tan(camera.fov*DEG/2), asp=pw/ph;
+  const dist=Math.max(s.y/2*1.1/tanV,Math.max(s.x,s.z)/2*1.15/(tanV*asp))+Math.max(s.x,s.z)*0.5;
+  try{
+    return [0,40,90,180].map(v=>{
+      cam.theta=(act.turn+v)*DEG; cam.phi=1.53; cam.target.copy(c); cam.radius=dist; applyCam();
+      return renderShot(pw,ph,null,{pass,transparent:o.transparent,fmt:'png'});
+    });
+  }finally{Object.assign(cam,{theta:saved.th,phi:saved.ph,radius:saved.r});cam.target.copy(saved.t);applyCam();}
+}
+async function turnaround(){
+  if(!act)return;
+  const o=captureOpts(), L=parseInt($('capSize').value,10), pw=Math.round(L/2), ph=Math.round(pw*1.5);
+  const set={id:stamp()+(++setN>1?'-'+setN:''),kind:'turnaround'};
+  const list=activePasses();
+  const rendered=list.map(p=>[p,turnaroundViews(pw,ph,p,o)]);   // all renders before any await, so the camera is restored at once
+  for(const [p,imgs] of rendered){
+    const sheet=document.createElement('canvas'); sheet.width=pw*4; sheet.height=ph;
+    const ctx=sheet.getContext('2d');
+    if(p!=='beauty'||!o.transparent){ctx.fillStyle=p==='beauty'?bgHex:'#000';ctx.fillRect(0,0,sheet.width,sheet.height);}
+    for(let i=0;i<imgs.length;i++){const im=new Image();im.src=imgs[i];await im.decode();ctx.drawImage(im,i*pw,0);}
+    addShot(sheet.toDataURL(p==='beauty'&&o.fmt==='jpeg'&&!o.transparent?'image/jpeg':'image/png',0.92),sheet.width,sheet.height,set,p);
+  }
+  shotFeedback(`Turnaround ${pw*4}×${ph}`+(list.length>1?` · ${list.length} passes`:''));
+}
+function stamp(){const d=new Date(),p=n=>String(n).padStart(2,'0');
+  return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;}
+const shots=[]; let viewIdx=-1;
+function addShot(url,w,h,set,pass){
+  const ext=url.startsWith('data:image/jpeg')?'jpg':'png';
+  const name=`${set.kind}_${set.id}${pass&&pass!=='beauty'?'_'+pass:''}.${ext}`;
+  shots.push({url,w,h,name,set:set.id,pass:pass||'beauty'});
+  renderTray();
+  window.dispatchEvent(new CustomEvent('posebench:shot',{detail:{dataUrl:url,width:w,height:h,name,pass:pass||'beauty'}}));
+}
+function shotFeedback(msg){
+  const f=$('flash'); f.classList.remove('fire'); void f.offsetWidth; f.classList.add('fire');
+  toast(msg);
+}
+function renderTray(){
+  const st=$('strip'); st.innerHTML='';
+  shots.forEach((s,i)=>{
+    const d=document.createElement('div'); d.className='th'+(i>0&&shots[i-1].set!==s.set?' newset':'');
+    const im=document.createElement('img'); im.src=s.url; im.title=`${s.name} · ${s.w}×${s.h}`; im.onclick=()=>openViewer(i);
+    d.appendChild(im);
+    if(s.pass!=='beauty'){const b=document.createElement('span');b.textContent=s.pass;d.appendChild(b);}
+    st.appendChild(d);
+  });
+  $('tray').classList.toggle('has',shots.length>0);
+  st.scrollLeft=st.scrollWidth;
+}
+function openViewer(i){
+  if(!shots.length){closeViewer();return;}
+  viewIdx=clamp(i,0,shots.length-1); const s=shots[viewIdx];
+  $('vImg').src=s.url; $('vName').textContent=`${s.name} · ${s.w}×${s.h}  (${viewIdx+1}/${shots.length})`;
+  const n=shots.filter(x=>x.set===s.set).length;
+  $('vDlSet').style.display=n>1?'':'none'; $('vDlSet').textContent=`Download set (${n})`;
+  $('viewer').classList.add('open');
+}
+function closeViewer(){$('viewer').classList.remove('open');viewIdx=-1;}
+function downloadShot(s){const a=document.createElement('a');a.href=s.url;a.download=s.name;document.body.appendChild(a);a.click();a.remove();}
+const downloadMany=list=>list.forEach((s,i)=>setTimeout(()=>downloadShot(s),i*250));
+async function toPngBlob(url){
+  if(url.startsWith('data:image/png'))return (await fetch(url)).blob();
+  const im=new Image(); im.src=url; await im.decode();
+  const c=document.createElement('canvas');c.width=im.naturalWidth;c.height=im.naturalHeight;c.getContext('2d').drawImage(im,0,0);
+  return new Promise(r=>c.toBlob(r,'image/png'));
+}
+async function copyShot(s){
+  if(!s)return;
+  try{await navigator.clipboard.write([new ClipboardItem({'image/png':await toPngBlob(s.url)})]);toast('Copied to clipboard');}
+  catch(err){toast('Clipboard blocked here — use Download');}
+}
+let toastT;
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('show'),1700);}
+
+/* storyboarder / host hook: window.PoseBench API + postMessage */
+const hostWin=window.opener||(window.parent!==window?window.parent:null);
+function apiFrame(o){
+  const a=o.aspect||capAspect()||(stage.clientWidth/stage.clientHeight), L=o.longEdge||parseInt($('capSize').value,10);
+  const [w,h]=a>=1?[L,Math.round(L/a)]:[Math.round(L*a),L];
+  const W=stage.clientWidth,H=stage.clientHeight;
+  return {w,h,r:a<W/H?{x:(W-H*a)/2,y:0,w:H*a,h:H}:{x:0,y:(H-W/a)/2,w:W,h:W/a}};
+}
+// o.pass: 'beauty' (default) | 'depth' | 'openpose' | 'normal' | 'mask'
+function apiCapture(o={}){const f=apiFrame(o);return renderShot(f.w,f.h,f.r,{pass:o.pass,transparent:!!o.transparent,fmt:o.format||'png'});}
+function apiCaptureSet(o={}){
+  const f=apiFrame(o), out={};
+  (o.passes||['beauty',...PASS_ORDER]).forEach(p=>{out[p]=renderShot(f.w,f.h,f.r,{pass:p,transparent:!!o.transparent,fmt:o.format||'png'});});
+  return out;
+}
+window.PoseBench={
+  capture:apiCapture,
+  captureSet:apiCaptureSet,
+  passes:['beauty',...PASS_ORDER],
+  getScene:()=>snapScene(),
+  setScene:s=>{applySceneFile(s);commit();},
+  presets:[...Object.keys(WORK),...Object.keys(SCENES),...Object.keys(PRESETS).filter(n=>n!=='Stand')],
+  applyPreset:applyNamed,
+};
+window.addEventListener('message',e=>{
+  const d=e.data; if(!d||typeof d!=='object'||!e.source)return;
+  const reply=m=>{try{e.source.postMessage(Object.assign({id:d.id},m),e.origin==='null'?'*':e.origin);}catch(err){}};
+  if(d.type==='posebench:capture')reply({type:'posebench:shot',pass:d.pass||'beauty',dataUrl:apiCapture(d)});
+  else if(d.type==='posebench:captureSet')reply({type:'posebench:set',images:apiCaptureSet(d)});
+});
+
+/* ================= UI wiring ================= */
+(function initUI(){
+  const fc=$('figColors');
+  FIG_COLORS.forEach(([c,n])=>{const s=document.createElement('button');s.className='sw';s.style.background=c;s.dataset.c=c;s.title=n;s.setAttribute('aria-label',n);
+    s.onclick=()=>{if(!act)return;act.setColor(c);refreshFigUI();commit();};fc.appendChild(s);});
+  const bc=$('bgColors');
+  BG_COLORS.forEach(([c,n])=>{const s=document.createElement('button');s.className='sw';s.style.background=c;s.dataset.c=c;s.title=n;s.setAttribute('aria-label',n);
+    s.onclick=()=>{setBg(c);saveView();};bc.appendChild(s);});
+  const mk=(box,names)=>names.forEach(n=>{const b=document.createElement('button');b.className='btn';b.textContent=n;b.onclick=()=>applyNamed(n);$(box).appendChild(b);});
+  mk('presets',Object.keys(WORK)); mk('scenes',Object.keys(SCENES)); mk('presetsMore',Object.keys(PRESETS).filter(n=>n!=='Stand'));
+  document.querySelectorAll('[data-prop]').forEach(b=>b.onclick=()=>addProp(b.dataset.prop));
+})();
+
+/* ---------- props panel ---------- */
+function selectProp(p){if(selProp)selProp.highlight(false);selProp=p||null;if(selProp)selProp.highlight(true);refreshPropUI();}
+const propName=p=>PROP_LABEL[p.type]+(p.owner&&figById(p.owner)&&figures.length>1?' · '+figById(p.owner).name:'');
+function refreshPropUI(){
+  const box=$('propPanel'); box.innerHTML='';
+  if(props.length){
+    const chips=document.createElement('div'); chips.className='chips';
+    props.forEach(p=>{const c=document.createElement('button');c.className='chip'+(p===selProp?' sel':'');c.textContent=propName(p)+(p.attach?' ✋':'');
+      c.title=p.attach?'Held in a hand':'';c.onclick=()=>selectProp(p===selProp?null:p);chips.appendChild(c);});
+    box.appendChild(chips);
+  }
+  if(!selProp){
+    const n=document.createElement('div'); n.className='note';
+    n.textContent=props.length?'Select a prop to turn, seat, hold or delete it. Drag props in the viewport to move them.':'Work poses add their own chair, desk, laptop or phone. You can also add props here.';
+    box.appendChild(n); refreshLookSel(); return;
+  }
+  const p=selProp;
+  const head=document.createElement('div'); head.className='ptitle';
+  head.innerHTML=`<span>${PROP_LABEL[p.type]}</span>`;
+  const del=document.createElement('button'); del.className='btn'; del.textContent='Delete'; del.onclick=deleteSelProp; head.appendChild(del);
+  box.appendChild(head);
+  if(!p.attach){
+    const a=document.createElement('div'); a.className='axis';
+    a.innerHTML=`<div class="lab"><span>Turn</span><span class="v">${Math.round(p.turn)}°</span></div><input type="range" min="-180" max="180" step="1">`;
+    const r=a.querySelector('input'); r.value=((p.turn+180)%360+360)%360-180;
+    r.oninput=()=>{turnProp(p,parseFloat(r.value));a.querySelector('.v').textContent=r.value+'°';};
+    r.onchange=commit; box.appendChild(a);
+  }
+  if(p.type==='chair'&&act){
+    const b=document.createElement('button'); b.className='btn'; b.style.width='100%';
+    const seated=act.seat===p.id;
+    b.textContent=seated?`Stand ${act.name} up`:`Seat ${act.name} here`;
+    b.onclick=()=>{seated?standUp(act):sitOn(act,p);syncAxes();refreshPropUI();commit();};
+    box.appendChild(b);
+  }
+  if(p.type==='phone'||p.type==='cup'){
+    const f=document.createElement('div'); f.className='field'; f.style.marginTop='6px';
+    f.innerHTML='<label>Held by</label><select></select>'; const s=f.querySelector('select');
+    const opts=[['','Nobody (on a surface / floor)']];
+    figures.forEach(x=>{opts.push([x.id+':l',x.name+' · left hand']);opts.push([x.id+':r',x.name+' · right hand']);});
+    opts.forEach(([v,t])=>{const o=document.createElement('option');o.value=v;o.textContent=t;s.appendChild(o);});
+    s.value=p.attach?p.attach.fig+':'+p.attach.side:'';
+    s.onchange=()=>{holdProp(p,s.value);refreshPropUI();commit();};
+    box.appendChild(f);
+  }
+  refreshLookSel();
+}
+function turnProp(p,deg){
+  const dr=(deg-p.turn)*DEG, c=p.group.position, Y=new V3(0,1,0);
+  props.forEach(q=>{if(q.on===p.id&&!q.attach){q.group.position.sub(c).applyAxisAngle(Y,dr).add(c);q.group.rotation.y+=dr;}});
+  figures.forEach(f=>{if(f.seat===p.id){f.group.position.sub(c).applyAxisAngle(Y,dr).add(c);}});
+  p.turn=deg;
+  figures.forEach(f=>{if(f.seat===p.id)f.ground();});
+  resolveAll();
+}
+function layFlat(p,surf){
+  p.on=surf?surf.id:null;
+  const y=surf?surf.topH:0;
+  if(p.type==='phone'){p.group.rotation.set(0,p.group.rotation.y,-Math.PI/2);p.group.position.y=y+0.004;}
+  else if(p.type==='cup')p.group.position.y=y+0.05;
+  else p.group.position.y=y;
+}
+function nearestSurface(pos){
+  return props.filter(q=>q.type==='desk'||q.type==='table').map(q=>[q,new V3(q.group.position.x,0,q.group.position.z).distanceTo(new V3(pos.x,0,pos.z))])
+    .filter(x=>x[1]<(x[0].type==='desk'?0.75:0.5)).sort((a,b)=>a[1]-b[1]).map(x=>x[0])[0]||null;
+}
+function holdProp(p,v){
+  if(p.attach){const f=figById(p.attach.fig);p.detach();layFlat(p,nearestSurface(p.group.position));if(f){f.goals=f.goals.filter(g=>!(g.prop===p.id));}}
+  if(!v)return;
+  const [id,side]=v.split(':'), f=figById(id); if(!f)return;
+  props.filter(q=>q!==p&&q.attach&&q.attach.fig===id&&q.attach.side===side).forEach(q=>{q.detach();layFlat(q,nearestSurface(q.group.position));});
+  p.on=null; p.attachTo(f,side); f.setHand(side,'grip'); refreshFigUI();
+}
+function addProp(type){
+  const f=act, A=f?figAxes(f):{fwd:new V3(0,0,1)};
+  const base=f?f.joints.pelvis.pivot.getWorldPosition(new V3()).setY(0):new V3();
+  let p=null;
+  if((type==='phone'||type==='cup')&&f){
+    const busy=s=>props.some(q=>q.attach&&q.attach.fig===f.id&&q.attach.side===s);
+    const side=!busy('r')?'r':!busy('l')?'l':null;
+    if(side){p=new Prop({type});props.push(p);p.attachTo(f,side);f.setHand(side,'grip');refreshFigUI();}
+  }
+  if(!p){
+    const d={chair:0.9,desk:1.1,table:1.1,laptop:0.7,phone:0.6,cup:0.6}[type];
+    const pos=base.clone().addScaledVector(A.fwd,d);
+    p=new Prop({type,pos:pos.toArray(),turn:f?f.turn+(type==='chair'?180:0):0}); props.push(p);
+    if(type==='laptop'||type==='phone'||type==='cup'){
+      const surf=nearestSurface(pos);
+      if(surf){p.group.position.x=surf.group.position.x;p.group.position.z=surf.group.position.z;p.turn=surf.turn+(f?0:0);}
+      layFlat(p,surf);
+    }
+  }
+  selectProp(p); commit();
+}
+function deleteSelProp(){if(!selProp)return;const p=selProp;removeProp(p);figures.forEach(f=>f.ground());selectProp(null);refreshFigUI();commit();}
+function sitOn(f,ch){
+  releaseLegs(f);
+  const cur=f.getPose();
+  for(const n of ['pelvis','spine','lHip','rHip','lKnee','rKnee','lAnkle','rAnkle'])cur[n]=Object.assign({},SEAT_BASE[n]||{});
+  f.setPose(cur,[0,0,0]); seatFigure(f,ch); resolveFig(f);
+}
+function standUp(f){
+  const ch=propById(f.seat); f.seat=null;
+  const cur=f.getPose(), st=PRESETS['Stand'];
+  for(const n of ['pelvis','spine','lHip','rHip','lKnee','rKnee','lAnkle','rAnkle'])cur[n]=Object.assign({},st[n]||{});
+  f.setPose(cur,[0,0,0]);
+  if(ch){const A=figAxes(f);f.group.position.addScaledVector(A.fwd,0.45);}
+  f.ground(true); resolveFig(f);
+}
+function releaseLegs(f){if(f.seat)f.seat=null;}
+function refreshLookSel(){
+  const s=$('lookSel'); s.innerHTML='';
+  const opts=[['none','Nothing (free)'],['camera','The camera']];
+  figures.forEach(f=>{if(f!==act)opts.push(['fig:'+f.id,f.name]);});
+  props.forEach(p=>{if(['laptop','phone','cup'].includes(p.type))opts.push(['prop:'+p.id,propName(p)]);});
+  opts.forEach(([v,t])=>{const o=document.createElement('option');o.value=v;o.textContent=t;s.appendChild(o);});
+  const L=act&&act.look;
+  s.value=!L?'none':L==='camera'?'camera':L.fig?'fig:'+L.fig:'prop:'+L.prop;
+  if(s.selectedIndex<0)s.value='none';
+}
+function setBg(c){bgHex=c;renderer.setClearColor(c,1);document.querySelectorAll('#bgColors .sw').forEach(s=>s.classList.toggle('sel',s.dataset.c===c));}
+function setKey(v){keyAz=v;$('rKey').value=v;$('vKey').textContent=Math.round(v)+'°';placeLights();}
+function markShot(){document.querySelectorAll('#shots .btn').forEach(b=>b.classList.toggle('sel',b.dataset.shot===cam.shot));}
+
+// after proportions change: re-fit the chair, re-reach the goals, re-attach held props
+function refit(f){
+  reattachProps(f);
+  if(f.seat){const ch=propById(f.seat);if(ch)seatFigure(f,ch);}
+  resolveFig(f); f.ground(true);
+  figures.forEach(o=>{if(o!==f&&(o.look&&o.look.fig===f.id||o.goals.some(g=>g.fig===f.id)))resolveFig(o);});
+}
+$('figType').onclick=e=>{const b=e.target.closest('[data-type]');if(!b||!act||act.type===b.dataset.type)return;
+  act.type=b.dataset.type; act.build(); refit(act); refreshFigUI(); highlightAll(); syncAxes(); commit();};
+$('rHeight').oninput=e=>{if(!act)return;act.height=e.target.value/100;act.group.scale.setScalar(act.height);refit(act);$('vHeight').textContent=act.heightCm()+' cm';};
+$('rHeight').onchange=commit;
+$('rBulk').oninput=e=>{if(!act)return;$('vBulk').textContent=e.target.value+'%';};
+$('rBulk').onchange=e=>{if(!act)return;act.bulk=e.target.value/100;act.build();refit(act);highlightAll();commit();};
+$('lookSel').onchange=e=>{if(!act)return;const v=e.target.value;
+  act.look=v==='none'?null:v==='camera'?'camera':v.startsWith('fig:')?{fig:v.slice(4)}:{prop:v.slice(5)};
+  resolveFig(act);syncAxes();commit();};
+for(const s of ['l','r'])$('hand'+s.toUpperCase()).onchange=e=>{if(!act)return;act.setHand(s,e.target.value);commit();};
+$('rTurn').oninput=e=>{if(!act)return;act.turn=parseFloat(e.target.value);$('nTurn').value=e.target.value;};
+$('rTurn').onchange=commit;
+$('nTurn').onchange=e=>{if(!act)return;const v=parseFloat(e.target.value);if(isNaN(v))return;act.turn=v;syncFacing();commit();};
+$('addFig').onclick=()=>addFigure(null);
+$('dupFig').onclick=()=>act&&addFigure(act);
+$('delFig').onclick=()=>{if(figures.length<=1||!act)return;const i=figures.indexOf(act),gone=act;
+  props.filter(p=>p.owner===gone.id||(p.attach&&p.attach.fig===gone.id)).forEach(removeProp);
+  figures.forEach(o=>{if(o.look&&o.look.fig===gone.id)o.look=null;o.goals=o.goals.filter(g=>g.fig!==gone.id);});
+  gone.dispose();figures.splice(i,1);
+  act=figures[Math.max(0,i-1)];refreshAll();refreshPropUI();commit();};
+$('mirror').onclick=()=>{if(!act)return;const f=act;f.mirror();
+  f.goals.forEach(g=>{g.side=g.side==='l'?'r':'l';});
+  const hl=f.hands.l,hr=f.hands.r; f.setHand('l',hr); f.setHand('r',hl);
+  props.forEach(p=>{if(p.attach&&p.attach.fig===f.id)p.attachTo(f,p.attach.side==='l'?'r':'l');});
+  resolveFig(f);f.ground();syncAxes();refreshFigUI();commit();};
+$('resetPose').onclick=()=>applyNamed('Stand');
+$('tSym').onchange=e=>{symmetry=e.target.checked;};
+$('tLimits').onchange=e=>{limitsOn=e.target.checked;if(limitsOn&&act){for(const n in act.joints)act.clampJoint(n);act.ground();}buildAxes();};
+$('tGround').onchange=e=>{autoGround=e.target.checked;if(autoGround)figures.forEach(f=>f.ground());};
+$('jointSelect').onchange=e=>selectJoint(e.target.value);
+const stepJoint=d=>{const i=ORDER.indexOf(sel);selectJoint(ORDER[(i+d+ORDER.length)%ORDER.length]);};
+$('jPrev').onclick=()=>stepJoint(-1); $('jNext').onclick=()=>stepJoint(1);
+$('resetJoint').onclick=()=>{if(!act)return;const base=(PRESETS['Stand'][sel])||{};for(const ax of ['x','y','z'])act.setA(sel,ax,base[ax]||0);
+  if(sel==='pelvis')act.joints.pelvis.pivot.position.copy(act.pelvisRest);act.ground();syncAxes();commit();};
+document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>{setView(b.dataset.view);saveView();});
+document.querySelectorAll('[data-shot]').forEach(b=>b.onclick=()=>{fitShot(b.dataset.shot);saveView();});
+$('rLens').oninput=e=>{
+  // dolly with the lens change so the subject stays the same size (feels like a real zoom-lens swap)
+  const old=Math.tan(camera.fov*DEG/2); setLens(parseInt(e.target.value,10)); cam.radius*=old/Math.tan(camera.fov*DEG/2); applyCam();};
+$('rLens').onchange=saveView;
+$('rKey').oninput=e=>setKey(parseFloat(e.target.value)); $('rKey').onchange=saveView;
+$('tShadow').onchange=e=>{shadowPlane.visible=e.target.checked;};
+$('tGrid').onchange=e=>{grid.visible=e.target.checked;};
+$('tHandles').onchange=e=>{showHandles=e.target.checked;};
+['capAspect','capSize','tGuide','tThirds'].forEach(id=>$(id).addEventListener('change',updateGuide));
+$('tAlpha').onchange=e=>{if(e.target.checked&&$('capFmt').value==='jpeg'){$('capFmt').value='png';toast('Transparent needs PNG — switched format');}};
+$('capFmt').onchange=e=>{if(e.target.value==='jpeg'&&$('tAlpha').checked){$('tAlpha').checked=false;toast('JPEG has no transparency — turned it off');}};
+$('capBtn').onclick=capture; $('capBtn2').onclick=capture; $('turnBtn').onclick=turnaround;
+$('undoBtn').onclick=undo; $('redoBtn').onclick=redo;
+$('dlAll').onclick=()=>downloadMany(shots);
+$('vDlSet').onclick=()=>{const s=shots[viewIdx];if(s)downloadMany(shots.filter(x=>x.set===s.set));};
+document.querySelectorAll('[data-pass]').forEach(b=>{
+  const sync=()=>{b.classList.toggle('sel',passes.has(b.dataset.pass));b.setAttribute('aria-pressed',passes.has(b.dataset.pass));};
+  b.onclick=()=>{const p=b.dataset.pass;passes.has(p)?passes.delete(p):passes.add(p);store.set(PKEY,[...passes]);sync();};
+  sync();
+});
+$('vPrev').onclick=()=>openViewer(viewIdx-1); $('vNext').onclick=()=>openViewer(viewIdx+1);
+$('vClose').onclick=closeViewer;
+$('vDl').onclick=()=>shots[viewIdx]&&downloadShot(shots[viewIdx]);
+$('vCopy').onclick=()=>copyShot(shots[viewIdx]);
+$('vDel').onclick=()=>{if(viewIdx<0)return;shots.splice(viewIdx,1);renderTray();openViewer(Math.min(viewIdx,shots.length-1));};
+if(hostWin){$('vSend').style.display='';$('vSend').onclick=()=>{const s=shots[viewIdx];if(!s)return;
+  try{hostWin.postMessage({type:'posebench:shot',dataUrl:s.url,width:s.w,height:s.h,name:s.name},'*');toast('Sent');}catch(e){toast('Could not reach the storyboard window');}};}
+$('railToggle').onclick=()=>$('rail').classList.toggle('open');
+$('railClose').onclick=()=>$('rail').classList.remove('open');
+
+// pose library
+function libList(){return store.get(LKEY)||[];}
+function renderLib(){
+  const box=$('lib'); box.innerHTML='';
+  libList().forEach((p,i)=>{const it=document.createElement('div');it.className='it';
+    const s=document.createElement('span');s.textContent=p.name;s.title='Apply to '+(act?act.name:'figure');
+    s.onclick=()=>{if(!act)return;act.setPose(p.pose,p.pelvis);act.ground();syncAxes();commit();};
+    const x=document.createElement('button');x.textContent='✕';x.title='Delete';x.setAttribute('aria-label','Delete '+p.name);
+    x.onclick=()=>{const l=libList();l.splice(i,1);store.set(LKEY,l);renderLib();};
+    it.append(s,x);box.appendChild(it);});
+}
+$('savePose').onclick=()=>{if(!act)return;const n=$('poseName').value.trim()||('Pose '+(libList().length+1));
+  const l=libList().filter(p=>p.name!==n);l.push({name:n,pose:act.getPose(),pelvis:act.pelvisOffset()});store.set(LKEY,l);$('poseName').value='';renderLib();toast('Saved “'+n+'”');};
+$('poseName').addEventListener('keydown',e=>{if(e.key==='Enter')$('savePose').click();});
+
+// scene file
+$('exportBtn').onclick=()=>{const b=new Blob([JSON.stringify(snapScene(),null,1)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=`posebench_${stamp()}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000);};
+$('importBtn').onclick=()=>$('importFile').click();
+$('importFile').onchange=async e=>{const file=e.target.files[0];e.target.value='';if(!file)return;
+  try{applySceneFile(JSON.parse(await file.text()));commit();toast('Scene loaded');}catch(err){toast('Could not read that file: '+err.message);}};
+$('newBtn').onclick=()=>{if(figures.length>1||hist.i>0){if(!confirm('Start a new scene? Your figures will be cleared (you can still Undo).'))return;}
+  props.forEach(p=>p.dispose());props=[];selProp=null;
+  figures.forEach(f=>f.dispose());figures=[];act=null;const f=new Figure({});figures.push(f);f.setPose(PRESETS['Stand']);f.ground(true);
+  act=f;refreshAll();refreshPropUI();cam.theta=0.7;cam.phi=1.45;fitShot('full');commit();};
+
+addEventListener('keydown',e=>{
+  const t=e.target, typing=(t.tagName==='INPUT'&&(t.type==='text'||t.type==='number'))||t.tagName==='TEXTAREA';
+  if($('viewer').classList.contains('open')){
+    if(e.key==='Escape')closeViewer(); else if(e.key==='ArrowLeft')openViewer(viewIdx-1); else if(e.key==='ArrowRight')openViewer(viewIdx+1);
+    return;
+  }
+  const mod=e.ctrlKey||e.metaKey;
+  if(mod&&(e.key==='z'||e.key==='Z')){if(typing)return;e.preventDefault();e.shiftKey?redo():undo();return;}
+  if(mod&&(e.key==='y'||e.key==='Y')){if(typing)return;e.preventDefault();redo();return;}
+  if(typing||mod||e.altKey)return;
+  if(t.tagName==='SELECT')return;
+  const k=e.key.toLowerCase();
+  if(k==='f'){e.shiftKey?frameAll():fitShot(cam.shot);}
+  else if(k==='c')capture();
+  else if(k==='m')$('mirror').click();
+  else if(k==='[')stepJoint(-1);
+  else if(k===']')stepJoint(1);
+  else if(selProp&&!selProp.attach&&(k==='q'||k==='e')){turnProp(selProp,selProp.turn+(k==='q'?15:-15));refreshPropUI();commit();}
+  else if(selProp&&(e.key==='Delete'||e.key==='Backspace')){e.preventDefault();deleteSelProp();}
+  else if(e.key==='Escape'&&selProp)selectProp(null);
+});
+
+/* ================= resize / loop / hud ================= */
+function resize(){
+  const w=Math.max(1,stage.clientWidth),h=Math.max(1,stage.clientHeight);
+  renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+  renderer.setSize(w,h,false); camera.aspect=w/h; camera.updateProjectionMatrix();
+  updateGuide();
+}
+new ResizeObserver(()=>resize()).observe(stage);
+function updateHud(){
+  if(!act){$('hud').textContent='—';return;}
+  const multi=figures.length>1?`${act.name} · `:'';
+  const h=hovered&&!(hovered.fig===act&&hovered.joint===sel)?`<span class="h">hover: ${labelOf(hovered.joint)}</span>`:'';
+  $('hud').innerHTML=`${multi}<b>${labelOf(sel)}</b>${h}`;
+}
+
+/* ================= storyboarder host mode =================
+ * The storyboarder mounts this page in an iframe named "posebench-embed" and talks to it with postMessage:
+ *   host -> here  posebench:open   {token, scene|null, cast:[{id,name,kind}], aspect, longEdge, shot}
+ *   host -> here  posebench:passes {token, id, scene, aspect, longEdge, passes:[...]}   (offscreen render for export)
+ *   here -> host  posebench:ready | posebench:done {scene, beauty, text, cast, lens} | posebench:cancel
+ *                 | posebench:passes {id, images}
+ * Everything leaving carries the token the host handed in; the host ignores anything else. */
+const COLOR_WORDS={'#a9afb8':'light grey','#c99a6b':'tan','#e6e1d6':'white','#595e66':'dark grey','#7f93d6':'blue','#d2826e':'coral','#8db890':'green'};
+// the order linked figures take colours in: the most distinguishable first, so "the tan one is Nat" is unambiguous
+const LINK_ORDER=['#c99a6b','#7f93d6','#d2826e','#8db890','#595e66','#e6e1d6','#a9afb8'];
+const host={token:null,cast:[],shot:'',aspect:16/9,longEdge:1536};
+const castName=id=>{const c=host.cast.find(x=>x.id===id);return c?c.name:null;};
+const figWho=f=>f.link?(castName(f.link)||f.name):(host.cast.length?null:f.name);
+function refreshLinkSel(){
+  const box=$('linkField');
+  if(!host.cast.length||!act){box.style.display='none';return;}
+  box.style.display='';
+  const s=$('figLink'); s.innerHTML='';
+  [['','Nobody in particular (an extra)']].concat(host.cast.map(c=>[c.id,c.name])).forEach(([v,t])=>{
+    const o=document.createElement('option'); o.value=v; o.textContent=t;
+    const other=v&&figures.find(f=>f!==act&&f.link===v); if(other)o.textContent+=' — now '+other.name;
+    s.appendChild(o);});
+  s.value=act.link||'';
+}
+function linkFigure(f,id){
+  figures.forEach(o=>{if(o!==f&&id&&o.link===id){o.link=null;o.name=nextName();}});   // one figure per subject
+  f.link=id||null;
+  if(id){
+    f.name=castName(id)||f.name;
+    const used=new Set(figures.filter(o=>o!==f&&o.link).map(o=>o.color));
+    if(used.has(f.color)||f.color===FIG_COLORS[0][0]){const pick=LINK_ORDER.find(c=>!used.has(c));if(pick)f.setColor(pick);}
+  }
+  refreshFigUI(); refreshPropUI();
+}
+// A plain-language account of the blocking, from the rig and the capture camera. It goes into the prompt
+// writer's input, and it is the only layout the API-key route (which sends no picture) receives.
+function blockingText(asp){
+  const W=stage.clientWidth,H=stage.clientHeight;
+  const r=asp<W/H?{x:(W-H*asp)/2,y:0,w:H*asp,h:H}:{x:0,y:(H-W/asp)/2,w:W,h:W/asp};
+  return withShotCamera(1000,Math.round(1000/asp),r,()=>{
+    const P=v=>v.clone().project(camera), IN=p=>Math.abs(p.x)<=1&&Math.abs(p.y)<=1&&p.z<1&&p.z>-1;
+    const camPos=camera.position.clone(), right=new V3().setFromMatrixColumn(camera.matrixWorld,0);
+    const W3=j=>j.pivot.getWorldPosition(new V3());
+    const lines=[];
+    const tilt=Math.atan2(camPos.y-cam.target.y,Math.hypot(camPos.x-cam.target.x,camPos.z-cam.target.z)||1)*RAD;
+    const main=act||figures[0];
+    const dy=main?camPos.y-eyePoint(main).y:0;
+    const angle=tilt>22?'high angle, looking down':tilt<-12?'low angle, looking up'
+      :Math.abs(dy)<0.2?'eye level':dy>0?'a little above eye level':'a little below eye level';
+    lines.push('Camera: '+cam.mm+'mm lens, '+angle+'.');
+    const dist=f=>W3(f.joints.pelvis).distanceTo(camPos);
+    const order=figures.slice().sort((a,b)=>dist(a)-dist(b));
+    figures.forEach(f=>{
+      f.group.updateMatrixWorld(true);
+      const name=figWho(f)||'An extra', color=COLOR_WORDS[f.color]||'grey';
+      const head=P(eyePoint(f)), pel=P(W3(f.joints.pelvis));
+      const feet=P(W3(f.joints.lAnkle).add(W3(f.joints.rAnkle)).multiplyScalar(0.5));
+      if(!IN(head)&&!IN(pel)){lines.push(name+' (the '+color+' mannequin): out of frame.');return;}
+      const bits=[], x=IN(head)?head.x:pel.x;
+      bits.push(x<-0.33?'left of frame':x>0.33?'right of frame':'centre of frame');
+      if(figures.length>1){const i=order.indexOf(f);bits.push(i===0?'nearest the camera':i===order.length-1?'furthest from the camera':'in the middle distance');}
+      bits.push(IN(feet)&&IN(head)?'seen full length':IN(pel)&&IN(head)?'seen from the hips up':IN(head)?'head and shoulders only':'head out of frame');
+      const posture=f.seat?'seated':(f.pelvisOffset()[1]<-0.2*f.height?'crouching':'standing');
+      const cq=f.joints.chest.pivot.getWorldQuaternion(new Q());
+      const fw=new V3(0,0,1).applyQuaternion(cq); fw.y=0; fw.normalize();
+      const toCam=camPos.clone().sub(W3(f.joints.chest)); toCam.y=0; toCam.normalize();
+      const ang=Math.acos(clamp(fw.dot(toCam),-1,1))*RAD, toward=fw.dot(right)>0?'screen right':'screen left';
+      bits.push(posture+', '+(ang<30?'facing the camera':ang<70?'turned three-quarters toward '+toward
+        :ang<110?'in profile, facing '+toward:ang<150?'turned three-quarters away, toward '+toward:'with their back to the camera'));
+      if(f.look==='camera')bits.push('looking straight into the lens');
+      else if(f.look&&f.look.fig){const o=figById(f.look.fig);if(o)bits.push('looking at '+(figWho(o)||'the '+(COLOR_WORDS[o.color]||'other')+' figure'));}
+      else if(f.look&&f.look.prop){const p=propById(f.look.prop);if(p)bits.push('looking at the '+PROP_LABEL[p.type].toLowerCase());}
+      const acts=[], add=a=>{if(!acts.includes(a))acts.push(a);};
+      f.goals.forEach(g=>{add({type:'typing on the laptop',ear:'holding a phone to their ear',view:'reading a phone',text:'texting with both thumbs',
+        cup:'holding a coffee cup',shake:'shaking hands',cross:'arms folded',gesture:'gesturing with an open hand',lap:'one hand resting on their lap'}[g.kind]||'');});
+      props.filter(p=>p.attach&&p.attach.fig===f.id).forEach(p=>{if(!acts.some(a=>a.includes(p.type)))add('holding a '+p.type);});
+      const a2=acts.filter(Boolean); if(a2.length)bits.push(a2.join(', '));
+      lines.push(name+' (the '+color+' mannequin): '+bits.join('; ')+'.');
+    });
+    const free=props.filter(p=>!p.attach);
+    if(free.length){
+      const c={}; free.forEach(p=>{c[p.type]=(c[p.type]||0)+1;});
+      const word=(t,n)=>{const w=t==='chair'?'office chair':PROP_LABEL[t].toLowerCase();return n>1?n+' '+w+'s':'a '+w;};
+      lines.push('Props: '+Object.keys(c).map(t=>word(t,c[t])).join(', ')+'.');
+    }
+    return lines.join('\n');
+  });
+}
+function hostPost(m){try{window.parent.postMessage(Object.assign({token:host.token},m),'*');}catch(e){}}
+const aspectValue=a=>{if(typeof a==='number')return a;const m=/^(\d+(?:\.\d+)?)\s*[:x\/]\s*(\d+(?:\.\d+)?)$/.exec(String(a||''));return m?(+m[1])/(+m[2]):null;};
+function lockAspect(asp){
+  const s=$('capAspect'); let best=null;
+  [...s.options].forEach(o=>{const v=parseFloat(o.value);if(!isNaN(v)&&Math.abs(v-asp)<0.01)best=o;});
+  if(!best){best=document.createElement('option');best.value=String(asp);best.textContent=asp.toFixed(2)+':1';s.appendChild(best);}
+  s.value=best.value; s.disabled=true; s.title='Set by the storyboard'; updateGuide();
+}
+function setLongEdge(n){const s=$('capSize');if(![...s.options].some(o=>o.value===String(n))){const o=document.createElement('option');o.textContent=String(n);s.appendChild(o);}s.value=String(n);updateGuide();}
+window.addEventListener('message',e=>{
+  if(!EMBED||e.source!==window.parent)return;
+  const d=e.data; if(!d||typeof d!=='object')return;
+  if(d.type==='posebench:open'){
+    host.token=d.token; host.cast=Array.isArray(d.cast)?d.cast.filter(c=>c&&c.id):[]; host.shot=d.shot||'';
+    host.aspect=aspectValue(d.aspect)||16/9; host.longEdge=+d.longEdge||1536;
+    props.forEach(p=>p.dispose()); props=[]; selProp=null; figures.forEach(f=>f.dispose()); figures=[]; act=null;
+    let ok=false;
+    if(d.scene){try{applySceneFile(d.scene);ok=true;}catch(err){}}
+    if(!ok){
+      const f=new Figure({}); figures.push(f); f.setPose(PRESETS['Stand']); f.ground(true); act=f; refreshAll();
+      // a fresh blocking starts with one mannequin per person cast on the card
+      host.cast.filter(c=>!c.kind||c.kind==='person').forEach((c,i)=>{if(i>0)addFigure(null);linkFigure(act,c.id);});
+    }
+    lockAspect(host.aspect); setLongEdge(host.longEdge);
+    hist.stack=[]; hist.i=-1; commit();
+    refreshAll(); refreshPropUI();
+    if(!ok){cam.theta=0.7;cam.phi=1.45;if(figures.length>1)frameAll();else fitShot('full');}
+    $('hostUse').textContent='Use for '+(host.shot||'this shot'); $('hostUse').style.display=''; $('hostCancel').style.display='';
+    $('capBtn').style.display='none';
+    return;
+  }
+  if(d.type==='posebench:passes'){
+    host.token=d.token||host.token;
+    try{applySceneFile(d.scene);}catch(err){hostPost({type:'posebench:passes',id:d.id,error:String(err.message||err)});return;}
+    const images=apiCaptureSet({aspect:aspectValue(d.aspect)||host.aspect,longEdge:+d.longEdge||host.longEdge,passes:d.passes});
+    hostPost({type:'posebench:passes',id:d.id,images});
+  }
+});
+$('hostUse').onclick=()=>{
+  const asp=host.aspect;
+  hostPost({type:'posebench:done',scene:snapScene(),lens:cam.mm,
+    beauty:apiCapture({aspect:asp,longEdge:host.longEdge}),
+    text:blockingText(asp),
+    cast:figures.filter(f=>f.link).map(f=>({fig:f.id,personaId:f.link,name:figWho(f),color:f.color,colorName:COLOR_WORDS[f.color]||'grey'}))});
+};
+$('hostCancel').onclick=()=>hostPost({type:'posebench:cancel'});
+$('figLink').onchange=e=>{if(!act)return;linkFigure(act,e.target.value);commit();};
+if(EMBED)$('vSend').style.display='none';
+
+/* ================= boot ================= */
+refreshJointList();
+renderLib();
+setLens(35);
+setKey(-40);
+setBg(bgHex);
+const saved=EMBED?null:store.get(SKEY);
+let booted=false;
+if(saved){try{applySceneFile(saved);booted=true;}catch(e){}}
+if(!booted){
+  const f=new Figure({}); figures.push(f); f.setPose(PRESETS['Stand']); f.ground(true); act=f; refreshAll();
+  cam.theta=0.7; cam.phi=1.45;
+}
+resize();
+if(!booted)fitShot('full');
+commit();
+refreshPropUI();
+(function loop(){requestAnimationFrame(loop);
+  figures.forEach(f=>{if(f.look==='camera')aimHead(f,camera.position);});
+  updateHandles();renderer.render(scene,camera);})();
+if(EMBED)try{window.parent.postMessage({type:'posebench:ready'},'*');}catch(e){}
+window.__pb={blockingText,get figures(){return figures;},get props(){return props;},get act(){return act;},cam,fitShot,setView,frameAll,PRESETS,WORK,SCENES,
+  camera,applyCam,selectJoint,solveChain,commit,applyNamed,goalFrame,eyePoint};
+})();
+</script>
+</body>
+</html>

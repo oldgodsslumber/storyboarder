@@ -111,6 +111,14 @@
             mark(r.image);
             mark(r.render);
           });
+          /* The 3D blocking (pose.js): its scene is the only copy of the
+             posed figures, and the first structural change after a save
+             would otherwise delete it along with its two renders. */
+          if (sh.pose) {
+            mark(sh.pose.scene);
+            mark(sh.pose.image);
+            mark(sh.pose.render);
+          }
         });
       });
     };
@@ -172,7 +180,10 @@
     };
     const scenes = function (list) {
       (list || []).forEach(function (sc) {
-        (sc.shots || []).forEach(function (sh) { count(sh.image); count(sh.annotation); });
+        (sc.shots || []).forEach(function (sh) {
+          count(sh.image); count(sh.annotation);
+          if (sh.pose) { count(sh.pose.image); count(sh.pose.render); count(sh.pose.scene); }
+        });
       });
     };
     const refsOf = function (list) {

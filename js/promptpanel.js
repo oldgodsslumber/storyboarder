@@ -1263,9 +1263,13 @@
       t.appendChild(im3);
       it.appendChild(t);
 
-      const file = SB.Renders.has(P(), e.render)
-        ? SB.Renders.fileName(e.render.serial, e.render.ext)
-        : null;
+      /* the blocking has no export serial — it is not a take — so it is named
+         by its own version instead of a render filename */
+      const file = e.kind === 'pose'
+        ? 'blocking v' + ((sh.pose && sh.pose.serial) || 1)
+        : SB.Renders.has(P(), e.render)
+          ? SB.Renders.fileName(e.render.serial, e.render.ext)
+          : null;
       const nameEl = SB.el('span', 'feed-file' + (file ? '' : ' none'),
         file || 'board copy only');
       it.appendChild(nameEl);
@@ -1312,6 +1316,8 @@
        be said — they are numbered nowhere and feed nothing */
     list.forEach(function (e) {
       if (e.images.length) return;
+      /* controls are said once, together, below */
+      if (e.as === 'control') return;
       const it = SB.el('div', 'pt-fe' + (e.kind === 'dead' ? ' dead' : ' empty') +
         (notSent ? ' not-sent' : ''));
       it.appendChild(SB.el('span', 'feed-n', '–'));
@@ -1322,6 +1328,22 @@
       it.title = e.label + (e.why ? ' — ' + e.why : '');
       wrap.appendChild(it);
     });
+
+    /* The blocking's control passes: listed so it is visible they exist, and
+       plainly not sent — ImagineArt takes pictures, not depth or pose
+       controls. They are rendered from the blocking for export. */
+    const controls = list.filter(function (e) { return e.as === 'control'; });
+    if (controls.length && role !== 'video') {
+      const it = SB.el('div', 'pt-fe empty not-sent');
+      it.appendChild(SB.el('span', 'feed-n', '·'));
+      it.appendChild(SB.el('span', 'feed-thumb none', '⛹'));
+      it.appendChild(SB.el('span', 'feed-file none', 'controls, not sent'));
+      it.appendChild(SB.el('span', 'feed-who', controls.map(function (e) { return e.label; }).join(' · ')));
+      it.title = 'Rendered from this card’s blocking when exported. ImagineArt has no ' +
+        'depth or pose input, so nothing here is sent with the still — the blocking picture ' +
+        '(number 1) is what carries the layout.';
+      wrap.appendChild(it);
+    }
 
     /* Not on the video lane: there is no set to hand a video model. Its one
        file is the frame, and that is on the card. */

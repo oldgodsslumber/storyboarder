@@ -3692,5 +3692,77 @@ console.log('\n— the framing a description asks for —');
     'and it uses the board\u2019s own spelling of the type');
 }
 
+console.log('\n— 3D blocking (pose.js) —');
+{
+  const p = SB.Model.newProject();
+  p.scenes[0].shots = [];
+  const sh = SB.Model.addShot(p, p.scenes[0].id, { type: 'Medium' });
+  eq(sh.pose, null, 'a new card has no blocking');
+  const nat = SB.Personas.add(p, { name: 'Nat', description: 'Red blazer.' });
+  const row = SB.Personas.add(p, { name: 'Rowan', description: 'Grey hoodie.' });
+  SB.Personas.toggleOnShot(p, sh, nat.id); SB.Personas.toggleOnShot(p, sh, row.id);
+  SB.Personas.setImage(nat, SB.Blobs.image(p, 'data:image/png;base64,TkFU', 8, 8), 'front', null);
+  const before = SB.Refs.images(p, sh, 'image').map(e => e.n + ':' + e.label);
+  eq(before, ['1:Nat'], 'without a blocking Nat is image 1');
+
+  sh.pose = {
+    serial: 1,
+    scene: SB.Blobs.put(p, 'data:application/json,' + encodeURIComponent('{"v":2,"figures":[{"id":"f1"}]}')),
+    image: SB.Blobs.image(p, 'data:image/jpeg;base64,QkxPQ0s=', 8, 5),
+    render: { ref: SB.Blobs.put(p, 'data:image/webp;base64,QkxPQ0tGVUxM'), w: 16, h: 9 },
+    cast: [{ fig: 'f1', personaId: nat.id, name: 'Nat', colorName: 'tan' },
+      { fig: 'f2', personaId: row.id, name: 'Rowan', colorName: 'blue' }],
+    text: 'Nat (the tan mannequin): left of frame; seated.\nRowan (the blue mannequin): right of frame.',
+    lens: 35, aspect: '16:9', at: 1
+  };
+  const feed = SB.Refs.feed(p, sh, 'image');
+  eq(feed[0].kind + '/' + feed[0].as + '/' + feed[0].numbers.join(','), 'pose/reference/1',
+    'the blocking is fed first, as a reference, numbered 1');
+  eq(SB.Refs.images(p, sh, 'image').map(e => e.n + ':' + e.label + ':' + e.role),
+    ['1:blocking:layout', '2:Nat:front'], 'and shifts the subjects on to 2…');
+  eq(SB.Refs.images(p, sh, 'image')[0].render && SB.Refs.images(p, sh, 'image')[0].render.w, 16,
+    'the full-size blocking render is what travels');
+  const controls = feed.filter(e => e.as === 'control');
+  eq(controls.map(e => e.pass + ':' + e.numbers.length + ':' + e.images.length),
+    ['depth:0:0', 'openpose:0:0', 'normal:0:0', 'mask:0:0'],
+    'its four passes are listed as controls: no pixels, no image number');
+  eq(feed.filter(e => e.as !== 'control').every(e => e.as === 'reference'), true,
+    'every other entry is tagged as a reference');
+  eq(SB.Refs.feed(p, sh, 'video').some(e => e.kind === 'pose' || e.as === 'control'), false,
+    'the video lane feeds no blocking — a clip animates the frame');
+
+  const block = SB.Personas.block(p, sh, null, 'image');
+  eq(/THE BLOCKING — image 1 is a 3D blocking/.test(block), true, 'the cast block names the blocking as image 1');
+  eq(/the tan mannequin is Nat \(image 2\); the blue mannequin is Rowan\./.test(block), true,
+    'and says which mannequin is whom, by colour, with their picture number');
+  eq(/Do NOT draw mannequins/.test(block), true, 'and that the mannequins are placeholders');
+  eq(/Nat \(the tan mannequin\): left of frame; seated\./.test(block), true, 'and carries the blocking in words');
+  nat.name = 'Natalie';
+  const renamed = SB.Personas.block(p, sh, null, 'image');
+  eq(/the tan mannequin is Natalie/.test(renamed) && /Natalie \(the tan mannequin\)/.test(renamed) &&
+    !/Nat \(the tan/.test(renamed), true, 'a rename after blocking uses the new name everywhere');
+  eq(/THE BLOCKING/.test(SB.Personas.block(p, sh, null, 'video')), false, 'the video block says nothing of it');
+
+  SB.Blobs.gc(p);
+  eq([sh.pose.scene, sh.pose.image.ref, sh.pose.render.ref].every(r => SB.Blobs.has(p, r)), true,
+    'gc() keeps the scene and both renders');
+  const copy = SB.Model.duplicateShot(p, sh.id);
+  eq(!!(copy && copy.pose && copy.pose !== sh.pose && copy.pose.scene === sh.pose.scene), true,
+    'a copied card takes the blocking: cloned record, shared bytes');
+  const other = SB.Model.addShot(p, p.scenes[0].id, { type: 'Wide' });
+  SB.Model.swapShotContent(p, sh.id, other.id);
+  eq(!!other.pose && sh.pose === null, true, 'a swap moves the blocking with the card’s content');
+  const refs = [other.pose.scene, other.pose.image.ref, other.pose.render.ref];
+  other.pose = null; copy.pose = null;
+  SB.Blobs.gc(p);
+  eq(refs.some(r => SB.Blobs.has(p, r)), false, 'and removing every blocking frees its bytes');
+
+  const old = SB.Model.newProject();
+  delete old.scenes[0].shots[0].pose;
+  SB.Model.migrate(old);
+  eq(old.scenes[0].shots[0].pose, null, 'migrate gives a card from before blocking a null one');
+  eq(!!SB.Model.duplicateShot(old, old.scenes[0].shots[0].id), true, 'so duplicating it does not throw');
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed\n');
 process.exit(fail ? 1 : 0);

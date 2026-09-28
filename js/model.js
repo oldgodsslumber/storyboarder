@@ -563,6 +563,10 @@
        * ordered against a dated one. */
       imageAt: 0,
       annotation: null,                 // {ref} — transparent PNG overlay
+      /* The 3D blocking (pose.js): {serial, scene, image, render, cast, text,
+       * lens, aspect, at}. Not the frame — the frame is where a still lands —
+       * but the layout reference fed ahead of everything else to the still. */
+      pose: null,
       /* What this card asks of the generator, where it differs from the
        * board: { duration, resolution, quality }. Sparse on purpose — a key
        * that is not here is the board's answer, so moving a board default
@@ -1157,6 +1161,10 @@
            and CONTENT_KEYS carries it through a duplicate — where SB.clone is
            JSON.parse(JSON.stringify(x)) and undefined is not valid JSON. */
         sh.imageAt = sh.imageAt || (sh.render && sh.render.at) || 0;
+        /* The 3D blocking — absent on every board written before it, and
+           CONTENT_KEYS carries it through a duplicate, where undefined is not
+           valid JSON. The same trap as the two above. */
+        if (sh.pose === undefined) sh.pose = null;
         repairTakes(sh);
         sh.personaIds = Array.isArray(sh.personaIds) ? sh.personaIds : [];
         /* Empty for every board written before this, which is the right answer:
@@ -1498,7 +1506,10 @@
        out of the swap separated the chosen take from the ones it was chosen
        against */
     'videoAlts', 'imageAlts', 'imageAt',
-    'fields', 'prompts', 'personaIds', 'castEnters', 'comments', 'render', 'video'
+    'fields', 'prompts', 'personaIds', 'castEnters', 'comments', 'render', 'video',
+    /* the blocking is part of what the card IS: a swap moves it with the words
+       it was blocked for, and a copy takes it (shared bytes, cloned record) */
+    'pose'
   ];
 
   /* A copy of a card, dropped where the drop landed.

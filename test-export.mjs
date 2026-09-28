@@ -33,14 +33,15 @@ const sandbox = {
   },
   fetch: () => Promise.reject(new Error('the tests never go to the network')),
   crypto: { getRandomValues: a => a, subtle: {} },
-  Uint8Array, TextEncoder, URL, FormData: class { append() { } }
+  Uint8Array, TextEncoder, URL, FormData: class { append() { } },
+  addEventListener() { }, removeEventListener() { }
 };
 sandbox.window = sandbox;
 vm.createContext(sandbox);
 
 for (const f of ['js/util.js', 'js/focus.js', 'js/doc.js', 'js/blobs.js', 'js/geminimodels.js', 'js/providers.js',
   'js/brand.js', 'js/renders.js', 'js/imaginemodels.js', 'js/imagine.js', 'js/refs.js', 'js/personas.js', 'js/fields.js',
-  'js/model.js', 'js/store.js', 'js/exportpanel.js']) {
+  'js/model.js', 'js/store.js', 'js/pose.js', 'js/exportpanel.js']) {
   vm.runInContext(readFileSync(join(root, f), 'utf8'), sandbox, { filename: f });
 }
 const SB = sandbox.SB;
@@ -568,6 +569,39 @@ section('the things a QA pass found');
   t('but "only what was made in here" passes it by',
     mine.items.filter(i => i.name === '0040.mp4').length === 0,
     mine.items.map(i => i.name).join(' '));
+}
+
+console.log('\n— the 3D blocking —');
+{
+  const p = SB.Model.newProject();
+  const sh = p.scenes[0].shots[0];
+  sh.pose = {
+    serial: 1,
+    scene: SB.Blobs.put(p, 'data:application/json,' + encodeURIComponent('{"v":2,"figures":[{"id":"f1","name":"Nat"}]}')),
+    image: SB.Blobs.image(p, 'data:image/jpeg;base64,QkxPQ0s=', 8, 5),
+    render: { ref: SB.Blobs.put(p, 'data:image/webp;base64,QkxPQ0tGVUxM'), w: 16, h: 9 },
+    cast: [], text: '', lens: 35, aspect: '16:9', at: 1
+  };
+  const inDir = i => /^blocking\//.test(i.sub || '');
+  const off = E.plan(p, withOpts({}));
+  t('the blocking folder is not written unless asked for', !off.items.some(inDir),
+    off.items.map(i => i.name).join(' '));
+  const on = E.plan(p, withOpts({ blocking: true }));
+  const mine = on.items.filter(inDir);
+  t('asked for, a blocked card writes its scene, its picture and four passes',
+    mine.map(i => i.name).join(' ') === 'scene.posebench.json blocking.webp depth.png openpose.png normal.png mask.png',
+    mine.map(i => i.name).join(' '));
+  t('into a folder of its own', mine.length > 0 && mine.every(i => i.sub === mine[0].sub), mine[0] && mine[0].sub);
+  t('the scene is the real one, reopenable in Pose Bench',
+    !!mine[0] && JSON.parse(mine[0].text).figures[0].name === 'Nat', mine[0] && mine[0].text);
+  t('the passes are rendered at write time, not carried in the board',
+    mine.slice(2).every(i => typeof i.lazy === 'function' && !i.data), '');
+  const refs = E.plan(p, withOpts({ refsets: true }));
+  t('and the reference set carries the blocking as image 1',
+    refs.items.some(i => /^refs\//.test(i.sub || '') && /^1_blocking_layout\./.test(i.name)),
+    refs.items.map(i => (i.sub || '') + '/' + i.name).join(' '));
+  const made = E.plan(p, withOpts({ blocking: true, madeOnly: true }));
+  t('"only what was made in here" leaves the blocking out', !made.items.some(inDir), '');
 }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');

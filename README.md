@@ -875,6 +875,50 @@ reference now.
 If the source has not been rendered yet, the card says so instead of feeding nothing; if it
 has been deleted, the mark goes dotted red and the strip says the reference is gone.
 
+### Blocking a shot in 3D
+
+**⛹ block** on a card (in the frame's hover tools, or under the empty frame's drop hint)
+opens **Pose Bench** full-screen over the board. Its mannequins are already there, one for each
+person cast on the card, each linked to that subject and given its own colour. You pose them,
+add props (a chair, a desk, a laptop, a phone), place the camera, and press **Use for 1B**.
+The capture aspect is locked to the board's.
+
+What the card keeps (`shot.pose`) is:
+
+- the **scene** itself, so reopening restores it exactly;
+- the **blocking picture**, which is grey mannequins;
+- a **description in words** (*"Nat (the tan mannequin): left of frame; seated, in profile,
+  facing screen right; looking at Rowan"*);
+- which mannequin is which subject.
+
+It is **not** the card's frame. The frame is where a still lands, so the next render would bank
+the blocking as a take and it would stop feeding. An empty blocked frame *shows* the blocking
+dimmed, labelled, and clickable to edit, until a still arrives.
+
+On the still lane, the blocking is **image 1**, fed ahead of every mark. On its own it goes as
+the one picture a still carries; beside subjects it takes the first panel of the reference
+sheet. The cast block tells the writer:
+
+- to match the layout and never draw mannequins;
+- which colour is whom, by the name the subject has now;
+- the blocking in words. The API-key door sends no picture, so for that door the words are
+  the only layout.
+
+A clip animates the frame, so the video lane feeds no blocking.
+
+Every still records which blocking version made it (`made.pose`). Re-block a card and its
+current still shows **⛹ older**, and the Reviewer marks those takes *earlier blocking*.
+
+The feed also lists the blocking's **control passes** (depth, OpenPose, normals and a mask
+per figure) as `as:'control'` entries. They have no pixels and no number, and nothing sends
+them: ImagineArt takes pictures, not controls. They are rendered from the scene on demand,
+never stored in the board. **Export → 3D blocking, per shot** writes them to `blocking/<code>/`
+with the scene JSON, for ComfyUI or VACE work. `pose_bench_plan.md` describes the ComfyUI
+route this is shaped for.
+
+Pose Bench's source is `posebench/pose.html`. It still opens on its own in a browser, and
+`node build.mjs` carries it into the app as `js/posebench-src.js`, which is generated.
+
 ### Who is in the first frame
 
 A shot description is usually a little story — *he writes at the desk; a moment later somebody
@@ -1062,6 +1106,9 @@ js/fields.js      the extra card text boxes, per project
 js/personapanel.js the reference library
 js/renders.js     full-size originals and clips, kept in the file by serial
 js/exportpanel.js the way back out: files, a manifest, a shot list
+js/pose.js        3D blocking: opens Pose Bench over a card, keeps shot.pose, renders passes
+js/posebench-src.js GENERATED from posebench/pose.html by build.mjs — do not edit
+posebench/pose.html Pose Bench itself (also runs standalone); HANDOFF.md beside it
 js/refs.js        marks, the feed, and the boundary a model reads
 js/viewer.js      a picture, big enough to judge
 js/refbox.js      the description box that draws a mark as a link
