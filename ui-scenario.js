@@ -3225,19 +3225,19 @@
           !Array.prototype.some.call(document.querySelectorAll('.card .ch-actions .mini'),
             function (x) { return x.textContent === '\u21c4'; }), '');
 
-        /* the fast route: alt-drag one card onto another */
+        /* the fast route: Ctrl+Alt-drag one card onto another (Alt alone copies) */
         const dt = new DataTransfer();
         const head = document.querySelector('.card[data-shot="' + a.id + '"] .card-head');
         head.dispatchEvent(new DragEvent('dragstart',
           { dataTransfer: dt, bubbles: true, cancelable: true }));
         const target = document.querySelector('.card[data-shot="' + b.id + '"]');
         target.dispatchEvent(new DragEvent('dragover',
-          { dataTransfer: dt, altKey: true, bubbles: true, cancelable: true }));
-        t('alt-dragging marks the target as a swap',
+          { dataTransfer: dt, altKey: true, ctrlKey: true, bubbles: true, cancelable: true }));
+        t('ctrl+alt-dragging marks the target as a swap',
           target.classList.contains('swap-target') && !target.classList.contains('drag-over'), '');
         target.dispatchEvent(new DragEvent('drop',
-          { dataTransfer: dt, altKey: true, bubbles: true, cancelable: true }));
-        t('alt-drop swaps the pictures back',
+          { dataTransfer: dt, altKey: true, ctrlKey: true, bubbles: true, cancelable: true }));
+        t('ctrl+alt-drop swaps the pictures back',
           a.description === 'FIRST picture' && b.description === 'SECOND picture',
           a.description + ' / ' + b.description);
         t('without reordering anything',
@@ -3261,6 +3261,24 @@
         t('taking the dialogue with it',
           document.querySelector('.script-box[data-shot="' + a.id + '"]').textContent ===
           'Wide of the office.', '');
+
+        /* Alt-drag copies: Chrome never starts a drag from a Shift-press, so
+           Alt is the duplicate gesture (as in Figma and Photoshop) */
+        const before = SB.Model.findShot(P(), a.id).scene.shots.length;
+        const dt3 = new DataTransfer();
+        document.querySelector('.card[data-shot="' + a.id + '"] .card-head')
+          .dispatchEvent(new DragEvent('dragstart', { dataTransfer: dt3, bubbles: true, cancelable: true }));
+        const t3 = document.querySelector('.card[data-shot="' + b.id + '"]');
+        t3.dispatchEvent(new DragEvent('dragover', { dataTransfer: dt3, altKey: true, bubbles: true, cancelable: true }));
+        t('alt-dragging marks the target as a copy, not a swap',
+          t3.classList.contains('copy-target') && !t3.classList.contains('swap-target'), '');
+        t3.dispatchEvent(new DragEvent('drop', { dataTransfer: dt3, altKey: true, bubbles: true, cancelable: true }));
+        const after = SB.Model.findShot(P(), a.id).scene.shots;
+        t('alt-drop duplicates the card', after.length === before + 1 &&
+          after.filter(function (s) { return s.description === a.description; }).length === 2,
+          before + ' -> ' + after.length);
+        t('and the copy is what is selected', SB.app.selectedShotId !== a.id &&
+          SB.Model.findShot(P(), SB.app.selectedShotId).shot.description === a.description, '');
       })();
 
       // moving a card between scenes — every target you might aim at

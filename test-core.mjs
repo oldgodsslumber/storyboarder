@@ -676,7 +676,7 @@ console.log('\n\u2014 what a synthetic drag cannot tell you \u2014');
      never be statically draggable, or text selection dies in every editable
      box inside it. */
   eq(/const GRAB_NOT = /.test(board), true, 'the exception list exists');
-  eq(/c\.draggable = !ev\.target\.closest\(GRAB_NOT\)/.test(board), true,
+  eq(/c\.draggable = !ev\.target\.closest\(ev\.altKey \? GRAB_NOT_ALT : GRAB_NOT\)/.test(board), true,
     'and each press decides whether it may become a drag');
   eq(/c\.draggable = true/.test(board), false,
     'nothing arms the card unconditionally');

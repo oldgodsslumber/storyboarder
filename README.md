@@ -513,14 +513,9 @@ each run of cards where the scene changes.
 ### Swapping two shots
 
 Dragging a card *moves* it, dialogue and all. To trade two shots over while each bit of
-dialogue stays where it is in the script, either:
-
-- **Ctrl+Alt-drag** (Cmd+Option on a Mac) one card onto another — the target says
-  **⇄ swap pictures** instead of the
-  usual move outline; or
-- click **⇄** in a card's header, then either press **⇄ on the other card** or click that card
-  anywhere (Esc cancels). While one is armed, the other cards' ⇄ buttons light up as
-  "swap with this one".
+dialogue stays where it is in the script, **Ctrl+Alt-drag** (Cmd+Option on a Mac) one card
+onto another. The target says **⇄ swap pictures** instead of the usual move outline. (Alt on
+its own duplicates the card.)
 
 What moves is the picture and everything describing it: frame, ink, shot type, card colour,
 description, card fields, prompts, cast and comments. What stays is the **script window**
