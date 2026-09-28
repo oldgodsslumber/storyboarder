@@ -272,8 +272,13 @@
         render: { ref: SB.Blobs.put(p, orig.data), w: orig.w, h: orig.h },
         cast: (Array.isArray(d.cast) ? d.cast : []).filter(function (c) { return c && c.personaId; })
           .map(function (c) {
+            const ps = c.pos && typeof c.pos === 'object' ? c.pos : null;
             return { fig: String(c.fig || ''), personaId: String(c.personaId), name: String(c.name || ''),
-              color: String(c.color || ''), colorName: String(c.colorName || 'grey') };
+              color: String(c.color || ''), colorName: String(c.colorName || 'grey'),
+              /* where the figure sits in the picture — "Left figure [Image 2]" in a MiniMax brief */
+              pos: ps ? { x: typeof ps.x === 'number' ? ps.x : null,
+                where: ['left', 'centre', 'right', 'out'].indexOf(ps.where) >= 0 ? ps.where : null,
+                depth: ps.depth | 0 } : null };
           }),
         text: String(d.text || '').slice(0, 4000),
         lens: +d.lens || 0,

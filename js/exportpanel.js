@@ -40,6 +40,7 @@
     proxies: false,
     refsets: false,
     blocking: false,       // the 3D blocking: scene + control passes, per blocked card
+    minimax: false,        // a MiniMax package per card, per lane (mxm.js)
     shotlist: false,
     manifest: true,
     scope: 'board',        // 'board' | 'scene' | 'selected'
@@ -273,6 +274,10 @@
       list.forEach(function (r) { blockingItems(p, r, items); });
     }
 
+    if (o.minimax && !o.madeOnly && SB.Mxm) {
+      list.forEach(function (r) { minimaxItems(p, r, items); });
+    }
+
     if (o.shotlist) {
       items.push({
         name: (SB.Renders.slug(p.name) || 'board') + '-shots.csv', kind: 'list',
@@ -369,6 +374,42 @@
             return res[pass];
           });
         } }, base));
+    });
+  }
+
+  /* The MiniMax packages (mxm.js): per card, a folder per lane holding the
+   * numbered files in upload order, prompt.txt and ORDER.txt — the same
+   * package the card's Export for MiniMax makes. A video prompt the writer has
+   * not written goes out assembled, and ORDER.txt says so; nothing here calls
+   * a writer. Clips and converted pictures are made only when written. */
+  function minimaxItems(p, r, items) {
+    const sh = r.shot;
+    if (sh.noShot) return;
+    ['image', 'video'].forEach(function (lane) {
+      const m = SB.Mxm.manifest(p, sh, lane);
+      if (!m.assets.length && !SB.Model.described(sh)) return;
+      const dir = 'minimax/' + (SB.Renders.slug(r.code) || 'shot') + '/' + (lane === 'image' ? 'still' : 'video');
+      const base = { sub: dir, code: r.code, scene: r.sceneName, shot: sh, made: null };
+      m.assets.forEach(function (a) {
+        items.push(Object.assign({ name: a.file, kind: 'minimax ' + (a.kind === 'clay-clip' ? 'clip' : 'picture'),
+          bytes: 0,
+          lazy: function () {
+            return SB.Mxm.assetData(p, sh, a, m).then(function (d) {
+              if (!d) throw new Error('the file for ' + a.label + ' on ' + r.code + ' is missing');
+              if (typeof d === 'string') return d;
+              return new Promise(function (resolve, reject) {
+                const fr = new FileReader();
+                fr.onload = function () { resolve(fr.result); };
+                fr.onerror = function () { reject(new Error('could not read the clip for ' + r.code)); };
+                fr.readAsDataURL(d);
+              });
+            });
+          } }, base));
+      });
+      const pr = SB.Mxm.promptFor(p, sh, lane, m);
+      const prompt = pr.text + '\n', order = SB.Mxm.orderText(m, pr);
+      items.push(Object.assign({ name: 'prompt.txt', kind: 'minimax prompt', text: prompt, bytes: textBytes(prompt) }, base));
+      items.push(Object.assign({ name: 'ORDER.txt', kind: 'minimax order', text: order, bytes: textBytes(order) }, base));
     });
   }
 
@@ -649,6 +690,9 @@
       check('blocking', '3D blocking, per shot',
         'scene + depth, OpenPose, normal and mask passes — for ComfyUI; cards cut from a performance add their reference and OpenPose clips',
         opts.madeOnly ? 'The blocking is what goes IN to a shot, so it is not part of “made in here”.' : ''),
+      check('minimax', 'MiniMax packages, per shot',
+        'numbered files in upload order + prompt.txt + ORDER.txt, for the still (MiniMax Image) and the video (MiniMax H3)',
+        opts.madeOnly ? 'A package is what goes IN to a shot, so it is not part of “made in here”.' : ''),
       check('shotlist', 'shot list', 'CSV: code, type, description, both prompts'),
       check('manifest', 'manifest', 'which model and prompt made each file')
     ]));

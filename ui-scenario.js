@@ -858,11 +858,18 @@
         SB.PromptPanel.open();
         const tBtn = Array.prototype.filter.call(
           document.querySelectorAll('.pt-row[data-shot="' + cShot.id + '"] button'),
-          function (b) { return /Download for MXM/.test(b.textContent); })[0];
+          function (b) { return /Export for MiniMax/.test(b.textContent); })[0];
         t('the table offers it instead', !!tBtn, tBtn ? tBtn.textContent : 'none');
         var threw = null;
         try { if (tBtn) tBtn.click(); } catch (e) { threw = e.message; }
         t('and clicking it does not throw', !threw, String(threw));
+        const mxmDlg = document.querySelector('.mxm-back');
+        t('it opens the MiniMax package, files in upload order',
+          !!mxmDlg && mxmDlg.querySelectorAll('.mxm-files li code').length >= 1 &&
+          /Ops lead/.test(mxmDlg.querySelector('.mxm-prompt').value),
+          mxmDlg ? mxmDlg.textContent.slice(0, 120) : 'no dialog');
+        if (mxmDlg) Array.prototype.filter.call(mxmDlg.querySelectorAll('.foot .tb'),
+          function (x) { return x.textContent === 'Close'; })[0].click();
         SB.PromptPanel.close();
         cShot.description = cWas;
         SB.app.changed(true);
@@ -2749,7 +2756,7 @@
           fLane().querySelector('.feed-n').textContent);
         t('and the image set can be handed over',
           Array.prototype.some.call(fLane().querySelectorAll('button'),
-            function (b) { return /Download for MXM/.test(b.textContent); }),
+            function (b) { return /Export for MiniMax/.test(b.textContent); }),
           fLane().textContent.slice(0, 90));
         SB.PromptPanel.close();
 
@@ -3989,9 +3996,11 @@
         t('and still marks the pictures it is not carrying',
           laneOf(made[0], 'video').querySelectorAll('.pt-fe.not-sent').length >= 1,
           laneOf(made[0], 'video').querySelectorAll('.pt-fe.not-sent').length);
-        t('with no offer to download them as the clip\u2019s set',
-          !Array.prototype.some.call(laneOf(made[0], 'video').querySelectorAll('button'),
-            function (b) { return /Download for MXM/.test(b.textContent); }), '');
+        /* the clip lane's one export is the MiniMax H3 package — a different
+           call from the push, and its own dialog, not the still's picture set */
+        t('its export is the MiniMax H3 package, not the still\u2019s picture set',
+          Array.prototype.some.call(laneOf(made[0], 'video').querySelectorAll('button'),
+            function (b) { return /Export for MiniMax/.test(b.textContent) && /H3/.test(b.title); }), '');
 
         /* ---- what the still lane carries, said by the pictures ----
          *

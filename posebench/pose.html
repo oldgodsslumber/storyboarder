@@ -3689,8 +3689,11 @@ function linkFigure(f,id){
 }
 // A plain-language account of the blocking, from the rig and the capture camera. It goes into the prompt
 // writer's input, and it is the only layout the API-key route (which sends no picture) receives.
+// where each figure sits in the picture, recorded by the last blockingText(): {figId: {x, where, depth}}. The storyboard
+// uses it for "Left figure [Image 2]: Gus" without re-reading the prose.
+let blockPos={};
 function blockingText(asp){
-  const W=stage.clientWidth,H=stage.clientHeight;
+  const W=stage.clientWidth,H=stage.clientHeight; blockPos={};
   const r=asp<W/H?{x:(W-H*asp)/2,y:0,w:H*asp,h:H}:{x:0,y:(H-W/asp)/2,w:W,h:W/asp};
   return withShotCamera(1000,Math.round(1000/asp),r,()=>{
     const P=v=>v.clone().project(camera), IN=p=>Math.abs(p.x)<=1&&Math.abs(p.y)<=1&&p.z<1&&p.z>-1;
@@ -3710,9 +3713,10 @@ function blockingText(asp){
       const name=figWho(f)||'An extra', color=COLOR_WORDS[f.color]||'grey';
       const head=P(eyePoint(f)), pel=P(W3(f.joints.pelvis));
       const feet=P(W3(f.joints.lAnkle).add(W3(f.joints.rAnkle)).multiplyScalar(0.5));
-      if(!IN(head)&&!IN(pel)){lines.push(name+' (the '+color+' mannequin): out of frame.');return;}
+      if(!IN(head)&&!IN(pel)){lines.push(name+' (the '+color+' mannequin): out of frame.');blockPos[f.id]={x:null,where:'out',depth:order.indexOf(f)};return;}
       const bits=[], x=IN(head)?head.x:pel.x;
       bits.push(x<-0.33?'left of frame':x>0.33?'right of frame':'centre of frame');
+      blockPos[f.id]={x:Math.round(x*1000)/1000,where:x<-0.33?'left':x>0.33?'right':'centre',depth:order.indexOf(f)};
       if(figures.length>1){const i=order.indexOf(f);bits.push(i===0?'nearest the camera':i===order.length-1?'furthest from the camera':'in the middle distance');}
       bits.push(IN(feet)&&IN(head)?'seen full length':IN(pel)&&IN(head)?'seen from the hips up':IN(head)?'head and shoulders only':'head out of frame');
       const posture=f.seat?'seated':(f.pelvisOffset()[1]<-0.2*f.height?'crouching':'standing');
@@ -3831,11 +3835,22 @@ window.addEventListener('message',e=>{
 $('hostUse').onclick=()=>{
   const asp=host.aspect;
   tlPlay(false);
+  const link=hostLink();
+  /* A card cut from a performance takes its still at its IN-POINT, whatever moment the playhead was on: the still is
+     the first frame the video starts from, and a video model is handed both — they have to be the same instant. */
+  if(link&&tl.take){
+    const tk=tl.take, c=tk.cams.find(x=>x.id===link.cam);
+    showTakeAt(link.in);
+    if(c)setCamView(camAt(tk,c,link.in)); else if(link.view)setCamView(link.view);
+    link.at=link.in;
+  }
   const sc=snapScene(); delete sc.takes;   // takes travel on their own: they belong to the scene, not this card
-  hostPost({type:'posebench:done',scene:sc,lens:cam.mm,takes:takes.map(takeSnap),link:hostLink(),
+  const text=blockingText(asp);
+  hostPost({type:'posebench:done',scene:sc,lens:cam.mm,takes:takes.map(takeSnap),link,
     beauty:apiCapture({aspect:asp,longEdge:host.longEdge}),
-    text:blockingText(asp),
-    cast:figures.filter(f=>f.link).map(f=>({fig:f.id,personaId:f.link,name:figWho(f),color:f.color,colorName:COLOR_WORDS[f.color]||'grey'}))});
+    text,
+    cast:figures.filter(f=>f.link).map(f=>({fig:f.id,personaId:f.link,name:figWho(f),color:f.color,colorName:COLOR_WORDS[f.color]||'grey',
+      pos:blockPos[f.id]||null}))});
 };
 $('hostCancel').onclick=()=>hostPost({type:'posebench:cancel'});
 $('figLink').onchange=e=>{if(!act)return;linkFigure(act,e.target.value);commit();};

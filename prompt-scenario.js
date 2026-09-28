@@ -824,7 +824,7 @@
           old2.referenceTemplate === 'mine too', old2.videoTemplate);
         t('the seed list follows the rename, so H3 is not added twice',
           proj.settings.models.filter(function (m) {
-            return /MiniMax/.test(m.name); }).length === 2,
+            return /MiniMax H3/.test(m.name); }).length === 2,
           proj.settings.models.map(function (m) { return m.name; }).join(','));
       }
 

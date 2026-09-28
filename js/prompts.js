@@ -191,6 +191,13 @@
     return parts.filter(Boolean).join('\n\n');
   }
 
+  /* A board image model left on the MiniMax Image template: its prompt is the
+     assembled brief, not a writer's paragraph. An edited template is the
+     user's own and goes to the writer like any other. */
+  function mxmImage(m) {
+    return !!m && m.name === 'MiniMax Image' && m.imageTemplate === SB.Model.tplsFor('MiniMax Image').image;
+  }
+
   /* Build the request list for one shot given the selected roles. */
   function jobsFor(shot, im, vm, roles) {
     const jobs = [];
@@ -214,7 +221,15 @@
       });
       return jobs;
     }
-    if (wantI) {
+    /* MiniMax Image, stock template: the brief is assembled from the board
+       (mxm.js) — a job with no writer call, so it needs no key either. */
+    if (wantI && SB.Mxm && mxmImage(im)) {
+      jobs.push({
+        local: function () { return { imagePrompt: SB.Mxm.brief(SB.Mxm.manifest(P(), shot, 'image')) }; },
+        keys: ['imagePrompt'],
+        targets: [{ model: im, field: 'imagePrompt' }]
+      });
+    } else if (wantI) {
       jobs.push({
         text: PREAMBLE + 'Return JSON with the key "imagePrompt".\n\n' + imageBlock(shot, im),
         keys: ['imagePrompt'],
@@ -454,11 +469,6 @@
     if ((!roles.image || !im) && (!roles.video || !vm)) {
       return Promise.reject(new Error('Pick a target model first'));
     }
-    /* Checked up front rather than letting the job fail: the reason is what the
-     * user needs, not a failure count. */
-    const prov = SB.Providers.active();
-    if (!prov.ready()) return Promise.reject(new Error(prov.notReady()));
-
     if (shot.noShot) {
       return Promise.reject(new Error('A \u201cno shot\u201d card is never generated.'));
     }
@@ -471,6 +481,12 @@
 
     const jobs = jobsFor(shot, im, vm, roles);
     if (!jobs.length) return Promise.reject(new Error('Nothing to write for this shot.'));
+    /* Checked up front rather than letting the job fail: the reason is what the
+     * user needs, not a failure count. A job assembled here needs no writer. */
+    const prov = SB.Providers.active();
+    if (jobs.some(function (j) { return !j.local; }) && !prov.ready()) {
+      return Promise.reject(new Error(prov.notReady()));
+    }
 
     /* Ids, not the object. Looked up again when the answer arrives. */
     const projectId = p.id, shotId = shot.id;
@@ -515,9 +531,9 @@
       if (i >= jobs.length) return Promise.resolve();
       if (lastError && SB.netKind(lastError)) return Promise.resolve();
       const j = jobs[i];
-      return callWriter(j.text, j.keys, j.system).then(function (res) {
+      return (j.local ? Promise.resolve(j.local()) : callWriter(j.text, j.keys, j.system).then(function (res) {
         return verify(j, res);
-      }).then(function (res) {
+      })).then(function (res) {
         const vals = j.map ? j.map(res) : res;
         const live = stillOpen(projectId, shotId);
         if (!live) {
@@ -589,8 +605,53 @@
     });
   }
 
+  /* The MiniMax H3 full-reference prompt for the package (mxm.js): the stock
+   * H3 template with the call's own label table — clip, first frame, subject
+   * pictures — and a rider saying what each file is for. Stored on shot.mxm,
+   * never on shot.prompts: the ImagineArt push keeps its frame-only prompt. */
+  function writeMxm(shot) {
+    const p = P();
+    const prov = SB.Providers.active();
+    if (!prov.ready()) return Promise.reject(new Error(prov.notReady()));
+    if (!SB.Model.described(shot)) {
+      return Promise.reject(new Error('Write a description first \u2014 there is nothing to work from.'));
+    }
+    if (writing(shot.id, 'mxmVideo')) return Promise.reject(new Error('That prompt is already being written.'));
+    const m = SB.Mxm.manifest(p, shot, 'video');
+    const sc = SB.Mxm.h3Scaffold(m);
+    const tm = { id: 'mxm', name: SB.H3.NAME, kind: 'video', videoTemplate: SB.Model.tplsFor(SB.H3.NAME).video };
+    const job = {
+      text: PREAMBLE + 'Return JSON with the keys "summary" and "detailed_description".\n\n' +
+        videoBlock(shot, tm, sc) + '\n' + SB.Mxm.h3Rider(m, sc) + '\n',
+      keys: SB.H3.WRITTEN,
+      system: sysFor(shot, 'video', tm),
+      check: function (res) {
+        /* with a clip, the camera is the clip's: a move it describes is not one nobody asked for */
+        return SB.H3.problems(sc, res)
+          .concat(sc.clip ? [] : SB.Brand.moveProblems(p, shot, res.detailed_description))
+          .concat(SB.Brand.genderProblems(p, shot, res.detailed_description));
+      }
+    };
+    const projectId = p.id, shotId = shot.id;
+    markWriting(shotId, ['mxmVideo'], true);
+    return callWriter(job.text, job.keys, job.system).then(function (res) {
+      return verify(job, res);
+    }).then(function (res) {
+      const live = stillOpen(projectId, shotId);
+      if (!live) throw new Error('That board is not open any more, so the prompt was not written.');
+      const text = SB.H3.assemble(sc, res);
+      SB.Mxm.remember(live, 'video', { prompt: text, sig: m.sig, written: true });
+      markWriting(shotId, ['mxmVideo'], false);
+      SB.Focus.defer('prompts:' + shotId, function () { SB.app.changed(true); });
+      return text;
+    }).catch(function (e) {
+      markWriting(shotId, ['mxmVideo'], false);
+      throw e;
+    });
+  }
+
   SB.Prompts = {
-    generateFor: generateFor,
+    generateFor: generateFor, writeMxm: writeMxm, mxmImage: mxmImage,
     writing: writing, writingAny: writingAny, onWriting: onWriting,
     jobsFor: jobsFor, fill: fill, raw: ask
   };

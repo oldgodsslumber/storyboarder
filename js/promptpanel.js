@@ -1345,16 +1345,23 @@
       wrap.appendChild(it);
     }
 
-    /* Not on the video lane: there is no set to hand a video model. Its one
-       file is the frame, and that is on the card. */
-    const imgs = role === 'video' ? [] : SB.Refs.images(P(), sh, role);
-    if (imgs.length) {
-      const full = imgs.filter(function (e) { return SB.Renders.has(P(), e.render); }).length;
-      const b = SB.el('button', 'mini', 'Download for MXM');
-      b.title = imgs.length + ' images, numbered in feed order' +
-        (full ? ' — ' + full + ' full-size' : ' — all at board size');
-      b.onclick = function () { SB.Board.saveFeed(sh, imgs, code); };
-      wrap.appendChild(b);
+    /* The MiniMax package (mxm.js): the numbered files, the prompt and the
+       upload order, written from one list so they cannot disagree. The still
+       lane's is MiniMax Image (clay render + each subject's picture); the video
+       lane's is MiniMax H3 full reference (clip, first frame, subjects) — a
+       different call from the ImagineArt push above, which carries the frame
+       alone. */
+    if (SB.Mxm) {
+      const m = SB.Mxm.manifest(P(), sh, role);
+      if (m.assets.length || SB.Model.described(sh)) {
+        const b = SB.el('button', 'mini mxm-btn', 'Export for MiniMax');
+        b.title = (role === 'video' ? 'MiniMax H3 full reference' : 'MiniMax Image') + ': ' +
+          m.assets.length + ' file' + (m.assets.length === 1 ? '' : 's') +
+          ' in upload order, prompt.txt and ORDER.txt' +
+          (m.warnings.length ? ' — ' + m.warnings.length + ' thing' + (m.warnings.length === 1 ? '' : 's') + ' to check' : '');
+        b.onclick = function () { SB.Mxm.open(sh, role); };
+        wrap.appendChild(b);
+      }
     }
     return wrap;
   }

@@ -1,6 +1,23 @@
 # MiniMax export: a finished package per card, per lane
 
-Status: **planned, not built.** It builds on the 3D blocking (`pose_bench_plan.md`), the recorded
+Status: **built on `V3-posebench` (2026-09-28).** Decisions taken as recommended:
+- the video uses H3's six-section format;
+- the brief uses `[Image N]` labels;
+- the brief is assembled, and the H3 prose comes from the writer (with an assembled fallback);
+- the still is taken at the in-point.
+
+H3's limits were checked: whole seconds from 4 to 15, at most 9 images, 3 videos and 12 files.
+
+What was built differently from the plan below:
+- the full-reference H3 scaffold lives in `mxm.js` rather than as a route inside `h3.js`, so the
+  ImagineArt prompt code is untouched;
+- `retention_analysis` uses `weak_reference` for a subject with no picture, where `h3.js` writes
+  `newly_introduced`, which isn't one of the guide's markers;
+- the package's prompts are stored on `shot.mxm`, not `shot.prompts`.
+
+Tests: `test-mxm.mjs`.
+
+It builds on the 3D blocking (`pose_bench_plan.md`), the recorded
 performances (`pose_motion_plan.md`), the H3 prompt module (`js/h3.js`), and the MiniMax H3
 full-reference skill (`minimax-h3-r2v-prompt`).
 

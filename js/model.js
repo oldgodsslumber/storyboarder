@@ -254,12 +254,23 @@
   const FRAME_ONLY = 'frame-only';
   const FULL_REFERENCE = 'full-reference';
 
+  /* MiniMax Image takes the team's brief — "[Image 1] is an untextured grey
+   * clay render…" — which the app assembles from the board (mxm.js), so there
+   * is no writer template: left as shipped, this text is a marker, and the
+   * prompt is built instead of written. Edit it and the writer takes over. */
+  const MXM_IMG_TPL =
+    'MiniMax Image brief: assembled by the app from the board — the clay blocking render as ' +
+    '[Image 1], each subject as its own picture, then Scene, figures, Moment, Camera, Style and ' +
+    'Negative. No writer model is used. Replace this text with a template of your own to have the ' +
+    'writer write it instead.';
+
   /* Templates a specific model needs instead of the generic pair, keyed by the
    * name it ships under in defaultModels(). */
   const MODEL_TPLS = {
     'MiniMax H3 (Hailuo)': {
       video: H3_VID_TPL, reference: H3_REF_TPL, videoRefs: FULL_REFERENCE
-    }
+    },
+    'MiniMax Image': { image: MXM_IMG_TPL }
   };
 
   function tplsFor(name) {
@@ -310,6 +321,7 @@
       model('MiniMax H3 (Hailuo)', 'video'), model('Seedance', 'video'),
       model('Flux 3', 'video'),
       model('Nano Banana (Gemini Image)', 'image'), model('Qwen-Image', 'image'),
+      model('MiniMax Image', 'image'),
       model('FLUX', 'image'), model('GPT Image', 'image'), model('Imagen', 'image'),
       model('Ideogram', 'image'), model('Midjourney', 'image')
     ];
@@ -567,6 +579,8 @@
        * lens, aspect, at}. Not the frame — the frame is where a still lands —
        * but the layout reference fed ahead of everything else to the still. */
       pose: null,
+      /* MiniMax package prompts (mxm.js): {image|video: {prompt, sig, edited, written, at}} */
+      mxm: null,
       /* What this card asks of the generator, where it differs from the
        * board: { duration, resolution, quality }. Sparse on purpose — a key
        * that is not here is the board's answer, so moving a board default
@@ -1078,6 +1092,12 @@
     if (typeof s.brand.custom !== 'boolean') s.brand.custom = false;
     if (!s.brand.custom) delete s.brand.text;
     if (typeof s.showImagePrompt !== 'boolean') s.showImagePrompt = false;
+    /* MiniMax package style and negatives (mxm.js); empty means the defaults */
+    s.mxm = (s.mxm && typeof s.mxm === 'object') ? s.mxm : {};
+    if (typeof s.mxm.style !== 'string') s.mxm.style = '';
+    ['negImage', 'negVideo'].forEach(function (k) {
+      s.mxm[k] = Array.isArray(s.mxm[k]) ? s.mxm[k].map(String).filter(Boolean) : [];
+    });
     if (typeof s.showVideoPrompt !== 'boolean') s.showVideoPrompt = false;
     /* Fill each export key on its own: a file written by an older build has
      * some of them, and replacing the whole object would throw away the
@@ -1173,6 +1193,8 @@
            CONTENT_KEYS carries it through a duplicate, where undefined is not
            valid JSON. The same trap as the two above. */
         if (sh.pose === undefined) sh.pose = null;
+        /* the MiniMax package's own prompts (mxm.js) — the same trap again */
+        if (!sh.mxm || typeof sh.mxm !== 'object') sh.mxm = null;
         repairTakes(sh);
         sh.personaIds = Array.isArray(sh.personaIds) ? sh.personaIds : [];
         /* Empty for every board written before this, which is the right answer:
@@ -1535,7 +1557,9 @@
     'fields', 'prompts', 'personaIds', 'castEnters', 'comments', 'render', 'video',
     /* the blocking is part of what the card IS: a swap moves it with the words
        it was blocked for, and a copy takes it (shared bytes, cloned record) */
-    'pose'
+    'pose',
+    /* and the MiniMax prompts written from it */
+    'mxm'
   ];
 
   /* A copy of a card, dropped where the drop landed.

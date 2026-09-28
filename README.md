@@ -959,6 +959,59 @@ A performance belongs to the storyboard **scene**, so its cards share it:
 Pose Bench's source is `posebench/pose.html`. It still opens on its own in a browser, and
 `node build.mjs` carries it into the app as `js/posebench-src.js`, which is generated.
 
+### Exporting for MiniMax
+
+For feeding MiniMax by hand: upload the files, paste the prompt. The labels in a MiniMax prompt
+(`[Image 1]`, `<Video 1>`), the order the files go up in, and which grey figure is which person all
+have to agree. The board writes all three from one list, so they can't disagree. The plan is in
+`minimax_export_plan.md`.
+
+**Prompts panel → Export for MiniMax**, on either lane. The dialog shows:
+
+- the files in upload order, each with its label;
+- anything worth checking first;
+- the prompt, which you can edit (your edit is kept);
+- the board's style and negatives.
+
+**Download zip** saves `<code>_minimax_still.zip` or `<code>_minimax_video.zip`, holding the numbered
+files, `prompt.txt` and `ORDER.txt`, and copies the prompt to the clipboard.
+
+- **First frame → MiniMax Image.**
+  - **Files:** `01_clay` is the blocking render at full size. Then each person gets their own picture:
+    `02_Gus`, …. Someone who arrives later is left out.
+  - **Prompt:** the team's brief. It opens with each file's role: *"[Image 1] is an untextured grey clay
+    render of this exact shot… the tan figure is Gus [Image 2]."* Then Scene, one line per figure
+    (*"Left figure [Image 2]: Gus, …"*, with the side taken from the blocking), Moment, Camera, Style
+    and Negative.
+  - **No writer needed.** The brief is assembled from the card, so it works with no key.
+- **Video → MiniMax H3, full reference.**
+  - **Files:** `01_clay.mp4` is the card's performance clip, rendered now through its camera over its
+    range. Then `02_first_frame` (the card's approved still), then each person's picture. With no
+    performance, the clay still takes slot 1.
+  - **Prompt:** H3's six-section rewrite, in the labels H3 uses. The clip is `<Video 1>`, which
+    defines layout, staging, camera and animation. Pictures are `<Picture N>`, and each person is a
+    `<Subject N>` bound to their clay figure (*"In `<Video 1>`, Gus is the tan figure on the left of
+    frame"*).
+  - **Write:** asks the writer model for the 350–500-word description, checked against the label
+    table. Without it, a shorter assembled version goes out and ORDER.txt says so.
+  - **Limits:** H3 makes whole-second clips from 4 to 15 s and takes up to 9 pictures; the package
+    warns when a card falls outside them.
+- **Order of work:**
+  1. Block the shot, and record or import a performance if it moves.
+  2. Make the first frame on MiniMax Image and drop the chosen one on the card.
+  3. Export the video, which now starts from that still.
+
+  When a card cut from a performance clicks **Use** in Pose Bench, it takes its still at the clip's
+  first frame, so the still and the clip begin together.
+- **The package warns rather than refuses.** It flags a still older than the blocking, a performance
+  changed since the card was cut, a person with no picture or no linked mannequin, and a clip outside
+  H3's length.
+- **Settings → Models → MiniMax Image** makes the card's own first-frame prompt the brief too, again
+  with no writer. Edit its template and the writer takes over.
+- **Export → MiniMax packages, per shot** writes the same folders for every card in scope.
+- **The ImagineArt push is unchanged.** It sends MiniMax the frame alone, and its prompt is written
+  for that.
+
 ### Who is in the first frame
 
 A shot description is usually a little story — *he writes at the desk; a moment later somebody
@@ -1117,6 +1170,7 @@ node test-ui.mjs       # boots the built file in headless Chrome, drives the UI
 node test-typing.mjs   # real mouse + keyboard over the DevTools protocol
 node test-store.mjs    # autosave/open against a stubbed File System Access API
 node test-prompts.mjs  # the prompt pipeline against a stubbed Gemini endpoint
+node test-mxm.mjs      # the MiniMax package: labels = file order, brief, H3 sections, Write
 ```
 
 `test-typing.mjs` exists because `test-ui.mjs` dispatches synthetic `beforeinput` events,
@@ -1147,6 +1201,8 @@ js/personapanel.js the reference library
 js/renders.js     full-size originals and clips, kept in the file by serial
 js/exportpanel.js the way back out: files, a manifest, a shot list
 js/pose.js        3D blocking: opens Pose Bench over a card, keeps shot.pose + scene performances, renders passes and clips
+js/mxm.js         MiniMax packages: manifest (files in upload order), the image brief, the H3 full-reference prompt
+js/zip.js         store-only zip writer
 js/posebench-src.js GENERATED from posebench/pose.html by build.mjs — do not edit
 posebench/pose.html Pose Bench itself (also runs standalone); HANDOFF.md beside it
 js/refs.js        marks, the feed, and the boundary a model reads
