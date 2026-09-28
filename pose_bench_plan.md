@@ -71,8 +71,18 @@ shot.pose = {
 
 ## How it feeds a still
 
-- `Refs.feed(p, shot, 'image')` puts a `{kind:'pose', label:'blocking', role:'layout'}` entry
+- `Refs.feed(p, shot, 'image')` puts a `{kind:'pose', label:'blocking', role:'layout', as:'reference'}` entry
   **first** when `shot.pose` exists.
+- **Every feed entry gets an `as` tag:**
+  - `'reference'` (today, every entry): the entry travels to the model as a picture.
+  - `'control'`: the entry drives a structural input (depth, pose, mask).
+  - For a blocked card, `feed()` also lists the four passes as `as:'control'` entries, `{kind:'pass', pass:'depth'|'openpose'|'normal'|'mask', lazy:true}`.
+    `lazy` means the entry names the pass rather than holding pixels; it is rendered only when a route asks for it.
+  - ImagineArt routes filter to `as:'reference'` (`Refs.images()` does this by default), so nothing
+    they send changes.
+  - A later control-capable route (ComfyUI, below) reads the controls from the same feed instead of
+    reaching into `shot.pose` itself.
+  - The numbering (`image N`) counts references only; controls are never numbered in the prompt.
   - With nothing else to send, the blocking goes **alone at full size** as the single `image_url`.
   - With subjects, it takes the **top-left panel** of the sheet.
 - The cast block (personas.js:455ff) gets one sentence per model template (`REF_TEMPLATES` gains a
@@ -162,7 +172,7 @@ srcdoc>` inside `SB.modal`, the precedent being the PDF preview (exportoptions.j
 | `index.html` | `<script src="js/pose.js">` after renders/model, before board/app |
 | `js/blobs.js` | `referenced()` marks `pose.scene`, `pose.image.ref`, `pose.render.ref`; `stats()` counts them |
 | `js/model.js` | `CONTENT_KEYS` += `pose` (card swap); card copy clones it; `Renders.weigh()` counts blocking |
-| `js/refs.js` | `feed()` puts the pose entry first on the image lane |
+| `js/refs.js` | `feed()` puts the pose entry first on the image lane; every entry gets `as` (`reference`/`control`), with lazy pass entries for blocked cards; `images()` returns references only |
 | `js/personas.js` | `block()` blocking sentence + colour→subject mapping; `REF_TEMPLATES.pose` |
 | `js/h3.js` | blocking = `<Picture 1>` composition anchor |
 | `js/imagine.js` | the sheet puts blocking top-left; `refsFor` counts it; `made.pose = serial` |
@@ -175,6 +185,7 @@ srcdoc>` inside `SB.modal`, the precedent being the PDF preview (exportoptions.j
 
 - **test-core.mjs:**
   - the pose entry is fed first, numbered 1, and shifts subjects to 2…;
+  - blocked cards list four `as:'control'` pass entries, never numbered, never sent by ImagineArt routes;
   - `gc()` does not collect pose blobs;
   - a card swap moves `pose`, and a card copy clones it;
   - `made.pose` is recorded.
@@ -191,6 +202,34 @@ srcdoc>` inside `SB.modal`, the precedent being the PDF preview (exportoptions.j
   - the host receives scene + beauty + text;
   - reopen restores the identical scene;
   - `passes` returns four images.
+
+## ComfyUI later (not part of this build)
+
+This plan is shaped so that a ComfyUI route slots in without reworking the feed or the blocking.
+
+**What this build already provides for it:**
+- **Control entries** in the feed (`as:'control'`), rendered on demand from `shot.pose.scene`, at the job's exact
+  size and aspect. ComfyUI gets them at full size, not as a 768 px sheet cell.
+- **Real controls:** depth → a ControlNet depth or Wan VACE depth input; OpenPose → ControlNet OpenPose or VACE pose.
+  These are the inputs those passes were made for.
+- **Figure ↔ subject linking plus the mask pass** allow regional prompting: each mask colour is one
+  subject, with that subject's reference and text. ImagineArt can't do this at all.
+- **Re-blocking stays cheap:** re-render the controls, re-queue with the same seed, and only the layout changes.
+
+**What the route itself would need (a separate plan when it happens):**
+- A generator route beside the ImagineArt ones:
+  - upload images via ComfyUI's `/upload/image`;
+  - queue a workflow via `/prompt`, and follow its progress over the `/ws` websocket;
+  - fetch the result via `/view`;
+  - file it through the existing `SB.Board.setImage` path, with `made.route = 'comfyui'`.
+- **Workflow templates** (API-format JSON), with named slots the app fills: `prompt`, `negative`,
+  `seed`, `reference[n]`, `control.depth`, `control.openpose`, `mask`, `width`/`height`.
+- ComfyUI started with **`--enable-cors-header`**, since the app runs from `file://`.
+- A **model check** that a template's checkpoints and ControlNets exist (`/object_info`) before
+  queueing, so a job doesn't fail twenty minutes in.
+- **House rules for a shared, live ComfyUI:**
+  - never call `/free` or unload models — other jobs may be running on it;
+  - keep seeds fixed while iterating, so cached stages stay cached.
 
 ## Order of work
 
