@@ -1,7 +1,16 @@
 # Motion takes — record a performance, recut it from any angle
 
-Status: **planned, not built.** It builds on `pose_from_camera_plan.md`, whose pose reading and retargeting are
-built on `V3-posebench`.
+Status: **built on `V3-posebench` (2026-09-28): all seven steps.** It builds on `pose_from_camera_plan.md`.
+
+- **Decisions taken:** no footage kept; full-body takes travel and upper-body takes stay in place; takes live on
+  the scene; exports at 24 fps.
+- **What differs from the text below:**
+  - In the Storyboarder the scene key is `scene.performances[]`, because "take" already means a render there. A
+    card's link is `shot.pose.perf`.
+  - Foot lock became root pinning (`footPin`).
+  - A card's range comes from the segment under the playhead when the edit is on.
+- **Still waiting:** the `video_url` push, which needs the arrival plan's video path.
+- **Details:** `posebench/HANDOFF.md`.
 
 ## Why
 

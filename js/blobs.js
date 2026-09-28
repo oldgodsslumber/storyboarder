@@ -120,6 +120,9 @@
             mark(sh.pose.render);
           }
         });
+        /* The scene's recorded performances: the only copy of each one's
+           landmarks, cameras and cut. */
+        (sc.performances || []).forEach(function (r) { if (r) mark(r.data); });
       });
     };
     /* Both shapes, deliberately: this sweep decides what gc() deletes, so a
@@ -184,6 +187,7 @@
           count(sh.image); count(sh.annotation);
           if (sh.pose) { count(sh.pose.image); count(sh.pose.render); count(sh.pose.scene); }
         });
+        (sc.performances || []).forEach(function (r) { if (r) count(r.data); });
       });
     };
     const refsOf = function (list) {

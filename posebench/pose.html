@@ -194,7 +194,34 @@
   #camPanel .spin{width:16px;height:16px;border-radius:50%;border:2px solid rgba(255,255,255,.25);border-top-color:var(--accent);animation:spin .8s linear infinite}
   @keyframes spin{to{transform:rotate(360deg)}}
   #camPanel.busy .row .btn,#camPanel.busy #camReset{opacity:.45;pointer-events:none}
-  #camLive.on{border-color:var(--danger);color:#ffb3aa;background:#3a2422}
+  #camLive.on,#camRec.on{border-color:var(--danger);color:#ffb3aa;background:#3a2422}
+  /* the timeline */
+  #timeline{position:absolute;left:14px;right:14px;bottom:12px;background:rgba(27,30,36,.96);border:1px solid var(--line);border-radius:10px;
+    padding:7px 9px;z-index:6;display:none;box-shadow:0 8px 26px rgba(0,0,0,.4)}
+  #timeline.open{display:block}
+  #stage.has-tl #tray{bottom:112px}
+  .tl-row{display:flex;align-items:center;gap:6px;min-width:0}
+  .tl-row+.tl-row{margin-top:6px}
+  .tl-b{background:var(--panel-3);border:1px solid var(--line);border-radius:6px;padding:5px 8px;font-size:12px;line-height:1;min-width:28px;white-space:nowrap}
+  .tl-b:hover{background:#323844}
+  .tl-b.wide{padding:5px 9px}
+  .tl-b.primary{background:var(--accent);color:#211a06;border-color:var(--accent);font-weight:650}
+  .tl-b:disabled{opacity:.4}
+  .tl-time{font-family:var(--mono);font-size:11px;color:var(--muted);min-width:86px;text-align:right}
+  #tlTrack{flex:1;height:34px;min-width:120px;border-radius:5px;cursor:pointer;display:block}
+  .tl-sel{width:auto;max-width:170px;padding:4px 6px;font-size:11.5px}
+  .tl-lbl{font-size:11px;color:var(--muted)}
+  .tl-cams{display:flex;gap:5px;flex-wrap:wrap}
+  .tl-cam{background:var(--panel-3);border:1px solid var(--line);border-left:4px solid var(--cc);border-radius:6px;padding:4px 8px;font-size:11.5px}
+  .tl-cam.sel{border-color:var(--cc);color:#fff}
+  .tl-sp{flex:1}
+  .tl-chk{font-size:11.5px;color:var(--text);display:flex;align-items:center;gap:5px;white-space:nowrap}
+  .tl-status{font-size:11px;color:var(--accent-hi);min-height:0}
+  .tl-status:empty{display:none}
+  .tl-pop{position:absolute;right:9px;bottom:calc(100% + 6px);width:300px;background:rgba(27,30,36,.98);border:1px solid var(--line);
+    border-radius:10px;padding:10px;display:none;box-shadow:0 10px 30px rgba(0,0,0,.45)}
+  .tl-pop.open{display:block}
+  #tlExpPasses label{font-size:12px;display:flex;align-items:center;gap:4px;margin-right:6px}
   #toast{position:absolute;left:50%;bottom:92px;transform:translateX(-50%) translateY(8px);background:#2b2f37;border:1px solid var(--line);
     color:var(--text);font-size:12.5px;padding:8px 14px;border-radius:8px;opacity:0;transition:opacity .18s,transform .18s;pointer-events:none;z-index:9}
   #toast.show{opacity:1;transform:translateX(-50%)}
@@ -447,6 +474,52 @@
     </div>
     <div id="flash"></div>
     <div id="toast"></div>
+    <div id="timeline" aria-label="Take timeline">
+      <div class="tl-row">
+        <button class="tl-b" id="tlPlay" title="Play / pause (Space)">▶</button>
+        <button class="tl-b" id="tlBack" title="Back one frame (,)">‹</button>
+        <button class="tl-b" id="tlFwd" title="Forward one frame (.)">›</button>
+        <span class="tl-time" id="tlTime">0.00</span>
+        <canvas id="tlTrack" title="Drag to scrub · drag the yellow handles to trim · drag a cut to move it, double-click to remove it"></canvas>
+        <select id="tlTake" class="tl-sel" aria-label="Take"></select>
+        <button class="tl-b" id="tlGear" title="Take settings">⚙</button>
+        <button class="tl-b" id="tlHide" title="Close the timeline (the take is kept)">✕</button>
+      </div>
+      <div class="tl-row">
+        <span class="tl-lbl">Cameras</span><span id="tlCams" class="tl-cams"></span>
+        <button class="tl-b wide" id="tlAddCam" title="Save the current view as a new camera">＋ Camera</button>
+        <span id="tlCamOpts" class="tl-cams"></span>
+        <span class="tl-sp"></span>
+        <label class="tl-chk"><input type="checkbox" id="tlEdit"> Play the edit</label>
+        <button class="tl-b wide" id="tlCut" title="Cut to the selected camera here — or press its number while playing">✂ Cut here</button>
+        <button class="tl-b wide primary" id="tlExport">⤓ Export</button>
+      </div>
+      <div class="tl-status" id="tlStatus"></div>
+      <div class="tl-pop" id="tlSet">
+        <div class="field"><label for="tlName">Name</label><input class="txt" id="tlName" style="width:100%"></div>
+        <div class="split">
+          <div class="field"><label for="tlRoot">Moving around</label><select id="tlRoot"><option value="auto">Auto</option><option value="inplace">Stay in place</option><option value="travel">Travel</option></select></div>
+          <div class="field"><label for="tlFps">Export fps</label><select id="tlFps"><option>24</option><option>25</option><option>30</option></select></div>
+        </div>
+        <div class="axis"><div class="lab"><span>Smoothing</span></div><input type="range" id="tlSmooth" min="0" max="3" step="0.5"></div>
+        <label class="toggle"><span>Keep feet planted</span><input type="checkbox" id="tlFoot"><i></i></label>
+        <div class="note" id="tlMode"></div>
+        <div class="row" style="margin-top:8px"><button class="btn grow" id="tlRebake">Re-bake</button><button class="btn grow" id="tlClearKeys">Clear <span id="tlKeys"></span></button><button class="btn grow" id="tlDelete">Delete</button></div>
+        <div class="note">Pause and pose a figure to fix that moment — the fix blends in and out. Re-bake applies the settings above.</div>
+      </div>
+      <div class="tl-pop" id="tlExp">
+        <div class="field"><label for="tlExpWhat">What</label><select id="tlExpWhat"></select></div>
+        <div class="lbl">Passes</div>
+        <div id="tlExpPasses" class="row" style="margin-bottom:8px">
+          <label><input type="checkbox" value="beauty" checked>Picture</label><label><input type="checkbox" value="depth">Depth</label>
+          <label><input type="checkbox" value="openpose">OpenPose</label><label><input type="checkbox" value="normal">Normal</label><label><input type="checkbox" value="mask">Mask</label>
+        </div>
+        <div class="field"><label for="tlExpFmt">Format</label><select id="tlExpFmt"><option value="mp4">Video (MP4)</option><option value="png">PNG frames (zip)</option></select></div>
+        <label class="toggle"><span>Cut list (JSON)</span><input type="checkbox" id="tlExpCuts" checked><i></i></label>
+        <div class="note" id="tlExpSize"></div>
+        <button class="btn primary" id="tlExpGo" style="width:100%;margin-top:8px">Export</button>
+      </div>
+    </div>
     <div id="camPanel" role="dialog" aria-label="Pose from camera">
       <div class="cp-head"><span>Pose from camera</span><span class="cp-who" id="camWho"></span><button class="btn icon" id="camClose" aria-label="Close">✕</button></div>
       <div class="cp-view" id="camView">
@@ -466,6 +539,11 @@
         <button class="btn grow" id="camLive" disabled title="The figure copies you continuously; press again to stop and keep the pose">● Follow live</button>
         <button class="btn primary grow" id="camSnap" disabled title="3-second countdown, then one steady capture (Space)">Snap in 3</button>
       </div>
+      <div class="row" style="margin-top:6px">
+        <button class="btn grow" id="camRec" disabled title="Record a performance: 3-second countdown, then until you stop (up to 60 s)">● Record</button>
+        <button class="btn grow" id="camVidBtn" title="Read a performance from a video file instead of the webcam">Video file…</button>
+      </div>
+      <input type="file" id="camVidFile" accept="video/*" hidden>
       <div class="split" style="margin-top:8px">
         <div class="field"><label for="camPeople">People</label>
           <select id="camPeople"><option value="auto">Auto</option><option value="1">One</option><option value="2">Two</option></select></div>
@@ -1381,9 +1459,10 @@ function saveScene(s){if(!EMBED)store.set(SKEY,s);}
 const hist={stack:[],i:-1};
 function snapScene(){return {v:2,figures:figures.map(f=>f.snap()),props:props.map(p=>p.snap()),active:act&&act.id,
   camera:{target:cam.target.toArray().map(v=>Math.round(v*1e4)/1e4),theta:cam.theta,phi:cam.phi,radius:cam.radius,mm:cam.mm,shot:cam.shot},
-  bg:bgHex,keyAz};}
+  bg:bgHex,keyAz,takes:takes.map(takeSnap)};}
 const poseKey=s=>JSON.stringify({f:s.figures,p:s.props,a:s.active});
 function commit(){
+  if(typeof takeEditHook==='function')takeEditHook();
   const s=snapScene(), k=poseKey(s);
   if(hist.stack[hist.i]!==k){hist.stack=hist.stack.slice(0,hist.i+1);hist.stack.push(k);if(hist.stack.length>150)hist.stack.shift();hist.i=hist.stack.length-1;}
   saveScene(s); updUndo();
@@ -1416,6 +1495,8 @@ function applySceneFile(s){
   if(typeof s.keyAz==='number')setKey(s.keyAz);
   if(s.camera){const c=s.camera;cam.target.fromArray(c.target||[0,1,0]);cam.theta=c.theta;cam.phi=c.phi;cam.radius=c.radius;cam.shot=c.shot||'full';setLens(c.mm||35);applyCam();markShot();}
   else fitShot('full');
+  if(typeof closeTimeline==='function'&&tl.take)closeTimeline();
+  takes=(s.takes||[]).map(takeLoad);
 }
 
 /* ================= selection / joint panel ================= */
@@ -1773,7 +1854,8 @@ function poseKeypoints(f,allFace){
  * camera is left out, since it has no place in the picture at all.
  * Face points turned away from the camera are still dropped by default, because that is how a detector reports a
  * turned head and how an OpenPose ControlNet reads which way someone faces; `allFace` keeps them all. */
-function renderPose(outW,outH,region,allFace){
+function renderPose(outW,outH,region,allFace){return renderPoseCanvas(outW,outH,region,allFace).toDataURL('image/png');}
+function renderPoseCanvas(outW,outH,region,allFace){
   const people=withShotCamera(outW,outH,region,()=>figures.map(f=>poseKeypoints(f,allFace).map(p=>{
     if(!p)return null;
     const cp=p.clone().applyMatrix4(camera.matrixWorldInverse);
@@ -1792,7 +1874,7 @@ function renderPose(outW,outH,region,allFace){
     ctx.fill();
   });
   for(const kp of people) kp.forEach((p,i)=>{if(!p)return;ctx.fillStyle=rgb(OP_COLORS[i],1);ctx.beginPath();ctx.arc(p[0],p[1],r,0,2*Math.PI);ctx.fill();});
-  return c.toDataURL('image/png');
+  return c;
 }
 function withShotCamera(outW,outH,region,fn){
   const W=stage.clientWidth,H=stage.clientHeight;
@@ -1804,7 +1886,8 @@ function withShotCamera(outW,outH,region,fn){
 // render one pass into a data URL; region = the part of the viewport to shoot (null = full frame at outW/outH aspect)
 function renderShot(outW,outH,region,opt){
   const pass=opt.pass||'beauty';
-  if(pass==='openpose')return renderPose(outW,outH,region,opt.allFace!=null?!!opt.allFace:opAllFace());
+  const allF=opt.allFace!=null?!!opt.allFace:opAllFace();
+  if(pass==='openpose')return opt.use?opt.use(renderPoseCanvas(outW,outH,region,allF)):renderPose(outW,outH,region,allF);
   const transparent=pass==='beauty'&&!!opt.transparent, jpeg=pass==='beauty'&&opt.fmt==='jpeg'&&!transparent;
   const was={grid:grid.visible,shadow:shadowPlane.visible,handles:handles.visible,pr:renderer.getPixelRatio(),hov:hovered};
   hovered=null; figures.forEach(f=>f.highlight(null,null)); handles.visible=false;
@@ -1819,7 +1902,7 @@ function renderShot(outW,outH,region,opt){
     url=withShotCamera(outW,outH,region,()=>{
       if(pass==='depth')setDepthRange();
       renderer.render(scene,camera);
-      return canvas.toDataURL(jpeg?'image/jpeg':'image/png',0.92);
+      return opt.use?opt.use(canvas):canvas.toDataURL(jpeg?'image/jpeg':'image/png',0.92);
     });
   }finally{
     if(unswap)unswap();
@@ -2186,6 +2269,7 @@ $('importFile').onchange=async e=>{const file=e.target.files[0];e.target.value='
   try{applySceneFile(JSON.parse(await file.text()));commit();toast('Scene loaded');}catch(err){toast('Could not read that file: '+err.message);}};
 $('newBtn').onclick=()=>{if(figures.length>1||hist.i>0){if(!confirm('Start a new scene? Your figures will be cleared (you can still Undo).'))return;}
   props.forEach(p=>p.dispose());props=[];selProp=null;
+  closeTimeline(); takes=[];
   figures.forEach(f=>f.dispose());figures=[];act=null;const f=new Figure({});figures.push(f);f.setPose(PRESETS['Stand']);f.ground(true);
   act=f;refreshAll();refreshPropUI();cam.theta=0.7;cam.phi=1.45;fitShot('full');commit();};
 
@@ -2198,6 +2282,12 @@ addEventListener('keydown',e=>{
   const mod=e.ctrlKey||e.metaKey;
   // Space snaps while the camera panel is up — the whole point is not having to reach the laptop
   if(e.key===' '&&!typing&&$('camPanel').classList.contains('open')&&camS.stream){e.preventDefault();camSnap();return;}
+  if(tl.take&&!typing&&!mod){
+    if(e.key===' '){e.preventDefault();tlPlay();return;}
+    if(e.key===','){tlPlay(false);showTakeAt(tl.t-1/TAKE_FPS);return;}
+    if(e.key==='.'){tlPlay(false);showTakeAt(tl.t+1/TAKE_FPS);return;}
+    if(/^[1-9]$/.test(e.key)&&tl.take.cams[+e.key-1]){addCut(+e.key-1);tl.cam=+e.key-1;tlUI();return;}
+  }
   if(mod&&(e.key==='z'||e.key==='Z')){if(typing)return;e.preventDefault();e.shiftKey?redo():undo();return;}
   if(mod&&(e.key==='y'||e.key==='Y')){if(typing)return;e.preventDefault();redo();return;}
   if(typing||mod||e.altKey)return;
@@ -2585,7 +2675,8 @@ function camStopStream(){
   cancelAnimationFrame(camS.raf); camS.raf=0;
   if(camS.stream){camS.stream.getTracks().forEach(t=>t.stop());camS.stream=null;}
   const v=$('camVideo'); v.srcObject=null; v.style.display='none';
-  $('camStart').textContent='▶ Start camera'; $('camLive').disabled=true; $('camSnap').disabled=true;
+  $('camStart').textContent='▶ Start camera'; $('camLive').disabled=true; $('camSnap').disabled=true; $('camRec').disabled=true;
+  if(camS.rec)camRecStop();
   if(!camS.photo)$('camEmpty').style.display='';
   camClear();
 }
@@ -2710,14 +2801,15 @@ function camTick(){
   const lm=MP.lm.VIDEO; if(!lm)return;
   camS.lastT=v.currentTime;
   let res; const t=performance.now();
-  try{res=lm.detectForVideo(v,t);}catch(e){return;}
+  try{res=lm.detectForVideo(v,nextTs(t));}catch(e){return;}
   const raw=readPose(res);
+  if(camS.rec)camS.rec.frames.push({t,people:[raw]});
   camDraw(raw,v.videoWidth,v.videoHeight);
   if(!raw){camS.last=null;if(!camS.counting)camIdle('No one in view yet.',true);return;}
   const sm=camSmooth(raw,t); camS.last=sm;
   camS.recent.push({t,p:sm}); while(camS.recent.length&&t-camS.recent[0].t>450)camS.recent.shift();
-  if(camS.live){const r=camApply(sm,false);if(r&&!camS.counting)camSay(r,'Following:');}
-  else if(!camS.counting)camIdle('Ready — Follow live, or Snap in 3 (Space).');
+  if(camS.live||camS.rec){const r=camApply(sm,false);if(r&&!camS.counting&&!camS.rec)camSay(r,'Following:');}
+  else if(!camS.counting)camIdle('Ready — Follow live, Snap in 3 (Space), or Record.');
 }
 /* Two performers: people are found every dozen frames and tracked in between by where their landmarks were. They
  * are ordered as the mirrored preview shows them, so whoever is on the left of the preview drives the left figure.
@@ -2731,12 +2823,13 @@ function camTickTwo(v){
   m.frame++;
   findPeople(v,W,H,2,{mirror:true,retry:false,whole:true,boxes:redetect?null:m.boxes}).then(people=>{
     m.boxes=people.map(p=>boxFromPose(p.pose,W,H)).filter(Boolean);
+    if(camS.rec)camS.rec.frames.push({t,people:people.map(p=>p.pose)});
     camDraw(people.map(p=>p.pose),W,H);
     if(!people.length){if(!camS.counting)camIdle('No one in view yet.',true);return;}
     while(m.filters.length<people.length)m.filters.push([]);
     const sm=people.map((p,i)=>smoothWith(m.filters[i],p.pose,t));
     m.recent.push({t,people:sm}); while(m.recent.length&&t-m.recent[0].t>450)m.recent.shift();
-    if(camS.live&&m.figs){
+    if((camS.live||camS.rec)&&m.figs){
       const res=camApplyMulti(sm.map(pose=>({pose})),m.figs.slice(0,sm.length),{});
       if(!camS.counting)camIdle('Following '+res.length+' '+(res.length===1?'person':'people')+' → '+res.map(x=>x.fig.name).join(' + ')+'.');
     }else if(!camS.counting)camIdle(people.length===2?'Two people in view — Follow live, or Snap in 3 (Space).'
@@ -2766,7 +2859,7 @@ async function camStart(){
   catch(e){camTell('The pose model did not load: '+(e.message||e),true);return;}
   camS.filters=null; camS.recent=[]; camS.lastT=-1;
   camS.m.filters=[]; camS.m.recent=[]; camS.m.boxes=null; camS.m.frame=0;
-  $('camLive').disabled=false; $('camSnap').disabled=false;
+  $('camLive').disabled=false; $('camSnap').disabled=false; $('camRec').disabled=false;
   camStatus(camTwoLive()?'Camera on. Two people: stand side by side, both in the picture.'
     :'Camera on. Stand back for full body, or sit at the desk for upper body.');
   cancelAnimationFrame(camS.raf); camTick();
@@ -2889,17 +2982,678 @@ $('camPeople').onchange=()=>{camWho();camLiveStop(true);camS.m.boxes=null;camS.m
   pnl.addEventListener('dragover',e=>{e.preventDefault();pnl.classList.add('dragover');});
   pnl.addEventListener('dragleave',()=>pnl.classList.remove('dragover'));
   pnl.addEventListener('drop',e=>{e.preventDefault();pnl.classList.remove('dragover');
+    const vf=[...(e.dataTransfer.files||[])].find(x=>/^video\//.test(x.type));
+    if(vf){camImportVideo(vf).catch(err=>{camBusy(false);camTell('That did not work: '+(err.message||err),true);});return;}
     const f=[...(e.dataTransfer.files||[])].find(x=>/^image\//.test(x.type));
-    if(!f){camStatus('Drop a photo (JPG, PNG, WebP).',true);return;}
+    if(!f){camStatus('Drop a photo (JPG, PNG, WebP) or a video.',true);return;}
     const r=new FileReader();r.onload=()=>camFromImage(r.result).catch(err=>camTell('That did not work: '+(err.message||err),true));r.readAsDataURL(f);});
 }
 
+/* ================= motion takes =================
+ * A take is a performance: the landmarks the pose model read, frame by frame — not the footage. It is tiny, it can be
+ * re-baked onto any figure or build without anyone performing again, and nothing but the numbers is kept.
+ *   record (webcam) / import (video file) -> raw frames -> resample to 30 fps, fill short gaps, smooth both ways
+ *   -> root travel + turning (full-body takes) -> bake: retarget every frame onto the figure -> foot lock
+ *   -> a track of joint rotations + position per frame, played back on the timeline and filmed by cameras A, B, C...
+ * Cameras and the cut list live on the take, so one performance can be recut from any angle. See pose_motion_plan.md. */
+const TAKE_FPS=30, TAKE_MAX_S=60, KEY_R=0.35;
+const MB_URL='https://cdn.jsdelivr.net/npm/mediabunny@1.60.0/+esm';
+const CAM_RGB=['245,177,47','90,209,230','190,150,255','143,209,158','224,112,96','230,210,90','120,170,255','200,200,200','255,140,200'];
+let takes=[];
+const tl={take:null,t:0,playing:false,loop:true,last:0,edit:false,cam:0,drag:null,exporting:false};
+const takeById=id=>takes.find(t=>t.id===id);
+
+/* ---- compact storage: Int16, base64. World points in mm, confidences and image points in 1/10000 ---- */
+const i16=v=>Math.max(-32767,Math.min(32767,Math.round(v)));
+function b64(u8){let s='';for(let i=0;i<u8.length;i+=0x8000)s+=String.fromCharCode.apply(null,u8.subarray(i,i+0x8000));return btoa(s);}
+function unb64(s){const b=atob(s),u=new Uint8Array(b.length);for(let i=0;i<b.length;i++)u[i]=b.charCodeAt(i);return u;}
+function encPose(pose){
+  if(!pose)return null;
+  const a=new Int16Array(99+33+66);
+  pose.p.forEach((v,i)=>{a[i*3]=i16(v.x*1000);a[i*3+1]=i16(v.y*1000);a[i*3+2]=i16(v.z*1000);});
+  pose.v.forEach((v,i)=>{a[99+i]=i16(v*10000);});
+  if(pose.img)pose.img.forEach((l,i)=>{a[132+i*2]=i16(l.x*10000);a[133+i*2]=i16(l.y*10000);});
+  return b64(new Uint8Array(a.buffer));
+}
+function decPose(s){
+  if(!s)return null;
+  const a=new Int16Array(unb64(s).buffer);
+  const p=[],v=[],img=[];
+  for(let i=0;i<33;i++){p.push(new V3(a[i*3]/1000,a[i*3+1]/1000,a[i*3+2]/1000));v.push(a[99+i]/10000);
+    img.push({x:a[132+i*2]/10000,y:a[133+i*2]/10000,visibility:a[99+i]/10000});}
+  return {p,v,img};
+}
+function takeSnap(tk){
+  return {id:tk.id,name:tk.name,W:tk.W,H:tk.H,dur:tk.dur,in:tk.in,out:tk.out,figIds:tk.figIds,base:tk.base,opts:tk.opts,
+    cams:tk.cams,cuts:tk.cuts,version:tk.version,
+    keys:tk.keys.map(k=>({fig:k.fig,t:k.t,d:Array.from(k.d,x=>Math.round(x*1e4)/1e4)})),
+    frames:tk.src.map(fr=>({t:Math.round(fr.t),p:fr.people.map(encPose)}))};
+}
+function takeLoad(s){
+  const tk={id:s.id||uid(),name:s.name||'Take',W:s.W||640,H:s.H||480,dur:s.dur||0,in:s.in||0,out:s.out||s.dur||0,
+    figIds:s.figIds||[],base:s.base||[],opts:Object.assign({root:'auto',smooth:1,foot:true,body:'auto',fps:24},s.opts||{}),
+    cams:s.cams||[],cuts:s.cuts||[],version:s.version||1,
+    keys:(s.keys||[]).map(k=>({fig:k.fig,t:k.t,d:Float32Array.from(k.d)})),
+    src:(s.frames||[]).map(fr=>({t:fr.t,people:fr.p.map(decPose)})),track:null};
+  return tk;
+}
+
+/* ---- cleanup: resample, fill gaps, smooth both ways ---- */
+function lerpPose(a,b,u){
+  return {p:a.p.map((v,i)=>v.clone().lerp(b.p[i],u)),v:a.v.map((x,i)=>Math.min(x,b.v[i])),
+    img:a.img&&b.img?a.img.map((l,i)=>({x:l.x+(b.img[i].x-l.x)*u,y:l.y+(b.img[i].y-l.y)*u})):(a.img||b.img)};
+}
+// one person's poses at TAKE_FPS; a gap up to half a second is bridged, a longer one stays empty (and is shown)
+function resampleTake(tk,k){
+  const N=Math.max(1,Math.round(tk.dur*TAKE_FPS)+1), out=new Array(N).fill(null);
+  const src=tk.src.filter(fr=>fr.people[k]);
+  if(!src.length)return out;
+  let i=0;
+  for(let j=0;j<N;j++){
+    const t=j/TAKE_FPS*1000;
+    while(i<src.length-1&&src[i+1].t<=t)i++;
+    const a=src[i], b=src[Math.min(i+1,src.length-1)];
+    if(t<a.t){if(a.t-t<=150)out[j]=a.people[k];continue;}
+    if(b===a||b.t<=a.t){if(t-a.t<=150)out[j]=a.people[k];continue;}
+    if(b.t-a.t>500){if(t-a.t<=150)out[j]=a.people[k];else if(b.t-t<=150)out[j]=b.people[k];continue;}
+    out[j]=lerpPose(a.people[k],b.people[k],(t-a.t)/(b.t-a.t));
+  }
+  return out;
+}
+// Gaussian over the frames either side — zero lag, where live smoothing can only look back
+function smoothSeq(seq,sigma){
+  if(sigma<0.3)return seq;
+  const R=Math.ceil(sigma*3), w=[];for(let d=-R;d<=R;d++)w.push(Math.exp(-(d*d)/(2*sigma*sigma)));
+  return seq.map((ps,j)=>{
+    if(!ps)return null;
+    const p=ps.p.map(()=>new V3()), img=ps.img?ps.img.map(()=>({x:0,y:0})):null; let W=0;
+    for(let d=-R;d<=R;d++){const q=seq[j+d];if(!q)continue;const ww=w[d+R];W+=ww;
+      q.p.forEach((v,i)=>p[i].addScaledVector(v,ww));
+      if(img&&q.img)q.img.forEach((l,i)=>{img[i].x+=l.x*ww;img[i].y+=l.y*ww;});}
+    p.forEach(v=>v.divideScalar(W)); if(img)img.forEach(l=>{l.x/=W;l.y/=W;});
+    return {p,v:ps.v,img};
+  });
+}
+function smooth1(arr,sigma){
+  const R=Math.ceil(sigma*3);
+  return arr.map((x,j)=>{if(x==null)return null;let s=0,W=0;for(let d=-R;d<=R;d++){const y=arr[j+d];if(y==null)continue;const w=Math.exp(-(d*d)/(2*sigma*sigma));s+=y*w;W+=w;}return s/W;});
+}
+// where the performer is and which way they face, per frame, from the picture (full-body takes only)
+function rootSeq(tk,seq){
+  const tv=Math.tan(PHOTO_FOV_V/2), th=tv*tk.W/tk.H;
+  const est=seq.map(ps=>{
+    if(!ps||!ps.img)return null;
+    if(![11,12,23,24].every(i=>ps.v[i]>=VIS_OK))return null;
+    const I=ps.img,P=ps.p;
+    const torsoM=Math.max(0.2,P[11].clone().add(P[12]).multiplyScalar(0.5).distanceTo(P[23].clone().add(P[24]).multiplyScalar(0.5)));
+    const sx=(I[11].x+I[12].x)/2*tk.W, sy=(I[11].y+I[12].y)/2*tk.H, hx=(I[23].x+I[24].x)/2*tk.W, hy=(I[23].y+I[24].y)/2*tk.H;
+    const D=torsoM/(2*tv*Math.max(Math.hypot(sx-hx,sy-hy)/tk.H,1e-3));
+    const hl=P[23].clone().sub(P[24]);
+    return {D,X:((I[23].x+I[24].x)-1)*th*D,yaw:Math.atan2(-hl.z,hl.x)};
+  });
+  // unwrap the turn so a full turn-around does not snap back through 360°
+  let prev=null;
+  est.forEach(e=>{if(!e)return;if(prev!=null){while(e.yaw-prev>Math.PI)e.yaw-=2*Math.PI;while(e.yaw-prev<-Math.PI)e.yaw+=2*Math.PI;}prev=e.yaw;});
+  const X=smooth1(est.map(e=>e&&e.X),3), D=smooth1(est.map(e=>e&&e.D),3), Y=smooth1(est.map(e=>e&&e.yaw),2);
+  // hold the last known value through frames the model could not place
+  let last=null;
+  return est.map((_,j)=>{if(X[j]!=null)last={X:X[j],D:D[j],yaw:Y[j]};return last;});
+}
+
+/* ---- bake ---- */
+const trackJoints=f=>ORDER.filter(n=>f.joints[n]);
+function recordFrame(f){
+  const js=trackJoints(f), r=new Float32Array(js.length*3);
+  js.forEach((n,i)=>{const e=f.joints[n].pivot.rotation;r[i*3]=e.x;r[i*3+1]=e.y;r[i*3+2]=e.z;});
+  const pp=f.joints.pelvis.pivot.position, gp=f.group.position;
+  return {r,pel:[pp.x,pp.y,pp.z],pos:[gp.x,gp.y,gp.z],turn:f.group.rotation.y};
+}
+const angLerp=(a,b,u)=>{let d=b-a;while(d>Math.PI)d-=2*Math.PI;while(d<-Math.PI)d+=2*Math.PI;return a+d*u;};
+function applyRecorded(f,fr,extra){
+  const js=trackJoints(f);
+  js.forEach((n,i)=>{const e=f.joints[n].pivot.rotation;
+    e.set(fr.r[i*3]+(extra?extra[i*3]:0),fr.r[i*3+1]+(extra?extra[i*3+1]:0),fr.r[i*3+2]+(extra?extra[i*3+2]:0));});
+  f.joints.pelvis.pivot.position.set(fr.pel[0],fr.pel[1],fr.pel[2]);
+  f.group.position.set(fr.pos[0],fr.pos[1],fr.pos[2]); f.group.rotation.y=fr.turn;
+  f.group.updateMatrixWorld(true);
+}
+function bakeTake(tk){
+  tk.track=[]; tk.gaps=[]; tk.modes=[];
+  const N=Math.max(1,Math.round(tk.dur*TAKE_FPS)+1);
+  tk.figIds.forEach((fid,k)=>{
+    const f=figById(fid), base=tk.base[k];
+    if(!f||!base){tk.track[k]=null;return;}
+    const raw=resampleTake(tk,k);
+    const seq=smoothSeq(raw,0.6+tk.opts.smooth*0.9);
+    tk.gaps[k]=raw.map(x=>!x);
+    // one body mode for the whole take, so it cannot flicker between full and upper frame to frame
+    const sureFull=seq.filter(ps=>ps&&[23,24].every(i=>ps.v[i]>=VIS_OK)&&(ps.v[25]>=VIS_OK||ps.v[26]>=VIS_OK)).length;
+    const full=tk.opts.body==='full'||(tk.opts.body!=='upper'&&!base.seat&&sureFull>=0.6*seq.filter(Boolean).length);
+    const travel=full&&(tk.opts.root==='travel'||tk.opts.root==='auto');
+    tk.modes[k]={full,travel};
+    const root=full?rootSeq(tk,seq):null, r0=root&&root.find(Boolean);
+    // start from where the figure stood when the take was made
+    f.setPose(base.pose,base.pel); f.group.position.fromArray(base.pos); f.turn=base.turn;
+    if(base.seat&&propById(base.seat))f.seat=base.seat;
+    const bt=base.turn*DEG, bx=base.pos[0], bz=base.pos[2];
+    const th=tk.opts.trust===false?VIS_OK:TRUST_FLOOR;
+    const track=[];
+    for(let j=0;j<N;j++){
+      const e=root&&root[j];
+      if(e&&r0){
+        f.group.rotation.y=bt+(e.yaw-r0.yaw);
+        if(travel){
+          // in the figure's starting frame the webcam stood in front of it: picture-right is the figure's left (+X),
+          // and moving away from the camera is moving backward (-Z)
+          const lx=e.X-r0.X, lz=-(e.D-r0.D);
+          f.group.position.x=bx+lx*Math.cos(bt)+lz*Math.sin(bt);
+          f.group.position.z=bz-lx*Math.sin(bt)+lz*Math.cos(bt);
+        }
+      }
+      const ps=seq[j];
+      if(ps)retarget(f,tk.opts.swap?swapPose(ps):ps,{body:full?'full':'upper',threshold:th});
+      else f.ground();
+      track.push(recordFrame(f));
+    }
+    if(travel&&tk.opts.foot)footPin(f,track,seq,tk.W,tk.H);
+    tk.track[k]=track;
+  });
+  tk.baked=Date.now();
+}
+/* Root pinning, the standard motion-capture cleanup. How far away someone is, judged from their torso's size in the
+ * picture, drifts with the pose (raising an arm lifts the shoulder landmark and the torso reads longer), so a performer
+ * standing still crept 27 cm. Where they are in the PICTURE is reliable: a foot that is still in the image and is the
+ * lowest point is planted, and while it is planted the whole figure is shifted so that foot stays exactly where it
+ * landed. A performer standing still stays still; in a walk, the planted foot carries the figure forward — and no foot
+ * can skate. Between plants (a jump, a run's flight) the estimated travel carries on from where the plant left it. */
+function footPin(f,track,seq,W,H){
+  const N=track.length, A={l:27,r:28}, cont={l:new Array(N).fill(false),r:new Array(N).fill(false)};
+  const at=j=>{const ps=seq[j];return ps&&ps.img?ps:null;};
+  for(let j=0;j<N;j++){
+    const ps=at(j); if(!ps)continue;
+    const I=ps.img, footY=Math.max(I[27].y,I[28].y);
+    const bodyH=Math.max(1,Math.abs(I[0].y-footY)*H);
+    const a=at(Math.max(0,j-1))||ps, b=at(Math.min(N-1,j+1))||ps;
+    for(const s of ['l','r']){
+      const i=A[s];
+      if(ps.v[i]<0.3)continue;
+      const speed=Math.hypot((b.img[i].x-a.img[i].x)*W,(b.img[i].y-a.img[i].y)*H)/2*TAKE_FPS/bodyH;   // body-heights a second
+      cont[s][j]=speed<0.12&&(footY-I[i].y)*H<0.035*bodyH;
+    }
+  }
+  // a plant has to last a few frames to count; a single still frame mid-stride is not one
+  for(const s of ['l','r']){let j=0;while(j<N){if(!cont[s][j]){j++;continue;}let e=j;while(e+1<N&&cont[s][e+1])e++;if(e-j<2)for(let q=j;q<=e;q++)cont[s][q]=false;j=e+1;}}
+  /* With both feet down they disagree a little (leg noise), and averaging them let each one drift by half of it. So the
+     foot that has been planted longer anchors the figure's position, and the other planted foot is held by leg IK. */
+  let cx=0,cz=0; const pin={l:null,r:null};
+  for(let j=0;j<N;j++){
+    applyRecorded(f,track[j]);
+    const foot={};
+    for(const s of ['l','r']){const w=f.joints[s+'Ankle'].pivot.getWorldPosition(new V3());foot[s]={x:w.x+cx,z:w.z+cz};}
+    const planted=['l','r'].filter(s=>cont[s][j]&&pin[s]).sort((a,b)=>pin[a].since-pin[b].since);
+    const anchor=planted[0];
+    if(anchor){cx+=pin[anchor].x-foot[anchor].x;cz+=pin[anchor].z-foot[anchor].z;}
+    for(const s of ['l','r']){
+      if(!cont[s][j]){pin[s]=null;continue;}
+      if(!pin[s]){const w=f.joints[s+'Ankle'].pivot.getWorldPosition(new V3());pin[s]={x:w.x+cx,z:w.z+cz,since:j};}
+    }
+    track[j].pos[0]+=cx; track[j].pos[2]+=cz;
+    const other=planted[1];
+    if(other){
+      applyRecorded(f,track[j]);
+      const A=other+'Ankle', aq=f.joints[A].pivot.getWorldQuaternion(new Q()), w=f.joints[A].pivot.getWorldPosition(new V3());
+      solveChain(f,[other+'Hip',other+'Knee'],A,new V3(),new V3(pin[other].x,w.y,pin[other].z));
+      setWorldQuat(f,A,aq);
+      track[j]=recordFrame(f);
+    }
+  }
+}
+// a foot that is still and on the floor stays exactly where it landed — the usual weakness of camera capture is
+// feet that skate. Leg IK holds it, the ankle keeps the angle it had.
+function footLock(f,track){
+  for(const s of ['l','r']){
+    const A=s+'Ankle', pos=track.map(fr=>{applyRecorded(f,fr);return f.joints[A].pivot.getWorldPosition(new V3());});
+    const minY=Math.min(...pos.map(p=>p.y));
+    // "still" means planted: a slow shuffle or a body gliding across the floor is not, and pinning it wrenched the legs
+    const still=pos.map((p,j)=>{const a=pos[Math.max(0,j-1)],b=pos[Math.min(pos.length-1,j+1)];
+      return p.y<minY+0.05&&Math.hypot(b.x-a.x,b.z-a.z)*TAKE_FPS/2<0.15;});
+    let j=0;
+    while(j<still.length){
+      if(!still[j]){j++;continue;}
+      let e=j;while(e+1<still.length&&still[e+1])e++;
+      if(e-j>=2){
+        let target=pos[j].clone();
+        for(let q=j;q<=e;q++){
+          // the foot it measured has wandered off the pin: let go and plant again where it is now
+          if(Math.hypot(pos[q].x-target.x,pos[q].z-target.z)>0.12)target=pos[q].clone();
+          applyRecorded(f,track[q]);
+          const aq=f.joints[A].pivot.getWorldQuaternion(new Q());
+          const tgt=target.clone(); tgt.y=pos[q].y;
+          solveChain(f,[s+'Hip',s+'Knee'],A,new V3(),tgt); setWorldQuat(f,A,aq);
+          track[q]=recordFrame(f);
+        }
+      }
+      j=e+1;
+    }
+  }
+}
+
+/* ---- playback ---- */
+function frameAt(tk,k,t){
+  const tr=tk.track&&tk.track[k]; if(!tr||!tr.length)return null;
+  const x=clamp(t*TAKE_FPS,0,tr.length-1), i=Math.floor(x), u=x-i, a=tr[i], b=tr[Math.min(i+1,tr.length-1)];
+  if(u<1e-4||a===b)return a;
+  const r=new Float32Array(a.r.length); for(let q=0;q<r.length;q++)r[q]=angLerp(a.r[q],b.r[q],u);
+  const L=(p,q)=>p.map((v,z)=>v+(q[z]-v)*u);
+  return {r,pel:L(a.pel,b.pel),pos:L(a.pos,b.pos),turn:angLerp(a.turn,b.turn,u)};
+}
+function keyDelta(tk,fid,t,n){
+  let d=null;
+  tk.keys.forEach(k=>{if(k.fig!==fid)return;const dt=Math.abs(k.t-t);if(dt>=KEY_R)return;
+    const w=0.5*(1+Math.cos(Math.PI*dt/KEY_R));if(!d)d=new Float32Array(n);for(let i=0;i<n;i++)d[i]+=w*(k.d[i]||0);});
+  return d;
+}
+function showTakeAt(t){
+  const tk=tl.take; if(!tk)return;
+  tl.t=clamp(t,0,tk.dur);
+  tk.figIds.forEach((fid,k)=>{const f=figById(fid),fr=f&&frameAt(tk,k,tl.t);if(!fr)return;
+    applyRecorded(f,fr,keyDelta(tk,fid,tl.t,fr.r.length));});
+  figures.forEach(f=>{if(f.look)resolveFig(f);});
+  if(tl.edit||tl.exporting){const c=cutCam(tk,tl.t);if(c)setCamView(camAt(tk,c,tl.t));}
+  if(!tl.playing)syncAxes();
+  drawTrack();
+}
+function tlTick(now){
+  if(!tl.take||!tl.playing){tl.last=now;return;}
+  const dt=Math.min(0.1,(now-tl.last)/1000); tl.last=now;
+  let t=tl.t+dt;
+  if(t>=tl.take.out){if(tl.loop)t=tl.take.in;else{t=tl.take.out;tlPlay(false);}}
+  showTakeAt(t);
+}
+function tlPlay(on){
+  if(!tl.take)return;
+  tl.playing=on==null?!tl.playing:on;
+  if(tl.playing&&(tl.t>=tl.take.out-1e-3||tl.t<tl.take.in))tl.t=tl.take.in;
+  tl.last=performance.now();
+  $('tlPlay').textContent=tl.playing?'❚❚':'▶';
+  if(!tl.playing){syncAxes();commit();}
+}
+
+/* ---- cameras and the cut ---- */
+const viewNow=()=>({theta:cam.theta,phi:cam.phi,radius:cam.radius,target:cam.target.toArray(),mm:cam.mm});
+function setCamView(v){
+  if(!v)return;
+  cam.theta=v.theta; cam.phi=v.phi; cam.radius=v.radius; cam.target.fromArray(v.target);
+  if(v.mm&&v.mm!==cam.mm)setLens(Math.round(v.mm));
+  applyCam();
+}
+function chestOf(fid){const f=figById(fid);if(!f)return null;f.group.updateMatrixWorld(true);return f.joints.chest.pivot.getWorldPosition(new V3());}
+function camAt(tk,c,t){
+  if(!c)return null;
+  let v=c.view;
+  if(c.to){
+    const span=Math.max(1e-3,tk.out-tk.in), u=clamp((t-tk.in)/span,0,1), e=u*u*(3-2*u);
+    v={theta:angLerp(c.view.theta,c.to.theta,e),phi:c.view.phi+(c.to.phi-c.view.phi)*e,radius:c.view.radius+(c.to.radius-c.view.radius)*e,
+      target:c.view.target.map((x,i)=>x+(c.to.target[i]-x)*e),mm:c.view.mm+(c.to.mm-c.view.mm)*e};
+  }
+  if(c.follow){const ch=chestOf(c.follow);if(ch&&c.off)v=Object.assign({},v,{target:[ch.x+c.off[0],ch.y+c.off[1],ch.z+c.off[2]]});}
+  return v;
+}
+function cutCam(tk,t){
+  if(!tk.cams.length)return null;
+  let c=null; tk.cuts.slice().sort((a,b)=>a.t-b.t).forEach(k=>{if(k.t<=t+1e-6)c=k.cam;});
+  return tk.cams.find(x=>x.id===c)||tk.cams[0];
+}
+function addCam(){
+  const tk=tl.take; if(!tk)return;
+  const name=String.fromCharCode(65+tk.cams.length%26);
+  tk.cams.push({id:uid(),name,view:viewNow(),to:null,follow:null,off:null});
+  tl.cam=tk.cams.length-1; takeChanged(); tlUI();
+  toast('Camera '+name+' saved from this view');
+}
+function addCut(camIdx){
+  const tk=tl.take; if(!tk||!tk.cams[camIdx])return;
+  const t=Math.round(tl.t*TAKE_FPS)/TAKE_FPS, id=tk.cams[camIdx].id;
+  tk.cuts=tk.cuts.filter(k=>Math.abs(k.t-t)>0.5/TAKE_FPS); tk.cuts.push({t,cam:id}); tk.cuts.sort((a,b)=>a.t-b.t);
+  takeChanged(); drawTrack();
+}
+
+/* ---- the timeline ---- */
+function takeChanged(){if(tl.take)tl.take.version=(tl.take.version||1)+1;saveTakes();}
+function saveTakes(){const s=store.get(SKEY);if(s){s.takes=takes.map(takeSnap);saveScene(s);}}
+function openTake(tk){
+  tl.take=tk; tl.playing=false; tl.t=tk.in; tl.cam=0;
+  $('timeline').classList.add('open'); $('stage').classList.add('has-tl');
+  if(!tk.track)bakeTake(tk);
+  tlUI(); showTakeAt(tk.in);
+}
+function closeTimeline(){tlPlay(false);tl.take=null;$('timeline').classList.remove('open');$('stage').classList.remove('has-tl');$('tlSet').classList.remove('open');$('tlExp').classList.remove('open');}
+function tlUI(){
+  const tk=tl.take; if(!tk)return;
+  const sel=$('tlTake'); sel.innerHTML='';
+  takes.forEach(t=>{const o=document.createElement('option');o.value=t.id;o.textContent=t.name+' · '+t.dur.toFixed(1)+'s';sel.appendChild(o);});
+  sel.value=tk.id;
+  const box=$('tlCams'); box.innerHTML='';
+  tk.cams.forEach((c,i)=>{
+    const b=document.createElement('button'); b.className='tl-cam'+(i===tl.cam?' sel':''); b.textContent=(i+1)+' '+c.name+(c.to?' ↝':'')+(c.follow?' ◎':'');
+    b.style.setProperty('--cc','rgb('+CAM_RGB[i%CAM_RGB.length]+')');
+    b.title='Camera '+c.name+': click to look through it · press '+(i+1)+' while playing to cut to it';
+    b.onclick=()=>{tl.cam=i;setCamView(camAt(tk,c,tl.t));tlUI();};
+    box.appendChild(b);
+  });
+  const o=$('tlCamOpts'); o.innerHTML='';
+  const c=tk.cams[tl.cam];
+  if(c){
+    const mk=(t,title,fn)=>{const b=document.createElement('button');b.className='tl-b wide';b.textContent=t;b.title=title;b.onclick=fn;o.appendChild(b);};
+    mk('Update','Save the current view as camera '+c.name,()=>{c.view=viewNow();takeChanged();toast('Camera '+c.name+' updated');});
+    mk(c.to?'✕ move':'Move to here','Make camera '+c.name+' travel from its view to this one over the take',()=>{c.to=c.to?null:viewNow();takeChanged();tlUI();});
+    const fig=figures.find(f=>tk.figIds.includes(f.id))||act;
+    mk(c.follow?'✕ follow':'Follow '+(fig?fig.name:''),'Keep camera '+c.name+' pointed at the figure as it moves',()=>{
+      if(c.follow){c.follow=null;c.off=null;}else if(fig){const ch=chestOf(fig.id);const v=camAt(tk,c,tl.t);c.follow=fig.id;c.off=[v.target[0]-ch.x,v.target[1]-ch.y,v.target[2]-ch.z];}
+      takeChanged();tlUI();});
+    mk('✕','Delete camera '+c.name,()=>{tk.cuts=tk.cuts.filter(k=>k.cam!==c.id);tk.cams.splice(tl.cam,1);tl.cam=Math.max(0,tl.cam-1);takeChanged();tlUI();drawTrack();});
+  }
+  $('tlEdit').checked=tl.edit; $('tlCut').disabled=!tk.cams.length;
+  $('tlName').value=tk.name; $('tlRoot').value=tk.opts.root; $('tlSmooth').value=tk.opts.smooth; $('tlFoot').checked=tk.opts.foot;
+  $('tlFps').value=String(tk.opts.fps||24); $('tlKeys').textContent=tk.keys.length?tk.keys.length+' fix'+(tk.keys.length>1?'es':''):'no fixes';
+  const modes=(tk.modes||[]).map((m,k)=>{const f=figById(tk.figIds[k]);return (f?f.name:'?')+': '+(m.full?(m.travel?'full body, travels':'full body, in place'):'upper body');}).join(' · ');
+  $('tlMode').textContent=modes;
+  drawTrack();
+}
+function drawTrack(){
+  const c=$('tlTrack'), tk=tl.take; if(!tk)return;
+  const W=c.clientWidth||600,H=c.clientHeight||34; if(c.width!==W*devicePixelRatio){c.width=W*devicePixelRatio;c.height=H*devicePixelRatio;}
+  const x=c.getContext('2d'); x.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0); x.clearRect(0,0,W,H);
+  const T=t=>t/Math.max(tk.dur,1e-3)*W;
+  x.fillStyle='#262a31'; x.fillRect(0,0,W,H);
+  x.fillStyle='#343a44'; x.fillRect(T(tk.in),0,T(tk.out)-T(tk.in),H*0.55);
+  // gaps the model could not read
+  (tk.gaps||[]).forEach(g=>{if(!g)return;x.fillStyle='rgba(224,106,90,.65)';g.forEach((gap,j)=>{if(gap)x.fillRect(T(j/TAKE_FPS),0,Math.max(1,W/g.length),H*0.55);});});
+  // correction keys
+  x.fillStyle='#ffc757'; tk.keys.forEach(k=>{x.beginPath();x.moveTo(T(k.t),2);x.lineTo(T(k.t)+4,8);x.lineTo(T(k.t)-4,8);x.fill();});
+  // the edit: one colour per camera
+  const cuts=tk.cuts.slice().sort((a,b)=>a.t-b.t);
+  if(tk.cams.length){
+    const seg=[{t:0,cam:(cuts[0]&&cuts[0].t<=0)?cuts[0].cam:tk.cams[0].id}].concat(cuts.filter(k=>k.t>0));
+    seg.forEach((s,i)=>{const t1=i+1<seg.length?seg[i+1].t:tk.dur,ci=tk.cams.findIndex(cc=>cc.id===s.cam);
+      x.fillStyle='rgba('+CAM_RGB[Math.max(0,ci)%CAM_RGB.length]+',.8)';x.fillRect(T(s.t),H*0.62,T(t1)-T(s.t),H*0.38);
+      x.fillStyle='#111';x.font='10px sans-serif';if(T(t1)-T(s.t)>14&&tk.cams[ci])x.fillText(tk.cams[ci].name,T(s.t)+3,H-3);});
+    cuts.forEach(k=>{x.fillStyle='#fff';x.fillRect(T(k.t)-1,H*0.58,2,H*0.42);});
+  }
+  // in / out handles and the playhead
+  x.fillStyle='#ffc757'; [tk.in,tk.out].forEach(t=>x.fillRect(T(t)-2,0,4,H*0.55));
+  x.fillStyle='#fff'; x.fillRect(T(tl.t)-1,0,2,H);
+  $('tlTime').textContent=tl.t.toFixed(2)+' / '+tk.dur.toFixed(1)+'s';
+}
+{
+  const c=$('tlTrack');
+  const tOf=e=>{const r=c.getBoundingClientRect();return clamp((e.clientX-r.left)/r.width,0,1)*tl.take.dur;};
+  c.addEventListener('pointerdown',e=>{
+    if(!tl.take)return; c.setPointerCapture(e.pointerId);
+    const tk=tl.take, t=tOf(e), px=tk.dur/Math.max(1,c.clientWidth)*6, upper=e.offsetY<c.clientHeight*0.58;
+    const cut=!upper&&tk.cuts.find(k=>Math.abs(k.t-t)<px);
+    tl.drag=upper&&Math.abs(t-tk.in)<px?'in':upper&&Math.abs(t-tk.out)<px?'out':cut?{cut}:'scrub';
+    if(tl.drag==='scrub'){tlPlay(false);showTakeAt(t);}
+  });
+  c.addEventListener('pointermove',e=>{
+    if(!tl.drag||!tl.take)return; const tk=tl.take, t=Math.round(tOf(e)*TAKE_FPS)/TAKE_FPS;
+    if(tl.drag==='in')tk.in=Math.min(t,tk.out-0.2);
+    else if(tl.drag==='out')tk.out=Math.max(t,tk.in+0.2);
+    else if(tl.drag.cut)tl.drag.cut.t=t;
+    else{showTakeAt(t);return;}
+    drawTrack();
+  });
+  c.addEventListener('pointerup',()=>{if(tl.drag&&tl.drag!=='scrub')takeChanged();tl.drag=null;});
+  c.addEventListener('dblclick',e=>{
+    const tk=tl.take;if(!tk)return;const t=tOf(e),px=tk.dur/Math.max(1,c.clientWidth)*6;
+    const i=tk.cuts.findIndex(k=>Math.abs(k.t-t)<px);if(i>=0){tk.cuts.splice(i,1);takeChanged();drawTrack();}
+  });
+  new ResizeObserver(()=>drawTrack()).observe(c);
+}
+
+/* ---- correction keys: fix one moment by posing it while paused ---- */
+function takeEditHook(){
+  const tk=tl.take; if(!tk||tl.playing||tl.exporting||!act)return;
+  const k=tk.figIds.indexOf(act.id); if(k<0)return;
+  const fr=frameAt(tk,k,tl.t); if(!fr)return;
+  const now=recordFrame(act).r, kd=keyDelta(tk,act.id,tl.t,fr.r.length)||new Float32Array(fr.r.length);
+  const d=new Float32Array(fr.r.length); let big=0;
+  for(let i=0;i<d.length;i++){let x=now[i]-(fr.r[i]+kd[i]);while(x>Math.PI)x-=2*Math.PI;while(x<-Math.PI)x+=2*Math.PI;d[i]=x;big=Math.max(big,Math.abs(x));}
+  if(big<0.5*DEG)return;
+  const near=tk.keys.find(q=>q.fig===act.id&&Math.abs(q.t-tl.t)<0.5/TAKE_FPS);
+  if(near){for(let i=0;i<d.length;i++)near.d[i]+=d[i];}
+  else tk.keys.push({fig:act.id,t:tl.t,d});
+  takeChanged(); tlUI();
+}
+
+/* ---- rendering frames for export ---- */
+function exportSize(){
+  const a=capAspect()||(stage.clientWidth/stage.clientHeight), L=parseInt($('capSize').value,10);
+  let w=a>=1?L:Math.round(L*a), h=a>=1?Math.round(L/a):L;
+  return [w-(w%2),h-(h%2)];   // H.264 wants even sizes
+}
+// the ZIP container, stored (PNGs are compressed already) — enough for a frame sequence without a library
+function zipStore(files){
+  const crcT=new Uint32Array(256);for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xedb88320^(c>>>1):c>>>1;crcT[n]=c>>>0;}
+  const crc=u=>{let c=0xffffffff;for(let i=0;i<u.length;i++)c=crcT[(c^u[i])&255]^(c>>>8);return (c^0xffffffff)>>>0;};
+  const parts=[],central=[];let off=0;
+  files.forEach(({name,data})=>{
+    const nm=new TextEncoder().encode(name),c=crc(data),h=new DataView(new ArrayBuffer(30));
+    h.setUint32(0,0x04034b50,true);h.setUint16(4,20,true);h.setUint32(14,c,true);h.setUint32(18,data.length,true);h.setUint32(22,data.length,true);h.setUint16(26,nm.length,true);
+    parts.push(new Uint8Array(h.buffer),nm,data);
+    const ce=new DataView(new ArrayBuffer(46));ce.setUint32(0,0x02014b50,true);ce.setUint16(4,20,true);ce.setUint16(6,20,true);
+    ce.setUint32(16,c,true);ce.setUint32(20,data.length,true);ce.setUint32(24,data.length,true);ce.setUint16(28,nm.length,true);ce.setUint32(42,off,true);
+    central.push(new Uint8Array(ce.buffer),nm);off+=30+nm.length+data.length;
+  });
+  const cs=central.reduce((n,u)=>n+u.length,0),e=new DataView(new ArrayBuffer(22));
+  e.setUint32(0,0x06054b50,true);e.setUint16(8,files.length,true);e.setUint16(10,files.length,true);e.setUint32(12,cs,true);e.setUint32(16,off,true);
+  return new Blob([...parts,...central,new Uint8Array(e.buffer)],{type:'application/zip'});
+}
+function saveBlob(blob,name){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),4000);}
+async function exportTake(o){
+  const tk=tl.take; if(!tk||tl.exporting)return null;
+  tlPlay(false);
+  const fps=o.fps||tk.opts.fps||24, [W,H]=exportSize();
+  const t0=o.from!=null?Math.max(0,o.from):tk.in, t1=o.to!=null?Math.min(tk.dur,o.to):tk.out;
+  const n=Math.max(1,Math.round((t1-t0)*fps));
+  const view=viewNow(), wasT=tl.t, wasEdit=tl.edit;
+  const out2d=document.createElement('canvas'); out2d.width=W; out2d.height=H;
+  const ctx=out2d.getContext('2d');
+  tl.exporting=true; const status=m=>{$('tlStatus').textContent=m;};
+  let M=null,output=null,src=null,frames=[];
+  try{
+    if(o.fmt==='mp4'){
+      status('Loading the video encoder…');
+      M=await import(MB_URL);
+      const codec=(await M.canEncodeVideo('avc',{width:W,height:H}))?'avc':'vp9';
+      output=new M.Output({format:codec==='avc'?new M.Mp4OutputFormat():new M.WebMOutputFormat(),target:new M.BufferTarget()});
+      src=new M.CanvasSource(out2d,{codec,bitrate:M.QUALITY_HIGH});
+      output.addVideoTrack(src,{frameRate:fps});
+      await output.start();
+      o.ext=codec==='avc'?'mp4':'webm';
+    }
+    for(let i=0;i<n;i++){
+      const t=t0+i/fps;
+      tl.edit=o.cams==='edit';
+      showTakeAt(t);
+      if(o.cams!=='edit'&&o.cams!=null){const c=tk.cams[o.cams];if(c)setCamView(camAt(tk,c,t));}
+      else if(o.cams==null)setCamView(view);
+      renderShot(W,H,null,{pass:o.pass||'beauty',transparent:false,fmt:'png',use:c=>{ctx.drawImage(c,0,0,W,H);}});
+      if(src)await src.add(i/fps,1/fps);
+      else frames.push({name:'frame_'+String(i).padStart(5,'0')+'.png',data:new Uint8Array(await (await new Promise(r=>out2d.toBlob(r,'image/png'))).arrayBuffer())});
+      if(i%6===0){status('Rendering frame '+(i+1)+' / '+n+'…');await new Promise(r=>setTimeout(r,0));}
+    }
+    let blob;
+    if(src){src.close();await output.finalize();blob=new Blob([output.target.buffer],{type:o.ext==='mp4'?'video/mp4':'video/webm'});}
+    else blob=zipStore(frames);
+    status('');
+    return {blob,W,H,fps,frames:n,ext:o.fmt==='mp4'?o.ext:'zip'};
+  }finally{
+    tl.exporting=false; tl.edit=wasEdit; setCamView(view); showTakeAt(wasT);
+  }
+}
+function cutList(tk,fps){
+  const cuts=tk.cuts.slice().sort((a,b)=>a.t-b.t).filter(k=>k.t>=tk.in&&k.t<tk.out);
+  const first=cutCam(tk,tk.in);
+  const seg=[{t:tk.in,cam:first&&first.id}].concat(cuts.filter(k=>k.t>tk.in));
+  return {take:tk.name,fps,duration:+(tk.out-tk.in).toFixed(3),
+    figures:tk.figIds.map(id=>{const f=figById(id);return f?{id,name:f.name,subject:f.link||null}:{id};}),
+    cameras:tk.cams.map(c=>({name:c.name,lens:Math.round(c.view.mm),moves:!!c.to,follows:c.follow?(figById(c.follow)||{}).name||null:null})),
+    cuts:seg.map((s,i)=>{const t1=i+1<seg.length?seg[i+1].t:tk.out,c=tk.cams.find(x=>x.id===s.cam);
+      return {camera:c?c.name:null,in:+(s.t-tk.in).toFixed(3),out:+(t1-tk.in).toFixed(3),inFrame:Math.round((s.t-tk.in)*fps),outFrame:Math.round((t1-tk.in)*fps)};})};
+}
+
+/* ---- making takes: from the webcam, or from a video file ---- */
+function makeTake(frames,figs,W,H){
+  if(!frames.length||!figs.length)return null;
+  const t0=frames[0].t; frames.forEach(fr=>{fr.t-=t0;});
+  const tk={id:uid(),name:'Take '+(takes.length+1),W,H,dur:frames[frames.length-1].t/1000,in:0,out:0,
+    figIds:figs.map(f=>f.id),base:figs.map(f=>({pos:f.group.position.toArray(),turn:f.turn,pose:f.getPose(),pel:f.pelvisOffset(),seat:f.seat||null})),
+    opts:{root:'auto',smooth:1,foot:true,body:$('camBody').value,fps:24,swap:$('camSwap').checked,trust:$('camTrust').checked},
+    cams:[],cuts:[],keys:[],version:1,src:frames,track:null};
+  tk.out=tk.dur;
+  figs.forEach(f=>{f.goals=[];});
+  bakeTake(tk);
+  tk.cams.push({id:uid(),name:'A',view:viewNow(),to:null,follow:null,off:null});
+  takes.push(tk); saveTakes();
+  return tk;
+}
+const vts={last:0};
+const nextTs=t=>{vts.last=Math.max(vts.last+1,t);return vts.last;};
+function camRecToggle(){
+  if(camS.rec){camRecStop();return;}
+  if(!camS.stream||camS.counting)return;
+  camLiveStop(true);
+  camS.counting=true; let n=3; const el=$('camCount');
+  const step=()=>{
+    if(n>0){el.textContent=n;camStatus('Get ready…');n--;setTimeout(step,1000);return;}
+    el.textContent=''; camS.counting=false;
+    const two=camTwoLive();
+    camS.rec={t0:performance.now(),frames:[],two,figs:two?figsForPeople(2):[act],W:$('camVideo').videoWidth,H:$('camVideo').videoHeight};
+    if(two)camS.m.figs=camS.rec.figs;
+    $('camRec').classList.add('on'); camRecTick();
+  };
+  step();
+}
+function camRecTick(){
+  if(!camS.rec)return;
+  const s=(performance.now()-camS.rec.t0)/1000;
+  $('camRec').textContent='■ Stop '+s.toFixed(1)+'s';
+  if(s>=TAKE_MAX_S){camRecStop();return;}
+  setTimeout(camRecTick,100);
+}
+function camRecStop(){
+  const r=camS.rec; if(!r)return;
+  camS.rec=null; $('camRec').classList.remove('on'); $('camRec').textContent='● Record';
+  if(r.frames.length<5){camTell('Nothing to keep — nobody was in view long enough.',true);return;}
+  camBusy(true,'Cleaning up the take…');
+  setTimeout(()=>{
+    try{const tk=makeTake(r.frames,r.figs,r.W,r.H);camBusy(false);if(tk){openTake(tk);commit();
+      camTell('✓ '+tk.name+': '+tk.dur.toFixed(1)+'s recorded. Play it, add cameras and cut it below.',false,true);}}
+    catch(e){camBusy(false);camTell('The take could not be made: '+(e.message||e),true);}
+  },30);
+}
+async function camImportVideo(file){
+  camLiveStop(true); if(camS.stream)camStopStream(); camS.photo=true;
+  const url=URL.createObjectURL(file), v=$('camVideo');
+  v.srcObject=null; v.src=url; v.muted=true; v.classList.remove('mirror'); $('camDraw').classList.remove('mirror');
+  v.style.display='block'; $('camPhoto').style.display='none'; $('camEmpty').style.display='none';
+  try{await new Promise((res,rej)=>{v.onloadedmetadata=res;v.onerror=()=>rej(new Error('this browser cannot play that file'));});}
+  catch(e){camTell('Could not read it: '+e.message,true);return null;}
+  const W=v.videoWidth,H=v.videoHeight,dur=Math.min(v.duration||0,TAKE_MAX_S);
+  if(!W||!dur){camTell('That video has no frames this browser can read.',true);return null;}
+  const two=camPeople()==='2', model=$('camModel').value;
+  camBusy(true,'Loading the pose model…');
+  try{if(two){await mpLoad(model,'IMAGE');await detLoad();}else await mpLoad(model,'VIDEO');}
+  catch(e){camBusy(false);camTell('The pose model did not load: '+(e.message||e),true);return null;}
+  const frames=[], step=1/TAKE_FPS, base=performance.now(), N=Math.floor(dur/step);
+  const seek=t=>new Promise(r=>{const done=()=>{v.removeEventListener('seeked',done);r();};v.addEventListener('seeked',done);v.currentTime=t;});
+  for(let i=0;i<=N;i++){
+    const t=Math.min(dur-0.001,i*step);
+    await seek(t);
+    let people=[];
+    if(two)people=(await findPeople(v,W,H,2,{whole:true,retry:false})).map(p=>p.pose);
+    else{const p=readPose(MP.lm.VIDEO.detectForVideo(v,nextTs(base+t*1000)));people=[p];}
+    camDraw(people,W,H);
+    frames.push({t:t*1000,people:people.length?people:[null]});
+    if(i%5===0)camBusy(true,'Reading frame '+(i+1)+' / '+(N+1)+'…');
+  }
+  URL.revokeObjectURL(url);
+  camBusy(true,'Cleaning up the take…'); await new Promise(r=>setTimeout(r,20));
+  const figs=two?figsForPeople(Math.max(1,Math.max(...frames.map(f=>f.people.filter(Boolean).length)))):[act];
+  const tk=makeTake(frames,figs,W,H);
+  camBusy(false);
+  if(!tk){camTell('Nobody was found in that video.',true);return null;}
+  tk.name=file.name.replace(/\.[^.]+$/,'').slice(0,40)||tk.name; saveTakes();
+  openTake(tk); commit();
+  camTell('✓ '+tk.name+': '+tk.dur.toFixed(1)+'s read from the video. Play it, add cameras and cut it below.',false,true);
+  return tk;
+}
+
+/* ---- wiring ---- */
+$('tlPlay').onclick=()=>tlPlay();
+$('tlBack').onclick=()=>{tlPlay(false);showTakeAt(tl.t-1/TAKE_FPS);};
+$('tlFwd').onclick=()=>{tlPlay(false);showTakeAt(tl.t+1/TAKE_FPS);};
+$('tlHide').onclick=closeTimeline;
+$('tlTake').onchange=e=>{const tk=takeById(e.target.value);if(tk)openTake(tk);};
+$('tlAddCam').onclick=addCam;
+$('tlCut').onclick=()=>addCut(tl.cam);
+$('tlEdit').onchange=e=>{tl.edit=e.target.checked;if(tl.edit&&tl.take)showTakeAt(tl.t);};
+$('tlGear').onclick=()=>{$('tlExp').classList.remove('open');$('tlSet').classList.toggle('open');};
+$('tlExport').onclick=()=>{$('tlSet').classList.remove('open');$('tlExp').classList.toggle('open');tlExpUI();};
+$('tlName').onchange=e=>{if(tl.take){tl.take.name=e.target.value.trim()||tl.take.name;takeChanged();tlUI();}};
+$('tlFps').onchange=e=>{if(tl.take){tl.take.opts.fps=+e.target.value;takeChanged();}};
+$('tlRebake').onclick=()=>{const tk=tl.take;if(!tk)return;
+  tk.opts.root=$('tlRoot').value; tk.opts.smooth=+$('tlSmooth').value; tk.opts.foot=$('tlFoot').checked;
+  $('tlStatus').textContent='Re-baking…';
+  setTimeout(()=>{bakeTake(tk);takeChanged();tlUI();showTakeAt(tl.t);$('tlStatus').textContent='';toast('Re-baked '+tk.name);},20);};
+$('tlClearKeys').onclick=()=>{if(!tl.take)return;tl.take.keys=[];takeChanged();tlUI();showTakeAt(tl.t);};
+$('tlDelete').onclick=()=>{const tk=tl.take;if(!tk)return;if(!confirm('Delete '+tk.name+'? The figures keep the pose they have now.'))return;
+  takes=takes.filter(t=>t!==tk);saveTakes();closeTimeline();commit();};
+function tlExpUI(){
+  const tk=tl.take;if(!tk)return;
+  const s=$('tlExpWhat'); const was=s.value; s.innerHTML='';
+  const opts=[['edit','The edit (cuts between cameras)']].concat(tk.cams.map((c,i)=>[String(i),'Camera '+c.name+' only'])).concat([['view','The current view']]);
+  opts.forEach(([v,t])=>{const o=document.createElement('option');o.value=v;o.textContent=t;s.appendChild(o);});
+  if([...s.options].some(o=>o.value===was))s.value=was;
+  const [W,H]=exportSize(); $('tlExpSize').textContent=W+'×'+H+' at '+(tk.opts.fps||24)+' fps (size and aspect from Capture)';
+}
+$('tlExpGo').onclick=async()=>{
+  const tk=tl.take;if(!tk)return;
+  const what=$('tlExpWhat').value, fmt=$('tlExpFmt').value;
+  const list=[...document.querySelectorAll('#tlExpPasses input:checked')].map(i=>i.value);
+  if(!list.length){toast('Pick at least one pass');return;}
+  $('tlExpGo').disabled=true;
+  try{
+    for(const pass of list){
+      const r=await exportTake({cams:what==='edit'?'edit':what==='view'?null:+what,pass,fmt});
+      if(!r)continue;
+      const label=what==='edit'?'edit':what==='view'?'view':'cam'+tk.cams[+what].name;
+      saveBlob(r.blob,(SB_SAFE(tk.name)||'take')+'_'+label+(pass==='beauty'?'':'_'+pass)+'.'+r.ext);
+    }
+    if($('tlExpCuts').checked)saveBlob(new Blob([JSON.stringify(cutList(tk,tk.opts.fps||24),null,1)],{type:'application/json'}),(SB_SAFE(tk.name)||'take')+'_cuts.json');
+    toast('Exported '+tk.name);
+  }catch(e){toast('Export failed: '+(e.message||e));$('tlStatus').textContent='';}
+  finally{$('tlExpGo').disabled=false;}
+};
+const SB_SAFE=s=>String(s||'').replace(/[^a-z0-9_-]+/gi,'_').replace(/^_+|_+$/g,'').slice(0,40);
+$('camRec').onclick=camRecToggle;
+$('camVidBtn').onclick=()=>$('camVidFile').click();
+$('camVidFile').onchange=e=>{const f=e.target.files[0];e.target.value='';if(f)camImportVideo(f).catch(err=>{camBusy(false);camTell('That did not work: '+(err.message||err),true);});};
+
 /* ================= storyboarder host mode =================
  * The storyboarder mounts this page in an iframe named "posebench-embed" and talks to it with postMessage:
- *   host -> here  posebench:open   {token, scene|null, cast:[{id,name,kind}], aspect, longEdge, shot}
+ *   host -> here  posebench:open   {token, scene|null, cast:[{id,name,kind}], aspect, longEdge, shot, takes:[snap], link}
  *   host -> here  posebench:passes {token, id, scene, aspect, longEdge, passes:[...]}   (offscreen render for export)
- *   here -> host  posebench:ready | posebench:done {scene, beauty, text, cast, lens} | posebench:cancel
- *                 | posebench:passes {id, images}
+ *   host -> here  posebench:clip   {token, id, scene, take:snap, link, aspect, longEdge, pass, fps}  (a card's clip)
+ *   here -> host  posebench:ready | posebench:done {scene, beauty, text, cast, lens, takes, link} | posebench:cancel
+ *                 | posebench:passes {id, images} | posebench:clip {id, blob, ext, frames, W, H, fps}
+ * Takes (recorded performances) belong to the storyboard SCENE, not to one card: the host hands in every take of the
+ * card's scene and gets them all back. A card's `link` says which take it uses, through which camera, over which
+ * range, and at which moment its still was taken:
+ *   {id, name, version, at, in, out, cam (camera id) | null + view (a free view), camName, fps, cut (from the edit)}
+ * With the cut on, Use takes the SEGMENT under the playhead: its camera and its in/out. So an edit's segments map onto
+ * cards one for one — put the playhead in segment 2, Use for card 2.
  * Everything leaving carries the token the host handed in; the host ignores anything else. */
 const COLOR_WORDS={'#a9afb8':'light grey','#c99a6b':'tan','#e6e1d6':'white','#595e66':'dark grey','#7f93d6':'blue','#d2826e':'coral','#8db890':'green'};
 // the order linked figures take colours in: the most distinguishable first, so "the tan one is Nat" is unambiguous
@@ -2983,6 +3737,26 @@ function blockingText(asp){
   });
 }
 function hostPost(m){try{window.parent.postMessage(Object.assign({token:host.token},m),'*');}catch(e){}}
+// what the card being saved uses of the open take (see the notes above)
+function hostLink(){
+  const tk=tl.take; if(!tk)return null;
+  const t=Math.round(tl.t*1000)/1000;
+  const L={id:tk.id,name:tk.name,version:tk.version||1,at:t,in:tk.in,out:tk.out,cam:null,camName:'',view:null,fps:tk.opts.fps||24};
+  if(tl.edit&&tk.cams.length){
+    const segs=cutList(tk,TAKE_FPS).cuts, rel=t-tk.in;
+    const sg=segs.find(x=>rel>=x.in-1e-6&&rel<x.out-1e-6)||segs[segs.length-1];
+    L.in=tk.in+sg.in; L.out=tk.in+sg.out;
+    const c=cutCam(tk,t); L.cam=c.id; L.camName=c.name; L.cut=true;
+  }else{
+    const c=tk.cams[tl.cam], v=c&&camAt(tk,c,t), n=viewNow();
+    if(v&&Math.abs(v.theta-n.theta)<1e-3&&Math.abs(v.phi-n.phi)<1e-3&&Math.abs(v.radius-n.radius)<1e-3&&Math.abs(v.mm-n.mm)<0.5){L.cam=c.id;L.camName=c.name;}
+    else L.view=n;   // somebody orbited off the camera: the clip is this view, held
+  }
+  return L;
+}
+// passes and clips share one hidden instance: one job at a time, or a pass request would load its scene mid-clip
+let hostQ=Promise.resolve();
+const hostJob=fn=>{hostQ=hostQ.then(fn,fn);return hostQ;};
 const aspectValue=a=>{if(typeof a==='number')return a;const m=/^(\d+(?:\.\d+)?)\s*[:x\/]\s*(\d+(?:\.\d+)?)$/.exec(String(a||''));return m?(+m[1])/(+m[2]):null;};
 function lockAspect(asp){
   const s=$('capAspect'); let best=null;
@@ -3005,24 +3779,55 @@ window.addEventListener('message',e=>{
       // a fresh blocking starts with one mannequin per person cast on the card
       host.cast.filter(c=>!c.kind||c.kind==='person').forEach((c,i)=>{if(i>0)addFigure(null);linkFigure(act,c.id);});
     }
+    takes=(Array.isArray(d.takes)?d.takes:[]).map(s=>{try{return takeLoad(s);}catch(err){return null;}}).filter(Boolean);
     lockAspect(host.aspect); setLongEdge(host.longEdge);
     hist.stack=[]; hist.i=-1; commit();
     refreshAll(); refreshPropUI();
     if(!ok){cam.theta=0.7;cam.phi=1.45;if(figures.length>1)frameAll();else fitShot('full');}
+    // back where the card was: its take open at the moment of its still, through its camera
+    const L=d.link, tk=L&&takeById(L.id);
+    if(tk){
+      const v=viewNow(); openTake(tk);
+      const ci=tk.cams.findIndex(c=>c.id===L.cam); if(ci>=0)tl.cam=ci;
+      tl.edit=!!L.cut;   // cut from a segment of the edit: the edit is on again, so Use takes the same segment
+      showTakeAt(+L.at||tk.in); if(!L.cut)setCamView(v); tlUI();
+    }else if(takes.length)toast(takes.length+' take'+(takes.length>1?'s':'')+' in this scene — open one from the Camera panel’s list, or record');
     $('hostUse').textContent='Use for '+(host.shot||'this shot'); $('hostUse').style.display=''; $('hostCancel').style.display='';
     $('capBtn').style.display='none';
     return;
   }
   if(d.type==='posebench:passes'){
     host.token=d.token||host.token;
-    try{applySceneFile(d.scene);}catch(err){hostPost({type:'posebench:passes',id:d.id,error:String(err.message||err)});return;}
-    const images=apiCaptureSet({aspect:aspectValue(d.aspect)||host.aspect,longEdge:+d.longEdge||host.longEdge,passes:d.passes});
-    hostPost({type:'posebench:passes',id:d.id,images});
+    hostJob(()=>{
+      try{applySceneFile(d.scene);}catch(err){hostPost({type:'posebench:passes',id:d.id,error:String(err.message||err)});return;}
+      const images=apiCaptureSet({aspect:aspectValue(d.aspect)||host.aspect,longEdge:+d.longEdge||host.longEdge,passes:d.passes});
+      hostPost({type:'posebench:passes',id:d.id,images});
+    });
+    return;
+  }
+  if(d.type==='posebench:clip'){
+    host.token=d.token||host.token;
+    hostJob(async()=>{
+      try{
+        applySceneFile(d.scene);
+        const tk=takeLoad(d.take), L=d.link||{}; takes=[tk];
+        lockAspect(aspectValue(d.aspect)||host.aspect); setLongEdge(+d.longEdge||1280);
+        openTake(tk);
+        const ci=tk.cams.findIndex(c=>c.id===L.cam);
+        if(ci<0&&L.view)setCamView(L.view);
+        const r=await exportTake({cams:ci>=0?ci:null,pass:d.pass||'beauty',fmt:'mp4',fps:+d.fps||L.fps||tk.opts.fps||24,
+          from:L.in!=null?+L.in:null,to:L.out!=null?+L.out:null});
+        if(!r)throw new Error('the clip did not render');
+        hostPost({type:'posebench:clip',id:d.id,blob:r.blob,ext:r.ext,frames:r.frames,W:r.W,H:r.H,fps:r.fps});
+      }catch(err){hostPost({type:'posebench:clip',id:d.id,error:String(err.message||err)});}
+    });
   }
 });
 $('hostUse').onclick=()=>{
   const asp=host.aspect;
-  hostPost({type:'posebench:done',scene:snapScene(),lens:cam.mm,
+  tlPlay(false);
+  const sc=snapScene(); delete sc.takes;   // takes travel on their own: they belong to the scene, not this card
+  hostPost({type:'posebench:done',scene:sc,lens:cam.mm,takes:takes.map(takeSnap),link:hostLink(),
     beauty:apiCapture({aspect:asp,longEdge:host.longEdge}),
     text:blockingText(asp),
     cast:figures.filter(f=>f.link).map(f=>({fig:f.id,personaId:f.link,name:figWho(f),color:f.color,colorName:COLOR_WORDS[f.color]||'grey'}))});
@@ -3050,9 +3855,10 @@ commit();
 refreshPropUI();
 (function loop(){requestAnimationFrame(loop);
   figures.forEach(f=>{if(f.look==='camera')aimHead(f,camera.position);});
+  tlTick(performance.now());
   updateHandles();renderer.render(scene,camera);})();
 if(EMBED)try{window.parent.postMessage({type:'posebench:ready'},'*');}catch(e){}
-window.__pb={blockingText,retarget,synthLandmarks,readPose,camFromImage,mpLoad,detLoad,findPeople,camApply,camStart,camSnap,get camState(){return camS;},get figures(){return figures;},get props(){return props;},get act(){return act;},cam,fitShot,setView,frameAll,PRESETS,WORK,SCENES,
+window.__pb={get takes(){return takes;},get tl(){return tl;},makeTake,bakeTake,openTake,showTakeAt,exportTake,cutList,takeSnap,takeLoad,camImportVideo,addCam,addCut,tlPlay,setCamView,viewNow,blockingText,retarget,synthLandmarks,readPose,camFromImage,mpLoad,detLoad,findPeople,camApply,camStart,camSnap,get camState(){return camS;},get figures(){return figures;},get props(){return props;},get act(){return act;},cam,fitShot,setView,frameAll,PRESETS,WORK,SCENES,
   camera,applyCam,selectJoint,solveChain,commit,applyNamed,goalFrame,eyePoint};
 })();
 </script>

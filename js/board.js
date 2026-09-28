@@ -22,6 +22,34 @@
 
   function P() { return SB.app.project; }
 
+  /* What a card's performance mark says on hover. */
+  function perfWords(sh, L, old) {
+    const rec = SB.Pose.perfOf(P(), sh);
+    const what = 'Cut from the performance “' + (rec ? rec.name : L.name) + '”' +
+      (L.camName ? ', camera ' + L.camName : ', a held view') + ', ' + L.in.toFixed(1) + '–' + L.out.toFixed(1) + 's.';
+    if (!rec) return what + ' That performance is gone — reopen the blocking to pick another.';
+    return old ? what + ' It has changed since this card was cut — reopen the blocking and Use again to update it.' : what;
+  }
+
+  /* The card's reference clip, straight to a file. Rendered now, from the
+     performance, so it can never disagree with it. */
+  function downloadClip(sh, btn) {
+    const f = SB.Model.findShot(P(), sh.id);
+    const code = (f && f.code) || 'shot';
+    const was = btn.textContent;
+    btn.disabled = true; btn.textContent = '🎞 rendering…';
+    SB.Pose.clip(sh).then(function (r) {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(r.blob);
+      a.download = code + '_reference.' + r.ext;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
+      SB.toast(code + ' reference clip: ' + r.frames + ' frames at ' + r.fps + ' fps, ' + r.W + '×' + r.H + '.');
+    }).catch(function (e) {
+      SB.toast('The clip could not be made: ' + (e.message || e), true);
+    }).then(function () { btn.disabled = false; btn.textContent = was; });
+  }
+
   /* ---------------- selecting cards ---------------- */
 
   function boardOrder() {
@@ -1928,8 +1956,11 @@
       /* Said in the corner, not across the picture: a label over the middle
          of the frame got in the way of reading the blocking itself, which is
          the whole point of showing it on a board being reviewed. */
-      const tag = SB.el('button', 'pose-badge', '⛹ blocking');
-      tag.title = 'This card’s 3D blocking — no still yet. Click to edit it; drop an image to fill the frame.';
+      const pl = SB.Pose.perfLink(sh), pOld = pl && SB.Pose.perfStale(P(), sh);
+      const tag = SB.el('button', 'pose-badge' + (pOld ? ' stale' : ''),
+        '⛹ blocking' + (pl ? ' · 🎞' + (pOld ? ' older' : '') : ''));
+      tag.title = 'This card’s 3D blocking — no still yet. Click to edit it; drop an image to fill the frame.' +
+        (pl ? '\n' + perfWords(sh, pl, pOld) : '');
       tag.onclick = function (ev) { ev.stopPropagation(); SB.Pose.open(sh); };
       f.appendChild(tag);
     } else {
@@ -1950,13 +1981,14 @@
        frames are behind. */
     if (SB.Pose && SB.Pose.has(sh) && shown) {
       const behind = SB.Pose.stale(sh, sh.render);
-      const pb = SB.el('button', 'pose-badge' + (behind ? ' stale' : ''),
-        '⛹' + (behind ? ' older' : ''));
-      pb.title = behind
+      const pl = SB.Pose.perfLink(sh), pOld = pl && SB.Pose.perfStale(P(), sh);
+      const pb = SB.el('button', 'pose-badge' + (behind || pOld ? ' stale' : ''),
+        '⛹' + (behind ? ' older' : '') + (pl ? ' 🎞' + (pOld ? ' older' : '') : ''));
+      pb.title = (behind
         ? 'This still was made from an earlier blocking — the blocking is now v' + sh.pose.serial +
           '. Render again to use it. Click to open the blocking.'
         : 'Blocked in 3D (v' + sh.pose.serial + ') — the layout reference fed first to this card’s still. ' +
-          'Click to edit it.';
+          'Click to edit it.') + (pl ? '\n' + perfWords(sh, pl, pOld) : '');
       pb.onclick = function (ev) { ev.stopPropagation(); SB.Pose.open(sh); };
       f.appendChild(pb);
     }
@@ -2020,6 +2052,12 @@
         : 'Block this shot in 3D — mannequins and a camera, fed first to the still';
       bk.onclick = function (ev) { ev.stopPropagation(); SB.Pose.open(sh); };
       tools.appendChild(bk);
+      if (SB.Pose.has(sh) && SB.Pose.perfLink(sh)) {
+        const cb = SB.el('button', 'mini', '🎞 clip');
+        cb.title = 'Download this card’s reference clip: its performance through its camera, as mannequins';
+        cb.onclick = function (ev) { ev.stopPropagation(); downloadClip(sh, cb); };
+        tools.appendChild(cb);
+      }
       if (SB.Pose.has(sh)) {
         const rb = SB.el('button', 'mini danger', '✕ ⛹');
         rb.title = 'Remove the blocking from this card';

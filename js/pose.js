@@ -24,14 +24,23 @@
  * no control input, so they are for export and for a future control route —
  * the feed lists them as `as:'control'` entries that nothing sends yet.
  *
+ * A recorded PERFORMANCE (a Pose Bench motion take: webcam or video file,
+ * baked onto the mannequins) belongs to the scene, not to a card —
+ * scene.performances[] — so one performance is recut across the scene's cards.
+ * A card that uses one records which, through which camera, over which range
+ * and at which moment its still was taken, in shot.pose.perf. Its reference
+ * clip is rendered from that on demand (clip()), like the passes.
+ *
  * shot.pose = { serial, scene, image{ref,w,h}, render{ref,w,h}, cast[], text,
- *               lens, aspect, at }
+ *               lens, aspect, at,
+ *               perf: null | {id, name, version, at, in, out, cam, camName, view, fps, cut} }
  */
 (function (SB) {
   'use strict';
 
   function P() { return SB.app.project; }
   const LONG_EDGE = 1536;
+  const CLIP_EDGE = 1280;    // a reference clip: 720p at 16:9
   const PASSES = ['depth', 'openpose', 'normal', 'mask'];
 
   let editor = null;     // {shotId, token, back, frame, code}
@@ -44,15 +53,88 @@
   /* ---------- the scene blob ---------- */
 
   /* ASCII-safe (Blobs hashes bytes as ASCII): percent-encoded JSON. */
-  function putScene(p, scene) {
-    return SB.Blobs.put(p, 'data:application/json,' + encodeURIComponent(JSON.stringify(scene)));
+  function putJson(p, o) {
+    return SB.Blobs.put(p, 'data:application/json,' + encodeURIComponent(JSON.stringify(o)));
   }
-  function sceneOf(p, shot) {
-    if (!has(shot)) return null;
-    const u = SB.Blobs.get(p, shot.pose.scene);
+  function readJson(p, ref) {
+    const u = SB.Blobs.get(p, ref);
     const i = u.indexOf(',');
     if (i < 0) return null;
     try { return JSON.parse(decodeURIComponent(u.slice(i + 1))); } catch (e) { return null; }
+  }
+  function putScene(p, scene) { return putJson(p, scene); }
+  function sceneOf(p, shot) {
+    if (!has(shot)) return null;
+    return readJson(p, shot.pose.scene);
+  }
+
+  /* ---------- performances ---------- */
+
+  function perfsOf(sc) { return (sc && Array.isArray(sc.performances)) ? sc.performances : []; }
+
+  /* Anywhere on the board: a card can have been moved or copied out of the
+     scene its performance was recorded in. */
+  function findPerf(p, id) {
+    if (!id) return null;
+    for (let i = 0; i < p.scenes.length; i++) {
+      const rec = perfsOf(p.scenes[i]).filter(function (r) { return r.id === id; })[0];
+      if (rec) return { rec: rec, scene: p.scenes[i] };
+    }
+    return null;
+  }
+  function perfLink(shot) { return (shot && shot.pose && shot.pose.perf) || null; }
+  function perfOf(p, shot) {
+    const L = perfLink(shot);
+    const f = L && findPerf(p, L.id);
+    return f ? f.rec : null;
+  }
+  /* The performance this card was cut from has changed since — re-baked,
+     corrected, its cameras moved — or is gone. */
+  function perfStale(p, shot) {
+    const L = perfLink(shot);
+    if (!L) return false;
+    const rec = perfOf(p, shot);
+    return !rec || (rec.version | 0) > (L.version | 0);
+  }
+
+  /* Everything Pose Bench hands back replaces the scene's list; a performance
+     that lives in another scene (the card came from there) is updated where
+     it lives. */
+  function storePerfs(p, sc, snaps) {
+    const now = Date.now();
+    const mine = [];
+    snaps.forEach(function (s) {
+      if (!s || !s.id) return;
+      const rec = { id: String(s.id), name: String(s.name || 'Take'), dur: +s.dur || 0,
+        version: s.version | 0 || 1, data: putJson(p, s), at: now };
+      const elsewhere = findPerf(p, rec.id);
+      if (elsewhere && elsewhere.scene !== sc) {
+        const i = elsewhere.scene.performances.indexOf(elsewhere.rec);
+        if (elsewhere.rec.data === rec.data) rec.at = elsewhere.rec.at;
+        elsewhere.scene.performances[i] = rec;
+        return;
+      }
+      const old = perfsOf(sc).filter(function (r) { return r.id === rec.id; })[0];
+      if (old && old.data === rec.data) rec.at = old.at;
+      mine.push(rec);
+    });
+    sc.performances = mine;
+  }
+
+  function cleanLink(L) {
+    if (!L || !L.id) return null;
+    const n = function (v) { return typeof v === 'number' && isFinite(v) ? Math.round(v * 1000) / 1000 : 0; };
+    const v = L.view;
+    return {
+      id: String(L.id), name: String(L.name || ''), version: L.version | 0 || 1,
+      at: n(L.at), in: n(L.in), out: n(L.out),
+      cam: L.cam ? String(L.cam) : null, camName: String(L.camName || ''),
+      view: v && typeof v === 'object' && Array.isArray(v.target)
+        ? { theta: +v.theta || 0, phi: +v.phi || 0, radius: +v.radius || 1, target: v.target.slice(0, 3).map(Number), mm: +v.mm || 35 }
+        : null,
+      fps: +L.fps || 24,
+      cut: !!L.cut
+    };
   }
 
   function castFor(p, shot) {
@@ -141,6 +223,25 @@
       aspect: SB.Imagine && SB.Imagine.aspectOf ? SB.Imagine.aspectOf(p) : '16:9' };
   }
 
+  /* What the editor opens with: the card's own blocking, and every
+     performance of its scene (plus the one it uses, if that lives elsewhere).
+     A card not blocked yet, in a scene that has performances, starts from the
+     set of the scene's most recently blocked card — a performance drives
+     mannequins by id, so a fresh set would have nobody for it to move. */
+  function openingFor(p, f) {
+    let scene = sceneOf(p, f.shot);
+    const recs = perfsOf(f.scene).slice();
+    const own = perfOf(p, f.shot);
+    if (own && recs.indexOf(own) < 0) recs.push(own);
+    if (!scene && recs.length) {
+      const sib = f.scene.shots.filter(function (s) { return s !== f.shot && has(s); })
+        .sort(function (a, b) { return (b.pose.at || 0) - (a.pose.at || 0); })[0];
+      if (sib) scene = sceneOf(p, sib);
+    }
+    if (scene) delete scene.takes;
+    return { scene: scene, takes: recs.map(function (r) { return readJson(p, r.data); }).filter(Boolean) };
+  }
+
   function close() {
     if (!editor) return;
     editor.back.remove();
@@ -160,6 +261,10 @@
     return Promise.all([SB.downscaleImage(d.beauty), encodeOriginal(d.beauty)]).then(function (r) {
       const proxy = r[0], orig = r[1];
       const prev = sh.pose || null;
+      if (Array.isArray(d.takes)) storePerfs(p, f.scene, d.takes);
+      const scene = Object.assign({}, d.scene);
+      delete scene.takes;
+      d = Object.assign({}, d, { scene: scene });
       sh.pose = {
         serial: ((prev && prev.serial) | 0) + 1,
         scene: putScene(p, d.scene),
@@ -173,10 +278,14 @@
         text: String(d.text || '').slice(0, 4000),
         lens: +d.lens || 0,
         aspect: editor && editor.shotId === shotId ? editor.aspect : (prev && prev.aspect) || '',
-        at: Date.now()
+        at: Date.now(),
+        perf: cleanLink(d.link)
       };
       SB.app.changed(true);
+      const L = sh.pose.perf;
       SB.toast('Blocking saved on ' + (f.code || 'the card') + ' — it now goes first in this card’s references' +
+        (L ? '; its clip is ' + L.name + (L.camName ? ', camera ' + L.camName : '') + ', ' +
+          (L.out - L.in).toFixed(1) + 's' : '') +
         (prev ? '. Takes made from the old blocking are marked.' : '.'));
       return true;
     }).catch(function (e) {
@@ -225,6 +334,39 @@
     });
   }
 
+  /* The card's reference clip: its performance through its camera over its
+     range, as mannequins (pass 'beauty') or a control pass ('openpose',
+     'depth', ...). Resolves to {blob, ext, frames, W, H, fps}. */
+  function clip(shot, opts) {
+    opts = opts || {};
+    const p = P();
+    const L = perfLink(shot), rec = perfOf(p, shot), scene = sceneOf(p, shot);
+    if (!L) return Promise.reject(new Error('this card does not use a performance'));
+    if (!rec) return Promise.reject(new Error('the performance this card was cut from is gone'));
+    if (!scene) return Promise.reject(new Error('this card has no blocking'));
+    if (!available()) return Promise.reject(new Error('Pose Bench is not in this build'));
+    delete scene.takes;
+    const take = readJson(p, rec.data);
+    if (!take) return Promise.reject(new Error('the performance could not be read'));
+    const w = ensureWorker();
+    return new Promise(function (resolve, reject) {
+      const id = token();
+      const msg = { type: 'posebench:clip', token: id, id: id, scene: scene, take: take, link: L,
+        aspect: shot.pose.aspect || SB.Imagine.aspectOf(p), longEdge: opts.longEdge || CLIP_EDGE,
+        pass: opts.pass || 'beauty', fps: opts.fps || L.fps || 24 };
+      /* a clip is rendered frame by frame; a slow machine takes minutes */
+      const timer = setTimeout(function () {
+        delete w.pending[id]; reject(new Error('Pose Bench did not finish the clip'));
+      }, 600000);
+      w.pending[id] = function (d) {
+        clearTimeout(timer);
+        if (d.error || !d.blob) reject(new Error(d.error || 'no clip came back'));
+        else resolve({ blob: d.blob, ext: d.ext || 'mp4', frames: d.frames, W: d.W, H: d.H, fps: d.fps });
+      };
+      if (w.ready) send(w.frame, msg); else w.queue.push(msg);
+    });
+  }
+
   /* ---------- messages ---------- */
 
   window.addEventListener('message', function (e) {
@@ -236,9 +378,11 @@
         const p = P();
         const f = SB.Model.findShot(p, editor.shotId);
         if (!f) { close(); return; }
+        const o = openingFor(p, f);
         send(editor.frame, {
-          type: 'posebench:open', token: editor.token, scene: sceneOf(p, f.shot),
-          cast: castFor(p, f.shot), aspect: editor.aspect, longEdge: LONG_EDGE, shot: editor.code
+          type: 'posebench:open', token: editor.token, scene: o.scene,
+          cast: castFor(p, f.shot), aspect: editor.aspect, longEdge: LONG_EDGE, shot: editor.code,
+          takes: o.takes, link: perfLink(f.shot)
         });
         return;
       }
@@ -258,7 +402,7 @@
         worker.queue.splice(0).forEach(function (m) { send(worker.frame, m); });
         return;
       }
-      if (d.type === 'posebench:passes' && worker.pending[d.id]) {
+      if ((d.type === 'posebench:passes' || d.type === 'posebench:clip') && worker.pending[d.id]) {
         const done = worker.pending[d.id];
         delete worker.pending[d.id];
         done(d);
@@ -280,6 +424,7 @@
   SB.Pose = {
     available: available, has: has, open: open, close: close, clear: clear,
     passes: passes, sceneOf: sceneOf, nameOf: nameOf, stale: stale, PASSES: PASSES,
+    clip: clip, perfLink: perfLink, perfOf: perfOf, perfStale: perfStale, perfsOf: perfsOf,
     /* for tests */
     _save: save, _editor: function () { return editor; }
   };

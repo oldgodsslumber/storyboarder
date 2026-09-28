@@ -607,6 +607,11 @@
       link: null,          // {from,to} into master
       local: null,         // its own doc once the link is broken; null = untied
       broken: false,
+      /* Recorded performances (Pose Bench motion takes): the SCENE's, shared by
+         its cards, each card choosing a camera and a range of one
+         (shot.pose.perf). {id, name, dur, version, data (blob), at}. Called
+         performances here because a "take" in this app is a render. */
+      performances: [],
       shots: []
     };
   }
@@ -1101,6 +1106,9 @@
         sc.local = null;
       }
       sc.broken = !!sc.broken;
+      /* absent on every board written before performances */
+      sc.performances = (Array.isArray(sc.performances) ? sc.performances : [])
+        .filter(function (r) { return r && r.id && r.data; });
       sc.shots = Array.isArray(sc.shots) ? sc.shots : [];
       sc.shots.forEach(function (sh) {
         sh.id = sh.id || SB.uid('sh');
@@ -1466,7 +1474,25 @@
     if (!f) return;
     p.scenes.splice(f.idx, 1);
     if (!p.scenes.length) p.scenes.push(newScene());
+    keepPerformances(p, [f.scene]);
     p.updatedAt = Date.now();
+  }
+
+  /* A performance lives on the scene it was recorded in, but a card that uses
+   * one can have been copied or moved to another scene since. When a scene
+   * goes, every performance a surviving card still uses moves to that card's
+   * scene rather than going with it. */
+  function keepPerformances(p, gone) {
+    const byId = {};
+    gone.forEach(function (sc) { (sc.performances || []).forEach(function (r) { byId[r.id] = r; }); });
+    if (!Object.keys(byId).length) return;
+    eachShot(p, function (sh, sc) {
+      const id = sh.pose && sh.pose.perf && sh.pose.perf.id;
+      if (!id || !byId[id]) return;
+      sc.performances = sc.performances || [];
+      if (!sc.performances.some(function (r) { return r.id === id; })) sc.performances.push(byId[id]);
+      delete byId[id];
+    });
   }
 
   function addShot(p, sceneId, opts, atIdx) {
@@ -1646,10 +1672,12 @@
      * made on purpose somewhere else is not ours to delete — and neither is one
      * holding a claim on the script, which is a deliberate mark that outlives
      * whichever cards happened to be sitting in it. */
+    const before = p.scenes.slice();
     p.scenes = p.scenes.filter(function (s) {
       return s.shots.length || sources.indexOf(s) < 0 || sceneTied(s);
     });
     if (!p.scenes.length) p.scenes.push(sc);
+    keepPerformances(p, before.filter(function (s) { return p.scenes.indexOf(s) < 0; }));
     p.updatedAt = Date.now();
     return sc;
   }

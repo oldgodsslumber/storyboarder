@@ -218,5 +218,57 @@ Space), **From photo…** (you can also drop a picture on the panel), a Body swi
   - **The preview:** joints drawn in colour are the ones being used, fainter the less sure the model is.
 - **Storyboarder embed:** the iframe is `allow="clipboard-write *; camera *"`. A plain `camera` is refused, because a
   srcdoc frame on a file:// page has an opaque origin.
-- **Next:** hands (HandLandmarker → forearm twist, wrist, finger shapes, a *point* shape), then two performers →
-  two figures, then "match the webcam's view".
+- **Next:** hands (HandLandmarker → forearm twist, wrist, finger shapes, a *point* shape), then "match the webcam's
+  view". (Two performers → two figures is built, above.)
+
+## Motion takes: record a performance, recut it (2026-09-28)
+Plan: `pose_motion_plan.md`, all seven steps built. The code is the `motion takes` region, just before host mode.
+
+- **Making a take.**
+  - **● Record** in the camera panel: a 3-second countdown, then until Stop (at most 60 s).
+  - **Video file…**: an offline read. The file is seeked every 1/30 s, and each frame goes through the VIDEO landmarker,
+    or through `findPeople` when People is Two.
+  - Both hand frames to `makeTake(frames, figs, W, H)`. **No footage is kept**: only landmarks, stored as Int16
+    base64 (`encPose`), about 57 KB for 3.5 s.
+- **Cleanup and bake (`bakeTake`):**
+  - `resampleTake` resamples to 30 fps, bridging gaps up to 0.5 s. `smoothSeq` smooths both ways with a Gaussian.
+  - One body mode per take: full when ≥60% of frames see the hips and a knee. Full takes travel (`rootSeq`: distance
+    from torso size through an assumed 45° lens, sideways from hip position); upper-body takes stay in place.
+  - Then `retarget` runs on every frame and `recordFrame` stores joint eulers, pelvis, position and turn.
+  - `footPin` is root pinning. While a foot is planted (image speed < 0.12 body heights per second — tighter would miss real plants, looser pinned a figure that glides, within 3.5% of
+    body height of the lowest foot, for 3+ frames), the earliest-planted foot anchors the whole figure, and the other
+    planted foot is solved with leg IK. A performer standing still shows 0 slide.
+- **Timeline** (under the stage when a take is open):
+  - Play/pause (Space), step (`,` `.`), and a track to scrub, trim (drag the ends) and cut on.
+  - The ⚙ panel: name, root (auto / in place / travels), fps, smoothing, foot pin, body, Re-bake, Clear fixes, Delete.
+- **Correction keys:** pause, pose a figure by hand, and the difference from the bake becomes a key that blends
+  cosine-wise over ±0.35 s (`takeEditHook`, called from `commit`; `keyDelta` at playback). A second nudge at the same
+  frame adds to the same key. Keys survive re-bakes and the file.
+- **Cameras and the cut:**
+  - **+ Cam** saves the current view as A, B, C… Per camera: Update, **Move to here** (it travels from its view to this
+    one across the take, smoothstep), and **Follow** a figure (the target rides that figure's chest).
+  - The cut: press 1–9 while playing, or ✂ at the playhead, to cut to that camera. Tick **Edit** to watch the cut.
+  - `camAt(tk, c, t)` gives a camera's view at a time; `cutCam(tk, t)` gives which camera the cut shows then.
+- **Export (`exportTake`):**
+  - Mediabunny 1.60.0 (MPL-2.0, jsdelivr ESM) encodes H.264 MP4 (VP9 WebM as fallback), 24 fps by default.
+  - Choose the edit or one camera, and beauty or any control pass. PNG frames export as a store-only zip.
+  - The cut list (`cutList`) is a JSON of the segments with in/out frames.
+  - `o.from` / `o.to` export a sub-range without moving the take's trim, which camera moves are timed against.
+- **`takeChanged()` bumps `version`** on every change a clip would show: bake, keys, cameras, cuts, trim, fps. The
+  storyboard uses it for staleness.
+- **Host mode:** see the protocol comment at the top of host mode.
+  - `posebench:open` carries the scene's `takes` and the card's `link`. On reopen, the take opens at the card's
+    still moment; if the card came from a segment of the edit (`link.cut`), the edit is switched back on.
+  - `posebench:done` returns `takes` and `link`. With the edit on, the link is the SEGMENT under the playhead: its
+    camera and its in/out. Otherwise it is the selected camera over the take's trim, or `view` if the user orbited off
+    every camera.
+  - `posebench:clip` renders a card's clip in the hidden worker. Passes and clips share one job queue (`hostJob`).
+- **Tests** (scratchpad scripts, not in the repo):
+  - Synthetic round trip on a different, turned figure: mean pose error 3.6°, worst 7°; travel 0.95 m against 1.0 m;
+    turn 58° against 60°.
+  - Webcam recording: the jumping-jacks video drawn into a `captureStream` gave 8.7 s with no gaps.
+  - Correction keys, and export: the cuts switch at the exact frames, and pass, PNG and file round trips work.
+  - Real footage: Wikimedia "Jumping jacks and burpees" (8 s): 241 frames, no gaps, the arms swing 5–62°.
+    (The Wikimedia clip "Jumping jack slow motion" shows an *ant*, the jumping jack ant, so nobody is found in it.
+    Don't use it as a test.)
+  - Headless swiftshader reads video at about 2 frames per second. On real hardware it is far faster.

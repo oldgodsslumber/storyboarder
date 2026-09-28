@@ -335,6 +335,30 @@
       items.push(Object.assign({ name: 'blocking.' + extOfUrl(pic), kind: 'blocking', data: pic,
         bytes: bytesOf(pic), rec: sh.pose.render }, base));
     }
+    /* A card cut from a recorded performance also gets its clip — the
+       mannequins, and the OpenPose pass for pose-driven video work — plus
+       what it was cut from, rendered now from the performance itself. */
+    const L = SB.Pose.perfLink(sh), rec = L && SB.Pose.perfOf(p, sh);
+    if (rec) {
+      const cut = { performance: rec.name, version: rec.version, stale: SB.Pose.perfStale(p, sh),
+        camera: L.camName || null, heldView: !L.cam, in: L.in, out: L.out, still: L.at, fps: L.fps,
+        frames: Math.max(1, Math.round((L.out - L.in) * L.fps)) };
+      const text = JSON.stringify(cut, null, 1);
+      items.push(Object.assign({ name: 'clip.json', kind: 'performance cut', text: text, bytes: textBytes(text) }, base));
+      [['reference', 'beauty'], ['openpose', 'openpose']].forEach(function (c) {
+        items.push(Object.assign({ name: c[0] + '.mp4', kind: 'reference clip', bytes: 0,
+          lazy: function () {
+            return SB.Pose.clip(sh, { pass: c[1] }).then(function (r) {
+              return new Promise(function (resolve, reject) {
+                const fr = new FileReader();
+                fr.onload = function () { resolve(fr.result); };
+                fr.onerror = function () { reject(new Error('could not read the clip for ' + (base.code || 'a card'))); };
+                fr.readAsDataURL(r.blob);
+              });
+            });
+          } }, base));
+      });
+    }
     let once = null;
     const all = function () { return once || (once = SB.Pose.passes(sh)); };
     SB.Pose.PASSES.forEach(function (pass) {
@@ -623,7 +647,7 @@
         opts.madeOnly ? 'Reference sets are what goes IN to a shot, so they are not part of ' +
           '“made in here”.' : ''),
       check('blocking', '3D blocking, per shot',
-        'scene + depth, OpenPose, normal and mask passes — for ComfyUI',
+        'scene + depth, OpenPose, normal and mask passes — for ComfyUI; cards cut from a performance add their reference and OpenPose clips',
         opts.madeOnly ? 'The blocking is what goes IN to a shot, so it is not part of “made in here”.' : ''),
       check('shotlist', 'shot list', 'CSV: code, type, description, both prompts'),
       check('manifest', 'manifest', 'which model and prompt made each file')

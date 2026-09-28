@@ -930,6 +930,31 @@ places and turns them the way the photo shows. It adds figures if the scene has 
 and downloads a 7.5 MB person finder the first time. Set **People: Two** to have two
 performers drive two figures from the webcam.
 
+**Recorded performances.** Act a scene once and recut it from any angle.
+
+1. **Record it.** In the camera panel, **● Record** captures a performance from the webcam (3-second countdown, up
+   to 60 s). **Video file…** reads a clip instead. The movement lands on the mannequins: full-body takes travel
+   across the floor, desk takes stay in place, and planted feet stay planted. Only the movement is kept, never
+   the video.
+2. **Shoot it.** A timeline opens under the stage. Save cameras with **+ Cam** (A, B, C…). A camera can travel
+   (**Move to here**) or **Follow** a figure. Cut between cameras by pressing 1–9 while it plays, and tick
+   **Edit** to watch the cut.
+3. **Fix a moment.** Pause, pose the figure by hand, and the fix blends in and out over a third of a second.
+4. **Export it** as MP4, PNG frames or a pass video, with a cut list.
+
+A performance belongs to the storyboard **scene**, so its cards share it:
+
+- **Cut the cards from it.** With **Edit** on, put the playhead in a segment and **Use for** the card. The card
+  takes that segment's camera and in/out, and the frame under the playhead becomes its still. Put the playhead in
+  segment 2 and Use for the next card, and so on.
+- **A card that isn't blocked yet** opens with the scene's mannequins and its performances.
+- **The 🎞 mark.** The blocking badge shows 🎞 on cards cut from a performance. It turns into **🎞 older** when the
+  performance has changed since, for example after a re-bake, a correction, or moved cameras.
+- **The card's clip.** **🎞 clip** on the card downloads the card's reference clip. **Export → 3D blocking**
+  adds `reference.mp4`, `openpose.mp4` and `clip.json` per card.
+- **No automatic send yet.** Clips are rendered on demand and never stored. Nothing sends them to a model until
+  the video lane can upload a reference video (`arrival_reference_plan.md`). The plan is `pose_motion_plan.md`.
+
 Pose Bench's source is `posebench/pose.html`. It still opens on its own in a browser, and
 `node build.mjs` carries it into the app as `js/posebench-src.js`, which is generated.
 
@@ -1120,7 +1145,7 @@ js/fields.js      the extra card text boxes, per project
 js/personapanel.js the reference library
 js/renders.js     full-size originals and clips, kept in the file by serial
 js/exportpanel.js the way back out: files, a manifest, a shot list
-js/pose.js        3D blocking: opens Pose Bench over a card, keeps shot.pose, renders passes
+js/pose.js        3D blocking: opens Pose Bench over a card, keeps shot.pose + scene performances, renders passes and clips
 js/posebench-src.js GENERATED from posebench/pose.html by build.mjs — do not edit
 posebench/pose.html Pose Bench itself (also runs standalone); HANDOFF.md beside it
 js/refs.js        marks, the feed, and the boundary a model reads
