@@ -565,6 +565,7 @@
       </div>
       <label class="toggle"><span>Arrange like the photo<span class="d">Two or more people in a photo: place and turn them as it shows</span></span><input type="checkbox" id="camArrange" checked><i></i></label>
       <label class="toggle"><span>Use unsure joints<span class="d">On: go with the model's best guess. Off: keep a joint as it was when the model is unsure</span></span><input type="checkbox" id="camTrust" checked><i></i></label>
+      <label class="toggle"><span>Head from the face<span class="d">Reads the head's tilt and turn from the face (a small extra model) — far truer than the body model's guess</span></span><input type="checkbox" id="camFace" checked><i></i></label>
       <label class="toggle"><span>Swap sides<span class="d">Figure acts as your reflection</span></span><input type="checkbox" id="camSwap"><i></i></label>
       <button class="btn grow" id="camReset" style="width:100%;margin-top:6px" title="Put the figure back to standing (a seated figure keeps its seat)">Reset figure to neutral</button>
       <input type="file" id="camFile" accept="image/*" hidden>
@@ -2421,6 +2422,56 @@ async function mpLoad(model,mode,slot){
   return MP.lm[key];
 }
 const mpReady=(model,mode)=>MP.model===model&&!!MP.lm[mode];
+/* The head comes from MediaPipe's FACE model where a face can be seen: 478 face points and a measured head rotation,
+ * where the pose model has five face points whose depth is its weakest number (a woman looking well down read as a
+ * level head). It runs on a crop around the head — it is built for faces that fill the frame, and in a full-body
+ * shot found none — in IMAGE mode, so a crop that moves frame to frame never confuses a tracker. */
+const FACE_URL='https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task';
+async function faceLoad(){
+  if(MP.face)return MP.face;
+  await mpSerial(async()=>{
+    if(MP.face)return;
+    await mpVision();
+    const opts=async d=>({baseOptions:await modelOpts(FACE_URL,d),runningMode:'IMAGE',numFaces:1,
+      outputFacialTransformationMatrixes:true,minFaceDetectionConfidence:0.4,minFacePresenceConfidence:0.4});
+    try{MP.face=await MP.vision.FaceLandmarker.createFromOptions(MP.files,await opts('GPU'));}
+    catch(e){MP.face=await MP.vision.FaceLandmarker.createFromOptions(MP.files,await opts('CPU'));}
+  });
+  return MP.face;
+}
+const faceCanvas=document.createElement('canvas'); faceCanvas.width=faceCanvas.height=256;
+/* Read the head of one pose from its picture and attach it as pose.face = {fwd, up}, unit vectors in the same space
+ * as pose.p (x right, y up, z toward the camera). Leaves the pose alone if there is no face model yet, no face in view
+ * (a back, a profile the model cannot read), or the face it finds is not this person's. */
+function addHead(pose,src,W,H){
+  if(!pose||!pose.img||!MP.face||!$('camFace').checked)return pose;
+  const I=pose.img, P=i=>({x:I[i].x*W,y:I[i].y*H}), vis=i=>pose.v[i];
+  if(vis(0)<0.3&&vis(2)<0.3&&vis(5)<0.3)return pose;                 // nothing of the face faces us
+  const n=P(0), s1=P(11), s2=P(12), h1=P(23), h2=P(24);
+  // the crop: sized from the torso and shoulders, which hold up in profile (the ears do not — they overlap)
+  const torso=Math.hypot((s1.x+s2.x-h1.x-h2.x)/2,(s1.y+s2.y-h1.y-h2.y)/2), sh=Math.hypot(s1.x-s2.x,s1.y-s2.y);
+  const size=Math.max(40,Math.max(torso*0.62,sh*1.05));
+  const e=[2,5,7,8].filter(i=>vis(i)>=0.3).map(P), cx=e.length?(n.x+e.reduce((a,q)=>a+q.x,0))/(e.length+1):n.x,
+    cy=e.length?(n.y+e.reduce((a,q)=>a+q.y,0))/(e.length+1):n.y;
+  const x0=cx-size/2, y0=cy-size*0.45;
+  const g=faceCanvas.getContext('2d'); g.fillStyle='#000'; g.fillRect(0,0,256,256);
+  try{g.drawImage(src,x0,y0,size,size,0,0,256,256);}catch(err){return pose;}
+  let r; try{r=MP.face.detect(faceCanvas);}catch(err){return pose;}
+  const M=r&&r.facialTransformationMatrixes&&r.facialTransformationMatrixes[0], L=r&&r.faceLandmarks&&r.faceLandmarks[0];
+  if(!M||!L)return pose;
+  // it has to be THIS person's face: its nose tip must sit near the pose's nose
+  const nx=x0+L[1].x*size, ny=y0+L[1].y*size;
+  if(Math.hypot(nx-n.x,ny-n.y)>size*0.25)return pose;
+  const d=M.data, fwd=new V3(d[8],d[9],d[10]).normalize(), up=new V3(d[4],d[5],d[6]).normalize();
+  /* The face model sees the crop as if it were a camera pointed straight at the head. The real camera sees the head
+     off to one side of its picture, looking along a ray to it; turning the answer by that ray's angle puts it back
+     in the real camera's view (a head near the top of a frame otherwise read tipped). */
+  const f=H/2/Math.tan(PHOTO_FOV_V/2), ray=new V3(cx-W/2,-(cy-H/2),-f).normalize();
+  const q=new Q().setFromUnitVectors(new V3(0,0,-1),ray);
+  fwd.applyQuaternion(q); up.applyQuaternion(q);
+  pose.face={fwd,up};
+  return pose;
+}
 async function detLoad(){
   if(MP.det)return MP.det;
   await mpSerial(async()=>{
@@ -2487,6 +2538,7 @@ async function findPeople(src,W,H,max,o={}){
     if(whole&&inBox(whole,b)){pose=whole;whole=null;}
     else pose=await poseInBox(lm,src,W,H,b,o.retry!==false);
     if(!pose)continue;
+    addHead(pose,src,W,H);
     const h=hipImg(pose);
     // two overlapping boxes around one person give that person twice
     if(people.some(q=>{const g=hipImg(q.pose);return Math.hypot(g.x-h.x,g.y-h.y)<0.04;}))continue;
@@ -2506,9 +2558,11 @@ function readPose(res){
 }
 function swapPose(pose){
   const p=pose.p.map(v=>v.clone()), v=pose.v.slice(), img=pose.img?pose.img.map(x=>Object.assign({},x)):null;
+  // a mirrored head: the face's vectors reflect across x like everything else
+  const face=pose.face?{fwd:pose.face.fwd.clone().setX(-pose.face.fwd.x),up:pose.face.up.clone().setX(-pose.face.up.x)}:null;
   LM_PAIRS.forEach(([a,b])=>{[p[a],p[b]]=[p[b],p[a]];[v[a],v[b]]=[v[b],v[a]];if(img)[img[a],img[b]]=[img[b],img[a]];});
   p.forEach(q=>{q.x=-q.x;});
-  return {p,v,img};
+  return {p,v,img,face};
 }
 // the One-Euro filter: steady when still, quick when moving — the standard answer to landmark jitter
 class OneEuro{
@@ -2633,9 +2687,22 @@ function retarget(f,pose,o={}){
     }
     applied.push('torso');
   }
-  {
-    const ears=ok('lEar','rEar'), eyes=ok('lEye','rEye');
-    if(ok('nose')&&(ears||eyes)){
+  /* The head. Where the face model saw a face (pose.face: its measured forward and up, in the same space as the
+     landmarks), that is the head — pitch, turn and roll from 478 face points. The pose model's five face points were
+     the old answer and remain the fallback (a face turned away): their depth is the model's weakest number, and a
+     woman looking well down at her hand read as a level head, so figures looked up at the sky. */
+  if(pose.face&&pose.face.fwd&&pose.face.up){
+    const fw=pose.face.fwd.clone(), up=pose.face.up.clone();
+    if(!upper&&hipsSeen){const hl=pose.p[LM.lHip].clone().sub(pose.p[LM.rHip]), yaw=Math.atan2(-hl.z,hl.x), Y=new V3(0,1,0);
+      fw.applyAxisAngle(Y,-yaw); up.applyAxisAngle(Y,-yaw);}
+    releaseFor(f,'head');
+    splitTwo(f,'neck','head',gq.clone().multiply(basisXZ(new V3().crossVectors(up,fw),fw)));
+    applied.push('head');
+  }else{
+    /* The fallback reads the ears only when the model is SURE of both, whatever the unsure-joints setting: a hidden
+       far ear is a guess, and a guessed ear line rolled and turned the whole head. Eyes next; else it stays put. */
+    const ears=sure('lEar','rEar'), eyes=sure('lEye','rEye');
+    if(sure('nose')&&(ears||eyes)){
       const X=ears?at('lEar').clone().sub(at('rEar')):at('lEye').clone().sub(at('rEye'));
       const base=ears?mid('lEar','rEar'):mid('lEye','rEye');
       const fwd=at('nose').clone().sub(base);
@@ -2799,8 +2866,10 @@ const smoothLevel=()=>SMOOTH[$('camSmoothSel').value]||SMOOTH.medium;
 function smoothWith(filters,pose,t){
   const lv=smoothLevel();
   if(!lv.filt)return pose;
-  if(!filters.length)pose.p.forEach(()=>filters.push([0,1,2].map(()=>new OneEuro(lv.filt[0],lv.filt[1]))));
-  return {p:pose.p.map((v,i)=>new V3(filters[i][0].f(v.x,t),filters[i][1].f(v.y,t),filters[i][2].f(v.z,t))),v:pose.v,img:pose.img};
+  if(!filters.length)for(let i=0;i<pose.p.length+2;i++)filters.push([0,1,2].map(()=>new OneEuro(lv.filt[0],lv.filt[1])));
+  const F=(v,i)=>new V3(filters[i][0].f(v.x,t),filters[i][1].f(v.y,t),filters[i][2].f(v.z,t));
+  const n=pose.p.length, face=pose.face?{fwd:F(pose.face.fwd,n).normalize(),up:F(pose.face.up,n+1).normalize()}:null;
+  return {p:pose.p.map((v,i)=>F(v,i)),v:pose.v,img:pose.img,face};
 }
 // the glide: per figure, the pose it is easing toward
 const glides=new Map();
@@ -2927,7 +2996,7 @@ function camTick(){
   camS.lastT=v.currentTime;
   let res; const t=performance.now();
   try{res=lm.detectForVideo(v,nextTs(t));}catch(e){return;}
-  const raw=readPose(res);
+  const raw=addHead(readPose(res),v,v.videoWidth,v.videoHeight);
   if(camS.rec)camS.rec.frames.push({t,people:[raw]});
   camDraw(raw,v.videoWidth,v.videoHeight);
   if(!raw){camS.last=null;if(!camS.counting)camIdle('No one in view yet.',true);return;}
@@ -2968,6 +3037,7 @@ async function camLoadFor(){
   try{
     if(camTwoLive()){await mpLoad(model,'IMAGE');await detLoad();}
     else await mpLoad(model,'VIDEO');
+    if($('camFace').checked)await faceLoad().catch(()=>null);
   }finally{camBusy(false);}
 }
 async function camStart(){
@@ -3001,8 +3071,13 @@ function camLiveToggle(){
   camS.live=true; $('camLive').classList.add('on'); $('camLive').textContent='■ Stop following';
 }
 // average the last moment's frames: a snapshot should be the pose you held, not one jittery frame
-const averagePoses=list=>({p:list[0].p.map((_,i)=>{const s=new V3();list.forEach(x=>s.add(x.p[i]));return s.divideScalar(list.length);}),
-  v:list[list.length-1].v,img:list[list.length-1].img});
+const averagePoses=list=>{
+  const withFace=list.filter(x=>x.face), avg=k=>{const s=new V3();withFace.forEach(x=>s.add(x.face[k]));return s.normalize();};
+  return {p:list[0].p.map((_,i)=>{const s=new V3();list.forEach(x=>s.add(x.p[i]));return s.divideScalar(list.length);}),
+    v:list[list.length-1].v,img:list[list.length-1].img,
+    // the head only if most of the held moment saw a face
+    face:withFace.length*2>=list.length?{fwd:avg('fwd'),up:avg('up')}:null};
+};
 function camSnap(){
   if(camS.counting||!camS.stream)return;
   camLiveStop(true);
@@ -3052,6 +3127,7 @@ async function camFromImage(src){
   try{
     camBusy(true,mpReady(model,'IMAGE')?'Reading the pose…':'Downloading the pose model (first time only)…');
     const lm=await mpLoad(model,'IMAGE');
+    if($('camFace').checked)await faceLoad().catch(()=>null);
     if(want!=='1'){
       camBusy(true,MP.det?'Finding the people…':'Downloading the person finder (first time only)…');
       people=await findPeople(img,W,H,want==='2'?2:4,{whole:true});
@@ -3059,7 +3135,7 @@ async function camFromImage(src){
     // one person (or the finder saw nobody): read the whole picture — more context for the model than a crop
     if(people.length<2){
       camBusy(true,'Reading the pose…');
-      const pose=readPose(await poseDetect(lm,img,true));
+      const pose=addHead(readPose(await poseDetect(lm,img,true)),img,W,H);
       people=pose?[{pose}]:[];
     }
   }catch(e){camBusy(false);camTell('The pose model did not run: '+(e.message||e),true);return null;}
@@ -3142,10 +3218,12 @@ function b64(u8){let s='';for(let i=0;i<u8.length;i+=0x8000)s+=String.fromCharCo
 function unb64(s){const b=atob(s),u=new Uint8Array(b.length);for(let i=0;i<b.length;i++)u[i]=b.charCodeAt(i);return u;}
 function encPose(pose){
   if(!pose)return null;
-  const a=new Int16Array(99+33+66);
+  // 198 values; 6 more (the face's forward and up, x10000) when the head was read from the face
+  const a=new Int16Array(99+33+66+(pose.face?6:0));
   pose.p.forEach((v,i)=>{a[i*3]=i16(v.x*1000);a[i*3+1]=i16(v.y*1000);a[i*3+2]=i16(v.z*1000);});
   pose.v.forEach((v,i)=>{a[99+i]=i16(v*10000);});
   if(pose.img)pose.img.forEach((l,i)=>{a[132+i*2]=i16(l.x*10000);a[133+i*2]=i16(l.y*10000);});
+  if(pose.face)[pose.face.fwd,pose.face.up].forEach((v,k)=>{a[198+k*3]=i16(v.x*10000);a[199+k*3]=i16(v.y*10000);a[200+k*3]=i16(v.z*10000);});
   return b64(new Uint8Array(a.buffer));
 }
 function decPose(s){
@@ -3154,7 +3232,8 @@ function decPose(s){
   const p=[],v=[],img=[];
   for(let i=0;i<33;i++){p.push(new V3(a[i*3]/1000,a[i*3+1]/1000,a[i*3+2]/1000));v.push(a[99+i]/10000);
     img.push({x:a[132+i*2]/10000,y:a[133+i*2]/10000,visibility:a[99+i]/10000});}
-  return {p,v,img};
+  const face=a.length>=204?{fwd:new V3(a[198],a[199],a[200]).normalize(),up:new V3(a[201],a[202],a[203]).normalize()}:null;
+  return {p,v,img,face};
 }
 function takeSnap(tk){
   return {id:tk.id,name:tk.name,W:tk.W,H:tk.H,dur:tk.dur,in:tk.in,out:tk.out,figIds:tk.figIds,base:tk.base,opts:tk.opts,
@@ -3173,8 +3252,10 @@ function takeLoad(s){
 
 /* ---- cleanup: resample, fill gaps, smooth both ways ---- */
 function lerpPose(a,b,u){
+  const face=a.face&&b.face?{fwd:a.face.fwd.clone().lerp(b.face.fwd,u).normalize(),up:a.face.up.clone().lerp(b.face.up,u).normalize()}
+    :(u<0.5?a.face:b.face)||null;
   return {p:a.p.map((v,i)=>v.clone().lerp(b.p[i],u)),v:a.v.map((x,i)=>Math.min(x,b.v[i])),
-    img:a.img&&b.img?a.img.map((l,i)=>({x:l.x+(b.img[i].x-l.x)*u,y:l.y+(b.img[i].y-l.y)*u})):(a.img||b.img)};
+    img:a.img&&b.img?a.img.map((l,i)=>({x:l.x+(b.img[i].x-l.x)*u,y:l.y+(b.img[i].y-l.y)*u})):(a.img||b.img),face};
 }
 // one person's poses at TAKE_FPS; a gap up to half a second is bridged, a longer one stays empty (and is shown)
 function resampleTake(tk,k){
@@ -3200,11 +3281,13 @@ function smoothSeq(seq,sigma){
   return seq.map((ps,j)=>{
     if(!ps)return null;
     const p=ps.p.map(()=>new V3()), img=ps.img?ps.img.map(()=>({x:0,y:0})):null; let W=0;
+    const ff=new V3(), fu=new V3(); let fW=0;
     for(let d=-R;d<=R;d++){const q=seq[j+d];if(!q)continue;const ww=w[d+R];W+=ww;
       q.p.forEach((v,i)=>p[i].addScaledVector(v,ww));
-      if(img&&q.img)q.img.forEach((l,i)=>{img[i].x+=l.x*ww;img[i].y+=l.y*ww;});}
+      if(img&&q.img)q.img.forEach((l,i)=>{img[i].x+=l.x*ww;img[i].y+=l.y*ww;});
+      if(q.face){ff.addScaledVector(q.face.fwd,ww);fu.addScaledVector(q.face.up,ww);fW+=ww;}}
     p.forEach(v=>v.divideScalar(W)); if(img)img.forEach(l=>{l.x/=W;l.y/=W;});
-    return {p,v:ps.v,img};
+    return {p,v:ps.v,img,face:ps.face&&fW?{fwd:ff.normalize(),up:fu.normalize()}:null};
   });
 }
 function smooth1(arr,sigma){
@@ -3710,7 +3793,8 @@ async function camImportVideo(file){
   /* A landmarker of its own for the file, made fresh each time: the webcam's carries a tracking state (where the
      person was a moment ago) that has nothing to do with this footage. */
   if(MP.lm.FILE){try{MP.lm.FILE.close();}catch(e){}delete MP.lm.FILE;}
-  try{await mpLoad(model,'IMAGE');if(two)await detLoad();else await mpLoad(model,'VIDEO','FILE');}
+  try{await mpLoad(model,'IMAGE');if(two)await detLoad();else await mpLoad(model,'VIDEO','FILE');
+    if($('camFace').checked)await faceLoad().catch(()=>null);}
   catch(e){camBusy(false);camTell('The pose model did not load: '+(e.message||e),true);return null;}
   /* Every frame is copied to a plain canvas before it is read. Straight off a <video> element that has just been
      seeked, a hardware-decoded frame is often not ready for the GPU model yet — it read a blank picture and found
@@ -3733,7 +3817,7 @@ async function camImportVideo(file){
       try{p=readPose(MP.lm.FILE.detectForVideo(cv,Math.round(t*1000)+1));}catch(e){p=null;}
       // a frame the tracker loses gets a fresh, more trusting look on its own
       if(!p){try{p=readPose(await poseDetect(MP.lm.IMAGE,cv,true));if(p)retried++;}catch(e){p=null;}}
-      people=[p];
+      people=[addHead(p,cv,cv.width,cv.height)];
     }
     if(people.some(Boolean))found++;
     camDraw(people,W,H);
@@ -4040,7 +4124,7 @@ refreshPropUI();
   glideTick(performance.now());
   updateHandles();renderer.render(scene,camera);})();
 if(EMBED)try{window.parent.postMessage({type:'posebench:ready'},'*');}catch(e){}
-window.__pb={get glides(){return glides;},glideTick,glideFinish,camApply,get tl(){return tl;},makeTake,bakeTake,openTake,showTakeAt,exportTake,cutList,takeSnap,takeLoad,camImportVideo,addCam,addCut,tlPlay,setCamView,viewNow,blockingText,retarget,synthLandmarks,readPose,camFromImage,mpLoad,detLoad,findPeople,camApply,camStart,camSnap,get camState(){return camS;},get figures(){return figures;},get props(){return props;},get act(){return act;},cam,fitShot,setView,frameAll,PRESETS,WORK,SCENES,
+window.__pb={addHead,faceLoad,get glides(){return glides;},glideTick,glideFinish,camApply,get tl(){return tl;},makeTake,bakeTake,openTake,showTakeAt,exportTake,cutList,takeSnap,takeLoad,camImportVideo,addCam,addCut,tlPlay,setCamView,viewNow,blockingText,retarget,synthLandmarks,readPose,camFromImage,mpLoad,detLoad,findPeople,camApply,camStart,camSnap,get camState(){return camS;},get figures(){return figures;},get props(){return props;},get act(){return act;},cam,fitShot,setView,frameAll,PRESETS,WORK,SCENES,
   camera,applyCam,selectJoint,solveChain,commit,applyNamed,goalFrame,eyePoint};
 })();
 </script>

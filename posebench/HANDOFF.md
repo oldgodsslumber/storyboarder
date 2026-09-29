@@ -315,3 +315,31 @@ Test clip: a squat filmed from behind, at three-quarters (Wikimedia "Squat - exe
   Webcam takes keep the old rule (the figure keeps its facing; only turns are copied).
 - **Still limited by the model:** hands hidden behind the head or a bar, and torso lean seen from behind (the model
   measured about 17° where the lifter leans more).
+
+## The head from the face model (2026-09-29, after "the head was totally off")
+- **Symptom:** a sullen walk and a woman in a chair were right except the head.
+  - Reproduced on photos: a woman looking down at her hand, one tilted down toward her shoulder, and a bird-dog.
+    The old head came out level or chin-up every time.
+  - **Cause:** the pose model's five face points (nose, eyes, ears) have poor depth. A clearly lowered head read as
+    18–23° of "nose below the ears", barely past the 15° allowance for a level head.
+  - The fallback also used a hidden, guessed ear whenever unsure joints were trusted.
+- **Now:** where a face can be seen, the head comes from MediaPipe's **FaceLandmarker** (`FACE_URL`, float16,
+  about 4 MB, kept in IndexedDB like the others) and its facial transformation matrix.
+- **`addHead(pose, src, W, H)`** does the work:
+  - It crops around the head. The crop is sized from the torso and shoulders, because the ears overlap in profile.
+    The model finds no face in a full-body frame.
+  - It runs the face model in IMAGE mode, and checks that the face's nose tip sits on this pose's nose.
+  - It corrects for the head sitting off-centre in the real picture (the camera ray, `PHOTO_FOV_V`).
+  - It sets `pose.face = {fwd, up}` in landmark space.
+- **`retarget`** uses `pose.face` for neck and head when present, de-yawed like everything else.
+- **Where it runs:** webcam (one person), `findPeople` (photos, two people, the two-person webcam, two-person video),
+  single photos, and video files.
+- **How the head data travels:** through `swapPose` (mirrored), the live One-Euro filter, snap averaging,
+  `lerpPose`, `smoothSeq`, and take storage (`encPose` adds 6 values; older takes decode with `face: null`).
+- **Switch:** "Head from the face" in the camera panel, on by default.
+- **Fallback, when no face is read** (a back view, a profile the model can't read): the old landmark head, but the
+  ears are used only when the model is *sure* of both. Then the eyes; otherwise the head stays put.
+- **Verified:**
+  - on the three photos, the head now drops and tilts like the photo;
+  - a take's head equals the same frame applied as a photo, and survives the file;
+  - clean synthetic round trips are unchanged, since they carry no face.
