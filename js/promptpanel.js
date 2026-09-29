@@ -1044,10 +1044,13 @@
       /* Editing by hand answers the camera-move flag, whatever it now says */
       delete sh.prompts[m.id].moved;
       delete sh.prompts[m.id].gendered;
+      if (sh.prompts[m.id].invented) delete sh.prompts[m.id].invented[field];
       const mvb = cell.querySelector('.moved');
       if (mvb) mvb.remove();
       const gbb = cell.querySelector('.gendered');
       if (gbb) gbb.remove();
+      const ibb = cell.querySelector('.invented');
+      if (ibb) ibb.remove();
       SB.Store.touch();
       SB.Board.refreshPromptStale();
     });
@@ -1066,6 +1069,14 @@
       const b = SB.el('span', 'badge warn gendered', 'gendered');
       b.title = 'This prompt decides someone\u2019s gender — "' + pr.gendered.join('", "') +
         '" — for a person the board has not cast. Edit them out, or cast that person.';
+      foot.appendChild(b);
+    }
+
+    /* Clothing or props the writer added that nothing on the card mentions. */
+    if (pr && pr[field] && pr.invented && Array.isArray(pr.invented[field]) && pr.invented[field].length) {
+      const said = pr.invented[field];
+      const b = SB.el('span', 'badge warn invented', 'added: ' + said.join(', '));
+      b.title = 'The writer added things no description on this card mentions — "' + said.join('", "') + '" — and kept them through one rewrite. Take them out, or put them in the description if they belong.';
       foot.appendChild(b);
     }
 

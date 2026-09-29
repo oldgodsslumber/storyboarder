@@ -1092,6 +1092,8 @@
     if (typeof s.brand.custom !== 'boolean') s.brand.custom = false;
     if (!s.brand.custom) delete s.brand.text;
     if (typeof s.showImagePrompt !== 'boolean') s.showImagePrompt = false;
+    /* the wardrobe lock (brand.js): on unless a board turned it off */
+    if (typeof s.wardrobeLock !== 'boolean') s.wardrobeLock = true;
     /* MiniMax package style and negatives (mxm.js); empty means the defaults */
     s.mxm = (s.mxm && typeof s.mxm === 'object') ? s.mxm : {};
     if (typeof s.mxm.style !== 'string') s.mxm.style = '';

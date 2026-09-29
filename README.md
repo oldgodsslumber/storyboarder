@@ -1020,6 +1020,34 @@ files, `prompt.txt` and `ORDER.txt`, and copies the prompt to the clipboard.
     only send the frame.
   - **Unblocked cards** keep the frame-only H3 prompt and push exactly as before.
 
+### Nothing invented, and the clay render explained
+
+Models kept adding coats, jackets, hats and bags nobody asked for, and none of the image or video models take a
+negative prompt. So the app works in three layers (`clay_reference_prompting_plan.md`):
+
+1. **The writer is told.** Every still and clip request says: every garment, accessory and prop comes from the
+   descriptions and the shot text, and where they're silent, the answer is nothing.
+2. **The answer is checked.** A written prompt that names a coat, jacket, hat, scarf, glasses, jewellery, a watch
+   or a bag that nothing on the card mentions is sent back once to be rewritten. "No coat" is not a coat. Anything
+   the writer keeps anyway is marked on the card, **added: overcoat**, next to *gendered* and *camera move*.
+3. **The prompt ends with a lock the app writes.**
+   - **Stills:** each person in the first frame gets a line: *"Gus wears exactly: a white shirt, headset, dark
+     slacks. Nothing else."* Then comes one line ruling out coats, jackets, hats, scarves, glasses, jewellery,
+     watches, bags, extra props and people.
+   - **Frame-only clips:** clothing stays exactly as in the first frame.
+   - **Where it comes from:** the part of each description that names clothes.
+   - **Where to change it:** it's in the stored prompt, where you can read and edit it. **Settings → Brand style
+     → Wardrobe lock** turns it off for a board.
+
+**A still with a blocking opens with the app's own paragraph about the clay render.** It says which picture or
+sheet panel the render is, and uses it only for the camera, framing, lens, positions, poses and scale. It says
+not to reproduce its grey material, mannequins, featureless faces, floor, grid or backdrop, and names which clay
+figure is whom, by the panel the model sees. The writer no longer paraphrases this: it's told to leave the render
+to the app and describe the real scene.
+
+MiniMax keeps its own formats. The brief's negatives now rule out the usual additions, and H3's description goes
+through the same check.
+
 ### Who is in the first frame
 
 A shot description is usually a little story — *he writes at the desk; a moment later somebody
@@ -1179,6 +1207,7 @@ node test-typing.mjs   # real mouse + keyboard over the DevTools protocol
 node test-store.mjs    # autosave/open against a stubbed File System Access API
 node test-prompts.mjs  # the prompt pipeline against a stubbed Gemini endpoint
 node test-mxm.mjs      # the MiniMax package: labels = file order, brief, H3 sections, Write
+node test-lock.mjs     # nothing invented: the check, the wardrobe lock, the clay-render opening
 ```
 
 `test-typing.mjs` exists because `test-ui.mjs` dispatches synthetic `beforeinput` events,

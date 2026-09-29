@@ -1432,7 +1432,7 @@ body.comment-mode .frame{cursor:crosshair}
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-09-29 15:24 · c0ffcbc+";</script>
+<script>window.SB_BUILD = "2026-09-29 15:46 · 96b8313+";</script>
 
 <div id="app">
 
@@ -3757,6 +3757,178 @@ window.SB = window.SB || {};
     '- The shot description is the board\u2019s own word too: if it says who someone is, follow it.'
   ].join('\n');
 
+  /* ---------------- invented details, checked rather than asked ----------------
+   *
+   * Coats, jackets, hats and bags that no description asked for were the most
+   * common thing a written prompt added (clay_reference_prompting_plan.md).
+   * Neither GPT Image nor Seedance takes a negative prompt, so the only defence
+   * is the words: the writer is told (NO_INVENT_RIDER), the answer is checked
+   * (inventedProblems) and gets one rewrite, and the app appends a wardrobe
+   * lock it writes itself (wardrobeLock).
+   *
+   * The check is a list of the things writers add — layers, headwear,
+   * eyewear, jewellery, bags, and the props that come with a coat — each one
+   * allowed the moment anything on the card says it. "No coat" is not a coat. */
+  const INVENT_TERMS = [
+    'trench ?coats?', 'overcoats?', 'raincoats?', 'coats?', 'parkas?', 'anoraks?', 'jackets?', 'blazers?',
+    'cardigans?', 'sweaters?', 'jumpers?', 'hoodies?', 'waistcoats?', 'vests?', 'scarf', 'scarves', 'shawls?',
+    'hats?', 'caps?', 'beanies?', 'berets?', 'fedoras?', 'gloves?', 'mittens?',
+    'sunglasses', 'glasses', 'spectacles', 'goggles',
+    'wristwatch(?:es)?', '(?:a|his|her|their) watch', 'bracelets?', 'necklaces?', 'earrings?', 'pendants?',
+    'jewell?ery', 'jewelry', 'necktie', 'bow ?tie', '(?:a|his|her|their) tie',
+    'lanyards?', 'id badges?', 'badges?', 'headphones', 'earbuds', 'backpacks?', 'handbags?', 'purses?',
+    'tote(?: bag)?s?', 'briefcases?', 'shoulder bags?', 'bags?', 'umbrellas?', 'aprons?'
+  ];
+  const INVENT_RE = new RegExp('\\b(?:' + INVENT_TERMS.join('|') + ')\\b', 'gi');
+  /* what a word counts as, so "blazers" is allowed by "blazer" and "trench coat" by "coat" */
+  function inventStem(w) {
+    const t = String(w).toLowerCase().replace(/^(?:a|his|her|their) /, '').replace(/\s+/g, ' ');
+    const last = t.split(' ').pop();
+    if (/^(?:scarf|scarves)$/.test(last)) return 'scarf';
+    if (/^jewell?ery|jewelry$/.test(last)) return 'jewellery';
+    if (/^(?:glasses|sunglasses|spectacles|goggles)$/.test(last)) return last === 'sunglasses' ? 'sunglasses' : 'glasses';
+    if (last === 'watches' || last === 'wristwatches' || last === 'wristwatch') return 'watch';
+    if (last === 'tie' || last === 'necktie') return 'tie';
+    if (/(?:ches|shes|sses)$/.test(last)) return last.slice(0, -2);
+    if (/s$/.test(last) && !/ss$/.test(last)) return last.slice(0, -1);
+    return last;
+  }
+  /* A hit preceded, in the same clause, by a negation is a thing ruled out, not put in. */
+  const NEG = /\b(?:no|not|without|never|nor|none|free of|instead of|rather than|removes?|takes? off|minus)\b/i;
+  function negated(text, at) {
+    const segs = text.slice(Math.max(0, at - 64), at).split(/[.;:!?\n]/).pop().split(',');
+    /* the negation's reach stops at a comma — "without a jacket, a watch on his wrist" wears the watch — unless the
+       comma is only carrying a list along: "no coat, hat or scarf" rules out all three */
+    for (let i = segs.length - 1; i >= 0; i--) {
+      if (i === segs.length - 1) { if (NEG.test(segs[i])) return true; continue; }
+      const listy = /^\s*(?:(?:or|and|nor)\s+)?(?:an?\s+|the\s+)?[a-z-]+(?:\s+[a-z-]+)?\s*$/i.test(segs[i]);
+      if (!listy) return false;
+      if (NEG.test(segs[i])) return true;
+    }
+    return false;
+  }
+  /* Everything this card says: its three boxes and fields, the scene, every
+     subject in its feed (description, the prompt of their reference frame, the
+     labels of their pictures) and the blocking in words. */
+  function cardText(p, shot) {
+    const bits = [shot.description, shot.imageDescription, shot.videoDescription, shot.type];
+    if (shot.fields) Object.keys(shot.fields).forEach(function (k) { bits.push(shot.fields[k]); });
+    try {
+      const f = SB.Model.findShot(p, shot.id);
+      if (f) bits.push(f.scene.heading, f.scene.description);
+    } catch (e) { }
+    let people = [];
+    try {
+      people = SB.Refs.feed(p, shot).concat(SB.Refs.feed(p, shot, 'video'))
+        .filter(function (e) { return e.kind === 'subject'; })
+        .map(function (e) { return e.subject; }).filter(Boolean);
+    } catch (e) { people = []; }
+    if (!people.length && SB.Personas.forShot) people = SB.Personas.forShot(p, shot) || [];
+    people.forEach(function (per) {
+      bits.push(per.name, per.description, per.imagePrompt);
+      (SB.Personas.imagesOf(per) || []).forEach(function (im) { bits.push(im.label); });
+    });
+    if (shot.pose && shot.pose.text) bits.push(shot.pose.text);
+    return bits.filter(function (x) { return typeof x === 'string' && x; })
+      .map(function (x) { return SB.Refs && SB.Refs.plain ? SB.Refs.plain(p, x) : x; }).join('. ');
+  }
+  /* The added things a prompt names that nothing on the card does, as written. */
+  function inventedTerms(p, shot, prompt) {
+    const text = String(prompt || '');
+    const allowed = {};
+    const card = cardText(p, shot);
+    (card.match(INVENT_RE) || []).forEach(function (w) { allowed[inventStem(w)] = 1; });
+    const out = [], seen = {};
+    let m;
+    INVENT_RE.lastIndex = 0;
+    while ((m = INVENT_RE.exec(text))) {
+      const w = m[0], st = inventStem(w);
+      if (allowed[st] || seen[st] || negated(text, m.index)) continue;
+      seen[st] = 1;
+      out.push(w.toLowerCase());
+    }
+    return out;
+  }
+  function inventedProblems(p, shot, prompt) {
+    const bad = inventedTerms(p, shot, prompt);
+    if (!bad.length) return [];
+    return ['You added things nobody described: "' + bad.join('", "') + '". Every garment, ' +
+      'accessory and prop comes from the subject descriptions and the shot text and from nowhere ' +
+      'else — nothing on this card mentions ' + (bad.length === 1 ? 'that' : 'those') + '. Take ' +
+      (bad.length === 1 ? 'it' : 'them') + ' out, and do not replace ' +
+      (bad.length === 1 ? 'it' : 'them') + ' with something similar. Change nothing else.'];
+  }
+
+  const NO_INVENT_RIDER = [
+    'ADD NOTHING THAT IS NOT DESCRIBED',
+    '- Every garment, accessory and prop comes ONLY from the subject descriptions and the shot text. ' +
+    'If they do not mention it, it is not there.',
+    '- Never add clothing layers (coat, jacket, blazer, cardigan, sweater, hoodie, scarf), headwear, ' +
+    'glasses, jewellery, watches, bags, lanyards, headphones, umbrellas, extra props or extra people.',
+    '- Where a description is silent, the answer is nothing: plain and unadorned is correct. Weather, ' +
+    'season, a location or a job are not reasons to dress someone.',
+    '- Do not describe clothing in more detail than the description gives — no invented colours, ' +
+    'fabrics, logos or brands.'
+  ].join('\n');
+
+  /* ---------------- the wardrobe lock ----------------
+   *
+   * Written by the app and appended to the prompt the writer returns, so it is
+   * there whatever the writer did: each person in the picture, wearing exactly
+   * what their description says, and a line ruling out the usual additions.
+   * The clothing is the part of the description that names garments — the
+   * rest (hair, build, age) is the reference picture's job. */
+  const GARMENT_RE = new RegExp('\\b(?:' + INVENT_TERMS.concat([
+    'shirts?', 't-shirts?', 'tees?', 'blouses?', 'tops?', 'tank tops?', 'camisoles?', 'polo', 'turtlenecks?',
+    'suits?', 'tuxedos?', 'dress(?:es)?', 'gowns?', 'skirts?', 'trousers', 'pants', 'slacks', 'jeans', 'chinos',
+    'shorts', 'leggings', 'joggers', 'sweatpants', 'uniforms?', 'overalls', 'scrubs', 'jumpsuits?', 'robes?',
+    'shoes', 'sneakers', 'trainers', 'boots', 'heels', 'loafers', 'sandals', 'flats', 'socks', 'belts?',
+    'headsets?', 'hijabs?', 'turbans?', 'veils?', 'rings?'
+  ]).join('|') + ')\\b', 'i');
+  function wardrobeOf(desc) {
+    const text = String(desc || '').replace(/\s+/g, ' ').trim();
+    if (!text) return '';
+    const keep = [];
+    text.split(/(?<=[.;!?])\s+/).forEach(function (sentence) {
+      if (!GARMENT_RE.test(sentence)) return;
+      // "A man in a white shirt, …" / "She wears …" / "Dressed in …": the clothes start after the verb
+      let t = sentence.replace(/[.;!?]+$/, '');
+      const lead = /^.{0,48}?\b(?:wearing|wears|dressed in|clad in|in)\b\s+/i.exec(t);
+      if (lead) t = t.slice(lead[0].length);
+      const parts = t.split(/,\s*|\s+and\s+(?=[a-z-]+\s)/i).filter(function (x) { return GARMENT_RE.test(x); });
+      if (parts.length) keep.push(parts.join(', '));
+    });
+    return keep.join('; ');
+  }
+  function lockOn(p) { return !(p && p.settings && p.settings.wardrobeLock === false); }
+  const LOCK_OUT = 'No coats, jackets, hats, scarves, glasses, jewellery, watches, bags, extra props or ' +
+    'extra people beyond those described.';
+  /* role 'image': everyone in the first frame, by name, wearing exactly their
+     clothes. role 'video' on a frame-only model: the frame shows the clothes,
+     so the lock is that nothing changes. '' when turned off or nobody's cast. */
+  function wardrobeLock(p, shot, role) {
+    if (!lockOn(p) || !shot) return '';
+    if (role === 'video') {
+      if (!SB.Model.videoInherits(SB.Model.videoModel(p))) return '';
+      return 'Everyone\u2019s clothing stays exactly as in the first frame — nothing is put on, taken ' +
+        'off or added. ' + LOCK_OUT;
+    }
+    let people = [];
+    try {
+      const fr = SB.Personas.framing ? SB.Personas.framing(p, shot) : null;
+      people = SB.Refs.feed(p, shot, 'image').filter(function (e) {
+        return e.kind === 'subject' && SB.Personas.kindOf(e.subject).id === 'person' && !(fr && fr.arrives(e.id));
+      }).map(function (e) { return e.subject; });
+    } catch (e) { people = []; }
+    const lines = [];
+    people.forEach(function (per) {
+      const w = wardrobeOf(per.description);
+      if (w) lines.push((per.name || 'They') + ' wears exactly: ' + w.replace(/[.\s]+$/, '') + '. Nothing else.');
+    });
+    lines.push(LOCK_OUT);
+    return lines.join('\n');
+  }
+
   /* ---------------- the camera, checked rather than asked ----------------
    *
    * Telling the writer not to move the camera is not enough on its own. Given
@@ -3957,6 +4129,7 @@ window.SB = window.SB || {};
     if (role === 'image' || role === 'video' || role === 'both') {
       if (parts.length) parts.push('');
       parts.push(GENDER_RIDER);
+      parts.push('', NO_INVENT_RIDER);
     }
     /* A frame-only video job is shown the picture, so it can SEE the framing —
        telling it in words is the same mistake as repeating the house style at
@@ -4015,6 +4188,8 @@ window.SB = window.SB || {};
     movesIn: movesIn, moveAsked: moveAsked, moveProblems: moveProblems,
     genderedTerms: genderedTerms, castSides: castSides,
     genderProblems: genderProblems, GENDER_RIDER: GENDER_RIDER,
+    inventedTerms: inventedTerms, inventedProblems: inventedProblems, NO_INVENT_RIDER: NO_INVENT_RIDER,
+    wardrobeOf: wardrobeOf, wardrobeLock: wardrobeLock, LOCK_OUT: LOCK_OUT,
     VIDEO_RIDER: VIDEO_RIDER,
     FIRST_FRAME_RIDER: FIRST_FRAME_RIDER,
     DERIVED_RIDER: DERIVED_RIDER,
@@ -9529,8 +9704,18 @@ window.SB = window.SB || {};
           ? model.referenceTemplate : DEFAULT_REF_TEMPLATE)
         : '';
       const names = cast.filter(hasImage).map(function (x) { return x.name; }).join(', ');
-      lines.push(tpl.replace(/\{\{N\}\}/g, function () { return 'N'; })
-        .replace(/\{\{NAME\}\}/g, names));
+      const onSheet0 = (SB.Imagine && SB.Imagine.sheetPlan && role !== 'video')
+        ? SB.Imagine.sheetPlan(p, shot, role).length > 1 : false;
+      /* On a sheet there is no "image N" to refer to — one picture, in panels
+         — and the numbered wording sent the writer looking for images that do
+         not exist, right above a mapping that names panels. */
+      if (onSheet0 && /image \{\{N\}\}/.test(tpl)) {
+        lines.push('Refer to each recurring subject by name. Where this frame shows their face, hair or ' +
+          'wardrobe, keep it exactly as in their panel of the sheet; where it does not, say nothing about it.');
+      } else {
+        lines.push(tpl.replace(/\{\{N\}\}/g, function () { return 'N'; })
+          .replace(/\{\{NAME\}\}/g, names));
+      }
       /* The mapping is the feed's, not this block's: a shot's own rendered
          frame is a reference like any other, and the numbers have to agree
          with the strip on the card and with the files the person is about to
@@ -9678,10 +9863,13 @@ window.SB = window.SB || {};
       };
       lines.push('THE BLOCKING — ' + (whereOf(blocking.id) || 'image 1') + ' is a 3D blocking of this ' +
         'exact shot: plain mannequins stand in for the people and simple grey shapes for the furniture.');
-      lines.push('Match its camera angle, lens and framing, and where each figure is, which way they ' +
-        'face, their pose and what they hold. Do NOT draw mannequins, grey shapes, a grid or a studio ' +
-        'floor — they are placeholders. The people are the ones described in this block, and the ' +
-        'place is the one the shot description gives.');
+      /* The instructions about the clay render itself are written by the app, at the head of the
+         prompt (clayPreamble) — in the writer's hands they were paraphrased, shortened or lost. */
+      lines.push('The app opens your prompt with its own paragraph telling the image model how to use ' +
+        'the blocking. Do not repeat it and do not mention the blocking, a render, mannequins, clay, ' +
+        'grey shapes, a grid or a studio floor. Describe the real scene so it MATCHES the blocking: ' +
+        'where each person is, which way they face, their pose and what they hold — the people ' +
+        'described in this block, in the place the shot description gives.');
       const who = (shot.pose.cast || []).map(function (c) {
         const w = whereOf(c.personaId);
         return 'the ' + (c.colorName || 'grey') + ' mannequin is ' +
@@ -9727,6 +9915,54 @@ window.SB = window.SB || {};
     }
 
     return lines.join('\n');
+  }
+
+  /* ---- the clay render, in the app's own words ----
+   *
+   * Put at the head of a still prompt whenever the card's blocking travels
+   * with it (clay_reference_prompting_plan.md): what the grey render is FOR —
+   * camera, framing, positions, poses, scale — what must not be copied from
+   * it, and which clay figure is whom, by the picture or sheet panel the model
+   * can actually see. '' when there is no blocking, or when the push carries
+   * no picture at all (the API-key door), since then it would name a picture
+   * the model never gets. */
+  function clayPreamble(p, shot) {
+    if (!shot || !shot.pose || !shot.pose.cast) return '';
+    const feed = SB.Refs.feed(p, shot, 'image');
+    const blocking = feed.filter(function (e) { return e.kind === 'pose' && e.images.length; })[0];
+    if (!blocking) return '';
+    const sent = (SB.Imagine && SB.Imagine.refsFor) ? SB.Imagine.refsFor(p, shot, 'image') : null;
+    if (sent && (sent.byKey || !sent.carries)) return '';
+    const plan = (SB.Imagine && SB.Imagine.sheetPlan) ? SB.Imagine.sheetPlan(p, shot, 'image') : [];
+    const onSheet = plan.length > 1;
+    const numbered = SB.Refs.images(p, shot, 'image');
+    const whereOf = function (id) {
+      if (onSheet) {
+        const c = plan.filter(function (x) { return x.e.id === id; })[0];
+        return c ? 'the ' + c.panel + ' panel' : '';
+      }
+      const e = numbered.filter(function (x) { return x.id === id; })[0];
+      return e && (!sent || e.n <= sent.carries) ? 'image ' + e.n : '';
+    };
+    const where = whereOf(blocking.id) || (onSheet ? 'the top-left panel' : 'Image 1');
+    const W = where.charAt(0).toUpperCase() + where.slice(1);
+    const bits = [W + ' is a grey clay layout render of this exact shot. Use it ONLY for the camera angle, ' +
+      'framing, lens and perspective, where each person stands, their pose and silhouette, and scale. ' +
+      'Do not reproduce its grey untextured material, mannequin bodies, featureless faces, studio floor, ' +
+      'grid or backdrop.'];
+    const who = (shot.pose.cast || []).map(function (c) {
+      const per = find(p, c.personaId), name = per ? (per.name || 'unnamed') : (c.name || '');
+      const pic = whereOf(c.personaId);
+      return 'the ' + (c.colorName || 'grey') + ' figure is ' + name + (pic ? ' (' + pic + ')' : '');
+    });
+    if (who.length) {
+      const w0 = who.join('; ');
+      bits.push(w0.charAt(0).toUpperCase() + w0.slice(1) + '. Any other figure is an extra.');
+    }
+    const pics = (shot.pose.cast || []).filter(function (c) { return whereOf(c.personaId); });
+    if (pics.length) bits.push('Take each person\u2019s face, hair, skin tone and build ONLY from their ' +
+      (onSheet ? 'panel' : 'image') + '.');
+    return bits.join(' ');
   }
 
   /* ---- the description says somebody walks in, but nobody is marked ----
@@ -9859,7 +10095,7 @@ window.SB = window.SB || {};
     imagesOf: imagesOf, hero: hero, hasImage: hasImage,
     setImage: setImage, clearImage: clearImage, labelImage: labelImage,
     retiredOf: retiredOf, useRetired: useRetired, dropRetired: dropRetired,
-    forShot: forShot, framing: framing, toggleOnShot: toggleOnShot, block: block, generate: generate,
+    forShot: forShot, framing: framing, clayPreamble: clayPreamble, toggleOnShot: toggleOnShot, block: block, generate: generate,
     enters: enters, setEnters: setEnters, toggleEnters: toggleEnters,
     presentAtOpen: presentAtOpen, arriving: arriving, ARRIVAL_RE: ARRIVAL_RE,
     readsAsArrival: readsAsArrival,
@@ -11088,6 +11324,8 @@ window.SB = window.SB || {};
     if (typeof s.brand.custom !== 'boolean') s.brand.custom = false;
     if (!s.brand.custom) delete s.brand.text;
     if (typeof s.showImagePrompt !== 'boolean') s.showImagePrompt = false;
+    /* the wardrobe lock (brand.js): on unless a board turned it off */
+    if (typeof s.wardrobeLock !== 'boolean') s.wardrobeLock = true;
     /* MiniMax package style and negatives (mxm.js); empty means the defaults */
     s.mxm = (s.mxm && typeof s.mxm === 'object') ? s.mxm : {};
     if (typeof s.mxm.style !== 'string') s.mxm.style = '';
@@ -14560,9 +14798,11 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
     'shallow depth of field, soft contrast, subtle film grain';
   /* Phrases without the "no": the brief lists them as "no X, no Y", H3 as one sentence. */
   const NEG_IMAGE = ['clay, mannequin or grey untextured surfaces', 'grey studio floor or grid',
-    'on-screen text', 'watermark', 'extra people', 'deformed hands'];
+    'on-screen text', 'watermark', 'extra people', 'deformed hands',
+    'clothing, accessories or props beyond those described (coats, jackets, hats, bags, jewellery)'];
   const NEG_VIDEO = ['on-screen text', 'watermark', 'extra people', 'camera cuts',
-    'morphing or deformed hands', 'empty or unrendered frames', 'clay, mannequin or grey untextured surfaces'];
+    'morphing or deformed hands', 'empty or unrendered frames', 'clay, mannequin or grey untextured surfaces',
+    'clothing, accessories or props beyond those described (coats, jackets, hats, bags, jewellery)'];
 
   function P() { return SB.app && SB.app.project; }
   function tidy(s) { return String(s == null ? '' : s).replace(/\s+/g, ' ').trim(); }
@@ -17037,6 +17277,16 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
     return b;
   }
 
+  /* Clothing or props the writer added that nothing on the card mentions, kept through its one rewrite. */
+  function inventBadge(sh, m, field) {
+    const pr = sh.prompts[m.id] || null;
+    const said = pr && pr.invented && Array.isArray(pr.invented[field]) ? pr.invented[field] : [];
+    if (!said.length || !(pr[field] || '').trim()) return null;
+    const b = SB.el('span', 'badge warn invented', 'added: ' + said.join(', '));
+    b.title = 'The writer added things no description on this card mentions — "' + said.join('", "') + '" — and kept them through one rewrite. Take them out, or put them in the description if they belong.';
+    return b;
+  }
+
   function staleBadge(sh, m, field) {
     const pr = sh.prompts[m.id] || null;
     if (!pr || !(pr[field] || '').trim()) return null;
@@ -17134,6 +17384,8 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
     if (mv) t.appendChild(mv);
     const gb = genderBadge(sh, m, field);
     if (gb) t.appendChild(gb);
+    const ib = inventBadge(sh, m, field);
+    if (ib) t.appendChild(ib);
     const gen = SB.Focus.costly(SB.el('button', 'mini', 'generate'));
     gen.style.marginLeft = 'auto';
     gen.onclick = function () {
@@ -17163,10 +17415,13 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
       /* Editing by hand is the answer to the move, whatever the words now say */
       delete sh.prompts[m.id].moved;
       delete sh.prompts[m.id].gendered;
+      if (sh.prompts[m.id].invented) delete sh.prompts[m.id].invented[field];
       const mvb = wrap.querySelector('.moved');
       if (mvb) mvb.remove();
       const gbb = wrap.querySelector('.gendered');
       if (gbb) gbb.remove();
+      const ibb = wrap.querySelector('.invented');
+      if (ibb) ibb.remove();
       SB.app.changed(false);
     });
     wrap.appendChild(ta);
@@ -18466,7 +18721,8 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
       check: function (res) {
         return SB.H3.problems(sc, res)
           .concat(SB.Brand.moveProblems(P(), shot, res.detailed_description))
-          .concat(SB.Brand.genderProblems(P(), shot, res.detailed_description));
+          .concat(SB.Brand.genderProblems(P(), shot, res.detailed_description))
+          .concat(invented(shot, res.detailed_description));
       }
     };
   }
@@ -18477,6 +18733,23 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
     if (cast) parts.push(cast);
     return parts.filter(Boolean).join('\n\n');
   }
+
+  /* What the app writes around the writer's words (clay_reference_prompting_plan.md): the
+     clay render's own paragraph ahead of a still, and the wardrobe lock after both. Written
+     by the app, not asked for, so it is there whatever the writer did — and visible in the
+     stored prompt, where it can be read and edited. */
+  function decorateImage(shot) {
+    return function (raw) {
+      return [SB.Personas.clayPreamble(P(), shot), String(raw || '').trim(),
+        SB.Brand.wardrobeLock(P(), shot, 'image')].filter(Boolean).join('\n\n');
+    };
+  }
+  function decorateVideo(shot) {
+    return function (raw) {
+      return [String(raw || '').trim(), SB.Brand.wardrobeLock(P(), shot, 'video')].filter(Boolean).join('\n\n');
+    };
+  }
+  const invented = function (shot, text) { return SB.Brand.inventedProblems(P(), shot, text); };
 
   /* A board image model left on the MiniMax Image template: its prompt is the
      assembled brief, not a writer's paragraph. An edited template is the
@@ -18500,10 +18773,12 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
         keys: ['imagePrompt', 'videoPrompt'],
         system: sys('both', im),
         targets: [{ model: im, field: 'imagePrompt' }, { model: vm, field: 'videoPrompt' }],
+        decorate: { imagePrompt: decorateImage(shot), videoPrompt: decorateVideo(shot) },
         check: function (res) {
           return SB.Brand.moveProblems(P(), shot, res.videoPrompt)
             .concat(SB.Brand.genderProblems(P(), shot, res.imagePrompt))
-            .concat(SB.Brand.genderProblems(P(), shot, res.videoPrompt));
+            .concat(SB.Brand.genderProblems(P(), shot, res.videoPrompt))
+            .concat(invented(shot, res.imagePrompt)).concat(invented(shot, res.videoPrompt));
         }
       });
       return jobs;
@@ -18522,7 +18797,10 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
         keys: ['imagePrompt'],
         system: sys('image', im),
         targets: [{ model: im, field: 'imagePrompt' }],
-        check: function (res) { return SB.Brand.genderProblems(P(), shot, res.imagePrompt); }
+        decorate: { imagePrompt: decorateImage(shot) },
+        check: function (res) {
+          return SB.Brand.genderProblems(P(), shot, res.imagePrompt).concat(invented(shot, res.imagePrompt));
+        }
       });
     }
     if (wantV) {
@@ -18535,9 +18813,11 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
         keys: ['videoPrompt'],
         system: sys('video', vm),
         targets: [{ model: vm, field: 'videoPrompt' }],
+        decorate: { videoPrompt: decorateVideo(shot) },
         check: function (res) {
           return SB.Brand.moveProblems(P(), shot, res.videoPrompt)
-            .concat(SB.Brand.genderProblems(P(), shot, res.videoPrompt));
+            .concat(SB.Brand.genderProblems(P(), shot, res.videoPrompt))
+            .concat(invented(shot, res.videoPrompt));
         }
       });
     }
@@ -18838,8 +19118,17 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
             kept.push({ field: t.field, model: t.model });
             return;
           }
-          store(live, t.model, t.field, vals[t.field]);
+          const raw = vals[t.field];
+          store(live, t.model, t.field, j.decorate && j.decorate[t.field] ? j.decorate[t.field](raw) : raw);
           written.push(t.field);
+          /* What the writer added and kept through its one rewrite — read off its own words,
+             before the app's lock (which names the very things it rules out) was put round them. */
+          {
+            const inv = SB.Brand.inventedTerms(P(), live, raw), rec = live.prompts[t.model.id];
+            const by = rec.invented && typeof rec.invented === 'object' && !Array.isArray(rec.invented) ? rec.invented : {};
+            if (inv.length) by[t.field] = inv; else delete by[t.field];
+            if (Object.keys(by).length) rec.invented = by; else delete rec.invented;
+          }
           /* which call a video prompt was written for: the full-reference one
              cannot go through the frame-only push */
           if (t.field === 'videoPrompt') {
@@ -18933,7 +19222,8 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
         /* with a clip, the camera is the clip's: a move it describes is not one nobody asked for */
         return SB.H3.problems(sc, res)
           .concat(sc.clip ? [] : SB.Brand.moveProblems(p, shot, res.detailed_description))
-          .concat(SB.Brand.genderProblems(p, shot, res.detailed_description));
+          .concat(SB.Brand.genderProblems(p, shot, res.detailed_description))
+          .concat(SB.Brand.inventedProblems(p, shot, res.detailed_description));
       }
     };
   }
@@ -20903,10 +21193,13 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
       /* Editing by hand answers the camera-move flag, whatever it now says */
       delete sh.prompts[m.id].moved;
       delete sh.prompts[m.id].gendered;
+      if (sh.prompts[m.id].invented) delete sh.prompts[m.id].invented[field];
       const mvb = cell.querySelector('.moved');
       if (mvb) mvb.remove();
       const gbb = cell.querySelector('.gendered');
       if (gbb) gbb.remove();
+      const ibb = cell.querySelector('.invented');
+      if (ibb) ibb.remove();
       SB.Store.touch();
       SB.Board.refreshPromptStale();
     });
@@ -20925,6 +21218,14 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
       const b = SB.el('span', 'badge warn gendered', 'gendered');
       b.title = 'This prompt decides someone\u2019s gender — "' + pr.gendered.join('", "') +
         '" — for a person the board has not cast. Edit them out, or cast that person.';
+      foot.appendChild(b);
+    }
+
+    /* Clothing or props the writer added that nothing on the card mentions. */
+    if (pr && pr[field] && pr.invented && Array.isArray(pr.invented[field]) && pr.invented[field].length) {
+      const said = pr.invented[field];
+      const b = SB.el('span', 'badge warn invented', 'added: ' + said.join(', '));
+      b.title = 'The writer added things no description on this card mentions — "' + said.join('", "') + '" — and kept them through one rewrite. Take them out, or put them in the description if they belong.';
       foot.appendChild(b);
     }
 
@@ -22910,6 +23211,21 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
       'The app adds the scene’s beat list underneath it automatically, so “same subject, same ' +
       'wardrobe, same location across the sequence” is something the writer can actually act on.'));
 
+    /* The wardrobe lock (brand.js): the app's own line after every prompt — each person wearing
+       exactly what their description says, and no coats, hats or bags nobody asked for. */
+    const wOn = SB.el('label', 'pp-toggle');
+    const wChk = document.createElement('input');
+    wChk.type = 'checkbox';
+    wChk.checked = p.settings.wardrobeLock !== false;
+    wOn.appendChild(wChk);
+    wOn.appendChild(document.createTextNode(' Wardrobe lock: end every prompt with each person\u2019s exact clothes, and nothing added'));
+    wOn.style.marginTop = '8px';
+    panels.brand.appendChild(wOn);
+    panels.brand.appendChild(SB.el('div', 'pp-note',
+      'Models add coats, jackets, hats and bags nobody described. With this on, the app lists what each person ' +
+      'wears (from their description) and rules the rest out, in words the model sees; the writer is also told ' +
+      'to add nothing, and anything it adds anyway is marked on the card.'));
+
     const bText = document.createElement('textarea');
     bText.rows = 22;
     bText.value = (p.settings.brand && p.settings.brand.text) || SB.Brand.DEFAULT;
@@ -24003,6 +24319,7 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
             p.settings.brand = (bTxt && bTxt !== SB.Brand.DEFAULT.trim())
               ? { enabled: bChk.checked, custom: true, text: bTxt }
               : { enabled: bChk.checked, custom: false };
+            p.settings.wardrobeLock = wChk.checked;
             p.settings.aiProvider = SB.Providers.normalize(chosenProvider);
             p.settings.geminiModel = (chosenModel || '').trim() || SB.GeminiModels.DEFAULT;
             p.settings.models = working.filter(function (m) { return (m.name || '').trim(); })

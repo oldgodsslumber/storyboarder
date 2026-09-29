@@ -3735,7 +3735,15 @@ console.log('\n— 3D blocking (pose.js) —');
   eq(/THE BLOCKING — image 1 is a 3D blocking/.test(block), true, 'the cast block names the blocking as image 1');
   eq(/the tan mannequin is Nat \(image 2\); the blue mannequin is Rowan\./.test(block), true,
     'and says which mannequin is whom, by colour, with their picture number');
-  eq(/Do NOT draw mannequins/.test(block), true, 'and that the mannequins are placeholders');
+  eq(/do not mention the blocking, a render, mannequins, clay/.test(block), true,
+    'the writer is told to leave the clay render to the app');
+  const pre = SB.Personas.clayPreamble(p, sh);
+  eq(/^Image 1 is a grey clay layout render of this exact shot\. Use it ONLY for the camera angle/.test(pre), true,
+    'and the app opens the still with what the render is for');
+  eq(/Do not reproduce its grey untextured material, mannequin bodies, featureless faces, studio floor, grid or backdrop/.test(pre), true,
+    'and what not to copy from it');
+  eq(/The tan figure is Nat \(image 2\); the blue figure is Rowan\./.test(pre), true,
+    'and which clay figure is whom, by the picture the model can see');
   eq(/Nat \(the tan mannequin\): left of frame; seated\./.test(block), true, 'and carries the blocking in words');
   nat.name = 'Natalie';
   const renamed = SB.Personas.block(p, sh, null, 'image');

@@ -527,8 +527,18 @@
           ? model.referenceTemplate : DEFAULT_REF_TEMPLATE)
         : '';
       const names = cast.filter(hasImage).map(function (x) { return x.name; }).join(', ');
-      lines.push(tpl.replace(/\{\{N\}\}/g, function () { return 'N'; })
-        .replace(/\{\{NAME\}\}/g, names));
+      const onSheet0 = (SB.Imagine && SB.Imagine.sheetPlan && role !== 'video')
+        ? SB.Imagine.sheetPlan(p, shot, role).length > 1 : false;
+      /* On a sheet there is no "image N" to refer to — one picture, in panels
+         — and the numbered wording sent the writer looking for images that do
+         not exist, right above a mapping that names panels. */
+      if (onSheet0 && /image \{\{N\}\}/.test(tpl)) {
+        lines.push('Refer to each recurring subject by name. Where this frame shows their face, hair or ' +
+          'wardrobe, keep it exactly as in their panel of the sheet; where it does not, say nothing about it.');
+      } else {
+        lines.push(tpl.replace(/\{\{N\}\}/g, function () { return 'N'; })
+          .replace(/\{\{NAME\}\}/g, names));
+      }
       /* The mapping is the feed's, not this block's: a shot's own rendered
          frame is a reference like any other, and the numbers have to agree
          with the strip on the card and with the files the person is about to
@@ -676,10 +686,13 @@
       };
       lines.push('THE BLOCKING — ' + (whereOf(blocking.id) || 'image 1') + ' is a 3D blocking of this ' +
         'exact shot: plain mannequins stand in for the people and simple grey shapes for the furniture.');
-      lines.push('Match its camera angle, lens and framing, and where each figure is, which way they ' +
-        'face, their pose and what they hold. Do NOT draw mannequins, grey shapes, a grid or a studio ' +
-        'floor — they are placeholders. The people are the ones described in this block, and the ' +
-        'place is the one the shot description gives.');
+      /* The instructions about the clay render itself are written by the app, at the head of the
+         prompt (clayPreamble) — in the writer's hands they were paraphrased, shortened or lost. */
+      lines.push('The app opens your prompt with its own paragraph telling the image model how to use ' +
+        'the blocking. Do not repeat it and do not mention the blocking, a render, mannequins, clay, ' +
+        'grey shapes, a grid or a studio floor. Describe the real scene so it MATCHES the blocking: ' +
+        'where each person is, which way they face, their pose and what they hold — the people ' +
+        'described in this block, in the place the shot description gives.');
       const who = (shot.pose.cast || []).map(function (c) {
         const w = whereOf(c.personaId);
         return 'the ' + (c.colorName || 'grey') + ' mannequin is ' +
@@ -725,6 +738,54 @@
     }
 
     return lines.join('\n');
+  }
+
+  /* ---- the clay render, in the app's own words ----
+   *
+   * Put at the head of a still prompt whenever the card's blocking travels
+   * with it (clay_reference_prompting_plan.md): what the grey render is FOR —
+   * camera, framing, positions, poses, scale — what must not be copied from
+   * it, and which clay figure is whom, by the picture or sheet panel the model
+   * can actually see. '' when there is no blocking, or when the push carries
+   * no picture at all (the API-key door), since then it would name a picture
+   * the model never gets. */
+  function clayPreamble(p, shot) {
+    if (!shot || !shot.pose || !shot.pose.cast) return '';
+    const feed = SB.Refs.feed(p, shot, 'image');
+    const blocking = feed.filter(function (e) { return e.kind === 'pose' && e.images.length; })[0];
+    if (!blocking) return '';
+    const sent = (SB.Imagine && SB.Imagine.refsFor) ? SB.Imagine.refsFor(p, shot, 'image') : null;
+    if (sent && (sent.byKey || !sent.carries)) return '';
+    const plan = (SB.Imagine && SB.Imagine.sheetPlan) ? SB.Imagine.sheetPlan(p, shot, 'image') : [];
+    const onSheet = plan.length > 1;
+    const numbered = SB.Refs.images(p, shot, 'image');
+    const whereOf = function (id) {
+      if (onSheet) {
+        const c = plan.filter(function (x) { return x.e.id === id; })[0];
+        return c ? 'the ' + c.panel + ' panel' : '';
+      }
+      const e = numbered.filter(function (x) { return x.id === id; })[0];
+      return e && (!sent || e.n <= sent.carries) ? 'image ' + e.n : '';
+    };
+    const where = whereOf(blocking.id) || (onSheet ? 'the top-left panel' : 'Image 1');
+    const W = where.charAt(0).toUpperCase() + where.slice(1);
+    const bits = [W + ' is a grey clay layout render of this exact shot. Use it ONLY for the camera angle, ' +
+      'framing, lens and perspective, where each person stands, their pose and silhouette, and scale. ' +
+      'Do not reproduce its grey untextured material, mannequin bodies, featureless faces, studio floor, ' +
+      'grid or backdrop.'];
+    const who = (shot.pose.cast || []).map(function (c) {
+      const per = find(p, c.personaId), name = per ? (per.name || 'unnamed') : (c.name || '');
+      const pic = whereOf(c.personaId);
+      return 'the ' + (c.colorName || 'grey') + ' figure is ' + name + (pic ? ' (' + pic + ')' : '');
+    });
+    if (who.length) {
+      const w0 = who.join('; ');
+      bits.push(w0.charAt(0).toUpperCase() + w0.slice(1) + '. Any other figure is an extra.');
+    }
+    const pics = (shot.pose.cast || []).filter(function (c) { return whereOf(c.personaId); });
+    if (pics.length) bits.push('Take each person\u2019s face, hair, skin tone and build ONLY from their ' +
+      (onSheet ? 'panel' : 'image') + '.');
+    return bits.join(' ');
   }
 
   /* ---- the description says somebody walks in, but nobody is marked ----
@@ -857,7 +918,7 @@
     imagesOf: imagesOf, hero: hero, hasImage: hasImage,
     setImage: setImage, clearImage: clearImage, labelImage: labelImage,
     retiredOf: retiredOf, useRetired: useRetired, dropRetired: dropRetired,
-    forShot: forShot, framing: framing, toggleOnShot: toggleOnShot, block: block, generate: generate,
+    forShot: forShot, framing: framing, clayPreamble: clayPreamble, toggleOnShot: toggleOnShot, block: block, generate: generate,
     enters: enters, setEnters: setEnters, toggleEnters: toggleEnters,
     presentAtOpen: presentAtOpen, arriving: arriving, ARRIVAL_RE: ARRIVAL_RE,
     readsAsArrival: readsAsArrival,

@@ -1791,6 +1791,16 @@
     return b;
   }
 
+  /* Clothing or props the writer added that nothing on the card mentions, kept through its one rewrite. */
+  function inventBadge(sh, m, field) {
+    const pr = sh.prompts[m.id] || null;
+    const said = pr && pr.invented && Array.isArray(pr.invented[field]) ? pr.invented[field] : [];
+    if (!said.length || !(pr[field] || '').trim()) return null;
+    const b = SB.el('span', 'badge warn invented', 'added: ' + said.join(', '));
+    b.title = 'The writer added things no description on this card mentions — "' + said.join('", "') + '" — and kept them through one rewrite. Take them out, or put them in the description if they belong.';
+    return b;
+  }
+
   function staleBadge(sh, m, field) {
     const pr = sh.prompts[m.id] || null;
     if (!pr || !(pr[field] || '').trim()) return null;
@@ -1888,6 +1898,8 @@
     if (mv) t.appendChild(mv);
     const gb = genderBadge(sh, m, field);
     if (gb) t.appendChild(gb);
+    const ib = inventBadge(sh, m, field);
+    if (ib) t.appendChild(ib);
     const gen = SB.Focus.costly(SB.el('button', 'mini', 'generate'));
     gen.style.marginLeft = 'auto';
     gen.onclick = function () {
@@ -1917,10 +1929,13 @@
       /* Editing by hand is the answer to the move, whatever the words now say */
       delete sh.prompts[m.id].moved;
       delete sh.prompts[m.id].gendered;
+      if (sh.prompts[m.id].invented) delete sh.prompts[m.id].invented[field];
       const mvb = wrap.querySelector('.moved');
       if (mvb) mvb.remove();
       const gbb = wrap.querySelector('.gendered');
       if (gbb) gbb.remove();
+      const ibb = wrap.querySelector('.invented');
+      if (ibb) ibb.remove();
       SB.app.changed(false);
     });
     wrap.appendChild(ta);

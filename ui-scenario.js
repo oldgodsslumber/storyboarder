@@ -2953,8 +2953,10 @@
       t('brand tab holds the house style',
         /CONSTRAINTS[\s\S]*STYLE & TONE/.test(
           document.querySelector('.modal .tab-panel.on textarea').value), '');
-      t('house style can be switched off',
-        document.querySelectorAll('.modal .tab-panel.on input[type=checkbox]').length === 1, '');
+      t('house style can be switched off, and so can the wardrobe lock (on by default)',
+        document.querySelectorAll('.modal .tab-panel.on input[type=checkbox]').length === 2 &&
+        document.querySelectorAll('.modal .tab-panel.on input[type=checkbox]')[1].checked &&
+        /Wardrobe lock/.test(document.querySelector('.modal .tab-panel.on').textContent), '');
 
       tab('Models & templates');
       t('models tab shows the model list',

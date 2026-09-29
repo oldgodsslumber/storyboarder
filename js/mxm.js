@@ -32,9 +32,11 @@
     'shallow depth of field, soft contrast, subtle film grain';
   /* Phrases without the "no": the brief lists them as "no X, no Y", H3 as one sentence. */
   const NEG_IMAGE = ['clay, mannequin or grey untextured surfaces', 'grey studio floor or grid',
-    'on-screen text', 'watermark', 'extra people', 'deformed hands'];
+    'on-screen text', 'watermark', 'extra people', 'deformed hands',
+    'clothing, accessories or props beyond those described (coats, jackets, hats, bags, jewellery)'];
   const NEG_VIDEO = ['on-screen text', 'watermark', 'extra people', 'camera cuts',
-    'morphing or deformed hands', 'empty or unrendered frames', 'clay, mannequin or grey untextured surfaces'];
+    'morphing or deformed hands', 'empty or unrendered frames', 'clay, mannequin or grey untextured surfaces',
+    'clothing, accessories or props beyond those described (coats, jackets, hats, bags, jewellery)'];
 
   function P() { return SB.app && SB.app.project; }
   function tidy(s) { return String(s == null ? '' : s).replace(/\s+/g, ' ').trim(); }

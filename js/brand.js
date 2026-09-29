@@ -345,6 +345,178 @@
     '- The shot description is the board\u2019s own word too: if it says who someone is, follow it.'
   ].join('\n');
 
+  /* ---------------- invented details, checked rather than asked ----------------
+   *
+   * Coats, jackets, hats and bags that no description asked for were the most
+   * common thing a written prompt added (clay_reference_prompting_plan.md).
+   * Neither GPT Image nor Seedance takes a negative prompt, so the only defence
+   * is the words: the writer is told (NO_INVENT_RIDER), the answer is checked
+   * (inventedProblems) and gets one rewrite, and the app appends a wardrobe
+   * lock it writes itself (wardrobeLock).
+   *
+   * The check is a list of the things writers add — layers, headwear,
+   * eyewear, jewellery, bags, and the props that come with a coat — each one
+   * allowed the moment anything on the card says it. "No coat" is not a coat. */
+  const INVENT_TERMS = [
+    'trench ?coats?', 'overcoats?', 'raincoats?', 'coats?', 'parkas?', 'anoraks?', 'jackets?', 'blazers?',
+    'cardigans?', 'sweaters?', 'jumpers?', 'hoodies?', 'waistcoats?', 'vests?', 'scarf', 'scarves', 'shawls?',
+    'hats?', 'caps?', 'beanies?', 'berets?', 'fedoras?', 'gloves?', 'mittens?',
+    'sunglasses', 'glasses', 'spectacles', 'goggles',
+    'wristwatch(?:es)?', '(?:a|his|her|their) watch', 'bracelets?', 'necklaces?', 'earrings?', 'pendants?',
+    'jewell?ery', 'jewelry', 'necktie', 'bow ?tie', '(?:a|his|her|their) tie',
+    'lanyards?', 'id badges?', 'badges?', 'headphones', 'earbuds', 'backpacks?', 'handbags?', 'purses?',
+    'tote(?: bag)?s?', 'briefcases?', 'shoulder bags?', 'bags?', 'umbrellas?', 'aprons?'
+  ];
+  const INVENT_RE = new RegExp('\\b(?:' + INVENT_TERMS.join('|') + ')\\b', 'gi');
+  /* what a word counts as, so "blazers" is allowed by "blazer" and "trench coat" by "coat" */
+  function inventStem(w) {
+    const t = String(w).toLowerCase().replace(/^(?:a|his|her|their) /, '').replace(/\s+/g, ' ');
+    const last = t.split(' ').pop();
+    if (/^(?:scarf|scarves)$/.test(last)) return 'scarf';
+    if (/^jewell?ery|jewelry$/.test(last)) return 'jewellery';
+    if (/^(?:glasses|sunglasses|spectacles|goggles)$/.test(last)) return last === 'sunglasses' ? 'sunglasses' : 'glasses';
+    if (last === 'watches' || last === 'wristwatches' || last === 'wristwatch') return 'watch';
+    if (last === 'tie' || last === 'necktie') return 'tie';
+    if (/(?:ches|shes|sses)$/.test(last)) return last.slice(0, -2);
+    if (/s$/.test(last) && !/ss$/.test(last)) return last.slice(0, -1);
+    return last;
+  }
+  /* A hit preceded, in the same clause, by a negation is a thing ruled out, not put in. */
+  const NEG = /\b(?:no|not|without|never|nor|none|free of|instead of|rather than|removes?|takes? off|minus)\b/i;
+  function negated(text, at) {
+    const segs = text.slice(Math.max(0, at - 64), at).split(/[.;:!?\n]/).pop().split(',');
+    /* the negation's reach stops at a comma — "without a jacket, a watch on his wrist" wears the watch — unless the
+       comma is only carrying a list along: "no coat, hat or scarf" rules out all three */
+    for (let i = segs.length - 1; i >= 0; i--) {
+      if (i === segs.length - 1) { if (NEG.test(segs[i])) return true; continue; }
+      const listy = /^\s*(?:(?:or|and|nor)\s+)?(?:an?\s+|the\s+)?[a-z-]+(?:\s+[a-z-]+)?\s*$/i.test(segs[i]);
+      if (!listy) return false;
+      if (NEG.test(segs[i])) return true;
+    }
+    return false;
+  }
+  /* Everything this card says: its three boxes and fields, the scene, every
+     subject in its feed (description, the prompt of their reference frame, the
+     labels of their pictures) and the blocking in words. */
+  function cardText(p, shot) {
+    const bits = [shot.description, shot.imageDescription, shot.videoDescription, shot.type];
+    if (shot.fields) Object.keys(shot.fields).forEach(function (k) { bits.push(shot.fields[k]); });
+    try {
+      const f = SB.Model.findShot(p, shot.id);
+      if (f) bits.push(f.scene.heading, f.scene.description);
+    } catch (e) { }
+    let people = [];
+    try {
+      people = SB.Refs.feed(p, shot).concat(SB.Refs.feed(p, shot, 'video'))
+        .filter(function (e) { return e.kind === 'subject'; })
+        .map(function (e) { return e.subject; }).filter(Boolean);
+    } catch (e) { people = []; }
+    if (!people.length && SB.Personas.forShot) people = SB.Personas.forShot(p, shot) || [];
+    people.forEach(function (per) {
+      bits.push(per.name, per.description, per.imagePrompt);
+      (SB.Personas.imagesOf(per) || []).forEach(function (im) { bits.push(im.label); });
+    });
+    if (shot.pose && shot.pose.text) bits.push(shot.pose.text);
+    return bits.filter(function (x) { return typeof x === 'string' && x; })
+      .map(function (x) { return SB.Refs && SB.Refs.plain ? SB.Refs.plain(p, x) : x; }).join('. ');
+  }
+  /* The added things a prompt names that nothing on the card does, as written. */
+  function inventedTerms(p, shot, prompt) {
+    const text = String(prompt || '');
+    const allowed = {};
+    const card = cardText(p, shot);
+    (card.match(INVENT_RE) || []).forEach(function (w) { allowed[inventStem(w)] = 1; });
+    const out = [], seen = {};
+    let m;
+    INVENT_RE.lastIndex = 0;
+    while ((m = INVENT_RE.exec(text))) {
+      const w = m[0], st = inventStem(w);
+      if (allowed[st] || seen[st] || negated(text, m.index)) continue;
+      seen[st] = 1;
+      out.push(w.toLowerCase());
+    }
+    return out;
+  }
+  function inventedProblems(p, shot, prompt) {
+    const bad = inventedTerms(p, shot, prompt);
+    if (!bad.length) return [];
+    return ['You added things nobody described: "' + bad.join('", "') + '". Every garment, ' +
+      'accessory and prop comes from the subject descriptions and the shot text and from nowhere ' +
+      'else — nothing on this card mentions ' + (bad.length === 1 ? 'that' : 'those') + '. Take ' +
+      (bad.length === 1 ? 'it' : 'them') + ' out, and do not replace ' +
+      (bad.length === 1 ? 'it' : 'them') + ' with something similar. Change nothing else.'];
+  }
+
+  const NO_INVENT_RIDER = [
+    'ADD NOTHING THAT IS NOT DESCRIBED',
+    '- Every garment, accessory and prop comes ONLY from the subject descriptions and the shot text. ' +
+    'If they do not mention it, it is not there.',
+    '- Never add clothing layers (coat, jacket, blazer, cardigan, sweater, hoodie, scarf), headwear, ' +
+    'glasses, jewellery, watches, bags, lanyards, headphones, umbrellas, extra props or extra people.',
+    '- Where a description is silent, the answer is nothing: plain and unadorned is correct. Weather, ' +
+    'season, a location or a job are not reasons to dress someone.',
+    '- Do not describe clothing in more detail than the description gives — no invented colours, ' +
+    'fabrics, logos or brands.'
+  ].join('\n');
+
+  /* ---------------- the wardrobe lock ----------------
+   *
+   * Written by the app and appended to the prompt the writer returns, so it is
+   * there whatever the writer did: each person in the picture, wearing exactly
+   * what their description says, and a line ruling out the usual additions.
+   * The clothing is the part of the description that names garments — the
+   * rest (hair, build, age) is the reference picture's job. */
+  const GARMENT_RE = new RegExp('\\b(?:' + INVENT_TERMS.concat([
+    'shirts?', 't-shirts?', 'tees?', 'blouses?', 'tops?', 'tank tops?', 'camisoles?', 'polo', 'turtlenecks?',
+    'suits?', 'tuxedos?', 'dress(?:es)?', 'gowns?', 'skirts?', 'trousers', 'pants', 'slacks', 'jeans', 'chinos',
+    'shorts', 'leggings', 'joggers', 'sweatpants', 'uniforms?', 'overalls', 'scrubs', 'jumpsuits?', 'robes?',
+    'shoes', 'sneakers', 'trainers', 'boots', 'heels', 'loafers', 'sandals', 'flats', 'socks', 'belts?',
+    'headsets?', 'hijabs?', 'turbans?', 'veils?', 'rings?'
+  ]).join('|') + ')\\b', 'i');
+  function wardrobeOf(desc) {
+    const text = String(desc || '').replace(/\s+/g, ' ').trim();
+    if (!text) return '';
+    const keep = [];
+    text.split(/(?<=[.;!?])\s+/).forEach(function (sentence) {
+      if (!GARMENT_RE.test(sentence)) return;
+      // "A man in a white shirt, …" / "She wears …" / "Dressed in …": the clothes start after the verb
+      let t = sentence.replace(/[.;!?]+$/, '');
+      const lead = /^.{0,48}?\b(?:wearing|wears|dressed in|clad in|in)\b\s+/i.exec(t);
+      if (lead) t = t.slice(lead[0].length);
+      const parts = t.split(/,\s*|\s+and\s+(?=[a-z-]+\s)/i).filter(function (x) { return GARMENT_RE.test(x); });
+      if (parts.length) keep.push(parts.join(', '));
+    });
+    return keep.join('; ');
+  }
+  function lockOn(p) { return !(p && p.settings && p.settings.wardrobeLock === false); }
+  const LOCK_OUT = 'No coats, jackets, hats, scarves, glasses, jewellery, watches, bags, extra props or ' +
+    'extra people beyond those described.';
+  /* role 'image': everyone in the first frame, by name, wearing exactly their
+     clothes. role 'video' on a frame-only model: the frame shows the clothes,
+     so the lock is that nothing changes. '' when turned off or nobody's cast. */
+  function wardrobeLock(p, shot, role) {
+    if (!lockOn(p) || !shot) return '';
+    if (role === 'video') {
+      if (!SB.Model.videoInherits(SB.Model.videoModel(p))) return '';
+      return 'Everyone\u2019s clothing stays exactly as in the first frame — nothing is put on, taken ' +
+        'off or added. ' + LOCK_OUT;
+    }
+    let people = [];
+    try {
+      const fr = SB.Personas.framing ? SB.Personas.framing(p, shot) : null;
+      people = SB.Refs.feed(p, shot, 'image').filter(function (e) {
+        return e.kind === 'subject' && SB.Personas.kindOf(e.subject).id === 'person' && !(fr && fr.arrives(e.id));
+      }).map(function (e) { return e.subject; });
+    } catch (e) { people = []; }
+    const lines = [];
+    people.forEach(function (per) {
+      const w = wardrobeOf(per.description);
+      if (w) lines.push((per.name || 'They') + ' wears exactly: ' + w.replace(/[.\s]+$/, '') + '. Nothing else.');
+    });
+    lines.push(LOCK_OUT);
+    return lines.join('\n');
+  }
+
   /* ---------------- the camera, checked rather than asked ----------------
    *
    * Telling the writer not to move the camera is not enough on its own. Given
@@ -545,6 +717,7 @@
     if (role === 'image' || role === 'video' || role === 'both') {
       if (parts.length) parts.push('');
       parts.push(GENDER_RIDER);
+      parts.push('', NO_INVENT_RIDER);
     }
     /* A frame-only video job is shown the picture, so it can SEE the framing —
        telling it in words is the same mistake as repeating the house style at
@@ -603,6 +776,8 @@
     movesIn: movesIn, moveAsked: moveAsked, moveProblems: moveProblems,
     genderedTerms: genderedTerms, castSides: castSides,
     genderProblems: genderProblems, GENDER_RIDER: GENDER_RIDER,
+    inventedTerms: inventedTerms, inventedProblems: inventedProblems, NO_INVENT_RIDER: NO_INVENT_RIDER,
+    wardrobeOf: wardrobeOf, wardrobeLock: wardrobeLock, LOCK_OUT: LOCK_OUT,
     VIDEO_RIDER: VIDEO_RIDER,
     FIRST_FRAME_RIDER: FIRST_FRAME_RIDER,
     DERIVED_RIDER: DERIVED_RIDER,

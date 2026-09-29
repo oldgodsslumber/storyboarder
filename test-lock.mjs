@@ -1,0 +1,142 @@
+/* test-lock.mjs — nothing invented: the writer rider, the invention check, the wardrobe lock, the clay opening.
+ * usage: node test-lock.mjs
+ */
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import vm from 'node:vm';
+
+const root = dirname(fileURLToPath(import.meta.url));
+const sandbox = {
+  console,
+  document: { createElement: () => ({ style: {}, classList: { add() { }, remove() { } }, appendChild() { } }), getElementById: () => null },
+  setTimeout, clearTimeout, indexedDB: undefined,
+  localStorage: (() => { const m = new Map(); return { getItem: k => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)), removeItem: k => m.delete(k) }; })(),
+  Uint8Array, TextEncoder, URL
+};
+sandbox.window = sandbox;
+vm.createContext(sandbox);
+for (const f of ['js/util.js', 'js/focus.js', 'js/doc.js', 'js/blobs.js', 'js/geminimodels.js', 'js/providers.js',
+  'js/brand.js', 'js/renders.js', 'js/imaginemodels.js', 'js/refs.js', 'js/personas.js', 'js/fields.js', 'js/model.js',
+  'js/store.js', 'js/h3.js', 'js/mxm.js', 'js/prompts.js']) {
+  vm.runInContext(readFileSync(join(root, f), 'utf8'), sandbox, { filename: f });
+}
+const SB = sandbox.SB;
+SB.Focus.defer = (k, fn) => fn();
+
+let pass = 0, fail = 0;
+const cut = s => (s && s.length > 160) ? s.slice(0, 157) + '…' : s;
+function eq(actual, expected, label) {
+  const a = JSON.stringify(actual), b = JSON.stringify(expected);
+  if (a === b) { pass++; console.log('  ok   ' + label); }
+  else { fail++; console.log('  FAIL ' + label + '\n       got ' + cut(a) + '\n       want ' + cut(b)); }
+}
+const has = (t, w, l) => eq(String(t).indexOf(w) >= 0, true, l + (String(t).indexOf(w) >= 0 ? '' : '  [' + cut(String(t)) + ']'));
+const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+function board() {
+  const p = SB.Model.newProject();
+  SB.app = { project: p, changed() { } };
+  p.scenes[0].shots = [];
+  const sh = SB.Model.addShot(p, p.scenes[0].id, { type: 'Medium' });
+  sh.description = 'Gus sits at his desk and reads a letter.';
+  const gus = SB.Personas.add(p, { name: 'Gus', description: 'A man in his fifties. He wears a white shirt, a headset and dark slacks.' });
+  SB.Personas.toggleOnShot(p, sh, gus.id);
+  SB.Personas.setImage(gus, SB.Blobs.image(p, PNG, 1, 1), 'front', null);
+  p.settings.aiProvider = 'ooba';
+  SB.Store.setOoba({ url: 'http://127.0.0.1:5000/v1/', model: 'local', key: '' });
+  return { p, sh, gus };
+}
+let replies = [], asked = [];
+sandbox.fetch = (url, init) => {
+  asked.push(JSON.parse(init.body));
+  const r = replies.length > 1 ? replies.shift() : replies[0];
+  return Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve(JSON.stringify({ choices: [{ message: { content: JSON.stringify(r) } }] })) });
+};
+
+console.log('\n— the wardrobe, read from a description —');
+eq(SB.Brand.wardrobeOf('A man in a white shirt, headset and dark slacks.'), 'a white shirt, headset, dark slacks', 'a sentence of clothes');
+eq(SB.Brand.wardrobeOf('Red blazer, short dark hair.'), 'Red blazer', 'hair is left to the picture');
+eq(SB.Brand.wardrobeOf('Short brown hair, freckles.'), '', 'no clothes described: nothing to lock');
+
+console.log('\n— the invention check —');
+{
+  const { p, sh } = board();
+  eq(SB.Brand.inventedTerms(p, sh, 'Gus, in a trench coat and a beanie, reads.'), ['trench coat', 'beanie'], 'coats and hats nobody described');
+  eq(SB.Brand.inventedTerms(p, sh, 'Gus in his white shirt and headset reads.'), [], 'what the description gives is allowed');
+  eq(SB.Brand.inventedTerms(p, sh, 'Gus, no jacket, reads.'), [], '"no jacket" is not a jacket');
+  eq(SB.Brand.inventedTerms(p, sh, 'He reads without a jacket, a watch on his wrist.'), ['a watch'], 'a negation stops at the comma');
+  eq(SB.Brand.inventedTerms(p, sh, 'No coat, hat or scarf on him.'), [], 'unless the comma carries a list');
+  sh.description += ' It is raining; he keeps his coat on.';
+  eq(SB.Brand.inventedTerms(p, sh, 'Gus in his coat reads.'), [], 'a coat the card mentions is allowed');
+  eq(/ADD NOTHING THAT IS NOT DESCRIBED/.test(SB.Brand.systemFor(p, sh, 'image')), true, 'the writer is told, for stills');
+  eq(/ADD NOTHING THAT IS NOT DESCRIBED/.test(SB.Brand.systemFor(p, sh, 'video')), true, 'and for clips');
+}
+
+console.log('\n— a still, written —');
+{
+  const { p, sh } = board();
+  const im = p.settings.models.find(m => m.name === 'GPT Image'); p.settings.imageModelId = im.id;
+  asked = []; replies = [{ imagePrompt: 'Gus in a trench coat reads a letter at his desk.' }, { imagePrompt: 'Gus reads a letter at his desk.' }];
+  await SB.Prompts.generateFor(sh, { image: true });
+  eq(asked.length, 2, 'an invented coat earns one corrective call');
+  has(JSON.stringify(asked[1]), 'You added things nobody described: \\"trench coat\\"', 'which names it');
+  const pr = sh.prompts[im.id];
+  eq(pr.imagePrompt.indexOf('Gus reads a letter at his desk.'), 0, 'the corrected words are stored');
+  has(pr.imagePrompt, 'Gus wears exactly: a white shirt, a headset, dark slacks. Nothing else.', 'then the lock: his clothes, from his description');
+  has(pr.imagePrompt, SB.Brand.LOCK_OUT, 'and the usual additions ruled out');
+  eq(pr.invented, undefined, 'nothing survived, so nothing is marked');
+  // a writer that will not let go of the coat
+  asked = []; replies = [{ imagePrompt: 'Gus in a trench coat reads.' }];
+  await SB.Prompts.generateFor(sh, { image: true });
+  eq(sh.prompts[im.id].invented, { imagePrompt: ['trench coat'] }, 'a coat that survives is kept, and marked');
+  // the lock can be turned off per board
+  p.settings.wardrobeLock = false;
+  asked = []; replies = [{ imagePrompt: 'Gus reads.' }];
+  await SB.Prompts.generateFor(sh, { image: true });
+  eq(sh.prompts[im.id].imagePrompt, 'Gus reads.', 'with the lock off, the words alone');
+}
+
+console.log('\n— a still with a blocking: the clay render opens the prompt —');
+{
+  const { p, sh, gus } = board();
+  const im = p.settings.models.find(m => m.name === 'GPT Image'); p.settings.imageModelId = im.id;
+  sh.pose = { serial: 1, scene: SB.Blobs.put(p, 'data:application/json,' + encodeURIComponent('{"figures":[{}]}')),
+    image: SB.Blobs.image(p, PNG, 1, 1), render: { ref: SB.Blobs.put(p, PNG), w: 1, h: 1 },
+    cast: [{ fig: 'f1', personaId: gus.id, name: 'Gus', colorName: 'tan', pos: { x: 0, where: 'centre', depth: 0 } }],
+    text: 'Gus (the tan mannequin): centre of frame.', lens: 35, aspect: '16:9', at: 1, perf: null };
+  asked = []; replies = [{ imagePrompt: 'Gus reads a letter at his desk.' }];
+  await SB.Prompts.generateFor(sh, { image: true });
+  const t = sh.prompts[im.id].imagePrompt;
+  eq(t.indexOf('Image 1 is a grey clay layout render of this exact shot.'), 0, 'the app’s own paragraph comes first');
+  has(t, 'Do not reproduce its grey untextured material, mannequin bodies, featureless faces, studio floor, grid or backdrop.', 'saying what not to copy');
+  has(t, 'The tan figure is Gus (image 2).', 'and which figure is whom');
+  has(t, '\n\nGus reads a letter at his desk.\n\n', 'then the writer’s words');
+  has(t, 'Gus wears exactly:', 'then the lock');
+  has(JSON.stringify(asked[0]), 'do not mention the blocking, a render, mannequins, clay', 'the writer leaves the clay render to the app');
+}
+
+console.log('\n— a clip on a frame-only model —');
+{
+  const { p, sh } = board();
+  const vm2 = p.settings.models.find(m => m.name === 'Seedance'); p.settings.videoModelId = vm2.id;
+  sh.image = SB.Blobs.image(p, PNG, 1, 1);
+  asked = []; replies = [{ videoPrompt: 'Gus puts on a jacket and stands.' }, { videoPrompt: 'Gus folds the letter and stands.' }];
+  await SB.Prompts.generateFor(sh, { video: true });
+  eq(asked.length, 2, 'a jacket put on out of nowhere is caught too');
+  const t = sh.prompts[vm2.id].videoPrompt;
+  eq(t.indexOf('Gus folds the letter and stands.'), 0, 'the corrected motion is stored');
+  has(t, 'Everyone’s clothing stays exactly as in the first frame', 'then the clip’s lock: nothing put on or taken off');
+}
+
+console.log('\n— MiniMax keeps its formats —');
+{
+  const { p, sh } = board();
+  eq(SB.Mxm.NEG_IMAGE.some(x => /coats, jackets, hats, bags, jewellery/.test(x)), true, 'the brief’s negatives rule out the usual additions');
+  const mi = p.settings.models.find(m => m.name === 'MiniMax Image'); p.settings.imageModelId = mi.id;
+  await SB.Prompts.generateFor(sh, { image: true });
+  eq(/Nothing else\./.test(sh.prompts[mi.id].imagePrompt), false, 'the assembled brief is not decorated');
+}
+
+console.log('\n' + pass + ' passed, ' + fail + ' failed\n');
+if (fail) process.exit(1);

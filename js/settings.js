@@ -330,6 +330,21 @@
       'The app adds the scene’s beat list underneath it automatically, so “same subject, same ' +
       'wardrobe, same location across the sequence” is something the writer can actually act on.'));
 
+    /* The wardrobe lock (brand.js): the app's own line after every prompt — each person wearing
+       exactly what their description says, and no coats, hats or bags nobody asked for. */
+    const wOn = SB.el('label', 'pp-toggle');
+    const wChk = document.createElement('input');
+    wChk.type = 'checkbox';
+    wChk.checked = p.settings.wardrobeLock !== false;
+    wOn.appendChild(wChk);
+    wOn.appendChild(document.createTextNode(' Wardrobe lock: end every prompt with each person\u2019s exact clothes, and nothing added'));
+    wOn.style.marginTop = '8px';
+    panels.brand.appendChild(wOn);
+    panels.brand.appendChild(SB.el('div', 'pp-note',
+      'Models add coats, jackets, hats and bags nobody described. With this on, the app lists what each person ' +
+      'wears (from their description) and rules the rest out, in words the model sees; the writer is also told ' +
+      'to add nothing, and anything it adds anyway is marked on the card.'));
+
     const bText = document.createElement('textarea');
     bText.rows = 22;
     bText.value = (p.settings.brand && p.settings.brand.text) || SB.Brand.DEFAULT;
@@ -1423,6 +1438,7 @@
             p.settings.brand = (bTxt && bTxt !== SB.Brand.DEFAULT.trim())
               ? { enabled: bChk.checked, custom: true, text: bTxt }
               : { enabled: bChk.checked, custom: false };
+            p.settings.wardrobeLock = wChk.checked;
             p.settings.aiProvider = SB.Providers.normalize(chosenProvider);
             p.settings.geminiModel = (chosenModel || '').trim() || SB.GeminiModels.DEFAULT;
             p.settings.models = working.filter(function (m) { return (m.name || '').trim(); })

@@ -179,7 +179,8 @@
       check: function (res) {
         return SB.H3.problems(sc, res)
           .concat(SB.Brand.moveProblems(P(), shot, res.detailed_description))
-          .concat(SB.Brand.genderProblems(P(), shot, res.detailed_description));
+          .concat(SB.Brand.genderProblems(P(), shot, res.detailed_description))
+          .concat(invented(shot, res.detailed_description));
       }
     };
   }
@@ -190,6 +191,23 @@
     if (cast) parts.push(cast);
     return parts.filter(Boolean).join('\n\n');
   }
+
+  /* What the app writes around the writer's words (clay_reference_prompting_plan.md): the
+     clay render's own paragraph ahead of a still, and the wardrobe lock after both. Written
+     by the app, not asked for, so it is there whatever the writer did — and visible in the
+     stored prompt, where it can be read and edited. */
+  function decorateImage(shot) {
+    return function (raw) {
+      return [SB.Personas.clayPreamble(P(), shot), String(raw || '').trim(),
+        SB.Brand.wardrobeLock(P(), shot, 'image')].filter(Boolean).join('\n\n');
+    };
+  }
+  function decorateVideo(shot) {
+    return function (raw) {
+      return [String(raw || '').trim(), SB.Brand.wardrobeLock(P(), shot, 'video')].filter(Boolean).join('\n\n');
+    };
+  }
+  const invented = function (shot, text) { return SB.Brand.inventedProblems(P(), shot, text); };
 
   /* A board image model left on the MiniMax Image template: its prompt is the
      assembled brief, not a writer's paragraph. An edited template is the
@@ -213,10 +231,12 @@
         keys: ['imagePrompt', 'videoPrompt'],
         system: sys('both', im),
         targets: [{ model: im, field: 'imagePrompt' }, { model: vm, field: 'videoPrompt' }],
+        decorate: { imagePrompt: decorateImage(shot), videoPrompt: decorateVideo(shot) },
         check: function (res) {
           return SB.Brand.moveProblems(P(), shot, res.videoPrompt)
             .concat(SB.Brand.genderProblems(P(), shot, res.imagePrompt))
-            .concat(SB.Brand.genderProblems(P(), shot, res.videoPrompt));
+            .concat(SB.Brand.genderProblems(P(), shot, res.videoPrompt))
+            .concat(invented(shot, res.imagePrompt)).concat(invented(shot, res.videoPrompt));
         }
       });
       return jobs;
@@ -235,7 +255,10 @@
         keys: ['imagePrompt'],
         system: sys('image', im),
         targets: [{ model: im, field: 'imagePrompt' }],
-        check: function (res) { return SB.Brand.genderProblems(P(), shot, res.imagePrompt); }
+        decorate: { imagePrompt: decorateImage(shot) },
+        check: function (res) {
+          return SB.Brand.genderProblems(P(), shot, res.imagePrompt).concat(invented(shot, res.imagePrompt));
+        }
       });
     }
     if (wantV) {
@@ -248,9 +271,11 @@
         keys: ['videoPrompt'],
         system: sys('video', vm),
         targets: [{ model: vm, field: 'videoPrompt' }],
+        decorate: { videoPrompt: decorateVideo(shot) },
         check: function (res) {
           return SB.Brand.moveProblems(P(), shot, res.videoPrompt)
-            .concat(SB.Brand.genderProblems(P(), shot, res.videoPrompt));
+            .concat(SB.Brand.genderProblems(P(), shot, res.videoPrompt))
+            .concat(invented(shot, res.videoPrompt));
         }
       });
     }
@@ -551,8 +576,17 @@
             kept.push({ field: t.field, model: t.model });
             return;
           }
-          store(live, t.model, t.field, vals[t.field]);
+          const raw = vals[t.field];
+          store(live, t.model, t.field, j.decorate && j.decorate[t.field] ? j.decorate[t.field](raw) : raw);
           written.push(t.field);
+          /* What the writer added and kept through its one rewrite — read off its own words,
+             before the app's lock (which names the very things it rules out) was put round them. */
+          {
+            const inv = SB.Brand.inventedTerms(P(), live, raw), rec = live.prompts[t.model.id];
+            const by = rec.invented && typeof rec.invented === 'object' && !Array.isArray(rec.invented) ? rec.invented : {};
+            if (inv.length) by[t.field] = inv; else delete by[t.field];
+            if (Object.keys(by).length) rec.invented = by; else delete rec.invented;
+          }
           /* which call a video prompt was written for: the full-reference one
              cannot go through the frame-only push */
           if (t.field === 'videoPrompt') {
@@ -646,7 +680,8 @@
         /* with a clip, the camera is the clip's: a move it describes is not one nobody asked for */
         return SB.H3.problems(sc, res)
           .concat(sc.clip ? [] : SB.Brand.moveProblems(p, shot, res.detailed_description))
-          .concat(SB.Brand.genderProblems(p, shot, res.detailed_description));
+          .concat(SB.Brand.genderProblems(p, shot, res.detailed_description))
+          .concat(SB.Brand.inventedProblems(p, shot, res.detailed_description));
       }
     };
   }

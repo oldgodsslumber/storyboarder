@@ -225,7 +225,7 @@
           /decided someone/.test(ask) && /businessman/.test(ask), ask.slice(-200));
         const imId = P().settings.imageModelId;
         t('the neutral rewrite is what gets stored',
-          shots.b.prompts[imId].imagePrompt === neutral, shots.b.prompts[imId].imagePrompt);
+          shots.b.prompts[imId].imagePrompt.indexOf(neutral) === 0, shots.b.prompts[imId].imagePrompt);
         t('and nothing is flagged', !shots.b.prompts[imId].gendered, '');
 
         /* the cast is the authority: with her cast, her pronouns cost nothing */
@@ -254,7 +254,7 @@
         };
         await SB.Prompts.generateFor(shots.b, { image: true });
         t('a guess that survives the rewrite is kept, not thrown away',
-          shots.b.prompts[imId].imagePrompt === guessed, shots.b.prompts[imId].imagePrompt);
+          shots.b.prompts[imId].imagePrompt.indexOf(guessed) === 0, shots.b.prompts[imId].imagePrompt);
         t('and the prompt is flagged with the words it chose',
           Array.isArray(shots.b.prompts[imId].gendered) &&
           shots.b.prompts[imId].gendered.indexOf('businessman') >= 0,
@@ -288,7 +288,7 @@
           /You moved the camera/.test(ask) && /camera pushes/i.test(ask), ask.slice(-220));
         const vmId = P().settings.videoModelId;
         t('the rewritten prompt is what gets stored',
-          shots.a.prompts[vmId].videoPrompt === clean, shots.a.prompts[vmId].videoPrompt);
+          shots.a.prompts[vmId].videoPrompt.indexOf(clean) === 0, shots.a.prompts[vmId].videoPrompt);
         t('and nothing is flagged, because nothing survived',
           !shots.a.prompts[vmId].moved, JSON.stringify(shots.a.prompts[vmId].moved));
 
@@ -300,7 +300,7 @@
         };
         await SB.Prompts.generateFor(shots.a, { video: true });
         t('a move that survives the rewrite is kept, not thrown away',
-          shots.a.prompts[vmId].videoPrompt === moved, shots.a.prompts[vmId].videoPrompt);
+          shots.a.prompts[vmId].videoPrompt.indexOf(moved) === 0, shots.a.prompts[vmId].videoPrompt);
         t('and the prompt is flagged with the words that did it',
           Array.isArray(shots.a.prompts[vmId].moved) &&
           /camera pushes/i.test(shots.a.prompts[vmId].moved.join(' ')),

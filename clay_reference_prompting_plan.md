@@ -1,6 +1,20 @@
 # Clay references for GPT Image and Seedance, and no invented details
 
-Status: **planned, not built.** It follows `minimax_export_plan.md` (built) and reuses its manifest.
+Status: **§2 and §3 built on `V3-posebench` (2026-09-29).** The no-invention rider, check, marks and wardrobe
+lock work for every model, with a board switch. The GPT Image clay-render opening is built, along with the
+panel/template fix. Tests: `test-lock.mjs`.
+
+Decisions taken as recommended:
+- one corrective rewrite plus a mark;
+- the opening and lock are visible in the stored prompt;
+- the wardrobe comes from the description's clothing clause.
+
+**Still to do:**
+- **§4, Seedance reference mode.** It waits on experiments E1–E3, which spend credits on the ImagineArt account,
+  so they need a go-ahead.
+- **§1, the shared manifest refactor.** It's only needed once Seedance reference mode is built.
+
+It follows `minimax_export_plan.md` (built) and reuses its manifest.
 
 ## Why
 
