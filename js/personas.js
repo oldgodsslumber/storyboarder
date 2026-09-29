@@ -562,6 +562,8 @@
           'from the sheet. Do NOT reproduce the grid, the panels, the grey ground or a ' +
           'collage: the picture you are asked for is the shot described below, with these ' +
           'people and places in it looking exactly as they do in their panels.');
+        lines.push('  The app opens your prompt with this panel mapping in its own words. Do not ' +
+          'repeat it and do not mention the sheet, panels or a grid; name each subject as above.');
       } else {
         mapped.forEach(function (e) {
           lines.push('  image ' + e.n + ' = ' + e.label + (e.role ? ' (' + e.role + ')' : ''));
@@ -788,6 +790,43 @@
     return bits.join(' ');
   }
 
+  /* ---- which picture is whom, in the app's own words ----
+   *
+   * The cast block tells the WRITER that the left panel is Nat and the right
+   * one Bob — and the writer is then told to call them by name, so what
+   * reached the image model was "Nat leans on the counter" beside a grid of
+   * faces it had no way to tie to anyone. Names mean nothing to an image
+   * model; the binding has to be in the prompt it reads. So, like the clay
+   * paragraph, the app writes it and puts it at the head of the still.
+   *
+   * '' when no picture travels (the API-key door), and for a lone picture
+   * that is the blocking or a source frame: the clay paragraph and the
+   * source-frame edit already say what those are. */
+  function refPreamble(p, shot) {
+    if (!shot) return '';
+    const sent = (SB.Imagine && SB.Imagine.refsFor) ? SB.Imagine.refsFor(p, shot, 'image') : null;
+    if (!sent || sent.byKey || !sent.carries) return '';
+    const plan = (SB.Imagine && SB.Imagine.sheetPlan) ? SB.Imagine.sheetPlan(p, shot, 'image') : [];
+    const what = function (c) {
+      if (c.e.kind === 'pose') return 'the 3D blocking of this shot';
+      if (c.e.kind === 'shot') return 'the rendered frame of shot ' + c.label;
+      return c.label + (c.role ? ' (' + c.role + ')' : '');
+    };
+    if (plan.length > 1) {
+      const panels = plan.map(function (c) { return 'the ' + c.panel + ' panel is ' + what(c); }).join('; ');
+      return 'The attached image is a REFERENCE SHEET of ' + plan.length + ' panels on a grey ground, not a ' +
+        'scene: ' + panels + '. Take each subject’s face, hair, build, wardrobe and look ONLY from its ' +
+        'own panel, and nothing else from the sheet. Do not reproduce the grid, the panels, the grey ground ' +
+        'or a collage — the picture wanted is the single shot described below, with these subjects in it ' +
+        'looking exactly as they do in their panels.';
+    }
+    const first = sent.first;
+    if (!first || first.kind !== 'subject') return '';
+    return 'Image 1 is ' + first.label + (first.role ? ' (' + first.role + ')' : '') + '. Wherever ' +
+      first.label + ' is in this shot, match them exactly to image 1 — face, hair, build and wardrobe. ' +
+      'Take nothing else from it: not its background, pose, framing or light.';
+  }
+
   /* ---- the description says somebody walks in, but nobody is marked ----
    *
    * The mark is the only thing that makes this deterministic, so it has to be
@@ -918,7 +957,7 @@
     imagesOf: imagesOf, hero: hero, hasImage: hasImage,
     setImage: setImage, clearImage: clearImage, labelImage: labelImage,
     retiredOf: retiredOf, useRetired: useRetired, dropRetired: dropRetired,
-    forShot: forShot, framing: framing, clayPreamble: clayPreamble, toggleOnShot: toggleOnShot, block: block, generate: generate,
+    forShot: forShot, framing: framing, clayPreamble: clayPreamble, refPreamble: refPreamble,toggleOnShot: toggleOnShot, block: block, generate: generate,
     enters: enters, setEnters: setEnters, toggleEnters: toggleEnters,
     presentAtOpen: presentAtOpen, arriving: arriving, ARRIVAL_RE: ARRIVAL_RE,
     readsAsArrival: readsAsArrival,

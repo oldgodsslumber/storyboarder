@@ -198,7 +198,8 @@
      stored prompt, where it can be read and edited. */
   function decorateImage(shot) {
     return function (raw) {
-      return [SB.Personas.clayPreamble(P(), shot), String(raw || '').trim(),
+      return [SB.Personas.refPreamble(P(), shot), SB.Personas.clayPreamble(P(), shot),
+        String(raw || '').trim(),
         SB.Brand.wardrobeLock(P(), shot, 'image')].filter(Boolean).join('\n\n');
     };
   }

@@ -3692,6 +3692,51 @@ console.log('\n— the framing a description asks for —');
     'and it uses the board\u2019s own spelling of the type');
 }
 
+console.log('\n— the still says which picture is whom —');
+{
+  const p = SB.Model.newProject();
+  p.scenes[0].shots = [];
+  const sh = SB.Model.addShot(p, p.scenes[0].id, { type: 'Medium' });
+  const nat = SB.Personas.add(p, { name: 'Nat', description: 'Red blazer.' });
+  const bob = SB.Personas.add(p, { name: 'Bob', description: 'Grey suit.' });
+  SB.Personas.toggleOnShot(p, sh, nat.id);
+  SB.Personas.setImage(nat, SB.Blobs.image(p, 'data:image/png;base64,TkFU', 8, 8), 'front', null);
+  SB.Personas.setImage(bob, SB.Blobs.image(p, 'data:image/png;base64,Qk9C', 8, 8), 'front', null);
+
+  eq(SB.Personas.refPreamble(p, sh), '', 'nothing without imagine.js to say what travels');
+
+  const wasIM = SB.Imagine;
+  const imgs = function () { return SB.Refs.images(p, sh, 'image'); };
+  let key = false, panels = [];
+  SB.Imagine = {
+    refsFor: function () {
+      return { carries: key ? 0 : (panels.length || Math.min(1, imgs().length)),
+        first: imgs()[0] || null, byKey: key };
+    },
+    sheetPlan: function () { return panels; }
+  };
+  eq(SB.Personas.refPreamble(p, sh),
+    'Image 1 is Nat (front). Wherever Nat is in this shot, match them exactly to image 1 — face, hair, ' +
+    'build and wardrobe. Take nothing else from it: not its background, pose, framing or light.',
+    'a lone subject picture is bound to its name in the prompt the image model reads');
+  key = true;
+  eq(SB.Personas.refPreamble(p, sh), '', 'the API-key door sends no picture, so it names none');
+  key = false;
+
+  SB.Personas.toggleOnShot(p, sh, bob.id);
+  panels = imgs().map(function (e, i) {
+    return { n: i + 1, label: e.label, role: e.role, panel: ['left', 'right'][i], e: e };
+  });
+  const sheet = SB.Personas.refPreamble(p, sh);
+  eq(/^The attached image is a REFERENCE SHEET of 2 panels on a grey ground, not a scene: the left panel is Nat \(front\); the right panel is Bob \(front\)\./.test(sheet), true,
+    'a sheet is described panel by panel, by name');
+  eq(/Do not reproduce the grid, the panels, the grey ground or a collage/.test(sheet), true,
+    'and the model is told not to draw the sheet');
+  eq(/app opens your prompt with this panel mapping/.test(SB.Personas.block(p, sh, null, 'image')), true,
+    'and the writer is told the app has already said it');
+  SB.Imagine = wasIM;
+}
+
 console.log('\n— 3D blocking (pose.js) —');
 {
   const p = SB.Model.newProject();
