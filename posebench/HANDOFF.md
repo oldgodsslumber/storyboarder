@@ -272,3 +272,20 @@ Plan: `pose_motion_plan.md`, all seven steps built. The code is the `motion take
     (The Wikimedia clip "Jumping jack slow motion" shows an *ant*, the jumping jack ant, so nobody is found in it.
     Don't use it as a test.)
   - Headless swiftshader reads video at about 2 frames per second. On real hardware it is far faster.
+
+## Live smoothing and kept models (2026-09-29)
+- **Smoothing** (camera panel, beside Model; Off / Light / **Medium** / Strong, remembered as `posebench.camSmooth`).
+  It works in two parts:
+  - **The landmark filter:** each level sets the One-Euro cut-off and beta (`SMOOTH`).
+  - **The glide:** in live follow, a reading becomes a target (`glideTo`). The render loop eases each joint's
+    quaternion toward it with the level's time constant (`glideTick`; Medium is 80 ms, so it settles in about 200 ms).
+    This is what removes the choppiness of a model reading 15–30 times a second.
+
+  Snaps, photos, arranging and a take's bake never glide. Stopping live follow, stopping the camera, and any exact
+  apply land the glide first (`glideFinish`).
+- **Kept models.** Pose and person-finder models are fetched once and stored in IndexedDB (`posebench-models`,
+  keyed by URL). After that they're handed to MediaPipe as `modelAssetBuffer`, and a later open makes no model
+  request. If storage is unavailable, it falls back to the URL. The MediaPipe wasm comes from jsdelivr, which the
+  browser caches normally.
+- **Headless testing:** the Accurate model on swiftshader starves the test harness. Set `posebench.camModel` to
+  `lite` in test runs.

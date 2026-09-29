@@ -556,8 +556,12 @@
         <div class="field"><label for="camBody">Body</label>
           <select id="camBody"><option value="auto">Auto</option><option value="full">Full body</option><option value="upper">Upper body only</option></select></div>
       </div>
-      <div class="field"><label for="camModel">Model</label>
-        <select id="camModel"><option value="lite">Fast (6 MB)</option><option value="full">Balanced (9 MB)</option><option value="heavy" selected>Accurate (31 MB)</option></select></div>
+      <div class="split">
+        <div class="field"><label for="camModel">Model</label>
+          <select id="camModel"><option value="lite">Fast (6 MB)</option><option value="full">Balanced (9 MB)</option><option value="heavy" selected>Accurate (31 MB)</option></select></div>
+        <div class="field"><label for="camSmoothSel" title="How smoothly the figure follows you live: steadier and gliding, at the cost of a little lag">Smoothing</label>
+          <select id="camSmoothSel"><option value="off">Off (raw)</option><option value="light">Light</option><option value="medium" selected>Medium</option><option value="strong">Strong</option></select></div>
+      </div>
       <label class="toggle"><span>Arrange like the photo<span class="d">Two or more people in a photo: place and turn them as it shows</span></span><input type="checkbox" id="camArrange" checked><i></i></label>
       <label class="toggle"><span>Use unsure joints<span class="d">On: go with the model's best guess. Off: keep a joint as it was when the model is unsure</span></span><input type="checkbox" id="camTrust" checked><i></i></label>
       <label class="toggle"><span>Swap sides<span class="d">Figure acts as your reflection</span></span><input type="checkbox" id="camSwap"><i></i></label>
@@ -2363,6 +2367,30 @@ const VIS_OK=0.5;
 // the nose tip sits below the ear line; a level head measures as looking this far down, so it is taken back out
 const NOSE_DROP=15*DEG;
 
+/* The models are fetched once and kept in this browser (IndexedDB), then handed to MediaPipe as bytes: the model
+ * host's own caching sent the 31 MB Accurate model down again on most opens. Falls back to the URL if storage is
+ * unavailable (a private window, blocked site data). */
+const MODEL_DB='posebench-models';
+function modelDb(){return new Promise((res,rej)=>{let r;try{r=indexedDB.open(MODEL_DB,1);}catch(e){rej(e);return;}
+  r.onupgradeneeded=()=>r.result.createObjectStore('m');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);});}
+async function modelKept(url){
+  try{const db=await modelDb();
+    return await new Promise(res=>{const q=db.transaction('m').objectStore('m').get(url);q.onsuccess=()=>res(q.result||null);q.onerror=()=>res(null);});
+  }catch(e){return null;}
+}
+async function modelBytes(url){
+  const kept=await modelKept(url);
+  if(kept)return {bytes:new Uint8Array(kept),kept:true};
+  const r=await fetch(url); if(!r.ok)throw new Error('the model download failed ('+r.status+')');
+  const buf=await r.arrayBuffer();
+  try{const db=await modelDb();await new Promise(res=>{const t=db.transaction('m','readwrite');t.objectStore('m').put(buf,url);t.oncomplete=res;t.onerror=res;t.onabort=res;});}catch(e){}
+  return {bytes:new Uint8Array(buf),kept:false};
+}
+// base options for a model: its bytes when they can be had, the URL otherwise
+async function modelOpts(url,delegate){
+  try{const m=await modelBytes(url);return {modelAssetBuffer:m.bytes,delegate};}
+  catch(e){return {modelAssetPath:url,delegate};}
+}
 async function mpVision(){
   if(MP.vision)return;
   MP.vision=await import(MP.base+'/vision_bundle.mjs');
@@ -2382,11 +2410,11 @@ async function mpLoad(model,mode){
     if(MP.model===model&&MP.lm[mode])return;
     await mpVision();
     if(MP.model!==model){Object.values(MP.lm).forEach(l=>{try{l.close();}catch(e){}});MP.lm={};MP.model=model;}
-    const opts=d=>({baseOptions:{modelAssetPath:mpModelUrl(model),delegate:d},runningMode:mode,numPoses:1,
+    const opts=async d=>({baseOptions:await modelOpts(mpModelUrl(model),d),runningMode:mode,numPoses:1,
       minPoseDetectionConfidence:0.5,minPosePresenceConfidence:0.5,minTrackingConfidence:0.5});
     // the GPU delegate needs WebGL2; the CPU one always works, just slower
-    try{MP.lm[mode]=await MP.vision.PoseLandmarker.createFromOptions(MP.files,opts('GPU'));}
-    catch(e){MP.lm[mode]=await MP.vision.PoseLandmarker.createFromOptions(MP.files,opts('CPU'));}
+    try{MP.lm[mode]=await MP.vision.PoseLandmarker.createFromOptions(MP.files,await opts('GPU'));}
+    catch(e){MP.lm[mode]=await MP.vision.PoseLandmarker.createFromOptions(MP.files,await opts('CPU'));}
   });
   return MP.lm[mode];
 }
@@ -2396,7 +2424,7 @@ async function detLoad(){
   await mpSerial(async()=>{
     if(MP.det)return;
     await mpVision();
-    MP.det=await MP.vision.ObjectDetector.createFromOptions(MP.files,{baseOptions:{modelAssetPath:DET_URL,delegate:'CPU'},
+    MP.det=await MP.vision.ObjectDetector.createFromOptions(MP.files,{baseOptions:await modelOpts(DET_URL,'CPU'),
       runningMode:'IMAGE',categoryAllowlist:['person'],scoreThreshold:0.3,maxResults:6});
   });
   return MP.det;
@@ -2685,7 +2713,7 @@ const camTwoLive=()=>camPeople()==='2';
 function camWho(){$('camWho').textContent=camTwoLive()?'→ two figures':(act?'→ '+act.name:'');}
 function camOpen(){$('camPanel').classList.add('open');camWho();}
 function camStopStream(){
-  cancelAnimationFrame(camS.raf); camS.raf=0;
+  cancelAnimationFrame(camS.raf); camS.raf=0; glideFinish();
   if(camS.stream){camS.stream.getTracks().forEach(t=>t.stop());camS.stream=null;}
   const v=$('camVideo'); v.srcObject=null; v.style.display='none';
   $('camStart').textContent='▶ Start camera'; $('camLive').disabled=true; $('camSnap').disabled=true; $('camRec').disabled=true;
@@ -2719,14 +2747,53 @@ function camDraw(poses,w,h){
     }
   });
 }
+/* Live smoothing, two halves:
+ *  - the landmark filter (One-Euro): a lower cut-off is steadier, a higher beta lets fast moves through sooner;
+ *  - the glide: the model reads a pose 15-30 times a second, and snapping the figure to each reading is what looks
+ *    choppy. So in live follow a reading sets a TARGET and the figure eases toward it on every screen frame, with a
+ *    time constant per level. A snap, a photo and a take's bake never glide — they are exact. */
+const SMOOTH={off:{filt:null,tau:0},light:{filt:[1.2,0.8],tau:0.04},medium:{filt:[0.6,0.5],tau:0.08},strong:{filt:[0.3,0.3],tau:0.15}};
+const smoothLevel=()=>SMOOTH[$('camSmoothSel').value]||SMOOTH.medium;
 function smoothWith(filters,pose,t){
-  if(!filters.length)pose.p.forEach(()=>filters.push([new OneEuro(1.2,0.8),new OneEuro(1.2,0.8),new OneEuro(1.2,0.8)]));
+  const lv=smoothLevel();
+  if(!lv.filt)return pose;
+  if(!filters.length)pose.p.forEach(()=>filters.push([0,1,2].map(()=>new OneEuro(lv.filt[0],lv.filt[1]))));
   return {p:pose.p.map((v,i)=>new V3(filters[i][0].f(v.x,t),filters[i][1].f(v.y,t),filters[i][2].f(v.z,t))),v:pose.v,img:pose.img};
 }
+// the glide: per figure, the pose it is easing toward
+const glides=new Map();
+function poseState(f){return {q:ORDER.filter(n=>f.joints[n]).map(n=>f.joints[n].pivot.quaternion.clone()),
+  pel:f.joints.pelvis.pivot.position.clone(),y:f.group.position.y};}
+function setPoseState(f,st){ORDER.filter(n=>f.joints[n]).forEach((n,i)=>f.joints[n].pivot.quaternion.copy(st.q[i]));
+  f.joints.pelvis.pivot.position.copy(st.pel);f.group.position.y=st.y;f.group.updateMatrixWorld(true);}
+// run a retarget, but show it as a target to glide to rather than a jump
+function glideTo(f,fn){
+  if(!smoothLevel().tau)return fn();
+  const shown=poseState(f), r=fn(), target=poseState(f);
+  setPoseState(f,shown);
+  const g=glides.get(f); glides.set(f,{target,last:g?g.last:performance.now()});
+  return r;
+}
+function glideTick(now){
+  if(!glides.size)return;
+  const tau=smoothLevel().tau;
+  glides.forEach((g,f)=>{
+    if(!figures.includes(f)){glides.delete(f);return;}
+    const dt=Math.min(0.1,Math.max(0,(now-g.last)/1000)); g.last=now;
+    const a=tau?1-Math.exp(-dt/tau):1;
+    ORDER.filter(n=>f.joints[n]).forEach((n,i)=>f.joints[n].pivot.quaternion.slerp(g.target.q[i],a));
+    f.joints.pelvis.pivot.position.lerp(g.target.pel,a); f.group.position.y+=(g.target.y-f.group.position.y)*a;
+    f.group.updateMatrixWorld(true);
+  });
+}
+// land every glide where it was going — before a commit, a snap, or stopping
+function glideFinish(){glides.forEach((g,f)=>{if(figures.includes(f))setPoseState(f,g.target);});glides.clear();}
 function camSmooth(pose,t){if(!camS.filters)camS.filters=[];return smoothWith(camS.filters,pose,t);}
 function camApply(pose,commitNow,o={}){
   if(!act||!pose)return null;
-  const r=retarget(act,$('camSwap').checked?swapPose(pose):pose,Object.assign({body:$('camBody').value,threshold:camThreshold(false)},o));
+  const go=()=>retarget(act,$('camSwap').checked?swapPose(pose):pose,Object.assign({body:$('camBody').value,threshold:camThreshold(false)},o));
+  let r;
+  if(commitNow||o.fresh){glideFinish();r=go();}else r=glideTo(act,go);
   syncAxes();
   if(commitNow)commit();
   return r;
@@ -2793,8 +2860,11 @@ function arrangeLikePhoto(figs,people,W,H){
   });
 }
 function camApplyMulti(people,figs,o){
-  const res=people.map((pp,i)=>({fig:figs[i],r:retarget(figs[i],$('camSwap').checked?swapPose(pp.pose):pp.pose,
-    Object.assign({body:$('camBody').value,threshold:camThreshold(false)},o))}));
+  const live=!(o&&(o.fresh||o.arrange));
+  if(!live)glideFinish();
+  const res=people.map((pp,i)=>{const go=()=>retarget(figs[i],$('camSwap').checked?swapPose(pp.pose):pp.pose,
+    Object.assign({body:$('camBody').value,threshold:camThreshold(false)},o));
+    return {fig:figs[i],r:live?glideTo(figs[i],go):go()};});
   syncAxes();
   return res;
 }
@@ -2879,6 +2949,7 @@ async function camStart(){
 }
 function camLiveStop(keep){
   if(!camS.live)return;
+  glideFinish();
   camS.live=false; $('camLive').classList.remove('on'); $('camLive').textContent='● Follow live';
   if(keep)commit();
 }
@@ -2989,7 +3060,10 @@ $('camPhotoBtn').onclick=()=>$('camFile').click();
 $('camFile').onchange=e=>{const f=e.target.files[0];e.target.value='';if(!f)return;const r=new FileReader();r.onload=()=>camFromImage(r.result).catch(err=>camTell('That did not work: '+(err.message||err),true));r.readAsDataURL(f);};
 /* The most accurate model by default, and whichever one was last picked after that — kept on this machine, so
    neither a reload nor opening a new card puts it back. */
-const CAM_MODEL_KEY='posebench.camModel';
+const CAM_MODEL_KEY='posebench.camModel', CAM_SMOOTH_KEY='posebench.camSmooth';
+try{const m=localStorage.getItem(CAM_SMOOTH_KEY);if(m&&SMOOTH[m])$('camSmoothSel').value=m;}catch(e){}
+$('camSmoothSel').onchange=()=>{try{localStorage.setItem(CAM_SMOOTH_KEY,$('camSmoothSel').value);}catch(e){}
+  camS.filters=null; if(camS.m)camS.m.filters=[]; if(!smoothLevel().tau)glideFinish();};
 try{const m=localStorage.getItem(CAM_MODEL_KEY);if(m&&MP_MODELS[m])$('camModel').value=m;}catch(e){}
 $('camModel').onchange=()=>{try{localStorage.setItem(CAM_MODEL_KEY,$('camModel').value);}catch(e){}if(camS.stream)camLoadFor().catch(e=>camTell('The pose model did not load: '+(e.message||e),true));};
 $('camPeople').onchange=()=>{camWho();camLiveStop(true);camS.m.boxes=null;camS.m.filters=[];camS.m.recent=[];
@@ -3888,9 +3962,10 @@ refreshPropUI();
 (function loop(){requestAnimationFrame(loop);
   figures.forEach(f=>{if(f.look==='camera')aimHead(f,camera.position);});
   tlTick(performance.now());
+  glideTick(performance.now());
   updateHandles();renderer.render(scene,camera);})();
 if(EMBED)try{window.parent.postMessage({type:'posebench:ready'},'*');}catch(e){}
-window.__pb={get takes(){return takes;},get tl(){return tl;},makeTake,bakeTake,openTake,showTakeAt,exportTake,cutList,takeSnap,takeLoad,camImportVideo,addCam,addCut,tlPlay,setCamView,viewNow,blockingText,retarget,synthLandmarks,readPose,camFromImage,mpLoad,detLoad,findPeople,camApply,camStart,camSnap,get camState(){return camS;},get figures(){return figures;},get props(){return props;},get act(){return act;},cam,fitShot,setView,frameAll,PRESETS,WORK,SCENES,
+window.__pb={get glides(){return glides;},glideTick,glideFinish,camApply,get tl(){return tl;},makeTake,bakeTake,openTake,showTakeAt,exportTake,cutList,takeSnap,takeLoad,camImportVideo,addCam,addCut,tlPlay,setCamView,viewNow,blockingText,retarget,synthLandmarks,readPose,camFromImage,mpLoad,detLoad,findPeople,camApply,camStart,camSnap,get camState(){return camS;},get figures(){return figures;},get props(){return props;},get act(){return act;},cam,fitShot,setView,frameAll,PRESETS,WORK,SCENES,
   camera,applyCam,selectJoint,solveChain,commit,applyNamed,goalFrame,eyePoint};
 })();
 </script>
