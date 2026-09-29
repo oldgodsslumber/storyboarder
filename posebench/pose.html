@@ -2404,19 +2404,20 @@ async function mpSerial(fn){
 }
 // One pose landmarker per running mode. The webcam's VIDEO one carries tracking state from frame to frame; photos,
 // and the per-person crops of a two-person frame, go through an IMAGE one so they never disturb it.
-async function mpLoad(model,mode){
-  if(MP.model===model&&MP.lm[mode])return MP.lm[mode];
+async function mpLoad(model,mode,slot){
+  const key=slot||mode;
+  if(MP.model===model&&MP.lm[key])return MP.lm[key];
   await mpSerial(async()=>{
-    if(MP.model===model&&MP.lm[mode])return;
+    if(MP.model===model&&MP.lm[key])return;
     await mpVision();
     if(MP.model!==model){Object.values(MP.lm).forEach(l=>{try{l.close();}catch(e){}});MP.lm={};MP.model=model;}
     const opts=async d=>({baseOptions:await modelOpts(mpModelUrl(model),d),runningMode:mode,numPoses:1,
       minPoseDetectionConfidence:0.5,minPosePresenceConfidence:0.5,minTrackingConfidence:0.5});
     // the GPU delegate needs WebGL2; the CPU one always works, just slower
-    try{MP.lm[mode]=await MP.vision.PoseLandmarker.createFromOptions(MP.files,await opts('GPU'));}
-    catch(e){MP.lm[mode]=await MP.vision.PoseLandmarker.createFromOptions(MP.files,await opts('CPU'));}
+    try{MP.lm[key]=await MP.vision.PoseLandmarker.createFromOptions(MP.files,await opts('GPU'));}
+    catch(e){MP.lm[key]=await MP.vision.PoseLandmarker.createFromOptions(MP.files,await opts('CPU'));}
   });
-  return MP.lm[mode];
+  return MP.lm[key];
 }
 const mpReady=(model,mode)=>MP.model===model&&!!MP.lm[mode];
 async function detLoad(){
@@ -3651,25 +3652,52 @@ async function camImportVideo(file){
   v.style.display='block'; $('camPhoto').style.display='none'; $('camEmpty').style.display='none';
   try{await new Promise((res,rej)=>{v.onloadedmetadata=res;v.onerror=()=>rej(new Error('this browser cannot play that file'));});}
   catch(e){camTell('Could not read it: '+e.message,true);return null;}
-  const W=v.videoWidth,H=v.videoHeight,dur=Math.min(v.duration||0,TAKE_MAX_S);
+  const W=v.videoWidth,H=v.videoHeight;
+  const seek=t=>new Promise(r=>{let ok=false;const done=()=>{if(ok)return;ok=true;v.removeEventListener('seeked',done);r();};
+    v.addEventListener('seeked',done);setTimeout(done,3000);v.currentTime=t;});
+  /* A recording straight from a browser (MediaRecorder) reports its length as Infinity until it has been read to the
+     end; asked for 60 s of it, the loop read far past the last frame. Seek to the end once to learn it. */
+  let len=v.duration;
+  if(!isFinite(len)||!len){await seek(1e9);len=v.duration;if(!isFinite(len))len=v.currentTime;await seek(0);}
+  const dur=Math.min(len||0,TAKE_MAX_S);
   if(!W||!dur){camTell('That video has no frames this browser can read.',true);return null;}
   const two=camPeople()==='2', model=$('camModel').value;
   camBusy(true,'Loading the pose model…');
-  try{if(two){await mpLoad(model,'IMAGE');await detLoad();}else await mpLoad(model,'VIDEO');}
+  /* A landmarker of its own for the file, made fresh each time: the webcam's carries a tracking state (where the
+     person was a moment ago) that has nothing to do with this footage. */
+  if(MP.lm.FILE){try{MP.lm.FILE.close();}catch(e){}delete MP.lm.FILE;}
+  try{await mpLoad(model,'IMAGE');if(two)await detLoad();else await mpLoad(model,'VIDEO','FILE');}
   catch(e){camBusy(false);camTell('The pose model did not load: '+(e.message||e),true);return null;}
-  const frames=[], step=1/TAKE_FPS, base=performance.now(), N=Math.floor(dur/step);
-  const seek=t=>new Promise(r=>{const done=()=>{v.removeEventListener('seeked',done);r();};v.addEventListener('seeked',done);v.currentTime=t;});
+  /* Every frame is copied to a plain canvas before it is read. Straight off a <video> element that has just been
+     seeked, a hardware-decoded frame is often not ready for the GPU model yet — it read a blank picture and found
+     nobody, frame after frame, while the webcam (never seeked) worked. The canvas copy waits for the real frame. */
+  const sc=Math.min(1,1280/Math.max(W,H)), cv=document.createElement('canvas');
+  cv.width=Math.max(2,Math.round(W*sc)); cv.height=Math.max(2,Math.round(H*sc));
+  const cx=cv.getContext('2d',{willReadFrequently:false});
+  const presented=()=>new Promise(r=>{if(!v.requestVideoFrameCallback){requestAnimationFrame(()=>r());return;}
+    let ok=false;const done=()=>{if(!ok){ok=true;r();}};v.requestVideoFrameCallback(done);setTimeout(done,250);});
+  const frames=[], step=1/TAKE_FPS, N=Math.floor(dur/step);
+  let found=0, retried=0;
   for(let i=0;i<=N;i++){
     const t=Math.min(dur-0.001,i*step);
-    await seek(t);
+    await seek(t); await presented();
+    cx.drawImage(v,0,0,cv.width,cv.height);
     let people=[];
-    if(two)people=(await findPeople(v,W,H,2,{whole:true,retry:false})).map(p=>p.pose);
-    else{const p=readPose(MP.lm.VIDEO.detectForVideo(v,nextTs(base+t*1000)));people=[p];}
+    if(two)people=(await findPeople(cv,cv.width,cv.height,2,{whole:true,retry:false})).map(p=>p.pose);
+    else{
+      let p=null;
+      try{p=readPose(MP.lm.FILE.detectForVideo(cv,Math.round(t*1000)+1));}catch(e){p=null;}
+      // a frame the tracker loses gets a fresh, more trusting look on its own
+      if(!p){try{p=readPose(await poseDetect(MP.lm.IMAGE,cv,true));if(p)retried++;}catch(e){p=null;}}
+      people=[p];
+    }
+    if(people.some(Boolean))found++;
     camDraw(people,W,H);
     frames.push({t:t*1000,people:people.length?people:[null]});
-    if(i%5===0)camBusy(true,'Reading frame '+(i+1)+' / '+(N+1)+'…');
+    if(i%5===0)camBusy(true,'Reading frame '+(i+1)+' / '+(N+1)+' — a person in '+found+' so far…');
   }
   URL.revokeObjectURL(url);
+  if(!found){camBusy(false);camTell('Nobody was found in any frame of that video. The pose model needs one person, most of their body in view — try a clip where they fill more of the picture.',true);return null;}
   camBusy(true,'Cleaning up the take…'); await new Promise(r=>setTimeout(r,20));
   const figs=two?figsForPeople(Math.max(1,Math.max(...frames.map(f=>f.people.filter(Boolean).length)))):[act];
   const tk=makeTake(frames,figs,W,H);
@@ -3677,7 +3705,10 @@ async function camImportVideo(file){
   if(!tk){camTell('Nobody was found in that video.',true);return null;}
   tk.name=file.name.replace(/\.[^.]+$/,'').slice(0,40)||tk.name; saveTakes();
   openTake(tk); commit();
-  camTell('✓ '+tk.name+': '+tk.dur.toFixed(1)+'s read from the video. Play it, add cameras and cut it below.',false,true);
+  const share=found/(N+1);
+  camTell((share<0.5?'⚠ ':'✓ ')+tk.name+': '+tk.dur.toFixed(1)+'s read from the video — a person in '+found+' of '+(N+1)+' frames'+
+    (share<0.5?'; the rest are gaps the figure holds still through. Try a clip where the person fills more of the picture.'
+      :'. Play it, add cameras and cut it below.'),share<0.5,share>=0.5);
   return tk;
 }
 

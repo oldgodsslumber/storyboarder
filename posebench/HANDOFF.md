@@ -289,3 +289,15 @@ Plan: `pose_motion_plan.md`, all seven steps built. The code is the `motion take
   browser caches normally.
 - **Headless testing:** the Accurate model on swiftshader starves the test harness. Set `posebench.camModel` to
   `lite` in test runs.
+
+## Video-file import, hardened (2026-09-29, after a user report)
+Reported: the webcam posed fine, but a video file didn't pose at all. I couldn't reproduce it headless: software
+decoding plus the CPU delegate. The most likely cause on a real machine is GPU decoding: straight after a seek, the
+`<video>` frame isn't ready for the GPU landmarker, so it reads a blank picture. `camImportVideo` now:
+- waits for `seeked`, then for `requestVideoFrameCallback` (or a frame, if that's unavailable);
+- copies the frame to a canvas (at most 1280 px long edge) and detects on the canvas, never the video element;
+- uses a fresh VIDEO landmarker of its own (`MP.lm.FILE`, via `mpLoad(model,'VIDEO','FILE')`), so the webcam's
+  tracking state doesn't carry into the file;
+- gives a frame it misses a second look with the IMAGE landmarker at a lower confidence (`poseDetect(...,true)`);
+- measures a recording that reports an `Infinity` duration (MediaRecorder output) by seeking to its end first;
+- reports "a person in N of M frames", and warns when that's under half.
