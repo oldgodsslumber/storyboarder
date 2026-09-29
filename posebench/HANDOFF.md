@@ -141,7 +141,7 @@ The same file still runs on its own in a browser.
 This is the **◉ Pose from camera or photo** button at the top of the Pose section. It opens a floating panel with a
 mirrored webcam preview and the detected skeleton drawn over it. It also has **Follow live**, **Snap in 3** (or press
 Space), **From photo…** (you can also drop a picture on the panel), a Body switch (auto / full / upper), a model choice
-(lite / full / heavy) and **Swap sides**. The plan is `pose_from_camera_plan.md` in the storyboarder repo.
+(lite / full / heavy; heavy by default, and the last pick is remembered in `localStorage` as `posebench.camModel`) and **Swap sides**. The plan is `pose_from_camera_plan.md` in the storyboarder repo.
 
 - **Model:** `@mediapipe/tasks-vision@1.0.1` (Apache-2.0), loaded with dynamic `import()` from jsdelivr. The models come
   from `storage.googleapis.com/mediapipe-models/pose_landmarker/*`. The GPU delegate is tried first, then the CPU one.

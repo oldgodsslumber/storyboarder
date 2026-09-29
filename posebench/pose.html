@@ -557,7 +557,7 @@
           <select id="camBody"><option value="auto">Auto</option><option value="full">Full body</option><option value="upper">Upper body only</option></select></div>
       </div>
       <div class="field"><label for="camModel">Model</label>
-        <select id="camModel"><option value="lite">Fast (6 MB)</option><option value="full" selected>Balanced (9 MB)</option><option value="heavy">Accurate (31 MB)</option></select></div>
+        <select id="camModel"><option value="lite">Fast (6 MB)</option><option value="full">Balanced (9 MB)</option><option value="heavy" selected>Accurate (31 MB)</option></select></div>
       <label class="toggle"><span>Arrange like the photo<span class="d">Two or more people in a photo: place and turn them as it shows</span></span><input type="checkbox" id="camArrange" checked><i></i></label>
       <label class="toggle"><span>Use unsure joints<span class="d">On: go with the model's best guess. Off: keep a joint as it was when the model is unsure</span></span><input type="checkbox" id="camTrust" checked><i></i></label>
       <label class="toggle"><span>Swap sides<span class="d">Figure acts as your reflection</span></span><input type="checkbox" id="camSwap"><i></i></label>
@@ -2987,7 +2987,11 @@ $('camLive').onclick=camLiveToggle;
 $('camSnap').onclick=camSnap;
 $('camPhotoBtn').onclick=()=>$('camFile').click();
 $('camFile').onchange=e=>{const f=e.target.files[0];e.target.value='';if(!f)return;const r=new FileReader();r.onload=()=>camFromImage(r.result).catch(err=>camTell('That did not work: '+(err.message||err),true));r.readAsDataURL(f);};
-$('camModel').onchange=()=>{if(camS.stream)camLoadFor().catch(e=>camTell('The pose model did not load: '+(e.message||e),true));};
+/* The most accurate model by default, and whichever one was last picked after that — kept on this machine, so
+   neither a reload nor opening a new card puts it back. */
+const CAM_MODEL_KEY='posebench.camModel';
+try{const m=localStorage.getItem(CAM_MODEL_KEY);if(m&&MP_MODELS[m])$('camModel').value=m;}catch(e){}
+$('camModel').onchange=()=>{try{localStorage.setItem(CAM_MODEL_KEY,$('camModel').value);}catch(e){}if(camS.stream)camLoadFor().catch(e=>camTell('The pose model did not load: '+(e.message||e),true));};
 $('camPeople').onchange=()=>{camWho();camLiveStop(true);camS.m.boxes=null;camS.m.filters=[];camS.m.recent=[];
   if(camS.stream)camLoadFor().catch(e=>camTell('Could not load: '+(e.message||e),true));};
 {
