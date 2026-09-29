@@ -301,3 +301,17 @@ decoding plus the CPU delegate. The most likely cause on a real machine is GPU d
 - gives a frame it misses a second look with the IMAGE landmarker at a lower confidence (`poseDetect(...,true)`);
 - measures a recording that reports an `Infinity` duration (MediaRecorder output) by seeking to its end first;
 - reports "a person in N of M frames", and warns when that's under half.
+
+## Limbs solved to end points; facing from the video (2026-09-29, after "it found the video but messed up the posing")
+Test clip: a squat filmed from behind, at three-quarters (Wikimedia "Squat - exercise demonstration video").
+- **Legs and arms reach the measured ankle and wrist** (`twoBone`), scaled from the performer's limb lengths to the
+  figure's. The measured knee or elbow only chooses the bend plane.
+  - **Why:** laying fixed-length bones along the measured thigh and shin *directions* failed from behind. The model's
+    depth for one thigh put the knee above the hip (thighs measured 0.26 m and 0.44 m), which threw that leg up.
+  - **Result:** both feet are planted and both knees bend forward in the squat.
+  - **Clean data is unaffected:** the 18-preset round trip is unchanged.
+- **Face as in the video** (take setting, on for video-file imports): the figure starts turned the way the performer
+  faces the camera (`group.rotation.y = base + yaw`), so a performer filmed from behind is a figure seen from behind.
+  Webcam takes keep the old rule (the figure keeps its facing; only turns are copied).
+- **Still limited by the model:** hands hidden behind the head or a bar, and torso lean seen from behind (the model
+  measured about 17° where the lifter leans more).

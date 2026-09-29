@@ -509,6 +509,7 @@
         </div>
         <div class="axis"><div class="lab"><span>Smoothing</span></div><input type="range" id="tlSmooth" min="0" max="3" step="0.5"></div>
         <label class="toggle"><span>Keep feet planted</span><input type="checkbox" id="tlFoot"><i></i></label>
+        <label class="toggle"><span>Face as in the video<span class="d">On: turned the way the performer faces the camera. Off: the figure keeps its facing</span></span><input type="checkbox" id="tlFace"><i></i></label>
         <div class="note" id="tlMode"></div>
         <div class="row" style="margin-top:8px"><button class="btn grow" id="tlRebake">Re-bake</button><button class="btn grow" id="tlClearKeys">Clear <span id="tlKeys"></span></button><button class="btn grow" id="tlDelete">Delete</button></div>
         <div class="note">Pause and pose a figure to fix that moment — the fix blends in and out. Re-bake applies the settings above.</div>
@@ -2567,6 +2568,20 @@ function limbFrame(f,root,midJ,du,df,bend){
   return true;
 }
 const UPPER_JOINTS=['spine','chest','neck','head','lShoulder','lElbow','lWrist','rShoulder','rElbow','rWrist'];
+/* Two bones reaching a measured end point: returns the world directions of the upper and lower bone. `rel` is the
+ * end point relative to the root, already scaled to the figure; `pole` says which way the middle joint bends (the
+ * measured middle joint's direction). Null when there is nothing to solve. */
+function twoBone(rootW,rel,a,b,pole,fallbackPole){
+  if(rel.lengthSq()<1e-8)return null;
+  const u=rel.clone().normalize(), d=clamp(rel.length(),Math.abs(a-b)+1e-3,a+b-1e-4);
+  let pp=pole.clone().addScaledVector(u,-pole.dot(u));
+  if(pp.lengthSq()<1e-6&&fallbackPole){pp=fallbackPole.clone();pp.addScaledVector(u,-pp.dot(u));}
+  if(pp.lengthSq()<1e-8)return null;
+  pp.normalize();
+  const cosA=clamp((a*a+d*d-b*b)/(2*a*d),-1,1), sinA=Math.sqrt(1-cosA*cosA);
+  const mid=rootW.clone().addScaledVector(u,a*cosA).addScaledVector(pp,a*sinA), end=rootW.clone().addScaledVector(u,d);
+  return {up:mid.clone().sub(rootW).normalize(),lo:end.clone().sub(mid).normalize(),mid,end};
+}
 function retarget(f,pose,o={}){
   const P=pose.p.map(v=>v.clone()), vis=pose.v, TH=o.threshold||VIS_OK;
   const ok=(...ks)=>ks.every(k=>vis[LM[k]]>=TH);
@@ -2630,13 +2645,22 @@ function retarget(f,pose,o={}){
       applied.push('head');
     }
   }
+  /* Arms, like legs below: to where the WRIST is, scaled from the performer's arms to the figure's, the measured
+     elbow only choosing which way the arm bends — a wrong depth on one bone no longer swings the whole arm. */
+  const armRig=(f.T.upperArm+f.T.forearm)*f.height;
+  const armsMeasured=[['lSh','lEl','lWr'],['rSh','rEl','rWr']].filter(([a,b,c])=>ok(a,b,c))
+    .map(([a,b,c])=>at(b).distanceTo(at(a))+at(c).distanceTo(at(b)));
+  const armScale=armsMeasured.length?armRig/(armsMeasured.reduce((x,y)=>x+y,0)/armsMeasured.length):1;
   for(const [s,S,E,W,I,Pk] of [['l','lSh','lEl','lWr','lIn','lPi'],['r','rSh','rEl','rWr','rIn','rPi']]){
     if(!ok(S,E))continue;
     releaseFor(f,s+'Shoulder');
-    const duW=toW(at(E).clone().sub(at(S)).normalize());
-    const eT=J(s+'Shoulder').addScaledVector(duW,f.T.upperArm*f.height);
+    let duW=toW(at(E).clone().sub(at(S)).normalize());
+    let eT=J(s+'Shoulder').addScaledVector(duW,f.T.upperArm*f.height);
     if(ok(W)){
-      const wT=eT.clone().addScaledVector(toW(at(W).clone().sub(at(E)).normalize()),f.T.forearm*f.height);
+      let wT=eT.clone().addScaledVector(toW(at(W).clone().sub(at(E)).normalize()),f.T.forearm*f.height);
+      const tb=twoBone(J(s+'Shoulder'),toW(at(W).clone().sub(at(S))).multiplyScalar(armScale),
+        f.T.upperArm*f.height,f.T.forearm*f.height,duW,null);
+      if(tb){duW=tb.up;eT=tb.mid;wT=tb.end;}
       const dfW=wT.clone().sub(eT).normalize();
       // a straight arm has no measurable bend plane: aim it, keeping the twist it has
       if(!limbFrame(f,s+'Shoulder',s+'Elbow',duW,dfW,1))
@@ -2652,13 +2676,30 @@ function retarget(f,pose,o={}){
     }else aimSwing(f,s+'Shoulder',J(s+'Elbow'),eT);
     applied.push(s==='l'?'left arm':'right arm');
   }
+  /* Legs go to where the ANKLE is, not along where the thigh points. The model's depth for a thigh is its least sure
+     number — from behind, one squatting thigh measured 0.26 m and the other 0.44 m with its knee above the hip — and
+     laying a fixed-length bone along a wrong direction threw that whole leg up: a foot in the air, a knee out sideways.
+     The ankle's place relative to the hips is steadier. So each leg is solved (two bones, exactly) to reach the
+     measured ankle, scaled from the performer's legs to the figure's, with the measured knee only saying which way the
+     knee bends. Clean data gives the same answer as before; noisy depth no longer lifts a foot. */
+  const legRig=(f.T.thigh+f.T.shin)*f.height;
+  const legsMeasured=[['lHip','lKn','lAn'],['rHip','rKn','rAn']].filter(([h,k,a])=>ok(h,k,a))
+    .map(([h,k,a])=>at(k).distanceTo(at(h))+at(a).distanceTo(at(k)));
+  const legScale=legsMeasured.length?legRig/(legsMeasured.reduce((x,y)=>x+y,0)/legsMeasured.length):1;
   if(!upper)for(const [s,H,K,A,He,Ft] of [['l','lHip','lKn','lAn','lHe','lFt'],['r','rHip','rKn','rAn','rHe','rFt']]){
     if(!ok(H,K))continue;
-    const duW=toW(at(K).clone().sub(at(H)).normalize());
+    let duW=toW(at(K).clone().sub(at(H)).normalize());
     const kT=J(s+'Hip').addScaledVector(duW,f.T.thigh*f.height);
     if(ok(A)){
-      const aT=kT.clone().addScaledVector(toW(at(A).clone().sub(at(K)).normalize()),f.T.shin*f.height);
-      if(!limbFrame(f,s+'Hip',s+'Knee',duW,aT.clone().sub(kT).normalize(),-1))
+      let aT=kT.clone().addScaledVector(toW(at(A).clone().sub(at(K)).normalize()),f.T.shin*f.height);
+      {
+        // the bend plane: the measured knee; failing that (a straight leg), the figure's forward
+        const tb=twoBone(J(s+'Hip'),toW(at(A).clone().sub(at(H))).multiplyScalar(legScale),
+          f.T.thigh*f.height,f.T.shin*f.height,duW,toW(new V3(0,0,1)));
+        if(tb){duW=tb.up;aT=tb.end;}
+      }
+      const kT2=J(s+'Hip').addScaledVector(duW,f.T.thigh*f.height);
+      if(!limbFrame(f,s+'Hip',s+'Knee',duW,aT.clone().sub(kT2).normalize(),-1))
         for(let it=0;it<3;it++){
           solveChain(f,[s+'Hip',s+'Knee'],s+'Ankle',new V3(),aT);
           swivelJ(f,s+'Hip',s+'Knee',s+'Ankle',new V3(),duW);
@@ -3233,7 +3274,10 @@ function bakeTake(tk){
     for(let j=0;j<N;j++){
       const e=root&&root[j];
       if(e&&r0){
-        f.group.rotation.y=bt+(e.yaw-r0.yaw);
+        /* "Face as in the video": the figure starts turned the way the performer is turned to the camera — a lifter
+           filmed from behind is a figure seen from behind — then follows their turns. Off (the webcam's rule, where
+           the performer faces the lens anyway), the figure keeps its own facing and only the turns are copied. */
+        f.group.rotation.y=bt+(tk.opts.face==='video'?e.yaw:e.yaw-r0.yaw);
         if(travel){
           // in the figure's starting frame the webcam stood in front of it: picture-right is the figure's left (+X),
           // and moving away from the camera is moving backward (-Z)
@@ -3446,7 +3490,7 @@ function tlUI(){
     mk('✕','Delete camera '+c.name,()=>{tk.cuts=tk.cuts.filter(k=>k.cam!==c.id);tk.cams.splice(tl.cam,1);tl.cam=Math.max(0,tl.cam-1);takeChanged();tlUI();drawTrack();});
   }
   $('tlEdit').checked=tl.edit; $('tlCut').disabled=!tk.cams.length;
-  $('tlName').value=tk.name; $('tlRoot').value=tk.opts.root; $('tlSmooth').value=tk.opts.smooth; $('tlFoot').checked=tk.opts.foot;
+  $('tlName').value=tk.name; $('tlRoot').value=tk.opts.root; $('tlSmooth').value=tk.opts.smooth; $('tlFoot').checked=tk.opts.foot; $('tlFace').checked=tk.opts.face==='video';
   $('tlFps').value=String(tk.opts.fps||24); $('tlKeys').textContent=tk.keys.length?tk.keys.length+' fix'+(tk.keys.length>1?'es':''):'no fixes';
   const modes=(tk.modes||[]).map((m,k)=>{const f=figById(tk.figIds[k]);return (f?f.name:'?')+': '+(m.full?(m.travel?'full body, travels':'full body, in place'):'upper body');}).join(' · ');
   $('tlMode').textContent=modes;
@@ -3596,12 +3640,12 @@ function cutList(tk,fps){
 }
 
 /* ---- making takes: from the webcam, or from a video file ---- */
-function makeTake(frames,figs,W,H){
+function makeTake(frames,figs,W,H,more){
   if(!frames.length||!figs.length)return null;
   const t0=frames[0].t; frames.forEach(fr=>{fr.t-=t0;});
   const tk={id:uid(),name:'Take '+(takes.length+1),W,H,dur:frames[frames.length-1].t/1000,in:0,out:0,
     figIds:figs.map(f=>f.id),base:figs.map(f=>({pos:f.group.position.toArray(),turn:f.turn,pose:f.getPose(),pel:f.pelvisOffset(),seat:f.seat||null})),
-    opts:{root:'auto',smooth:1,foot:true,body:$('camBody').value,fps:24,swap:$('camSwap').checked,trust:$('camTrust').checked},
+    opts:Object.assign({root:'auto',smooth:1,foot:true,face:'figure',body:$('camBody').value,fps:24,swap:$('camSwap').checked,trust:$('camTrust').checked},more||{}),
     cams:[],cuts:[],keys:[],version:1,src:frames,track:null};
   tk.out=tk.dur;
   figs.forEach(f=>{f.goals=[];});
@@ -3700,7 +3744,7 @@ async function camImportVideo(file){
   if(!found){camBusy(false);camTell('Nobody was found in any frame of that video. The pose model needs one person, most of their body in view — try a clip where they fill more of the picture.',true);return null;}
   camBusy(true,'Cleaning up the take…'); await new Promise(r=>setTimeout(r,20));
   const figs=two?figsForPeople(Math.max(1,Math.max(...frames.map(f=>f.people.filter(Boolean).length)))):[act];
-  const tk=makeTake(frames,figs,W,H);
+  const tk=makeTake(frames,figs,W,H,{face:'video'});
   camBusy(false);
   if(!tk){camTell('Nobody was found in that video.',true);return null;}
   tk.name=file.name.replace(/\.[^.]+$/,'').slice(0,40)||tk.name; saveTakes();
@@ -3726,7 +3770,7 @@ $('tlExport').onclick=()=>{$('tlSet').classList.remove('open');$('tlExp').classL
 $('tlName').onchange=e=>{if(tl.take){tl.take.name=e.target.value.trim()||tl.take.name;takeChanged();tlUI();}};
 $('tlFps').onchange=e=>{if(tl.take){tl.take.opts.fps=+e.target.value;takeChanged();}};
 $('tlRebake').onclick=()=>{const tk=tl.take;if(!tk)return;
-  tk.opts.root=$('tlRoot').value; tk.opts.smooth=+$('tlSmooth').value; tk.opts.foot=$('tlFoot').checked;
+  tk.opts.root=$('tlRoot').value; tk.opts.smooth=+$('tlSmooth').value; tk.opts.foot=$('tlFoot').checked; tk.opts.face=$('tlFace').checked?'video':'figure';
   $('tlStatus').textContent='Re-baking…';
   setTimeout(()=>{bakeTake(tk);takeChanged();tlUI();showTakeAt(tl.t);$('tlStatus').textContent='';toast('Re-baked '+tk.name);},20);};
 $('tlClearKeys').onclick=()=>{if(!tl.take)return;tl.take.keys=[];takeChanged();tlUI();showTakeAt(tl.t);};
