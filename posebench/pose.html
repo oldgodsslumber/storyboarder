@@ -574,6 +574,7 @@
       <label class="toggle"><span>Catch glitches<span class="d">Live: a reading with left/right swapped or a limb thrown out is held back. Photos: a limb that reads the wrong length is flagged</span></span><input type="checkbox" id="camGlitch" checked><i></i></label>
       <label class="toggle"><span>Head from the face<span class="d">Reads the head's tilt and turn from the face (a small extra model) — far truer than the body model's guess</span></span><input type="checkbox" id="camFace" checked><i></i></label>
       <label class="toggle"><span>Swap sides<span class="d">Figure acts as your reflection</span></span><input type="checkbox" id="camSwap"><i></i></label>
+      <button class="btn grow" id="camViewPhoto" style="width:100%;margin-top:6px" disabled title="Look at the figure from the angle the photo was taken from — the figure keeps its own facing, so the usual view can show it from a different side than the picture">◎ View as the photo</button>
       <button class="btn grow" id="camReset" style="width:100%;margin-top:6px" title="Put the figure back to standing (a seated figure keeps its seat)">Reset figure to neutral</button>
       <input type="file" id="camFile" accept="image/*" hidden>
     </div>
@@ -1449,6 +1450,12 @@ const aim=(f,n,eff,target)=>(sideOf(n)&&!f.joints[n].spec.hinge&&!n.endsWith('Wr
 function setWorldQuat(f,n,q){
   const p=f.joints[n].pivot; f.group.updateMatrixWorld(true);
   p.quaternion.copy(p.parent.getWorldQuaternion(_q3).invert().multiply(q)); f.clampJoint(n);
+}
+// The pelvis is the root: its angle is the body's orientation, not a joint bending, so a capture sets it unclamped —
+// a body lying flat or on all fours is a posture, and the ±30° posing range kept it from ever being one.
+function setRootQuat(f,q){
+  const p=f.joints.pelvis.pivot; f.group.updateMatrixWorld(true);
+  p.quaternion.copy(p.parent.getWorldQuaternion(_q3).invert().multiply(q));
 }
 function solveChain(f,chain,effJ,effLocal,target){
   const effW=()=>{f.group.updateMatrixWorld(true);return f.joints[effJ].pivot.localToWorld(effLocal.clone());};
@@ -2676,7 +2683,24 @@ function retarget(f,pose,o={}){
   const J=n=>f.joints[n].pivot.getWorldPosition(new V3());
   const applied=[];
   if(!upper){
-    setWorldQuat(f,'pelvis',gq.clone().multiply(basisXY(at('lHip').clone().sub(at('rHip')),new V3(0,1,0))));
+    /* The pelvis used to stand upright whatever the body did (only the hip line's tilt was copied), so the spine had
+       to bend a whole torso flat on its own, ran out at its limit, and every leg angle was measured from a pelvis that
+       was not where the body's was — a bird-dog came out as a steep diagonal with the raised leg on the floor. Now it
+       tips with the torso: the spine takes a natural share of the lean (40%, at most 35° forward or 20° back), the
+       pelvis the rest. Upright poses are untouched: a small lean is shared the same way. */
+    const X=at('lHip').clone().sub(at('rHip')), xn=X.clone().normalize();
+    let up=new V3(0,1,0);
+    if(sure('lSh','rSh')){
+      const T=mid('lSh','rSh').sub(mid('lHip','rHip'));
+      const Tp=T.addScaledVector(xn,-T.dot(xn)), Up=new V3(0,1,0).addScaledVector(xn,-xn.y);
+      if(Tp.lengthSq()>1e-8&&Up.lengthSq()>1e-8){
+        Tp.normalize(); Up.normalize();
+        const th=Math.atan2(new V3().crossVectors(Up,Tp).dot(xn),Up.dot(Tp));     // the torso's lean, about the hip line
+        const spine=clamp(th*0.4,-20*DEG,35*DEG);
+        up=Up.applyAxisAngle(xn,th-spine);
+      }
+    }
+    setRootQuat(f,gq.clone().multiply(basisXY(X,up)));
     applied.push('hips');
   }
   if(ok('lSh','rSh')){
@@ -2721,10 +2745,21 @@ function retarget(f,pose,o={}){
   }
   /* Arms, like legs below: to where the WRIST is, scaled from the performer's arms to the figure's, the measured
      elbow only choosing which way the arm bends — a wrong depth on one bone no longer swings the whole arm. */
-  const armRig=(f.T.upperArm+f.T.forearm)*f.height;
-  const armsMeasured=[['lSh','lEl','lWr'],['rSh','rEl','rWr']].filter(([a,b,c])=>ok(a,b,c))
-    .map(([a,b,c])=>at(b).distanceTo(at(a))+at(c).distanceTo(at(b)));
-  const armScale=armsMeasured.length?armRig/(armsMeasured.reduce((x,y)=>x+y,0)/armsMeasured.length):1;
+  /* Each limb scaled by its OWN measured length. Averaging both sides let a hidden arm's guessed length (0.40 m
+     against the visible one's 0.49) put the visible wrist out of reach, and the solve straightened a bent arm to
+     reach it. A hidden limb borrows the sure one's length; only when neither is sure is the average used. */
+  const sideScale=(rig,chains)=>{
+    const len=c=>at(c[1]).distanceTo(at(c[0]))+at(c[2]).distanceTo(at(c[1]));
+    const sureS=['l','r'].filter(k=>sure(...chains[k])), okS=['l','r'].filter(k=>ok(...chains[k]));
+    const o={};
+    ['l','r'].forEach(k=>{
+      const m=sure(...chains[k])?len(chains[k]):sureS.length?len(chains[sureS[0]])
+        :okS.length?okS.reduce((t,x)=>t+len(chains[x]),0)/okS.length:0;
+      o[k]=m>1e-6?rig/m:1;
+    });
+    return o;
+  };
+  const armScale=sideScale((f.T.upperArm+f.T.forearm)*f.height,{l:['lSh','lEl','lWr'],r:['rSh','rEl','rWr']});
   for(const [s,S,E,W,I,Pk] of [['l','lSh','lEl','lWr','lIn','lPi'],['r','rSh','rEl','rWr','rIn','rPi']]){
     if(!ok(S,E))continue;
     releaseFor(f,s+'Shoulder');
@@ -2732,7 +2767,7 @@ function retarget(f,pose,o={}){
     let eT=J(s+'Shoulder').addScaledVector(duW,f.T.upperArm*f.height);
     if(ok(W)){
       let wT=eT.clone().addScaledVector(toW(at(W).clone().sub(at(E)).normalize()),f.T.forearm*f.height);
-      const tb=twoBone(J(s+'Shoulder'),toW(at(W).clone().sub(at(S))).multiplyScalar(armScale),
+      const tb=twoBone(J(s+'Shoulder'),toW(at(W).clone().sub(at(S))).multiplyScalar(armScale[s]),
         f.T.upperArm*f.height,f.T.forearm*f.height,duW,null);
       if(tb){duW=tb.up;eT=tb.mid;wT=tb.end;}
       const dfW=wT.clone().sub(eT).normalize();
@@ -2756,10 +2791,7 @@ function retarget(f,pose,o={}){
      The ankle's place relative to the hips is steadier. So each leg is solved (two bones, exactly) to reach the
      measured ankle, scaled from the performer's legs to the figure's, with the measured knee only saying which way the
      knee bends. Clean data gives the same answer as before; noisy depth no longer lifts a foot. */
-  const legRig=(f.T.thigh+f.T.shin)*f.height;
-  const legsMeasured=[['lHip','lKn','lAn'],['rHip','rKn','rAn']].filter(([h,k,a])=>ok(h,k,a))
-    .map(([h,k,a])=>at(k).distanceTo(at(h))+at(a).distanceTo(at(k)));
-  const legScale=legsMeasured.length?legRig/(legsMeasured.reduce((x,y)=>x+y,0)/legsMeasured.length):1;
+  const legScale=sideScale((f.T.thigh+f.T.shin)*f.height,{l:['lHip','lKn','lAn'],r:['rHip','rKn','rAn']});
   if(!upper)for(const [s,H,K,A,He,Ft] of [['l','lHip','lKn','lAn','lHe','lFt'],['r','rHip','rKn','rAn','rHe','rFt']]){
     if(!ok(H,K))continue;
     let duW=toW(at(K).clone().sub(at(H)).normalize());
@@ -2768,7 +2800,7 @@ function retarget(f,pose,o={}){
       let aT=kT.clone().addScaledVector(toW(at(A).clone().sub(at(K)).normalize()),f.T.shin*f.height);
       {
         // the bend plane: the measured knee; failing that (a straight leg), the figure's forward
-        const tb=twoBone(J(s+'Hip'),toW(at(A).clone().sub(at(H))).multiplyScalar(legScale),
+        const tb=twoBone(J(s+'Hip'),toW(at(A).clone().sub(at(H))).multiplyScalar(legScale[s]),
           f.T.thigh*f.height,f.T.shin*f.height,duW,toW(new V3(0,0,1)));
         if(tb){duW=tb.up;aT=tb.end;}
       }
@@ -3220,6 +3252,13 @@ async function camFromImage(src){
   let out;
   if(people.length===1){
     const r=camApply(people[0].pose,true,{fresh:true,threshold:camThreshold(true)}); camSay(r,'Posed from the photo:');
+    /* The retarget took the performer's turn out (the figure keeps its facing); the photo's camera saw them at that
+       turn. Kept, so "View as the photo" can put the viewport where the photographer stood. */
+    {
+      const ps=people[0].pose, hl=ps.p[LM.lHip].clone().sub(ps.p[LM.rHip]);
+      camS.photoView={fig:act.id,yaw:r&&!r.upper&&ps.v[LM.lHip]>=VIS_OK&&ps.v[LM.rHip]>=VIS_OK?Math.atan2(-hl.z,hl.x):0};
+      $('camViewPhoto').disabled=false;
+    }
     const warn=$('camGlitch').checked?photoWarnings(people[0].pose,act):'';
     if(warn){camTell($('camStatus').textContent+' ⚠ '+warn.charAt(0).toUpperCase()+warn.slice(1),true);if(r)r.warn=warn;}
     out=Object.assign({people:1},r);
@@ -3245,6 +3284,13 @@ function camReset(){
 }
 $('camOpen').onclick=camOpen;
 $('camReset').onclick=camReset;
+function viewAsPhoto(){
+  const pv=camS.photoView, f=pv&&figById(pv.fig); if(!f)return;
+  cam.theta=f.group.rotation.y-pv.yaw; cam.phi=Math.min(cam.phi,1.52);
+  act=f; fitShot('full');
+  camTell('Seen from where the photo was taken. Orbit freely — the figure keeps its own facing.',false,true);
+}
+$('camViewPhoto').onclick=viewAsPhoto;
 {const t=store.get(TRUSTKEY); if(t===false)$('camTrust').checked=false;
   $('camTrust').onchange=e=>store.set(TRUSTKEY,e.target.checked);}
 $('camClose').onclick=camClose;
@@ -4443,7 +4489,7 @@ refreshPropUI();
   glideTick(performance.now());
   updateHandles();renderer.render(scene,camera);})();
 if(EMBED)try{window.parent.postMessage({type:'posebench:ready'},'*');}catch(e){}
-window.__pb={liveGuard,guardNew,photoWarnings,glitchMask,repairSeq,labelSwap,glitchSummary,glitchOverride,addHead,faceLoad,get takes(){return takes;},get glides(){return glides;},glideTick,glideFinish,camApply,get tl(){return tl;},makeTake,bakeTake,openTake,showTakeAt,exportTake,cutList,takeSnap,takeLoad,camImportVideo,addCam,addCut,tlPlay,setCamView,viewNow,blockingText,retarget,synthLandmarks,readPose,camFromImage,mpLoad,detLoad,findPeople,camApply,camStart,camSnap,get camState(){return camS;},get figures(){return figures;},get props(){return props;},get act(){return act;},cam,fitShot,setView,frameAll,PRESETS,WORK,SCENES,
+window.__pb={viewAsPhoto,liveGuard,guardNew,photoWarnings,glitchMask,repairSeq,labelSwap,glitchSummary,glitchOverride,addHead,faceLoad,get takes(){return takes;},get glides(){return glides;},glideTick,glideFinish,camApply,get tl(){return tl;},makeTake,bakeTake,openTake,showTakeAt,exportTake,cutList,takeSnap,takeLoad,camImportVideo,addCam,addCut,tlPlay,setCamView,viewNow,blockingText,retarget,synthLandmarks,readPose,camFromImage,mpLoad,detLoad,findPeople,camApply,camStart,camSnap,get camState(){return camS;},get figures(){return figures;},get props(){return props;},get act(){return act;},cam,fitShot,setView,frameAll,PRESETS,WORK,SCENES,
   camera,applyCam,selectJoint,solveChain,commit,applyNamed,goalFrame,eyePoint};
 })();
 </script>

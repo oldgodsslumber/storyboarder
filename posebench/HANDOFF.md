@@ -391,3 +391,33 @@ Test clip: a squat filmed from behind, at three-quarters (Wikimedia "Squat - exe
   - **Real footage:**
     - jumping jacks: 1 frame repaired;
     - squat from behind: 24 short repairs, plus one 1.5 s arm misread left as read.
+
+## Photo to figure: the translation, diagnosed and fixed (2026-09-29)
+**The user's report:** the 2D skeleton over the photo looked right, but the figure looked wonky.
+
+**How it was measured.** Every bone's on-screen angle was compared three ways: the 2D skeleton, the model's 3D
+world landmarks seen from the camera, and the figure seen from the photo's camera (the removed turn put back). The
+photos were: seated on the ground, standing and turned 53°, a bird-dog, and a standing officer. The model's own 3D
+agreed with its 2D (mostly within 0–10°), so the losses were in `retarget`.
+
+**The findings, and the fixes:**
+1. **Limb scale averaged both sides.** A hidden arm's guessed length (0.40 m, visibility 0.11) dragged the average
+   below the visible arm's 0.49 m. The visible wrist target was then out of reach, so the two-bone solve
+   straightened a bent arm (19–24° error).
+   - **Fix:** `sideScale` scales each limb by its own length when sure, otherwise borrows the sure side's, and falls
+     back to the average only when neither side is sure.
+   - **Result:** 19–24° → 1°.
+2. **The pelvis was always upright** (`basisXY(hipLine, worldUp)`, clamped to its ±30° posing range). A bird-dog
+   needs the pelvis tipped about 75°, so the spine hit its 55° limit, the hip hit −30° extension, and the torso and
+   legs were clipped.
+   - **Fix:** the pelvis takes the torso's lean about the hip line, and the spine keeps `clamp(0.4 × lean, −20°,
+     +35°)`. It's set with `setRootQuat`, unclamped, because the root's angle is the body's orientation, not a
+     joint.
+   - **Result:** thigh 40° → 0°, shin 51° → 0°, torso 21° → 3°, hips 14° → 0°.
+3. **Viewing.** The figure keeps its facing, so for a performer turned 50–70° the default view is a different side
+   from the photo, and a correct pose looks like a tangle.
+   - **Fix:** **◎ View as the photo** in the camera panel (`viewAsPhoto`; `camS.photoView` = the figure plus the
+     performer's yaw) sets `cam.theta = figure turn − yaw`.
+
+The diagnostic script is `diag_translate.js` in the session scratchpad. Its table columns: `img~model`,
+`model~figure` and `3d model~figure`, plus the depth of each bone.
