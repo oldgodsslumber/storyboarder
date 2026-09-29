@@ -117,9 +117,52 @@
     return out;
   }
 
+  function isPerson(per) { return SB.Personas.kindOf(per).id === 'person'; }
+
+  /* The people this scene MENTIONS — the only ones a run may reuse. Everyone
+   * else it needs is new, however well somebody on the board would fit: left
+   * to the writer's judgement of "fits", the same board reused a person on one
+   * run and invented a stranger on the next.
+   *
+   * Mentioned is: an @ mark in the description; the name written plainly in
+   * the description, heading, claimed script or note (older scenes and
+   * scripts have no marks); or already cast on one of this scene's cards,
+   * because more shots of a scene with Nat in it are still shots of Nat.
+   * People only — places and things are reused whenever the scene uses them. */
+  function mentionedCast(p, sc, note) {
+    const out = [];
+    const take = function (per) {
+      if (per && isPerson(per) && out.indexOf(per) < 0) out.push(per);
+    };
+    castFor(p, sc).forEach(take);
+    SB.Refs.parse(p, sc.description || '').forEach(function (m) {
+      if (m.kind === 'subject') take(m.target.subject);
+    });
+    const text = [SB.Refs.plain(p, sc.description || ''), sc.heading || '',
+      sceneScript(p, sc), note || ''].join('\n');
+    SB.Refs.unlinked(p, text).forEach(function (h) { take(SB.Personas.find(p, h.id)); });
+    return out;
+  }
+
   /* Names are how the writer addresses a persona, so matching is by name and
    * has to survive "Ops Lead" vs "ops lead." */
-  function nameKey(s) { return norm(s).replace(/\s+/g, ' ').trim(); }
+  /* Digits count: "Barista 2" is a different person from "Barista", and a key
+     that dropped them made every free name look taken. */
+  function nameKey(s) {
+    return String(s || '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+
+  /* A new person's handle, clear of every name on the board and in this run:
+   * cards link to subjects by name, so two called "Barista" is one too many. */
+  function freeName(p, nm, used) {
+    const clash = function (n) {
+      return !!findByName(p, n) || used.indexOf(nameKey(n)) >= 0;
+    };
+    if (!clash(nm)) return nm;
+    let i = 2;
+    while (clash(nm + ' ' + i)) i++;
+    return nm + ' ' + i;
+  }
 
   function findByName(p, name) {
     const want = nameKey(name);
@@ -197,7 +240,10 @@
       'place the action in its setting. If you return 2 shots, both are tight.';
   }
 
-  function buildGenPrompt(p, sc, idx, n, note, onScene, roster) {
+  /* cast: the people the scene mentions, the only ones to reuse. taken: every
+   * other person's name, which a new person must not be given. things: the
+   * board's places and things. */
+  function buildGenPrompt(p, sc, idx, n, note, cast, taken, things) {
     const script = sceneScript(p, sc);
     const already = existingShots(p, sc);
     const types = (p.settings.shotTypes || []).join(', ');
@@ -221,21 +267,20 @@
       '- Location, time of day, lighting and screen direction stay consistent across every shot.',
       '',
       'WHO IS ON CAMERA',
-      onScene.length
-        ? '- This scene is already cast (ON THIS SCENE, below). Reuse those people by their ' +
-        'exact name. Do not rename them and do not invent a second version of the same person.'
-        : (roster.length
-          ? '- The board already has people on it (THE BOARD\'S PEOPLE, below). If one of them ' +
-          'fits this scene, reuse them by their exact name rather than inventing anybody new.'
-          : '- Nobody has been cast on this board yet.'),
-      '- Return every person the scene needs in the "cast" array. For someone already listed ' +
-      'below, return their name alone — leave description and imagePrompt out, they are already ' +
-      'written. For somebody genuinely new, add them with a short handle for a name ("Ops lead", ' +
+      cast.length
+        ? '- The people listed under IN THIS SCENE (below) are the ones this scene names. Use them ' +
+        'by their exact name. Do not rename them and do not invent a second version of any of them.'
+        : '- This scene names nobody who is already cast.',
+      '- Anybody else the scene needs is a NEW person, created here — even if the board has had ' +
+      'somebody similar in another scene. Never reuse a name from NAMES ALREADY TAKEN.',
+      '- Return every person the scene needs in the "cast" array. For someone listed under IN ' +
+      'THIS SCENE, return their name alone — leave description and imagePrompt out, they are ' +
+      'already written. For a new person, add them with a short handle for a name ("Ops lead", ' +
       'not a character name), a description covering age range, build, hair, skin tone and a ' +
       'specific outfit down to fabric and colour, and an imagePrompt that would produce a clean ' +
       'front-facing reference frame of them — plain background, natural light, full wardrobe ' +
       'visible, neutral expression.',
-      '- Keep the cast as small as the scene honestly needs. Reuse beats inventing, every time.',
+      '- Keep the cast as small as the scene honestly needs.',
       '- Name the people each shot contains in that shot\'s own "cast" array, by the same names.',
       '',
       'EACH SHOT',
@@ -266,19 +311,24 @@
 
     neighbours(p, idx).forEach(function (l) { lines.push(l); });
     if (script) lines.push('', 'SCRIPT THIS SCENE COVERS:\n' + script.slice(0, 4000));
-    if (onScene.length) {
-      lines.push('', 'ON THIS SCENE — already cast here, reuse by name:');
-      onScene.forEach(function (per) {
+    if (cast.length) {
+      lines.push('', 'IN THIS SCENE — named by it, use by exact name:');
+      cast.forEach(function (per) {
         lines.push('- ' + (per.name || 'unnamed') + ': ' + (per.description || '').trim());
       });
     }
-    /* The roster is context for reuse, not a cast order — a scene is free to
-     * need none of them. Only the ones not already pinned here are worth the
-     * tokens. */
-    const rest = roster.filter(function (per) { return onScene.indexOf(per) < 0; });
-    if (rest.length) {
-      lines.push('', 'THE BOARD\'S PEOPLE — reuse one of these by name if they fit this scene:');
-      rest.forEach(function (per) {
+    /* Names only, no descriptions: nothing here is on offer, and a
+       description is exactly what would make one look like it fits. */
+    if (taken.length) {
+      lines.push('', 'NAMES ALREADY TAKEN — other people on the board, not in this scene. Do not ' +
+        'use them, and do not give a new person any of these names: ' + taken.join(', '));
+    }
+    /* The rule is about people. Places and things are reused whenever the
+       scene is set there or uses them, which is what their pictures are for. */
+    if (things.length) {
+      lines.push('', 'PLACES AND THINGS ON THE BOARD — use one by its exact name if the scene is ' +
+        'set there or uses it:');
+      things.forEach(function (per) {
         lines.push('- ' + (per.name || 'unnamed') + ': ' +
           (per.description || '').replace(/\s+/g, ' ').trim().slice(0, 300));
       });
@@ -396,9 +446,14 @@
     if (miss) return Promise.reject(miss);
 
     const n = opts.count ? SB.clamp(opts.count | 0, MIN, MAX) : 0;
+    const note = (opts.note || '').trim();
     const onScene = castFor(p, sc);
-    const roster = SB.Personas.all(p).slice();
-    const text = buildGenPrompt(p, sc, f.idx, n, (opts.note || '').trim(), onScene, roster);
+    const cast = mentionedCast(p, sc, note);
+    const people = SB.Personas.all(p).filter(isPerson);
+    const taken = people.filter(function (per) { return cast.indexOf(per) < 0; })
+      .map(function (per) { return per.name || ''; }).filter(Boolean);
+    const things = SB.Personas.all(p).filter(function (per) { return !isPerson(per); });
+    const text = buildGenPrompt(p, sc, f.idx, n, note, cast, taken, things);
 
     const brand = SB.Brand.brandOf(p);
     const system = [
@@ -408,12 +463,9 @@
        * style and was ignored on every shot: descriptions came back carrying
        * "Capture RAW, muted professional grade" and "shallow depth of field",
        * which then get applied AGAIN by the prompt writer downstream. */
-      'Name the places and things you use exactly as they are named in the roster above, so ' +
-      'the board can attach their reference pictures. Do not rename them or describe them ' +
-      'generically.',
-      'Name the places and things you use exactly as they are named in the roster above, so ' +
-      'the board can attach their reference pictures. Do not rename them or describe them ' +
-      'generically.',
+      'Name the places and things you use exactly as they are named in the PLACES AND THINGS ' +
+      'list, so the board can attach their reference pictures. Do not rename them or describe ' +
+      'them generically.',
       'A DESCRIPTION IS PROSE, NOT A PROMPT. Write what happens and where, as a director would ' +
       'say it to a crew. Never write the grade, the grain, the contrast, the lens, the focal ' +
       'length, the aperture, the depth of field or any finishing instruction into a description. ' +
@@ -432,22 +484,33 @@
       if (n) list = list.slice(0, n);
       else if (list.length > 3) list = list.slice(0, 3);
 
-      /* Resolve the cast before any card is written. A returned name that
-       * already exists is reused as it stands — the roster entry is the user's,
-       * and a generated description does not get to overwrite it. */
-      const byName = {}, created = [];
+      /* Resolve the cast before any card is written — against the people the
+       * scene MENTIONS, and nobody else. One of them is reused as it stands:
+       * the roster entry is the user's, and a generated description does not
+       * get to overwrite it. Any other name is a new person, even one that
+       * happens to match somebody on the board; that match was the silent
+       * reuse this rule exists to end, so the newcomer gets a free name. */
+      const mentioned = {};
+      cast.forEach(function (per) { mentioned[nameKey(per.name)] = per; });
+      const byName = {}, created = [], renamed = [], used = [];
       (out.cast || []).forEach(function (c) {
         const nm = String((c && c.name) || '').trim();
         if (!nm || byName[nameKey(nm)]) return;
-        let per = findByName(p, nm);
+        let per = mentioned[nameKey(nm)];
         if (!per) {
+          /* a place or a thing listed as a person is not somebody to invent */
+          const other = findByName(p, nm);
+          if (other && !isPerson(other)) return;
+          const free = freeName(p, nm, used);
           per = SB.Personas.add(p, {
-            name: nm,
+            name: free,
             description: String(c.description || '').trim(),
             imagePrompt: String(c.imagePrompt || '').trim()
           });
           created.push(per);
+          if (free !== nm) renamed.push({ from: nm, per: per });
         }
+        used.push(nameKey(per.name));
         byName[nameKey(nm)] = per;
       });
       /* Whoever the scene already had stays addressable even if the writer
@@ -455,11 +518,33 @@
       onScene.forEach(function (per) {
         if (!byName[nameKey(per.name)]) byName[nameKey(per.name)] = per;
       });
-      const all = Object.keys(byName).map(function (k) { return byName[k]; });
+      const all = Object.keys(byName).map(function (k) { return byName[k]; })
+        .filter(function (per, i, a) { return a.indexOf(per) === i; });
+      /* The only subjects a generated card may link: this run's people, the
+         ones the scene mentions, and the board's places and things. */
+      const linkable = all.concat(cast, things).map(function (per) { return per.id; });
+
+      /* A shot's own list may name a mentioned person the cast array left out. */
+      function lookup(nm) {
+        const k = nameKey(nm);
+        return byName[k] || mentioned[k] || null;
+      }
+
+      /* The prose calls a renamed newcomer by the name the writer gave it,
+         which is somebody else's — so those words are marked to the newcomer
+         before anything else can link them. */
+      function markRenamed(text) {
+        let s = text;
+        renamed.forEach(function (r) {
+          const re = new RegExp('(?<![\\w@{|])' + r.from.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') +
+            '(?![\\w}|])', 'gi');
+          s = s.replace(re, function () { return SB.Refs.mark(r.per.id, r.per.name); });
+        });
+        return s;
+      }
 
       function idsFor(x) {
-        const named = ((x && x.cast) || []).map(function (nm) { return byName[nameKey(nm)]; })
-          .filter(Boolean);
+        const named = ((x && x.cast) || []).map(lookup).filter(Boolean);
         if (named.length) {
           return named.filter(function (per, i) { return named.indexOf(per) === i; })
             .map(function (per) { return per.id; });
@@ -485,7 +570,7 @@
         /* The writer hands back prose naming the people it used. Linking those
            names here is what makes a generated card arrive already saying which
            pictures go with it, rather than looking finished and feeding none. */
-        sh.description = SB.Refs.linkAll(p, description);
+        sh.description = SB.Refs.linkAll(p, markRenamed(description), linkable);
         made.push(sh);
       });
       if (!made.length) {
@@ -499,6 +584,9 @@
         shots: made,
         cast: all,
         created: created,
+        /* reused, not created — said beside the new ones, so a reuse nobody
+           expected is visible the moment it happens */
+        reused: all.filter(function (per) { return created.indexOf(per) < 0; }),
         personaIds: created.map(function (per) { return per.id; }),
         beats: list.map(function (x) { return String(x.beat || '').trim(); })
       };

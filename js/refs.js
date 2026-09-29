@@ -383,9 +383,15 @@
     return out;
   }
 
-  /* Link every unlinked name in one pass, back to front so the offsets hold. */
-  function linkAll(p, text) {
-    const hits = unlinked(p, text);
+  /* Link every unlinked name in one pass, back to front so the offsets hold.
+   *
+   * `only` (ids) limits which subjects may be linked. The match itself still
+   * runs over every name, so "Ops lead" is not linked as a permitted "Ops"
+   * just because "Ops lead" is not permitted. */
+  function linkAll(p, text, only) {
+    const hits = unlinked(p, text).filter(function (h) {
+      return !only || only.indexOf(h.id) >= 0;
+    });
     let s = String(text == null ? '' : text);
     for (let i = hits.length - 1; i >= 0; i--) {
       s = s.slice(0, hits[i].from) + mark(hits[i].id, hits[i].name) + s.slice(hits[i].to);

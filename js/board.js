@@ -776,8 +776,13 @@
         /* A person the run had to invent is a change to the whole board, not
          * just to this scene, so it is said out loud rather than found later. */
         const newCast = (r.created || []).map(function (per) { return per.name; });
+        /* ...and so is every existing person it reused: only a mention in the
+           scene lets one in, so an unexpected name here means a mention to
+           take out of the description. */
+        const reused = (r.reused || []).map(function (per) { return per.name; });
         ai.status = r.ids.length + ' shot' + (r.ids.length === 1 ? '' : 's') + ' added' +
-          (newCast.length ? ' · cast ' + newCast.join(', ') : '');
+          (newCast.length ? ' · new: ' + newCast.join(', ') : '') +
+          (reused.length ? ' · reused: ' + reused.join(', ') : '');
         ai.err = false;
         SB.app.selectedShotId = r.ids[0];
         SB.app.selection = [r.ids[0]];

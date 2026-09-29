@@ -2846,6 +2846,76 @@ console.log('\n— scene coverage: a second run appends, and count is honoured �
   eq(r2.created.length, 0, 'so nothing is reported as newly cast');
 }
 
+console.log('\n— scene coverage: new people unless the scene names them —');
+{
+  const C = SB.Coverage, R = SB.Refs, Per = SB.Personas;
+  let reply = null, asked = null;
+  SB.Prompts = { raw: (text) => { asked = text; return Promise.resolve(reply); } };
+  SB.Store.getApiKey = () => 'test-key';
+
+  const p = SB.Model.newProject();
+  const barista = Per.add(p, { name: 'Barista', description: 'Fifties, green apron.' });
+  const nat = Per.add(p, { name: 'Nat', description: 'Tall, red coat.' });
+  const cafe = Per.add(p, { kind: 'place', name: 'Corner Cafe', description: 'Tiled, bright.' });
+
+  /* nobody named: the barista who would fit is neither offered nor taken */
+  const sc = p.scenes[0];
+  sc.description = 'Someone orders a flat white at the Corner Cafe.';
+  reply = {
+    cast: [{ name: 'Barista', description: 'Twenties, black tee.' }],
+    shots: [
+      { beat: 'the order', type: 'Medium', cast: ['Barista'], description: 'The Barista takes the order at the Corner Cafe.' },
+      { beat: 'the cup', type: 'Insert', cast: ['Barista'], description: 'A cup slides across the counter.' }
+    ]
+  };
+  const r = await C.generate(p, sc.id, {});
+  eq(/Fifties, green apron/.test(asked), false, 'an unmentioned person is not offered with a description');
+  eq(/NAMES ALREADY TAKEN[^\n]*Barista, Nat/.test(asked), true, 'their names are listed as taken instead');
+  eq(/IN THIS SCENE —/.test(asked), false, 'and nobody is offered for reuse');
+  eq(/PLACES AND THINGS ON THE BOARD[\s\S]*Corner Cafe: Tiled/.test(asked), true,
+    'places and things are still offered — the rule is about people');
+  eq(r.created.map(x => x.name), ['Barista 2'],
+    'the writer answering with a taken name still gets a NEW person, under a free name');
+  eq(r.reused.length, 0, 'and nobody is reported as reused');
+  const card = p.scenes[0].shots.filter(s => r.ids.indexOf(s.id) >= 0)[0];
+  eq(card.personaIds.indexOf(barista.id) < 0 && card.personaIds.indexOf(r.created[0].id) >= 0, true,
+    'the card carries the new person, not the old one');
+  eq(R.parse(p, card.description).map(m => m.label), ['Barista 2', 'Corner Cafe'],
+    'the prose names the newcomer and links the place, and never the old Barista');
+
+  /* an @ mark is a mention */
+  const sc2 = SB.Model.addScene(p, {});
+  sc2.description = R.mark(nat.id, 'Nat') + ' pays and leaves.';
+  reply = { cast: [{ name: 'Nat' }], shots: [
+    { beat: 'pays', type: 'Close-up', cast: ['Nat'], description: 'Nat taps her card.' },
+    { beat: 'leaves', type: 'Wide', cast: ['Nat'], description: 'Nat pushes out through the door.' }] };
+  const r2 = await C.generate(p, sc2.id, {});
+  eq(/IN THIS SCENE[^\n]*\n- Nat: Tall, red coat\./.test(asked), true, 'a marked person is offered by name');
+  eq(r2.created.length + ':' + r2.reused.map(x => x.name).join(), '0:Nat', 'and reused, not cloned');
+
+  /* a plain name is a mention too */
+  const sc3 = SB.Model.addScene(p, {});
+  sc3.description = 'The barista wipes down the machine.';
+  reply = { cast: [{ name: 'Barista' }], shots: [
+    { beat: 'wipes', type: 'Close-up', cast: ['Barista'], description: 'The barista wipes the steam wand.' },
+    { beat: 'done', type: 'Wide', cast: ['Barista'], description: 'The counter gleams.' }] };
+  const r3 = await C.generate(p, sc3.id, {});
+  eq(r3.reused.map(x => x.id), [barista.id], 'a name written plainly in the scene reuses that person');
+
+  /* already on this scene's cards counts, even when the text never says so */
+  const sc4 = SB.Model.addScene(p, {});
+  sc4.description = 'She checks her phone outside.';
+  const own = SB.Model.addShot(p, sc4.id, {});
+  own.description = 'Outside, by the door.';
+  own.personaIds = [nat.id];
+  reply = { cast: [{ name: 'Nat' }], shots: [
+    { beat: 'looks', type: 'Close-up', cast: ['Nat'], description: 'Nat reads a message.' },
+    { beat: 'goes', type: 'Wide', description: 'The street, empty.' }] };
+  const r4 = await C.generate(p, sc4.id, {});
+  eq(r4.created.length + ':' + r4.reused.map(x => x.name).join(), '0:Nat',
+    'somebody already cast on this scene is reused');
+}
+
 console.log('\n— scene coverage: it refuses to guess —');
 {
   const C = SB.Coverage;
