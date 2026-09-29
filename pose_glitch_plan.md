@@ -1,6 +1,17 @@
 # Glitch frames: find the haywire ones and repair them
 
-Status: **planned, not built.** It builds on the motion takes (`pose_motion_plan.md`, built) and runs inside
+Status: **built on `V3-posebench` (2026-09-29).** Decisions taken as recommended:
+- Auto by default;
+- rebuild only the broken limb;
+- live follow holds bad readings;
+- photos warn only.
+
+What real footage changed:
+- **Runs over 8 frames** of one limb are *sustained misreads*, not glitches. They're left as read and shown as a
+  hollow bar, because rebuilding hidden arms from equally wrong neighbours only froze them.
+- **Strong's joint-limit pass** ignores the straight end of elbows and knees.
+
+Details: `posebench/HANDOFF.md`. It builds on the motion takes (`pose_motion_plan.md`, built) and runs inside
 `bakeTake`, before retargeting.
 
 ## Why

@@ -343,3 +343,51 @@ Test clip: a squat filmed from behind, at three-quarters (Wikimedia "Squat - exe
   - on the three photos, the head now drops and tilts like the photo;
   - a take's head equals the same frame applied as a photo, and survives the file;
   - clean synthetic round trips are unchanged, since they carry no face.
+
+## Glitch frames (2026-09-29, `pose_glitch_plan.md`)
+- **Where it runs:** `bakeTake` calls `repairSeq(read, level, overrides)` between `resampleTake` and `smoothSeq`,
+  so one bad frame can't be smoothed into a lurch. The raw landmarks stay stored, so any setting change or override
+  just re-bakes.
+- **The detector** (`glitchMask`) works per frame and per limb (`GL_LIMBS`: arms, legs, torso, head) and uses the
+  take's own statistics:
+  - **Swaps:** if a frame fits the median of its ±4 neighbours better with its left/right labels swapped back
+    (`labelSwap`, which never mirrors), it's unswapped exactly.
+  - **Spikes:** a Hampel-style test on each joint against the median of its ±3 neighbours, scaled by how much those
+    neighbours spread. A fast real move spreads its neighbours too, so it isn't flagged.
+  - **Bone lengths:** each of the 12 bones is compared with its median over the take. Several bones off at once
+    means a whole-frame collapse.
+  - **Promotion:** a broken torso, or 3 or more limbs, becomes a whole-frame glitch.
+  - **Long runs** of a limb (over `GL_RUN_MAX` = 8 frames, bridging gaps of up to 2 clean frames) are sustained
+    misreads, not glitches. On the squat-from-behind clip, the hidden arms read about 40% long for 1.5 s. Those are
+    left as read and noted (`kind: 'long'`), because rebuilding them from equally wrong neighbours only froze the arm.
+- **The repair** (`repairSeq`) rebuilds a broken limb by interpolating it from the nearest good frames within
+  0.5 s, and keeps the rest of the frame. A broken frame is rebuilt with `lerpPose`. With nothing to rebuild from,
+  the limb's visibility is zeroed, so the retarget holds it.
+- **Levels** (`tk.opts.glitch`: `off` / `auto` default / `strong`):
+  - Strong tightens the thresholds and adds a second bake that flags limbs pinned against a joint limit (not the
+    straight end of an elbow or knee) where the neighbours aren't.
+  - Strong can flag a real pose held right at a limit; it's opt-in.
+- **Overrides:** `tk.glitch[k] = {mark: {frame: limb|'all'}, keep: {frame: true}}`, set by **Mark as glitch**
+  (uses the selected joint's limb) and **Keep as read** in the ⚙ panel. They're stored in `takeSnap`.
+- **UI:**
+  - **Timeline:** a red tick per repaired frame (taller for a whole frame) and a hollow bar over a long misread;
+    hovering says what and why.
+  - **⚙ panel:** the level control, a summary, and "This frame: …".
+  - **Import message:** "…; 24 frames repaired (24 limbs); 1 longer misread left as read".
+- **Live** (`liveGuard`, "Catch glitches" in the camera panel, on by default): readings are judged against the last
+  accepted one.
+  - A swap is undone on the spot.
+  - A limb whose bones read over 35% off their recent median is held.
+  - A limb jumping more than 0.35 m is held for up to 2 readings, then accepted if the next reading agrees (a real
+    fast move).
+  - Recordings keep the raw readings, so the bake repairs them.
+- **Photos:** `photoWarnings` compares each bone with the figure's own proportions, relative to the torso. More than
+  45% off gets a warning in the panel; nothing is changed.
+- **Verified:**
+  - **Synthetic test** (a swap, a 2-frame 90° arm throw, a +50% thigh, a whole-body collapse, and a real fast
+    punch): all five glitches caught, the punch not flagged, repairs within 0–4° of the clean take against 11–47°
+    unrepaired, and no flags on the clean take (Auto).
+  - **Live guard:** the swap undone, the glitch held, the real move accepted a frame later.
+  - **Real footage:**
+    - jumping jacks: 1 frame repaired;
+    - squat from behind: 24 short repairs, plus one 1.5 s arm misread left as read.

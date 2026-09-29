@@ -510,6 +510,12 @@
         <div class="axis"><div class="lab"><span>Smoothing</span></div><input type="range" id="tlSmooth" min="0" max="3" step="0.5"></div>
         <label class="toggle"><span>Keep feet planted</span><input type="checkbox" id="tlFoot"><i></i></label>
         <label class="toggle"><span>Face as in the video<span class="d">On: turned the way the performer faces the camera. Off: the figure keeps its facing</span></span><input type="checkbox" id="tlFace"><i></i></label>
+        <div class="field"><label for="tlGlitch">Fix glitches<span class="d" id="tlGlitchNote"></span></label>
+          <select id="tlGlitch" title="Auto: left/right swaps, limbs that jump and snap back, bones that suddenly read the wrong length — only short glitches; a long misread is left as read. Strong: tighter, and joints pinned at an impossible angle."><option value="off">Off</option><option value="auto">Auto (recommended)</option><option value="strong">Strong</option></select></div>
+        <div class="row" style="margin-top:4px"><span class="note" id="tlGlitchHere" style="flex:1"></span>
+          <button class="btn" id="tlGlMark" title="This frame (or the limb of the selected joint) is wrong: rebuild it from the frames either side">Mark as glitch</button>
+          <button class="btn" id="tlGlKeep" title="This frame is right as read: do not repair it">Keep as read</button>
+          <button class="btn" id="tlGlClear" title="Back to the detector's judgement for this frame">Clear</button></div>
         <div class="note" id="tlMode"></div>
         <div class="row" style="margin-top:8px"><button class="btn grow" id="tlRebake">Re-bake</button><button class="btn grow" id="tlClearKeys">Clear <span id="tlKeys"></span></button><button class="btn grow" id="tlDelete">Delete</button></div>
         <div class="note">Pause and pose a figure to fix that moment — the fix blends in and out. Re-bake applies the settings above.</div>
@@ -565,6 +571,7 @@
       </div>
       <label class="toggle"><span>Arrange like the photo<span class="d">Two or more people in a photo: place and turn them as it shows</span></span><input type="checkbox" id="camArrange" checked><i></i></label>
       <label class="toggle"><span>Use unsure joints<span class="d">On: go with the model's best guess. Off: keep a joint as it was when the model is unsure</span></span><input type="checkbox" id="camTrust" checked><i></i></label>
+      <label class="toggle"><span>Catch glitches<span class="d">Live: a reading with left/right swapped or a limb thrown out is held back. Photos: a limb that reads the wrong length is flagged</span></span><input type="checkbox" id="camGlitch" checked><i></i></label>
       <label class="toggle"><span>Head from the face<span class="d">Reads the head's tilt and turn from the face (a small extra model) — far truer than the body model's guess</span></span><input type="checkbox" id="camFace" checked><i></i></label>
       <label class="toggle"><span>Swap sides<span class="d">Figure acts as your reflection</span></span><input type="checkbox" id="camSwap"><i></i></label>
       <button class="btn grow" id="camReset" style="width:100%;margin-top:6px" title="Put the figure back to standing (a seated figure keeps its seat)">Reset figure to neutral</button>
@@ -2986,6 +2993,73 @@ function camSayMulti(res,how,arranged){
     (miss.length?' Set to neutral (not clear enough): '+miss.join('; ')+'.':''),false,true);
 }
 
+/* ---- glitches, live ----
+ * Live follow cannot wait for the next frame the way a bake can, so it judges each reading against the last one it
+ * accepted: a reading that fits far better with left and right swapped back is swapped back on the spot; a limb
+ * whose bones suddenly read well off their recent length is held where it was; and a limb that jumps impossibly far
+ * in one frame is held for up to two readings — if the next one agrees with where it jumped to, it was a real fast
+ * move and is taken, if it snaps back it was a glitch. The live glide hides the hold. A recording keeps the raw
+ * readings, so its bake can repair them with both neighbours. */
+function guardNew(){return {last:null,bones:{},pending:{}};}
+function liveGuard(g,pose){
+  if(!pose||!g||$('camGlitch')&&!$('camGlitch').checked)return pose;
+  if(!g.last){g.last=pose;return pose;}
+  const last=g.last;
+  const dist=(a,b,idx)=>idx.reduce((s,i)=>s+a.p[i].distanceTo(b.p[i]),0)/idx.length;
+  // a swap, straight back
+  const d0=dist(pose,last,GL_BODY), sw=labelSwap(pose), d1=dist(sw,last,GL_BODY);
+  if(d0>0.1&&d1<d0*0.6)pose=sw;
+  const out=Object.assign({},pose,{p:pose.p.slice(),v:pose.v.slice(),img:pose.img?pose.img.slice():null});
+  const hold=key=>{const J=key==='head'?[0,1,2,3,4,5,6,7,8,9,10]:GL_LIMBS[key].joints;
+    J.forEach(i=>{out.p[i]=last.p[i];out.v[i]=last.v[i];if(out.img&&last.img)out.img[i]=last.img[i];});};
+  for(const [key,l] of Object.entries(GL_LIMBS)){
+    if(key==='torso')continue;
+    // bones against their recent length
+    let stretched=false;
+    l.bones.forEach(([a,b])=>{
+      if(pose.v[a]<0.3||pose.v[b]<0.3)return;
+      const id=a+'-'+b, len=pose.p[a].distanceTo(pose.p[b]), hist=g.bones[id]||(g.bones[id]=[]);
+      if(hist.length>=10&&Math.abs(len/med(hist)-1)>0.35)stretched=true;
+    });
+    // a jump that has to prove itself
+    const J=l.joints.filter(i=>pose.v[i]>=0.3);
+    const jump=J.length?Math.max(...J.map(i=>pose.p[i].distanceTo(last.p[i]))):0;
+    let held=stretched;
+    if(!held&&jump>0.35){
+      const pd=g.pending[key];
+      if(pd&&pd.n<2&&Math.max(...J.map(i=>pose.p[i].distanceTo(pd.p[i])))>0.12){g.pending[key]={p:pose.p.slice(),n:pd.n+1};held=true;}
+      else if(!pd){g.pending[key]={p:pose.p.slice(),n:1};held=true;}
+      else delete g.pending[key];                    // it stayed where it jumped to: a real move
+    }else delete g.pending[key];
+    if(held)hold(key);
+    else l.bones.forEach(([a,b])=>{if(out.v[a]<0.3||out.v[b]<0.3)return;const id=a+'-'+b,hist=g.bones[id]||(g.bones[id]=[]);
+      hist.push(out.p[a].distanceTo(out.p[b]));if(hist.length>60)hist.shift();});
+  }
+  g.last=out;
+  return out;
+}
+/* A photo has no neighbours to repair from, so it is only checked against the figure's own proportions, and warned
+ * about rather than changed: "the left leg reads 60% too long — probably hidden; check it". */
+function photoWarnings(pose,f){
+  if(!pose||!f)return '';
+  f.group.updateMatrixWorld(true);
+  const W=n=>f.joints[n].pivot.getWorldPosition(new V3());
+  const rigTorso=W('lShoulder').add(W('rShoulder')).multiplyScalar(0.5).distanceTo(W('lHip').add(W('rHip')).multiplyScalar(0.5));
+  const P=i=>pose.p[i], mTorso=P(11).clone().add(P(12)).multiplyScalar(0.5).distanceTo(P(23).clone().add(P(24)).multiplyScalar(0.5));
+  if(!(rigTorso>0)||!(mTorso>0)||pose.v[11]<0.5||pose.v[23]<0.5)return '';
+  const B=[['left arm',11,13,'lShoulder','lElbow'],['left arm',13,15,'lElbow','lWrist'],['right arm',12,14,'rShoulder','rElbow'],['right arm',14,16,'rElbow','rWrist'],
+    ['left leg',23,25,'lHip','lKnee'],['left leg',25,27,'lKnee','lAnkle'],['right leg',24,26,'rHip','rKnee'],['right leg',26,28,'rKnee','rAnkle']];
+  const bad={};
+  B.forEach(([name,a,b,ja,jb])=>{
+    if(pose.v[a]<0.3||pose.v[b]<0.3)return;
+    const r=(P(a).distanceTo(P(b))/mTorso)/(W(ja).distanceTo(W(jb))/rigTorso);
+    if(Math.abs(r-1)>0.45&&(!bad[name]||Math.abs(r-1)>Math.abs(bad[name]-1)))bad[name]=r;
+  });
+  const names=Object.keys(bad); if(!names.length)return '';
+  return names.map(n=>'the '+n+' reads '+Math.round(Math.abs(bad[n]-1)*100)+'% too '+(bad[n]>1?'long':'short')).join(', ')+
+    ' — probably hidden or misread; check '+(names.length>1?'them':'it')+'.';
+}
+
 /* ---------- the webcam ---------- */
 function camTick(){
   camS.raf=requestAnimationFrame(camTick);
@@ -3000,7 +3074,7 @@ function camTick(){
   if(camS.rec)camS.rec.frames.push({t,people:[raw]});
   camDraw(raw,v.videoWidth,v.videoHeight);
   if(!raw){camS.last=null;if(!camS.counting)camIdle('No one in view yet.',true);return;}
-  const sm=camSmooth(raw,t); camS.last=sm;
+  const sm=camSmooth(liveGuard(camS.guard||(camS.guard=guardNew()),raw),t); camS.last=sm;
   camS.recent.push({t,p:sm}); while(camS.recent.length&&t-camS.recent[0].t>450)camS.recent.shift();
   if(camS.live||camS.rec){const r=camApply(sm,false);if(r&&!camS.counting&&!camS.rec)camSay(r,'Following:');}
   else if(!camS.counting)camIdle('Ready — Follow live, Snap in 3 (Space), or Record.');
@@ -3021,7 +3095,8 @@ function camTickTwo(v){
     camDraw(people.map(p=>p.pose),W,H);
     if(!people.length){if(!camS.counting)camIdle('No one in view yet.',true);return;}
     while(m.filters.length<people.length)m.filters.push([]);
-    const sm=people.map((p,i)=>smoothWith(m.filters[i],p.pose,t));
+    m.guards=m.guards||[]; while(m.guards.length<people.length)m.guards.push(guardNew());
+    const sm=people.map((p,i)=>smoothWith(m.filters[i],liveGuard(m.guards[i],p.pose),t));
     m.recent.push({t,people:sm}); while(m.recent.length&&t-m.recent[0].t>450)m.recent.shift();
     if((camS.live||camS.rec)&&m.figs){
       const res=camApplyMulti(sm.map(pose=>({pose})),m.figs.slice(0,sm.length),{});
@@ -3052,8 +3127,8 @@ async function camStart(){
   $('camStart').textContent='■ Stop camera';
   try{await camLoadFor();}
   catch(e){camTell('The pose model did not load: '+(e.message||e),true);return;}
-  camS.filters=null; camS.recent=[]; camS.lastT=-1;
-  camS.m.filters=[]; camS.m.recent=[]; camS.m.boxes=null; camS.m.frame=0;
+  camS.filters=null; camS.recent=[]; camS.lastT=-1; camS.guard=null;
+  camS.m.filters=[]; camS.m.recent=[]; camS.m.boxes=null; camS.m.frame=0; camS.m.guards=[];
   $('camLive').disabled=false; $('camSnap').disabled=false; $('camRec').disabled=false;
   camStatus(camTwoLive()?'Camera on. Two people: stand side by side, both in the picture.'
     :'Camera on. Stand back for full body, or sit at the desk for upper body.');
@@ -3145,6 +3220,8 @@ async function camFromImage(src){
   let out;
   if(people.length===1){
     const r=camApply(people[0].pose,true,{fresh:true,threshold:camThreshold(true)}); camSay(r,'Posed from the photo:');
+    const warn=$('camGlitch').checked?photoWarnings(people[0].pose,act):'';
+    if(warn){camTell($('camStatus').textContent+' ⚠ '+warn.charAt(0).toUpperCase()+warn.slice(1),true);if(r)r.warn=warn;}
     out=Object.assign({people:1},r);
   }else{
     const figs=figsForPeople(people.length), arrange=$('camArrange').checked;
@@ -3237,14 +3314,14 @@ function decPose(s){
 }
 function takeSnap(tk){
   return {id:tk.id,name:tk.name,W:tk.W,H:tk.H,dur:tk.dur,in:tk.in,out:tk.out,figIds:tk.figIds,base:tk.base,opts:tk.opts,
-    cams:tk.cams,cuts:tk.cuts,version:tk.version,
+    cams:tk.cams,cuts:tk.cuts,version:tk.version,glitch:tk.glitch||null,
     keys:tk.keys.map(k=>({fig:k.fig,t:k.t,d:Array.from(k.d,x=>Math.round(x*1e4)/1e4)})),
     frames:tk.src.map(fr=>({t:Math.round(fr.t),p:fr.people.map(encPose)}))};
 }
 function takeLoad(s){
   const tk={id:s.id||uid(),name:s.name||'Take',W:s.W||640,H:s.H||480,dur:s.dur||0,in:s.in||0,out:s.out||s.dur||0,
-    figIds:s.figIds||[],base:s.base||[],opts:Object.assign({root:'auto',smooth:1,foot:true,body:'auto',fps:24},s.opts||{}),
-    cams:s.cams||[],cuts:s.cuts||[],version:s.version||1,
+    figIds:s.figIds||[],base:s.base||[],opts:Object.assign({root:'auto',smooth:1,foot:true,body:'auto',fps:24,glitch:'auto'},s.opts||{}),
+    cams:s.cams||[],cuts:s.cuts||[],version:s.version||1,glitch:s.glitch&&typeof s.glitch==='object'?s.glitch:null,
     keys:(s.keys||[]).map(k=>({fig:k.fig,t:k.t,d:Float32Array.from(k.d)})),
     src:(s.frames||[]).map(fr=>({t:fr.t,people:fr.p.map(decPose)})),track:null};
   return tk;
@@ -3316,6 +3393,167 @@ function rootSeq(tk,seq){
   return est.map((_,j)=>{if(X[j]!=null)last={X:X[j],D:D[j],yaw:Y[j]};return last;});
 }
 
+/* ---- glitch frames (pose_glitch_plan.md) ----
+ * Now and then the model reads one frame haywire: left and right swapped, one limb somewhere it cannot be, a bone
+ * suddenly half again as long, the whole body folded. The frames either side are fine, so each failure leaves a mark
+ * the take's own statistics can see — and two-way smoothing would otherwise smear a single bad frame into a lurch.
+ * glitchMask() finds them per limb; repairSeq() unswaps a swap exactly, rebuilds a broken limb from the good frames
+ * either side (keeping the rest of that frame as read), and fills a broken frame from its neighbours. Raw landmarks
+ * stay stored: this runs at every bake, so a setting or an override just re-bakes. */
+const GL_LIMBS={
+  lArm:{name:'left arm',joints:[13,15,17,19,21],bones:[[11,13],[13,15]]},
+  rArm:{name:'right arm',joints:[14,16,18,20,22],bones:[[12,14],[14,16]]},
+  lLeg:{name:'left leg',joints:[25,27,29,31],bones:[[23,25],[25,27]]},
+  rLeg:{name:'right leg',joints:[26,28,30,32],bones:[[24,26],[26,28]]},
+  torso:{name:'torso',joints:[11,12,23,24],bones:[[11,12],[23,24],[11,23],[12,24]]},
+  head:{name:'head',joints:[0,2,5,7,8],bones:[]}
+};
+const GL_LEVEL={auto:{bone:0.32,floor:0.15,k:4.5,swap:0.6,collapse:4,limits:false},
+  strong:{bone:0.22,floor:0.10,k:3.5,swap:0.75,collapse:3,limits:true}};
+const GL_SPAN=Math.round(0.5*TAKE_FPS);        // how far to look for good frames to rebuild from
+/* A glitch is SHORT. A limb misread for longer than this — arms hidden behind a bar for most of a squat — is a
+   sustained misread: its "neighbours" are just as wrong, and rebuilding from them only froze the arm. Those runs are
+   left as read and noted, not repaired (a hand mark still repairs them). */
+const GL_RUN_MAX=8;
+const GL_BODY=[11,12,13,14,15,16,23,24,25,26,27,28];
+// the same person with left and right labels swapped back — the points stay where they are
+function labelSwap(ps){
+  const p=ps.p.slice(), v=ps.v.slice(), img=ps.img?ps.img.slice():null;
+  LM_PAIRS.forEach(([a,b])=>{[p[a],p[b]]=[p[b],p[a]];[v[a],v[b]]=[v[b],v[a]];if(img)[img[a],img[b]]=[img[b],img[a]];});
+  return Object.assign({},ps,{p,v,img});
+}
+const med=a=>{const s=a.slice().sort((x,y)=>x-y);return s.length?s[s.length>>1]:0;};
+// each joint's median position over the frames near j (not j itself)
+function refAround(seq,j,R){
+  const nb=[];for(let d=-R;d<=R;d++){if(!d)continue;const q=seq[j+d];if(q)nb.push(q);}
+  if(nb.length<2)return null;
+  return {nb,p:nb[0].p.map((_,i)=>new V3(med(nb.map(q=>q.p[i].x)),med(nb.map(q=>q.p[i].y)),med(nb.map(q=>q.p[i].z))))};
+}
+function glitchMask(seq,level,over){
+  const L=GL_LEVEL[level]||GL_LEVEL.auto, N=seq.length, out=new Array(N).fill(null);
+  const fr=j=>out[j]||(out[j]={swap:false,limbs:new Set(),whole:false,why:[]});
+  // bone lengths over the take: bones do not change length
+  const boneMed={};
+  Object.values(GL_LIMBS).forEach(l=>l.bones.forEach(([a,b])=>{
+    const ls=seq.filter(q=>q&&q.v[a]>=0.5&&q.v[b]>=0.5).map(q=>q.p[a].distanceTo(q.p[b]));
+    if(ls.length>=5)boneMed[a+'-'+b]=med(ls);
+  }));
+  // 1. swaps: does the frame fit its neighbours better with left and right swapped back?
+  const work=seq.slice();
+  for(let j=0;j<N;j++){
+    const q=work[j]; if(!q)continue;
+    const r=refAround(work,j,4); if(!r)continue;
+    const d=x=>GL_BODY.reduce((s,i)=>s+x.p[i].distanceTo(r.p[i]),0)/GL_BODY.length;
+    const d0=d(q), sw=labelSwap(q), d1=d(sw);
+    if(d0>L.floor*0.7&&d1<d0*L.swap){work[j]=sw;const m=fr(j);m.swap=true;m.why.push('left and right swapped');}
+  }
+  // 2. spikes: a joint far from where its neighbours put it, when they agree with each other
+  for(let j=0;j<N;j++){
+    const q=work[j]; if(!q)continue;
+    const r=refAround(work,j,3); if(!r)continue;
+    for(const [key,l] of Object.entries(GL_LIMBS)){
+      for(const i of l.joints){
+        if(q.v[i]<0.3)continue;
+        const e=q.p[i].distanceTo(r.p[i]);
+        if(e<L.floor)continue;
+        const spread=med(r.nb.map(n=>n.p[i].distanceTo(r.p[i])));
+        if(e>L.k*1.4826*spread){const m=fr(j);if(!m.limbs.has(key)){m.limbs.add(key);m.why.push(l.name+' jumped');}break;}
+      }
+    }
+  }
+  // 3. bone lengths
+  for(let j=0;j<N;j++){
+    const q=work[j]; if(!q)continue; let off=0;
+    for(const [key,l] of Object.entries(GL_LIMBS)){
+      for(const [a,b] of l.bones){
+        const M=boneMed[a+'-'+b]; if(!M||q.v[a]<0.3||q.v[b]<0.3)continue;
+        const r=q.p[a].distanceTo(q.p[b])/M;
+        if(Math.abs(r-1)>L.bone){off++;const m=fr(j);if(!m.limbs.has(key)){m.limbs.add(key);m.why.push(l.name+' '+Math.round(Math.abs(r-1)*100)+'% '+(r>1?'too long':'too short'));}}
+      }
+    }
+    if(off>=L.collapse){const m=fr(j);m.whole=true;m.why.push('the whole body read wrong');}
+  }
+  // a broken torso, or most of the body, is a broken frame
+  out.forEach(m=>{if(m&&(m.limbs.has('torso')||m.limbs.size>=3))m.whole=true;});
+  // long runs are misreads, not glitches: take them back out, and say so
+  const long=[];
+  // a stretch keeps going across a couple of clean frames: a misread hovering at the threshold is still one misread
+  const runs=(has,clear,label)=>{let j=0;while(j<N){if(!has(j)){j++;continue;}let e=j;
+    for(;;){let n=e+1;while(n<N&&n<=e+3&&!has(n))n++;if(n<N&&n<=e+3&&has(n))e=n;else break;}
+    if(e-j+1>GL_RUN_MAX){for(let q=j;q<=e;q++)clear(q);long.push({from:j,to:e,label});}j=e+1;}};
+  // (a bridged clean frame inside a stretch has no record to clear)
+  const drop=(j,name)=>{out[j].why=out[j].why.filter(w=>w.indexOf(name)!==0);};
+  runs(j=>!!(out[j]&&out[j].whole),j=>{if(out[j]){out[j].whole=false;drop(j,'the whole body');}},'the whole body');
+  Object.entries(GL_LIMBS).forEach(([key,l])=>runs(j=>!!(out[j]&&out[j].limbs.has(key)),j=>{if(out[j]){out[j].limbs.delete(key);drop(j,l.name);}},l.name));
+  out.forEach((m,j)=>{if(m&&!m.swap&&!m.whole&&!m.limbs.size)out[j]=null;});
+  // Strong's second pass: limbs a first bake found pinned against a joint limit
+  if(over&&over.pinned)Object.entries(over.pinned).forEach(([k,v])=>{const j=+k;if(j>=N||!seq[j])return;const m=fr(j);
+    v.forEach(x=>{if(GL_LIMBS[x]&&!m.limbs.has(x)){m.limbs.add(x);m.why.push(GL_LIMBS[x].name+' pinned at a joint limit');}});});
+  // the person's word over the detector's
+  if(over){
+    Object.keys(over.keep||{}).forEach(k=>{const j=+k;if(j<N)out[j]=null;});
+    Object.entries(over.mark||{}).forEach(([k,v])=>{const j=+k;if(j>=N||!seq[j])return;const m=fr(j);
+      if(v==='all')m.whole=true;else(Array.isArray(v)?v:[v]).forEach(x=>{if(GL_LIMBS[x])m.limbs.add(x);});
+      m.why.push('marked by hand');m.manual=true;});
+  }
+  return {mask:out,work,long};
+}
+function repairSeq(seq,level,over){
+  const {mask,work,long}=glitchMask(seq,level,over), N=seq.length, out=work.slice();
+  const bad=(j,key)=>{const m=mask[j];return !!(m&&(m.whole||(key&&m.limbs.has(key))));};
+  const find=(j,dir,key)=>{for(let d=1;d<=GL_SPAN;d++){const k=j+dir*d;if(k<0||k>=N)return -1;if(out[k]&&!bad(k,key)&&!(mask[k]&&mask[k].whole))return k;}return -1;};
+  const info=[];
+  for(let j=0;j<N;j++){
+    const m=mask[j]; if(!m||!seq[j])continue;
+    if(over&&over.keep&&over.keep[j]){out[j]=seq[j];continue;}
+    let fixed=true;
+    if(m.whole){
+      const a=find(j,-1,null), b=find(j,1,null);
+      if(a>=0&&b>=0)out[j]=lerpPose(out[a],out[b],(j-a)/(b-a));
+      else if(a>=0||b>=0)out[j]=out[a>=0?a:b];
+      else{out[j]=null;fixed=false;}
+    }else if(m.limbs.size){
+      const q=Object.assign({},out[j],{p:out[j].p.map(v=>v.clone()),v:out[j].v.slice(),img:out[j].img?out[j].img.map(x=>Object.assign({},x)):null});
+      m.limbs.forEach(key=>{
+        const J=key==='head'?[0,1,2,3,4,5,6,7,8,9,10]:GL_LIMBS[key].joints;
+        const a=find(j,-1,key), b=find(j,1,key);
+        if(a<0&&b<0){J.forEach(i=>{q.v[i]=0;});fixed=false;return;}      // nothing to rebuild from: the retarget holds it
+        const A=out[a>=0?a:b], B=out[b>=0?b:a], u=a>=0&&b>=0?(j-a)/(b-a):0;
+        J.forEach(i=>{q.p[i]=A.p[i].clone().lerp(B.p[i],u);q.v[i]=Math.min(A.v[i],B.v[i]);
+          if(q.img&&A.img&&B.img)q.img[i]={x:A.img[i].x+(B.img[i].x-A.img[i].x)*u,y:A.img[i].y+(B.img[i].y-A.img[i].y)*u,visibility:q.v[i]};});
+      });
+      out[j]=q;
+    }
+    info.push({j,t:j/TAKE_FPS,kind:m.whole?'frame':m.limbs.size?'limb':'swap',swap:m.swap,limbs:[...m.limbs],why:m.why,fixed,manual:!!m.manual});
+  }
+  // the misreads left alone, as one note per stretch
+  (long||[]).forEach(r=>info.push({j:r.from,t:r.from/TAKE_FPS,to:r.to/TAKE_FPS,kind:'long',swap:false,limbs:[],fixed:false,manual:false,
+    why:[r.label+' misread for '+((r.to-r.from+1)/TAKE_FPS).toFixed(1)+' s — too long to be a glitch, left as read']}));
+  info.sort((a,b)=>a.j-b.j);
+  return {seq:out,info};
+}
+function glitchSummary(info){
+  if(!info||!info.length)return '';
+  const fixed=info.filter(x=>x.kind!=='long'), lg=info.length-fixed.length;
+  const sw=fixed.filter(x=>x.swap).length, lb=fixed.filter(x=>x.kind==='limb').length, wh=fixed.filter(x=>x.kind==='frame').length;
+  const bits=[]; if(sw)bits.push(sw+' swap'+(sw>1?'s':'')); if(lb)bits.push(lb+' limb'+(lb>1?'s':''));
+  if(wh)bits.push(wh+' whole frame'+(wh>1?'s':''));
+  return [fixed.length?fixed.length+' frame'+(fixed.length>1?'s':'')+' repaired ('+bits.join(', ')+')':'',
+    lg?lg+' longer misread'+(lg>1?'s':'')+' left as read':''].filter(Boolean).join('; ');
+}
+// Strong: a limb pinned hard against a joint limit for a frame where its neighbours are not
+function pinnedLimbs(f){
+  const J={lArm:['lShoulder','lElbow'],rArm:['rShoulder','rElbow'],lLeg:['lHip','lKnee'],rLeg:['rHip','rKnee']}, out=[];
+  for(const [key,js] of Object.entries(J)){
+    if(js.some(n=>{const j=f.joints[n];return j&&['x','y','z'].some(ax=>{const L=j.lim[ax];if(!L||L[1]-L[0]<5)return false;
+      const v=f.getA(n,ax);
+      // a fully straight elbow or knee is an everyday pose, not an impossible one: only its bent-too-far end counts
+      if(ax==='x'&&/Elbow|Knee/.test(n))return L[1]-v<1.5;
+      return v-L[0]<1.5||L[1]-v<1.5;});}))out.push(key);
+  }
+  return out;
+}
+
 /* ---- bake ---- */
 const trackJoints=f=>ORDER.filter(n=>f.joints[n]);
 function recordFrame(f){
@@ -3339,9 +3577,20 @@ function bakeTake(tk){
   tk.figIds.forEach((fid,k)=>{
     const f=figById(fid), base=tk.base[k];
     if(!f||!base){tk.track[k]=null;return;}
-    const raw=resampleTake(tk,k);
+    const read=resampleTake(tk,k);
+    tk.gaps[k]=read.map(x=>!x);
+    // glitch frames repaired before smoothing, so one bad frame cannot spread into its neighbours
+    const lvl=tk.opts.glitch||'auto';
+    let over=(tk.glitch&&tk.glitch[k])||null;
+    if(tk._limitPass&&tk._limitPass[k])over=Object.assign({mark:{},keep:{}},over||{},{pinned:tk._limitPass[k]});
+    let raw=read;
+    tk.glitchInfo=tk.glitchInfo||[]; tk.glitchInfo[k]=[];
+    if(lvl!=='off'||(over&&over.mark&&Object.keys(over.mark).length)){
+      const G=repairSeq(read,lvl==='off'?'auto':lvl,lvl==='off'?{mark:over.mark,keep:{}}:over);
+      if(lvl==='off')G.info=G.info.filter(x=>x.manual);
+      raw=lvl==='off'?read.map((q,j)=>G.info.some(x=>x.j===j)?G.seq[j]:q):G.seq; tk.glitchInfo[k]=G.info;
+    }
     const seq=smoothSeq(raw,0.6+tk.opts.smooth*0.9);
-    tk.gaps[k]=raw.map(x=>!x);
     // one body mode for the whole take, so it cannot flicker between full and upper frame to frame
     const sureFull=seq.filter(ps=>ps&&[23,24].every(i=>ps.v[i]>=VIS_OK)&&(ps.v[25]>=VIS_OK||ps.v[26]>=VIS_OK)).length;
     const full=tk.opts.body==='full'||(tk.opts.body!=='upper'&&!base.seat&&sureFull>=0.6*seq.filter(Boolean).length);
@@ -3378,6 +3627,22 @@ function bakeTake(tk){
     tk.track[k]=track;
   });
   tk.baked=Date.now();
+  /* Strong: once more, with any limb that came out pinned against a joint limit for a frame (where the frames
+     either side are not) rebuilt from its neighbours — the retarget's way of saying the reading was impossible. */
+  if(tk.opts.glitch==='strong'&&!tk._limitPass){
+    const extra=[]; let any=false;
+    tk.figIds.forEach((fid,k)=>{
+      const f=figById(fid), track=tk.track[k]; if(!f||!track)return;
+      const pins=track.map(fr=>{applyRecorded(f,fr);return pinnedLimbs(f);}), m={};
+      pins.forEach((ls,j)=>ls.forEach(key=>{
+        // judged against both neighbours, so the first and last frames are left alone
+        if(j===0||j===pins.length-1||pins[j-1].includes(key)||pins[j+1].includes(key))return;
+        (m[j]=m[j]||[]).push(key); any=true;
+      }));
+      extra[k]=m;
+    });
+    if(any){tk._limitPass=extra;try{bakeTake(tk);}finally{delete tk._limitPass;}}
+  }
 }
 /* Root pinning, the standard motion-capture cleanup. How far away someone is, judged from their torso's size in the
  * picture, drifts with the pose (raising an arm lifts the shoulder landmark and the torso reads longer), so a performer
@@ -3573,7 +3838,9 @@ function tlUI(){
     mk('✕','Delete camera '+c.name,()=>{tk.cuts=tk.cuts.filter(k=>k.cam!==c.id);tk.cams.splice(tl.cam,1);tl.cam=Math.max(0,tl.cam-1);takeChanged();tlUI();drawTrack();});
   }
   $('tlEdit').checked=tl.edit; $('tlCut').disabled=!tk.cams.length;
-  $('tlName').value=tk.name; $('tlRoot').value=tk.opts.root; $('tlSmooth').value=tk.opts.smooth; $('tlFoot').checked=tk.opts.foot; $('tlFace').checked=tk.opts.face==='video';
+  $('tlName').value=tk.name; $('tlRoot').value=tk.opts.root; $('tlSmooth').value=tk.opts.smooth; $('tlFoot').checked=tk.opts.foot; $('tlGlitch').value=tk.opts.glitch||'auto';
+  $('tlGlitchNote').textContent=' — '+(glitchSummary([].concat(...(tk.glitchInfo||[]).map(g=>g||[])))||'none found');
+  glitchHereUI(); $('tlFace').checked=tk.opts.face==='video';
   $('tlFps').value=String(tk.opts.fps||24); $('tlKeys').textContent=tk.keys.length?tk.keys.length+' fix'+(tk.keys.length>1?'es':''):'no fixes';
   const modes=(tk.modes||[]).map((m,k)=>{const f=figById(tk.figIds[k]);return (f?f.name:'?')+': '+(m.full?(m.travel?'full body, travels':'full body, in place'):'upper body');}).join(' · ');
   $('tlMode').textContent=modes;
@@ -3590,6 +3857,12 @@ function drawTrack(){
   (tk.gaps||[]).forEach(g=>{if(!g)return;x.fillStyle='rgba(224,106,90,.65)';g.forEach((gap,j)=>{if(gap)x.fillRect(T(j/TAKE_FPS),0,Math.max(1,W/g.length),H*0.55);});});
   // correction keys
   x.fillStyle='#ffc757'; tk.keys.forEach(k=>{x.beginPath();x.moveTo(T(k.t),2);x.lineTo(T(k.t)+4,8);x.lineTo(T(k.t)-4,8);x.fill();});
+  // repaired glitch frames: a red tick, taller for a whole frame, hollow where it could not be rebuilt
+  (tk.glitchInfo||[]).forEach(g=>(g||[]).forEach(e=>{
+    if(e.kind==='long'){x.strokeStyle='rgba(255,90,74,.6)';x.lineWidth=1;x.strokeRect(T(e.t)+0.5,H*0.44,Math.max(2,T(e.to)-T(e.t)),H*0.1);return;}
+    const X=T(e.t), h=e.kind==='frame'?H*0.5:H*0.3;
+    x.fillStyle=e.fixed?'#ff5a4a':'rgba(255,90,74,.45)'; x.fillRect(X-1,H*0.55-h,2,h);
+  }));
   // the edit: one colour per camera
   const cuts=tk.cuts.slice().sort((a,b)=>a.t-b.t);
   if(tk.cams.length){
@@ -3603,6 +3876,7 @@ function drawTrack(){
   x.fillStyle='#ffc757'; [tk.in,tk.out].forEach(t=>x.fillRect(T(t)-2,0,4,H*0.55));
   x.fillStyle='#fff'; x.fillRect(T(tl.t)-1,0,2,H);
   $('tlTime').textContent=tl.t.toFixed(2)+' / '+tk.dur.toFixed(1)+'s';
+  if($('tlSet').classList.contains('open'))glitchHereUI();
 }
 {
   const c=$('tlTrack');
@@ -3615,6 +3889,12 @@ function drawTrack(){
     if(tl.drag==='scrub'){tlPlay(false);showTakeAt(t);}
   });
   c.addEventListener('pointermove',e=>{
+    if(!tl.drag&&tl.take){
+      // hovering a repaired frame says what was wrong with it
+      const tk=tl.take, t=tOf(e), px=tk.dur/Math.max(1,c.clientWidth)*4;
+      const hit=[].concat(...(tk.glitchInfo||[]).map(g=>g||[])).find(g=>g.kind==='long'?t>=g.t-px&&t<=g.to+px:Math.abs(g.t-t)<px);
+      c.title=hit?glitchTip(hit):'';
+    }
     if(!tl.drag||!tl.take)return; const tk=tl.take, t=Math.round(tOf(e)*TAKE_FPS)/TAKE_FPS;
     if(tl.drag==='in')tk.in=Math.min(t,tk.out-0.2);
     else if(tl.drag==='out')tk.out=Math.max(t,tk.in+0.2);
@@ -3728,7 +4008,7 @@ function makeTake(frames,figs,W,H,more){
   const t0=frames[0].t; frames.forEach(fr=>{fr.t-=t0;});
   const tk={id:uid(),name:'Take '+(takes.length+1),W,H,dur:frames[frames.length-1].t/1000,in:0,out:0,
     figIds:figs.map(f=>f.id),base:figs.map(f=>({pos:f.group.position.toArray(),turn:f.turn,pose:f.getPose(),pel:f.pelvisOffset(),seat:f.seat||null})),
-    opts:Object.assign({root:'auto',smooth:1,foot:true,face:'figure',body:$('camBody').value,fps:24,swap:$('camSwap').checked,trust:$('camTrust').checked},more||{}),
+    opts:Object.assign({root:'auto',smooth:1,foot:true,face:'figure',glitch:'auto',body:$('camBody').value,fps:24,swap:$('camSwap').checked,trust:$('camTrust').checked},more||{}),
     cams:[],cuts:[],keys:[],version:1,src:frames,track:null};
   tk.out=tk.dur;
   figs.forEach(f=>{f.goals=[];});
@@ -3833,8 +4113,9 @@ async function camImportVideo(file){
   if(!tk){camTell('Nobody was found in that video.',true);return null;}
   tk.name=file.name.replace(/\.[^.]+$/,'').slice(0,40)||tk.name; saveTakes();
   openTake(tk); commit();
-  const share=found/(N+1);
+  const share=found/(N+1), rep=glitchSummary([].concat(...(tk.glitchInfo||[]).map(g=>g||[])));
   camTell((share<0.5?'⚠ ':'✓ ')+tk.name+': '+tk.dur.toFixed(1)+'s read from the video — a person in '+found+' of '+(N+1)+' frames'+
+    (rep?'; '+rep:'')+
     (share<0.5?'; the rest are gaps the figure holds still through. Try a clip where the person fills more of the picture.'
       :'. Play it, add cameras and cut it below.'),share<0.5,share>=0.5);
   return tk;
@@ -3849,14 +4130,52 @@ $('tlTake').onchange=e=>{const tk=takeById(e.target.value);if(tk)openTake(tk);};
 $('tlAddCam').onclick=addCam;
 $('tlCut').onclick=()=>addCut(tl.cam);
 $('tlEdit').onchange=e=>{tl.edit=e.target.checked;if(tl.edit&&tl.take)showTakeAt(tl.t);};
-$('tlGear').onclick=()=>{$('tlExp').classList.remove('open');$('tlSet').classList.toggle('open');};
+$('tlGear').onclick=()=>{$('tlExp').classList.remove('open');$('tlSet').classList.toggle('open');if(typeof glitchHereUI==='function')glitchHereUI();};
 $('tlExport').onclick=()=>{$('tlSet').classList.remove('open');$('tlExp').classList.toggle('open');tlExpUI();};
 $('tlName').onchange=e=>{if(tl.take){tl.take.name=e.target.value.trim()||tl.take.name;takeChanged();tlUI();}};
 $('tlFps').onchange=e=>{if(tl.take){tl.take.opts.fps=+e.target.value;takeChanged();}};
 $('tlRebake').onclick=()=>{const tk=tl.take;if(!tk)return;
-  tk.opts.root=$('tlRoot').value; tk.opts.smooth=+$('tlSmooth').value; tk.opts.foot=$('tlFoot').checked; tk.opts.face=$('tlFace').checked?'video':'figure';
+  tk.opts.root=$('tlRoot').value; tk.opts.smooth=+$('tlSmooth').value; tk.opts.foot=$('tlFoot').checked; tk.opts.glitch=$('tlGlitch').value; tk.opts.face=$('tlFace').checked?'video':'figure';
   $('tlStatus').textContent='Re-baking…';
   setTimeout(()=>{bakeTake(tk);takeChanged();tlUI();showTakeAt(tl.t);$('tlStatus').textContent='';toast('Re-baked '+tk.name);},20);};
+function glitchTip(g){
+  if(g.kind==='long')return g.t.toFixed(2)+'–'+g.to.toFixed(2)+'s: '+g.why.join('; ')+'. Mark a frame as a glitch to repair it anyway.';
+  return (g.fixed?'Repaired':'Could not repair')+' at '+g.t.toFixed(2)+'s — '+g.why.join('; ')+
+    (g.kind==='frame'?' (whole frame rebuilt from its neighbours)':g.limbs.length?' ('+g.limbs.map(k=>GL_LIMBS[k].name).join(', ')+' rebuilt)':' (swapped back)');
+}
+// the take's own frame number at the playhead, and the figure it is about
+const glFrame=()=>Math.round((tl.t||0)*TAKE_FPS);
+const glFig=()=>{const tk=tl.take;if(!tk)return 0;const k=act?tk.figIds.indexOf(act.id):-1;return k<0?0:k;};
+// the limb of the selected joint, or the whole frame
+function glLimbOf(n){
+  if(!n)return 'all';
+  if(/^l(Shoulder|Elbow|Wrist)/.test(n))return 'lArm'; if(/^r(Shoulder|Elbow|Wrist)/.test(n))return 'rArm';
+  if(/^l(Hip|Knee|Ankle)/.test(n))return 'lLeg'; if(/^r(Hip|Knee|Ankle)/.test(n))return 'rLeg';
+  if(n==='head'||n==='neck')return 'head';
+  return 'all';
+}
+function glitchHereUI(){
+  const tk=tl.take; if(!tk)return;
+  const k=glFig(), j=glFrame(), g=((tk.glitchInfo||[])[k]||[]).find(x=>x.j===j), o=(tk.glitch&&tk.glitch[k])||{};
+  $('tlGlitchHere').textContent=o.keep&&o.keep[j]?'This frame: kept as read.':o.mark&&o.mark[j]?'This frame: marked by hand.':
+    g?'This frame: '+g.why.join('; ')+'.':'This frame: fine.';
+}
+function glitchOverride(kind){
+  const tk=tl.take; if(!tk)return;
+  const k=glFig(), j=glFrame();
+  tk.glitch=tk.glitch||[]; const o=tk.glitch[k]=tk.glitch[k]||{mark:{},keep:{}};
+  o.mark=o.mark||{}; o.keep=o.keep||{};
+  delete o.mark[j]; delete o.keep[j];
+  if(kind==='mark')o.mark[j]=glLimbOf(sel);
+  else if(kind==='keep')o.keep[j]=true;
+  $('tlStatus').textContent='Re-baking…';
+  setTimeout(()=>{bakeTake(tk);takeChanged();tlUI();showTakeAt(tl.t);$('tlStatus').textContent='';},20);
+}
+$('tlGlMark').onclick=()=>glitchOverride('mark');
+$('tlGlKeep').onclick=()=>glitchOverride('keep');
+$('tlGlClear').onclick=()=>glitchOverride('clear');
+$('tlGlitch').onchange=e=>{const tk=tl.take;if(!tk)return;tk.opts.glitch=e.target.value;
+  $('tlStatus').textContent='Re-baking…';setTimeout(()=>{bakeTake(tk);takeChanged();tlUI();showTakeAt(tl.t);$('tlStatus').textContent='';},20);};
 $('tlClearKeys').onclick=()=>{if(!tl.take)return;tl.take.keys=[];takeChanged();tlUI();showTakeAt(tl.t);};
 $('tlDelete').onclick=()=>{const tk=tl.take;if(!tk)return;if(!confirm('Delete '+tk.name+'? The figures keep the pose they have now.'))return;
   takes=takes.filter(t=>t!==tk);saveTakes();closeTimeline();commit();};
@@ -4124,7 +4443,7 @@ refreshPropUI();
   glideTick(performance.now());
   updateHandles();renderer.render(scene,camera);})();
 if(EMBED)try{window.parent.postMessage({type:'posebench:ready'},'*');}catch(e){}
-window.__pb={addHead,faceLoad,get glides(){return glides;},glideTick,glideFinish,camApply,get tl(){return tl;},makeTake,bakeTake,openTake,showTakeAt,exportTake,cutList,takeSnap,takeLoad,camImportVideo,addCam,addCut,tlPlay,setCamView,viewNow,blockingText,retarget,synthLandmarks,readPose,camFromImage,mpLoad,detLoad,findPeople,camApply,camStart,camSnap,get camState(){return camS;},get figures(){return figures;},get props(){return props;},get act(){return act;},cam,fitShot,setView,frameAll,PRESETS,WORK,SCENES,
+window.__pb={liveGuard,guardNew,photoWarnings,glitchMask,repairSeq,labelSwap,glitchSummary,glitchOverride,addHead,faceLoad,get takes(){return takes;},get glides(){return glides;},glideTick,glideFinish,camApply,get tl(){return tl;},makeTake,bakeTake,openTake,showTakeAt,exportTake,cutList,takeSnap,takeLoad,camImportVideo,addCam,addCut,tlPlay,setCamView,viewNow,blockingText,retarget,synthLandmarks,readPose,camFromImage,mpLoad,detLoad,findPeople,camApply,camStart,camSnap,get camState(){return camS;},get figures(){return figures;},get props(){return props;},get act(){return act;},cam,fitShot,setView,frameAll,PRESETS,WORK,SCENES,
   camera,applyCam,selectJoint,solveChain,commit,applyNamed,goalFrame,eyePoint};
 })();
 </script>
