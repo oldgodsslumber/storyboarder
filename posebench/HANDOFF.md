@@ -421,3 +421,13 @@ agreed with its 2D (mostly within 0–10°), so the losses were in `retarget`.
 
 The diagnostic script is `diag_translate.js` in the session scratchpad. Its table columns: `img~model`,
 `model~figure` and `3d model~figure`, plus the depth of each bone.
+
+## Steady standing: the model's depth guess for a still stance (2026-09-29, after "the dummy looks like it has to pee")
+
+A neutral standing photo came out with bent knees, a forward torso and forearms raised toward the lens, while the 2D skeleton on the photo was straight. Diagnosis on three neutral photos (`diag_stand.js`): the retarget was faithful (model vs figure 0–2°). The fault was MediaPipe's world **depth**, biased the same way every time: shins 16–29° back, forearms 9–35° toward the camera, torso 4–16° forward. Heavy was no better (the knees were worse). The picture can't settle it: a 22° depth tilt shortens a bone on screen by only 7%.
+
+`steadyDepth(ps)` runs before `retarget` in `camApply`/`camApplyMulti` when **Steady standing** (`camSteady`, default on) is set, and only when `standingStill(ps)` holds: hips, knees and ankles all confident, legs mostly extended, feet level, torso within 35° of upright. It then:
+- damps each bone's depth tilt (torso, then the arm and leg bones from the root out, carrying descendants): tilts under 30° are kept at 20%, tilts over 45° are kept whole, and the range between is blended;
+- slides the ankles in depth under the centre of mass, with the knees following half way.
+
+Only camera-space z moves, so the photo-angle view is unchanged. Results: knees went from 14–27° to 4–11°, and the spine from 10–16° lean to 3–4°. Hands-on-hips elbows stay bent (they're real). Squats, seated poses, a bird-dog and a mid-stride photo are not steadied. Takes don't use it (a walk seen from the front can pass for standing).

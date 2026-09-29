@@ -571,6 +571,7 @@
       </div>
       <label class="toggle"><span>Arrange like the photo<span class="d">Two or more people in a photo: place and turn them as it shows</span></span><input type="checkbox" id="camArrange" checked><i></i></label>
       <label class="toggle"><span>Use unsure joints<span class="d">On: go with the model's best guess. Off: keep a joint as it was when the model is unsure</span></span><input type="checkbox" id="camTrust" checked><i></i></label>
+      <label class="toggle"><span>Steady standing<span class="d">For someone standing on both feet: trusts the picture over the model's shaky depth guess — straight knees, feet level, weight over the feet. Seen from the photo's angle nothing changes</span></span><input type="checkbox" id="camSteady" checked><i></i></label>
       <label class="toggle"><span>Catch glitches<span class="d">Live: a reading with left/right swapped or a limb thrown out is held back. Photos: a limb that reads the wrong length is flagged</span></span><input type="checkbox" id="camGlitch" checked><i></i></label>
       <label class="toggle"><span>Head from the face<span class="d">Reads the head's tilt and turn from the face (a small extra model) — far truer than the body model's guess</span></span><input type="checkbox" id="camFace" checked><i></i></label>
       <label class="toggle"><span>Swap sides<span class="d">Figure acts as your reflection</span></span><input type="checkbox" id="camSwap"><i></i></label>
@@ -2650,6 +2651,58 @@ function twoBone(rootW,rel,a,b,pole,fallbackPole){
   const mid=rootW.clone().addScaledVector(u,a*cosA).addScaledVector(pp,a*sinA), end=rootW.clone().addScaledVector(u,d);
   return {up:mid.clone().sub(rootW).normalize(),lo:end.clone().sub(mid).normalize(),mid,end};
 }
+/* ---- steady depth, for a person standing on both feet ----
+ * The pose model's DEPTH for a standing person is biased, and the same way every time: shins leaning 20–29° back,
+ * forearms 20–35° toward the lens, the torso tipped 10–16° forward — the figure looked like it needed the loo, while
+ * the picture (and the skeleton drawn on it) showed a straight stance. The picture cannot settle it: a shin tipped 22°
+ * away is 7% shorter on screen, inside the noise. Two priors can, for a person standing on both feet:
+ *   - depth tilts under ~30° are the model's weakest guess: damped toward the picture plane (a bone that plainly
+ *     points at the lens, over ~45°, keeps its depth — the picture shows it foreshortened);
+ *   - balance: standing still, the body's weight is over the feet, so the ankles go under the centre of mass.
+ * Both move points in DEPTH only (the camera's z, before the turn is taken out): seen from the photo's angle nothing
+ * changes. Not applied to takes by default — a walk seen from the front looks like standing. */
+function standingStill(ps){
+  const P=ps.p, v=ps.v, ok=i=>v[i]>=VIS_OK;
+  if(![11,12,23,24,25,26,27,28].every(ok))return false;
+  const hip=(P[23].y+P[24].y)/2, leg=((P[23].distanceTo(P[25])+P[25].distanceTo(P[27]))+(P[24].distanceTo(P[26])+P[26].distanceTo(P[28])))/2;
+  if(!(leg>0.2))return false;
+  // knees below the hips, ankles below the knees, both feet down, torso roughly upright
+  if(!(P[25].y<hip&&P[26].y<hip&&P[27].y<P[25].y&&P[28].y<P[26].y))return false;
+  if(Math.abs(P[27].y-P[28].y)>0.12*leg)return false;
+  if(hip-(P[27].y+P[28].y)/2<0.75*leg)return false;                      // legs mostly extended, not a squat
+  const T=P[11].clone().add(P[12]).multiplyScalar(0.5).sub(P[23].clone().add(P[24]).multiplyScalar(0.5));
+  return T.y>0&&Math.atan2(Math.hypot(T.x,T.z),T.y)<35*DEG;
+}
+function steadyDepth(ps){
+  if(!ps||!standingStill(ps))return ps;
+  const P=ps.p.map(q=>q.clone());
+  // the tilt a bone keeps: small ones damped, large ones (the picture shows them) kept
+  const keep=t=>{const a=Math.abs(t);return t*(a<=30*DEG?0.2:a>=45*DEG?1:0.2+(1-0.2)*(a-30*DEG)/(15*DEG));};
+  const redo=(a,b,kids)=>{                                      // re-aim bone a->b in depth, carrying b's descendants
+    const d=P[b].clone().sub(P[a]), L=d.length(); if(L<1e-6)return;
+    const h=Math.hypot(d.x,d.y), t=Math.atan2(d.z,h), t2=keep(t);
+    const nd=h>1e-6?new V3(d.x/h*L*Math.cos(t2),d.y/h*L*Math.cos(t2),L*Math.sin(t2)):d;
+    const shift=P[a].clone().add(nd).sub(P[b]);
+    [b].concat(kids).forEach(i=>P[i].add(shift));
+  };
+  // torso: shoulders (and everything above them) over the hips
+  {
+    const hm=P[23].clone().add(P[24]).multiplyScalar(0.5), sm=P[11].clone().add(P[12]).multiplyScalar(0.5);
+    const d=sm.clone().sub(hm), L=d.length(), h=Math.hypot(d.x,d.y), t2=keep(Math.atan2(d.z,h));
+    if(h>1e-6){const nd=new V3(d.x/h*L*Math.cos(t2),d.y/h*L*Math.cos(t2),L*Math.sin(t2)), sh=hm.clone().add(nd).sub(sm);
+      [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22].forEach(i=>P[i].add(sh));}
+  }
+  // arms and legs, bone by bone from the root out
+  redo(11,13,[15,17,19,21]); redo(13,15,[17,19,21]);
+  redo(12,14,[16,18,20,22]); redo(14,16,[18,20,22]);
+  redo(23,25,[27,29,31]); redo(25,27,[29,31]);
+  redo(24,26,[28,30,32]); redo(26,28,[30,32]);
+  // balance: the ankles under the centre of mass (hips and torso), in depth; the knees follow half way
+  const com=P[23].z*0.3+P[24].z*0.3+P[11].z*0.2+P[12].z*0.2, am=(P[27].z+P[28].z)/2, dz=com-am;
+  if(Math.abs(dz)<0.3){[27,28,29,30,31,32].forEach(i=>{P[i].z+=dz;});P[25].z+=dz*0.5;P[26].z+=dz*0.5;}
+  return Object.assign({},ps,{p:P,steadied:true});
+}
+
 function retarget(f,pose,o={}){
   const P=pose.p.map(v=>v.clone()), vis=pose.v, TH=o.threshold||VIS_OK;
   const ok=(...ks)=>ks.every(k=>vis[LM[k]]>=TH);
@@ -2941,7 +2994,8 @@ function glideFinish(){glides.forEach((g,f)=>{if(figures.includes(f))setPoseStat
 function camSmooth(pose,t){if(!camS.filters)camS.filters=[];return smoothWith(camS.filters,pose,t);}
 function camApply(pose,commitNow,o={}){
   if(!act||!pose)return null;
-  const go=()=>retarget(act,$('camSwap').checked?swapPose(pose):pose,Object.assign({body:$('camBody').value,threshold:camThreshold(false)},o));
+  const pz=$('camSteady').checked?steadyDepth(pose):pose;
+  const go=()=>retarget(act,$('camSwap').checked?swapPose(pz):pz,Object.assign({body:$('camBody').value,threshold:camThreshold(false)},o));
   let r;
   if(commitNow||o.fresh){glideFinish();r=go();}else r=glideTo(act,go);
   syncAxes();
@@ -3012,7 +3066,8 @@ function arrangeLikePhoto(figs,people,W,H){
 function camApplyMulti(people,figs,o){
   const live=!(o&&(o.fresh||o.arrange));
   if(!live)glideFinish();
-  const res=people.map((pp,i)=>{const go=()=>retarget(figs[i],$('camSwap').checked?swapPose(pp.pose):pp.pose,
+  const res=people.map((pp,i)=>{const pz=$('camSteady').checked?steadyDepth(pp.pose):pp.pose;
+    const go=()=>retarget(figs[i],$('camSwap').checked?swapPose(pz):pz,
     Object.assign({body:$('camBody').value,threshold:camThreshold(false)},o));
     return {fig:figs[i],r:live?glideTo(figs[i],go):go()};});
   syncAxes();
@@ -4489,7 +4544,7 @@ refreshPropUI();
   glideTick(performance.now());
   updateHandles();renderer.render(scene,camera);})();
 if(EMBED)try{window.parent.postMessage({type:'posebench:ready'},'*');}catch(e){}
-window.__pb={viewAsPhoto,liveGuard,guardNew,photoWarnings,glitchMask,repairSeq,labelSwap,glitchSummary,glitchOverride,addHead,faceLoad,get takes(){return takes;},get glides(){return glides;},glideTick,glideFinish,camApply,get tl(){return tl;},makeTake,bakeTake,openTake,showTakeAt,exportTake,cutList,takeSnap,takeLoad,camImportVideo,addCam,addCut,tlPlay,setCamView,viewNow,blockingText,retarget,synthLandmarks,readPose,camFromImage,mpLoad,detLoad,findPeople,camApply,camStart,camSnap,get camState(){return camS;},get figures(){return figures;},get props(){return props;},get act(){return act;},cam,fitShot,setView,frameAll,PRESETS,WORK,SCENES,
+window.__pb={steadyDepth,standingStill,viewAsPhoto,liveGuard,guardNew,photoWarnings,glitchMask,repairSeq,labelSwap,glitchSummary,glitchOverride,addHead,faceLoad,get takes(){return takes;},get glides(){return glides;},glideTick,glideFinish,camApply,get tl(){return tl;},makeTake,bakeTake,openTake,showTakeAt,exportTake,cutList,takeSnap,takeLoad,camImportVideo,addCam,addCut,tlPlay,setCamView,viewNow,blockingText,retarget,synthLandmarks,readPose,camFromImage,mpLoad,detLoad,findPeople,camApply,camStart,camSnap,get camState(){return camS;},get figures(){return figures;},get props(){return props;},get act(){return act;},cam,fitShot,setView,frameAll,PRESETS,WORK,SCENES,
   camera,applyCam,selectJoint,solveChain,commit,applyNamed,goalFrame,eyePoint};
 })();
 </script>
