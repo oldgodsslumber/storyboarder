@@ -1221,6 +1221,18 @@
       (m.warnings.length ? ' — ' + m.warnings.length + ' thing' + (m.warnings.length === 1 ? '' : 's') + ' to check' : '');
     b.onclick = function () { SB.Mxm.open(sh, role); };
     wrap.appendChild(b);
+    /* the Seedance reference-mode experiments (seedtest.js) — temporary, for a card cut from a performance */
+    if (role === 'video' && SB.SeedTest && SB.Pose && SB.Pose.perfLink(sh)) {
+      const t = SB.el('button', 'mini seedtest-btn', '🧪 Test Seedance reference (3 pushes)');
+      t.title = 'Runs the three reference-mode tests through your ImagineArt sign-in: the clay clip alone, ' +
+        'the still as the opening frame + the clip, and a reference photo + the clip. Each costs a Seedance clip.';
+      t.onclick = function () {
+        if (!window.confirm('Run 3 Seedance reference-mode test pushes for this card? Each one is billed as a ' +
+          'Seedance clip on your ImagineArt organization.')) return;
+        SB.SeedTest.run(sh);
+      };
+      wrap.appendChild(t);
+    }
   }
 
   function feedList(sh, code, role) {

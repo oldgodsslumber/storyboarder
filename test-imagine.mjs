@@ -907,6 +907,9 @@ section('a still carries every reference the card names');
           });
         }
         result = { content: [{ type: 'text', text: '{"url":"https://cdn/out.png"}' }] };
+      } else if (n === 'generate_video') {
+        /* the reference-video test only needs to see what was sent */
+        result = { isError: true, content: [{ type: 'text', text: 'stopped by the test' }] };
       } else result = { content: [{ type: 'text', text: '{}' }] };
     }
     return Promise.resolve({ ok: true, status: 200, headers: { get: () => null },
@@ -958,6 +961,29 @@ section('a still carries every reference the card names');
   t('and only the picture that travels is uploaded',
     calls.filter(c => c.name === 'user_upload').length === 1,
     calls.filter(c => c.name === 'user_upload').length);
+
+  /* Seedance reference mode: a clay clip rides as video_url, after the picture as image_url */
+  calls.length = 0;
+  const fake = (type) => ({ size: 8, type, name: 'x', arrayBuffer: () => Promise.resolve(new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]).buffer) });
+  let sentArgs = null;
+  await SB.Imagine.video({ prompt: '@Video1 is the clay clip.', slug: 'seedance-2.5', duration: 4,
+    frame: fake('image/png'), videos: [{ blob: fake('video/mp4'), label: 'the clay clip' }],
+    onArgs: a => { sentArgs = a; } }).catch(() => null);
+  const gv = calls.filter(c => c.name === 'generate_video')[0];
+  t('a reference-mode clip uploads the picture and the clay clip',
+    calls.filter(c => c.name === 'user_upload').length === 2, calls.map(c => c.name).join(','));
+  t('and sends one image_url and one video_url',
+    !!gv && Array.isArray(gv.args.image_url) && gv.args.image_url.length === 1 &&
+    Array.isArray(gv.args.video_url) && gv.args.video_url.length === 1 && gv.args.video_url[0] !== gv.args.image_url[0],
+    gv ? JSON.stringify({ i: gv.args.image_url, v: gv.args.video_url }) : 'no call');
+  t('and tells its caller what it sent', !!sentArgs && sentArgs.video_url.length === 1, JSON.stringify(sentArgs));
+  const keyTry = await (function () {
+    SB.Imagine.setTransport('key');
+    return SB.Imagine.video({ prompt: 'x', slug: 'seedance-2.5', videos: [{ blob: fake('video/mp4'), label: 'c' }] })
+      .then(() => 'sent', e => e.message);
+  })();
+  SB.Imagine.setTransport('oauth');
+  t('the API-key door refuses a reference video rather than dropping it', /only through your ImagineArt sign-in/.test(keyTry), keyTry);
 
   store.delete('sb.imagine.imageRefs');
 }

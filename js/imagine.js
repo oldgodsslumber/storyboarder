@@ -2032,6 +2032,9 @@
       /* [{blob, name, label}] — whoever arrives partway through, in the order
          the cast block names them. The frame is always first in the array. */
       extra: opts.extra || [],
+      /* [{blob, name, label}] — reference VIDEOS (Seedance 2.x's video_url, the
+         clay clip as @Video1). Any of them makes the call reference-to-video. */
+      videos: opts.videos || [],
       onState: opts.onState
     };
     const viaMcp = function () {
@@ -2063,6 +2066,24 @@
           return chain;
         })
         .then(function (urls) {
+          /* reference videos go up after the pictures, in order: @Video1 is the first */
+          let chain = Promise.resolve([]);
+          canon.videos.forEach(function (x) {
+            chain = chain.then(function (acc) {
+              return uploadForUrl(x.blob).then(function (u) {
+                return acc.concat(u ? [u] : []);
+              }, function (e) {
+                const err = new Error('“' + x.label + '” could not be uploaded, so the clip was not ' +
+                  'made: ' + (e.message || e) + '. Nothing was charged.');
+                err.submitted = true;
+                throw err;
+              });
+            });
+          });
+          return chain.then(function (vids) { return { urls: urls, vids: vids }; });
+        })
+        .then(function (up) {
+          const urls = up.urls;
           const args = {
             org_id: orgId(),
             prompt: canon.prompt,
@@ -2071,6 +2092,8 @@
             duration: canon.duration ? String(canon.duration) : null,
             image_url: urls.length ? urls : null
           };
+          if (up.vids.length) args.video_url = up.vids;
+          if (canon.onArgs) canon.onArgs(args);
           if (canon.resolution) args.resolution = canon.resolution;
           return callRaw(TOOL.video, args);
         })
@@ -2108,7 +2131,12 @@
      * describes photographs it did not send. The still lane has refused this
      * for the same reason since the day it was written; the clip lane never
      * learned to. */
-    const dropsExtra = !!(opts.extra && opts.extra.length);
+    const dropsExtra = !!(opts.extra && opts.extra.length) || !!(opts.videos && opts.videos.length);
+    canon.onArgs = opts.onArgs;
+    if (transport() === 'key' && opts.videos && opts.videos.length) {
+      return Promise.reject(new Error('A reference video goes only through your ImagineArt sign-in ' +
+        '(the API key door has no field for one). Sign in under Settings → ImagineArt.'));
+    }
     if (transport() === 'key') {
       if (dropsExtra) {
         return Promise.reject(new Error('An API-key push sends the first frame only, and ' +
@@ -3771,7 +3799,8 @@
     ensureTools: ensureTools,
     /* exposed for the tests */
     _bind: bind, _pickScore: score, _harvest: harvest, _parseRpc: parseRpc,
-    _fileVideo: fileVideo, _land: land, _start: start, _image: image, _firstRef: firstRef
+    _fileVideo: fileVideo, _land: land, _start: start, _image: image, _firstRef: firstRef,
+    _dataUrlToBlob: function (u) { return dataUrlToBlob(u); }
   };
 
 })(window.SB);
