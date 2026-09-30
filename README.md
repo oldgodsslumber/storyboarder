@@ -1051,6 +1051,15 @@ negative prompt. So the app works in two layers (`clay_reference_prompting_plan.
 2. **The answer is checked.** A written prompt that names a coat, jacket, hat, scarf, glasses, jewellery, a watch
    or a bag that nothing on the card mentions is sent back once to be rewritten. "No coat" is not a coat. Anything
    the writer keeps anyway is marked on the card, **added: overcoat**, next to *gendered* and *camera move*.
+**The house look is part of every still's task, and checked.** With the house style on, the still's task line
+asks for the look outright: shot on an ARRI Alexa, with focal length, aperture and camera height named; real
+focus with a shallow depth of field; a muted, filmic grade with fine grain; the light source; and the texture of
+skin and materials. A board's own house style gets the same ask in general terms. The answer is read for it:
+- **The camera, the focus and the grade must all be there.** Missing any one of them, or two of the rest (lens,
+  aperture, light, grain, texture), sends the prompt back once to have them woven in.
+- **Still missing after that, the card says so:** **look: no camera, focus, …**, beside *added: overcoat*.
+- **Skipped** for an edit of another card's frame, which carries its own look, and when the house style is off.
+
 **A still with a blocking opens with the app's own paragraph about the clay render.** It says which picture or
 sheet panel the render is, and uses it only for the camera, framing, lens, positions, poses and scale. It says
 not to reproduce its grey material, mannequins, featureless faces, floor, grid or backdrop, and names which clay

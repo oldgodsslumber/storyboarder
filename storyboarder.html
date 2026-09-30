@@ -1452,7 +1452,7 @@ body.comment-mode .frame{cursor:crosshair}
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-09-30 17:42 · 0ac5b4b+";</script>
+<script>window.SB_BUILD = "2026-09-30 17:49 · eb37aa2+";</script>
 
 <div id="app">
 
@@ -4160,6 +4160,62 @@ window.SB = window.SB || {};
     return parts.join('\n');
   }
 
+  /* ---------------- the house look, in the task and then checked ----------------
+   *
+   * The house style rode at the top of a long instruction and nothing checked it: the writer squeezed
+   * everything into one dense paragraph and the look was the first thing trimmed. So the still's task line
+   * now names what the look needs (lookLineFor), and the answer is read for it (lookProblems): two or more
+   * missing and it gets one rewrite; still missing, the card is marked. Kinds of detail, not phrases, so a
+   * board's own house style is served too. Not for an edit of another card's frame (the frame carries the
+   * look) or a board with the house style off. */
+  function derivedStill(p, shot) {
+    return SB.Refs.feed(p, shot, 'image').some(function (e) { return e.kind === 'shot' && e.images.length; });
+  }
+  function looksApply(p, shot) {
+    return !!shot && brandOf(p).enabled && !derivedStill(p, shot);
+  }
+  /* The three the house style cares about most: the camera (an Alexa), real focus with depth of field, and
+     the muted filmic grade. Named outright for the stock style; asked for in kind for a board's own. */
+  const LOOK_LINE = 'Make it look shot for real, as the house style sets it: shot on an ARRI Alexa, with the ' +
+    'focal length, aperture and camera height named; real focus \u2014 one sharp plane and a shallow depth of ' +
+    'field, the background falling soft; a muted, filmic grade with fine grain; the light source and its ' +
+    'quality; and the texture of skin and materials.';
+  const LOOK_LINE_CUSTOM = 'Make it look shot for real, as the house style sets it: name the camera and lens ' +
+    '(focal length, aperture, camera height), the focus and depth of field, the grade, the light source and its ' +
+    'quality, and the texture of skin and materials.';
+  function lookLineFor(p, shot) {
+    if (!looksApply(p, shot)) return '';
+    return brandOf(p).custom ? LOOK_LINE_CUSTOM : LOOK_LINE;
+  }
+  // core: must be there (any one missing earns the rewrite); the rest: two or more missing does
+  const LOOK_CHECKS = [
+    { id: 'camera', core: true, label: 'the camera (shot on an ARRI Alexa)', re: /\b(?:alexa|arri|cinema camera|full[- ]frame|shot on)\b/i },
+    { id: 'focus', core: true, label: 'the focus and depth of field', re: /\b(?:depth of field|shallow focus|shallow depth|bokeh|out[- ]of[- ]focus|soft focus|plane of focus|focus fall-?off|defocus(?:ed)?|(?:blurred|soft|softened) background|background (?:falls?|falling|drops?) (?:away|soft|off))\b/i },
+    { id: 'grade', core: true, label: 'the muted, filmic grade', re: /\b(?:filmic|muted|film grade|graded|grade|film stock|film-like)\b/i },
+    { id: 'lens', label: 'the lens (a focal length)', re: /\b\d{2,3}\s?mm\b/i },
+    { id: 'aperture', label: 'the aperture (an f-number)', re: /(?:\bf\s?\/\s?\d+(?:\.\d+)?|\bf\d+(?:\.\d+)?\b|\bT\s?\d(?:\.\d)?\b)/i },
+    { id: 'light', label: 'the light source', re: /\b(?:window|daylight|sunlight|sunlit|overcast|lamps?|practicals?|tungsten|fluorescent|skylight|dusk|dawn|golden hour|backlit|backlight|overhead light|light (?:from|through|spills|falls|pools))\b/i },
+    { id: 'grain', label: 'the film grain', re: /\b(?:grain|grainy)\b/i },
+    { id: 'texture', label: 'skin and material texture', re: /\b(?:texture|textured|textures|pores|weave|creases|creased|worn|scuffs?|scuffed|fingerprints?|imperfections?|unretouched)\b/i }
+  ];
+  function lookMissing(text) {
+    const t = String(text || '');
+    return LOOK_CHECKS.filter(function (c) { return !c.re.test(t); });
+  }
+  function lookProblems(p, shot, text) {
+    if (!looksApply(p, shot) || !String(text || '').trim()) return [];
+    const miss = lookMissing(text);
+    const core = miss.filter(function (c) { return c.core; });
+    if (!core.length && miss.length < 2) return [];
+    return ['You left out the house look: ' + miss.map(function (c) { return c.label; }).join(', ') +
+      '. Rewrite the prompt with ' + (miss.length === 1 ? 'it' : 'them') + ' woven in as concrete description ' +
+      '\u2014 change nothing else.'];
+  }
+  /* the short names for a card's mark, or [] when it reads as shot for real */
+  function lookMark(p, shot, text) {
+    return lookProblems(p, shot, text).length ? lookMissing(text).map(function (c) { return c.id; }) : [];
+  }
+
   SB.Brand = {
     DEFAULT: DEFAULT_BRAND,
     movesIn: movesIn, moveAsked: moveAsked, moveProblems: moveProblems,
@@ -4170,6 +4226,7 @@ window.SB = window.SB || {};
     FIRST_FRAME_RIDER: FIRST_FRAME_RIDER,
     DERIVED_RIDER: DERIVED_RIDER,
     REFERENCE_RIDER: REFERENCE_RIDER, closingFor: closingFor,
+    lookLineFor: lookLineFor, lookProblems: lookProblems, lookMissing: lookMissing, lookMark: lookMark, LOOK_LINE: LOOK_LINE,
     brandOf: brandOf,
     systemFor: systemFor,
     sequenceBlock: sequenceBlock
@@ -17709,6 +17766,14 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
     return b;
   }
 
+  function flatBadge(sh, m, field) {
+    const pr = sh.prompts[m.id] || null;
+    if (field !== 'imagePrompt' || !pr || !Array.isArray(pr.flat) || !pr.flat.length || !(pr[field] || '').trim()) return null;
+    const b = SB.el('span', 'badge warn flat', 'look: no ' + pr.flat.join(', '));
+    b.title = 'This prompt doesn\u2019t name ' + pr.flat.join(', ') + ' \u2014 the house look \u2014 even after one rewrite.';
+    return b;
+  }
+
   function staleBadge(sh, m, field) {
     const pr = sh.prompts[m.id] || null;
     if (!pr || !(pr[field] || '').trim()) return null;
@@ -17808,6 +17873,8 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
     if (gb) t.appendChild(gb);
     const ib = inventBadge(sh, m, field);
     if (ib) t.appendChild(ib);
+    const fb = flatBadge(sh, m, field);
+    if (fb) t.appendChild(fb);
     const gen = SB.Focus.costly(SB.el('button', 'mini', 'generate'));
     gen.style.marginLeft = 'auto';
     gen.onclick = function () {
@@ -17838,6 +17905,7 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
       delete sh.prompts[m.id].moved;
       delete sh.prompts[m.id].gendered;
       if (sh.prompts[m.id].invented) delete sh.prompts[m.id].invented[field];
+      if (field === 'imagePrompt') delete sh.prompts[m.id].flat;
       const mvb = wrap.querySelector('.moved');
       if (mvb) mvb.remove();
       const gbb = wrap.querySelector('.gendered');
@@ -19101,8 +19169,15 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
 
   function imageBlock(shot, m) {
     const ctx = contextFor(shot, 'image'); ctx.MODEL = m.name;
-    return '=== FIRST-FRAME IMAGE PROMPT — INSTRUCTIONS ===\n' +
-      fill(m.imageTemplate, ctx) + extras(shot, m.imageTemplate) + '\n';
+    ctx.LOOK = SB.Brand.lookLineFor(P(), shot);
+    let body = fill(m.imageTemplate, ctx);
+    /* A template that doesn't place {{LOOK}} (every board's own copy) gets it right after its task, ahead of
+       the shot description, so it is part of the ask rather than a note at the end. */
+    if (ctx.LOOK && !/\{\{LOOK\}\}/.test(m.imageTemplate || '')) {
+      const at = body.indexOf('SHOT DESCRIPTION:');
+      body = at > 0 ? body.slice(0, at).replace(/\s*$/, '\n') + ctx.LOOK + '\n\n' + body.slice(at) : body + '\n' + ctx.LOOK;
+    }
+    return '=== FIRST-FRAME IMAGE PROMPT — INSTRUCTIONS ===\n' + body + extras(shot, m.imageTemplate) + '\n';
   }
   function videoBlock(shot, m, sc) {
     const ctx = contextFor(shot, 'video'); ctx.MODEL = m.name;
@@ -19200,7 +19275,8 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
           return SB.Brand.moveProblems(P(), shot, res.videoPrompt)
             .concat(SB.Brand.genderProblems(P(), shot, res.imagePrompt))
             .concat(SB.Brand.genderProblems(P(), shot, res.videoPrompt))
-            .concat(invented(shot, res.imagePrompt)).concat(invented(shot, res.videoPrompt));
+            .concat(invented(shot, res.imagePrompt)).concat(invented(shot, res.videoPrompt))
+            .concat(SB.Brand.lookProblems(P(), shot, res.imagePrompt));
         }
       });
       return jobs;
@@ -19221,7 +19297,8 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
         targets: [{ model: im, field: 'imagePrompt' }],
         decorate: { imagePrompt: decorateImage(shot) },
         check: function (res) {
-          return SB.Brand.genderProblems(P(), shot, res.imagePrompt).concat(invented(shot, res.imagePrompt));
+          return SB.Brand.genderProblems(P(), shot, res.imagePrompt).concat(invented(shot, res.imagePrompt))
+            .concat(SB.Brand.lookProblems(P(), shot, res.imagePrompt));
         }
       });
     }
@@ -19569,6 +19646,11 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
             const by = rec.invented && typeof rec.invented === 'object' && !Array.isArray(rec.invented) ? rec.invented : {};
             if (inv.length) by[t.field] = inv; else delete by[t.field];
             if (Object.keys(by).length) rec.invented = by; else delete rec.invented;
+          }
+          /* A still that came back flat even after its rewrite: marked, the way an added coat is. */
+          if (t.field === 'imagePrompt') {
+            const rec = live.prompts[t.model.id], flat = SB.Brand.lookMark(P(), live, raw);
+            if (flat.length) rec.flat = flat; else delete rec.flat;
           }
           /* which call a video prompt was written for: the full-reference one
              cannot go through the frame-only push */
@@ -21817,6 +21899,9 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
       delete sh.prompts[m.id].moved;
       delete sh.prompts[m.id].gendered;
       if (sh.prompts[m.id].invented) delete sh.prompts[m.id].invented[field];
+      if (field === 'imagePrompt') delete sh.prompts[m.id].flat;
+      const flb = cell.querySelector('.flat');
+      if (flb) flb.remove();
       const mvb = cell.querySelector('.moved');
       if (mvb) mvb.remove();
       const gbb = cell.querySelector('.gendered');
@@ -21850,6 +21935,14 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
       const said = pr.invented[field];
       const b = SB.el('span', 'badge warn invented', 'added: ' + said.join(', '));
       b.title = 'The writer added things no description on this card mentions — "' + said.join('", "') + '" — and kept them through one rewrite. Take them out, or put them in the description if they belong.';
+      foot.appendChild(b);
+    }
+
+    /* A still that came back without the house look, even after its rewrite. */
+    if (field === 'imagePrompt' && pr && pr[field] && Array.isArray(pr.flat) && pr.flat.length) {
+      const b = SB.el('span', 'badge warn flat', 'look: no ' + pr.flat.join(', '));
+      b.title = 'This prompt doesn\u2019t name ' + pr.flat.join(', ') + ' \u2014 the house look the style asks for \u2014 ' +
+        'even after one rewrite. Generate again, or write it in.';
       foot.appendChild(b);
     }
 

@@ -1139,6 +1139,9 @@
       delete sh.prompts[m.id].moved;
       delete sh.prompts[m.id].gendered;
       if (sh.prompts[m.id].invented) delete sh.prompts[m.id].invented[field];
+      if (field === 'imagePrompt') delete sh.prompts[m.id].flat;
+      const flb = cell.querySelector('.flat');
+      if (flb) flb.remove();
       const mvb = cell.querySelector('.moved');
       if (mvb) mvb.remove();
       const gbb = cell.querySelector('.gendered');
@@ -1172,6 +1175,14 @@
       const said = pr.invented[field];
       const b = SB.el('span', 'badge warn invented', 'added: ' + said.join(', '));
       b.title = 'The writer added things no description on this card mentions — "' + said.join('", "') + '" — and kept them through one rewrite. Take them out, or put them in the description if they belong.';
+      foot.appendChild(b);
+    }
+
+    /* A still that came back without the house look, even after its rewrite. */
+    if (field === 'imagePrompt' && pr && pr[field] && Array.isArray(pr.flat) && pr.flat.length) {
+      const b = SB.el('span', 'badge warn flat', 'look: no ' + pr.flat.join(', '));
+      b.title = 'This prompt doesn\u2019t name ' + pr.flat.join(', ') + ' \u2014 the house look the style asks for \u2014 ' +
+        'even after one rewrite. Generate again, or write it in.';
       foot.appendChild(b);
     }
 

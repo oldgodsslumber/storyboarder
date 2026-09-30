@@ -237,7 +237,7 @@
         window.__reply = function () {
           return { ok: true, status: 200, text: JSON.stringify({ candidates: [{ content: {
             parts: [{ text: JSON.stringify({
-              imagePrompt: 'Nat leans over the desk, her sleeve catching the lamp.'
+              imagePrompt: 'Nat leans over the desk, her sleeve catching the lamp, shot on an ARRI Alexa at 35mm f/2, shallow depth of field, soft window light, a muted filmic grade with fine grain and real skin texture.'
             }) }] } }] }) };
         };
         await SB.Prompts.generateFor(shots.b, { image: true });
@@ -375,7 +375,7 @@
       window.__reply = function () {
         return { ok: true, status: 200, text: JSON.stringify({
           candidates: [{ content: { parts: [{ text: JSON.stringify({
-            imagePrompt: 'A businesswoman adjusts her collar by the window.' }) }] } }] }) };
+            imagePrompt: 'A businesswoman adjusts her collar by the window, shot on an ARRI Alexa at 35mm f/2, shallow depth of field, soft window light, a muted filmic grade with fine grain and real skin texture.' }) }] } }] }) };
       };
       await SB.Prompts.generateFor(shots.a, { image: true });
       t('a prompt naming a cast woman costs one call, not two', window.__calls.length === 1,

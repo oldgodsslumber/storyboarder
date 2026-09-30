@@ -728,6 +728,62 @@
     return parts.join('\n');
   }
 
+  /* ---------------- the house look, in the task and then checked ----------------
+   *
+   * The house style rode at the top of a long instruction and nothing checked it: the writer squeezed
+   * everything into one dense paragraph and the look was the first thing trimmed. So the still's task line
+   * now names what the look needs (lookLineFor), and the answer is read for it (lookProblems): two or more
+   * missing and it gets one rewrite; still missing, the card is marked. Kinds of detail, not phrases, so a
+   * board's own house style is served too. Not for an edit of another card's frame (the frame carries the
+   * look) or a board with the house style off. */
+  function derivedStill(p, shot) {
+    return SB.Refs.feed(p, shot, 'image').some(function (e) { return e.kind === 'shot' && e.images.length; });
+  }
+  function looksApply(p, shot) {
+    return !!shot && brandOf(p).enabled && !derivedStill(p, shot);
+  }
+  /* The three the house style cares about most: the camera (an Alexa), real focus with depth of field, and
+     the muted filmic grade. Named outright for the stock style; asked for in kind for a board's own. */
+  const LOOK_LINE = 'Make it look shot for real, as the house style sets it: shot on an ARRI Alexa, with the ' +
+    'focal length, aperture and camera height named; real focus \u2014 one sharp plane and a shallow depth of ' +
+    'field, the background falling soft; a muted, filmic grade with fine grain; the light source and its ' +
+    'quality; and the texture of skin and materials.';
+  const LOOK_LINE_CUSTOM = 'Make it look shot for real, as the house style sets it: name the camera and lens ' +
+    '(focal length, aperture, camera height), the focus and depth of field, the grade, the light source and its ' +
+    'quality, and the texture of skin and materials.';
+  function lookLineFor(p, shot) {
+    if (!looksApply(p, shot)) return '';
+    return brandOf(p).custom ? LOOK_LINE_CUSTOM : LOOK_LINE;
+  }
+  // core: must be there (any one missing earns the rewrite); the rest: two or more missing does
+  const LOOK_CHECKS = [
+    { id: 'camera', core: true, label: 'the camera (shot on an ARRI Alexa)', re: /\b(?:alexa|arri|cinema camera|full[- ]frame|shot on)\b/i },
+    { id: 'focus', core: true, label: 'the focus and depth of field', re: /\b(?:depth of field|shallow focus|shallow depth|bokeh|out[- ]of[- ]focus|soft focus|plane of focus|focus fall-?off|defocus(?:ed)?|(?:blurred|soft|softened) background|background (?:falls?|falling|drops?) (?:away|soft|off))\b/i },
+    { id: 'grade', core: true, label: 'the muted, filmic grade', re: /\b(?:filmic|muted|film grade|graded|grade|film stock|film-like)\b/i },
+    { id: 'lens', label: 'the lens (a focal length)', re: /\b\d{2,3}\s?mm\b/i },
+    { id: 'aperture', label: 'the aperture (an f-number)', re: /(?:\bf\s?\/\s?\d+(?:\.\d+)?|\bf\d+(?:\.\d+)?\b|\bT\s?\d(?:\.\d)?\b)/i },
+    { id: 'light', label: 'the light source', re: /\b(?:window|daylight|sunlight|sunlit|overcast|lamps?|practicals?|tungsten|fluorescent|skylight|dusk|dawn|golden hour|backlit|backlight|overhead light|light (?:from|through|spills|falls|pools))\b/i },
+    { id: 'grain', label: 'the film grain', re: /\b(?:grain|grainy)\b/i },
+    { id: 'texture', label: 'skin and material texture', re: /\b(?:texture|textured|textures|pores|weave|creases|creased|worn|scuffs?|scuffed|fingerprints?|imperfections?|unretouched)\b/i }
+  ];
+  function lookMissing(text) {
+    const t = String(text || '');
+    return LOOK_CHECKS.filter(function (c) { return !c.re.test(t); });
+  }
+  function lookProblems(p, shot, text) {
+    if (!looksApply(p, shot) || !String(text || '').trim()) return [];
+    const miss = lookMissing(text);
+    const core = miss.filter(function (c) { return c.core; });
+    if (!core.length && miss.length < 2) return [];
+    return ['You left out the house look: ' + miss.map(function (c) { return c.label; }).join(', ') +
+      '. Rewrite the prompt with ' + (miss.length === 1 ? 'it' : 'them') + ' woven in as concrete description ' +
+      '\u2014 change nothing else.'];
+  }
+  /* the short names for a card's mark, or [] when it reads as shot for real */
+  function lookMark(p, shot, text) {
+    return lookProblems(p, shot, text).length ? lookMissing(text).map(function (c) { return c.id; }) : [];
+  }
+
   SB.Brand = {
     DEFAULT: DEFAULT_BRAND,
     movesIn: movesIn, moveAsked: moveAsked, moveProblems: moveProblems,
@@ -738,6 +794,7 @@
     FIRST_FRAME_RIDER: FIRST_FRAME_RIDER,
     DERIVED_RIDER: DERIVED_RIDER,
     REFERENCE_RIDER: REFERENCE_RIDER, closingFor: closingFor,
+    lookLineFor: lookLineFor, lookProblems: lookProblems, lookMissing: lookMissing, lookMark: lookMark, LOOK_LINE: LOOK_LINE,
     brandOf: brandOf,
     systemFor: systemFor,
     sequenceBlock: sequenceBlock

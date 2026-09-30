@@ -30,7 +30,7 @@ window.fetch = function (url, opts) {
   if (!r) {
     r = { ok: true, status: 200, text: JSON.stringify({
       candidates: [{ content: { parts: [{ text: JSON.stringify(
-        { imagePrompt: 'A quiet office, 35mm, f/2, window light.',
+        { imagePrompt: 'A quiet office, shot on an ARRI Alexa at 35mm f/2, shallow depth of field, soft window light, a muted filmic grade with fine grain and real skin texture.',
           videoPrompt: 'The cup goes down; the hands settle flat. Two beats.' }) }] } }] }) };
   }
   return Promise.resolve({

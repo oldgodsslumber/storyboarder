@@ -1806,6 +1806,14 @@
     return b;
   }
 
+  function flatBadge(sh, m, field) {
+    const pr = sh.prompts[m.id] || null;
+    if (field !== 'imagePrompt' || !pr || !Array.isArray(pr.flat) || !pr.flat.length || !(pr[field] || '').trim()) return null;
+    const b = SB.el('span', 'badge warn flat', 'look: no ' + pr.flat.join(', '));
+    b.title = 'This prompt doesn\u2019t name ' + pr.flat.join(', ') + ' \u2014 the house look \u2014 even after one rewrite.';
+    return b;
+  }
+
   function staleBadge(sh, m, field) {
     const pr = sh.prompts[m.id] || null;
     if (!pr || !(pr[field] || '').trim()) return null;
@@ -1905,6 +1913,8 @@
     if (gb) t.appendChild(gb);
     const ib = inventBadge(sh, m, field);
     if (ib) t.appendChild(ib);
+    const fb = flatBadge(sh, m, field);
+    if (fb) t.appendChild(fb);
     const gen = SB.Focus.costly(SB.el('button', 'mini', 'generate'));
     gen.style.marginLeft = 'auto';
     gen.onclick = function () {
@@ -1935,6 +1945,7 @@
       delete sh.prompts[m.id].moved;
       delete sh.prompts[m.id].gendered;
       if (sh.prompts[m.id].invented) delete sh.prompts[m.id].invented[field];
+      if (field === 'imagePrompt') delete sh.prompts[m.id].flat;
       const mvb = wrap.querySelector('.moved');
       if (mvb) mvb.remove();
       const gbb = wrap.querySelector('.gendered');

@@ -137,8 +137,15 @@
 
   function imageBlock(shot, m) {
     const ctx = contextFor(shot, 'image'); ctx.MODEL = m.name;
-    return '=== FIRST-FRAME IMAGE PROMPT — INSTRUCTIONS ===\n' +
-      fill(m.imageTemplate, ctx) + extras(shot, m.imageTemplate) + '\n';
+    ctx.LOOK = SB.Brand.lookLineFor(P(), shot);
+    let body = fill(m.imageTemplate, ctx);
+    /* A template that doesn't place {{LOOK}} (every board's own copy) gets it right after its task, ahead of
+       the shot description, so it is part of the ask rather than a note at the end. */
+    if (ctx.LOOK && !/\{\{LOOK\}\}/.test(m.imageTemplate || '')) {
+      const at = body.indexOf('SHOT DESCRIPTION:');
+      body = at > 0 ? body.slice(0, at).replace(/\s*$/, '\n') + ctx.LOOK + '\n\n' + body.slice(at) : body + '\n' + ctx.LOOK;
+    }
+    return '=== FIRST-FRAME IMAGE PROMPT — INSTRUCTIONS ===\n' + body + extras(shot, m.imageTemplate) + '\n';
   }
   function videoBlock(shot, m, sc) {
     const ctx = contextFor(shot, 'video'); ctx.MODEL = m.name;
@@ -236,7 +243,8 @@
           return SB.Brand.moveProblems(P(), shot, res.videoPrompt)
             .concat(SB.Brand.genderProblems(P(), shot, res.imagePrompt))
             .concat(SB.Brand.genderProblems(P(), shot, res.videoPrompt))
-            .concat(invented(shot, res.imagePrompt)).concat(invented(shot, res.videoPrompt));
+            .concat(invented(shot, res.imagePrompt)).concat(invented(shot, res.videoPrompt))
+            .concat(SB.Brand.lookProblems(P(), shot, res.imagePrompt));
         }
       });
       return jobs;
@@ -257,7 +265,8 @@
         targets: [{ model: im, field: 'imagePrompt' }],
         decorate: { imagePrompt: decorateImage(shot) },
         check: function (res) {
-          return SB.Brand.genderProblems(P(), shot, res.imagePrompt).concat(invented(shot, res.imagePrompt));
+          return SB.Brand.genderProblems(P(), shot, res.imagePrompt).concat(invented(shot, res.imagePrompt))
+            .concat(SB.Brand.lookProblems(P(), shot, res.imagePrompt));
         }
       });
     }
@@ -605,6 +614,11 @@
             const by = rec.invented && typeof rec.invented === 'object' && !Array.isArray(rec.invented) ? rec.invented : {};
             if (inv.length) by[t.field] = inv; else delete by[t.field];
             if (Object.keys(by).length) rec.invented = by; else delete rec.invented;
+          }
+          /* A still that came back flat even after its rewrite: marked, the way an added coat is. */
+          if (t.field === 'imagePrompt') {
+            const rec = live.prompts[t.model.id], flat = SB.Brand.lookMark(P(), live, raw);
+            if (flat.length) rec.flat = flat; else delete rec.flat;
           }
           /* which call a video prompt was written for: the full-reference one
              cannot go through the frame-only push */

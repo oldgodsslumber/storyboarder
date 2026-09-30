@@ -141,5 +141,43 @@ console.log('\n— MiniMax keeps its formats —');
   eq(/Nothing else\./.test(sh.prompts[mi.id].imagePrompt), false, 'the assembled brief is not decorated');
 }
 
+console.log('\n\u2014 the house look: in the task, then checked \u2014');
+{
+  const { p, sh } = board();
+  const im = p.settings.models.find(m => m.name === 'GPT Image'); p.settings.imageModelId = im.id;
+  const GOOD = 'Gus reads a letter at his desk, shot on an ARRI Alexa with a 35mm lens at f/2.8 from seated eye height, a shallow depth of field with the room falling soft, soft window light from the left, a muted filmic grade with fine grain, real skin texture and worn desk edges.';
+  asked = []; replies = [{ imagePrompt: GOOD }];
+  await SB.Prompts.generateFor(sh, { image: true });
+  const user = asked[0].messages[asked[0].messages.length - 1].content;
+  has(user, 'Make it look shot for real', 'the look is part of the still\u2019s task');
+  has(user, 'shot on an ARRI Alexa', 'naming the camera');
+  has(user, 'shallow depth of field', 'the focus');
+  has(user, 'muted, filmic grade', 'and the grade');
+  eq(user.indexOf('Make it look shot for real') < user.indexOf('SHOT DESCRIPTION:'), true, 'ahead of the shot description');
+  eq(asked.length, 1, 'a prompt that names the look is not sent back');
+  eq(sh.prompts[im.id].flat, undefined, 'and is not marked');
+
+  asked = []; replies = [{ imagePrompt: 'Gus reads a letter at his desk.' }, { imagePrompt: GOOD }];
+  await SB.Prompts.generateFor(sh, { image: true });
+  eq(asked.length, 2, 'a flat prompt earns one rewrite');
+  has(JSON.stringify(asked[1]), 'You left out the house look', 'which says what is missing');
+  eq(sh.prompts[im.id].flat, undefined, 'fixed by the rewrite: no mark');
+
+  asked = []; replies = [{ imagePrompt: 'Gus reads a letter at his desk.' }];
+  await SB.Prompts.generateFor(sh, { image: true });
+  eq(Array.isArray(sh.prompts[im.id].flat) && sh.prompts[im.id].flat.indexOf('lens') >= 0, true, 'still flat after it: marked, naming what is missing');
+  asked = []; replies = [{ imagePrompt: GOOD.replace('shot on an ARRI Alexa with a', 'with a') }];
+  await SB.Prompts.generateFor(sh, { image: true });
+  eq(asked.length, 2, 'missing only the camera is enough for a rewrite: it is one of the three that matter');
+
+  p.settings.brand = { enabled: false, custom: false };
+  asked = []; replies = [{ imagePrompt: 'Gus reads a letter at his desk.' }];
+  await SB.Prompts.generateFor(sh, { image: true });
+  const u2 = asked[0].messages[asked[0].messages.length - 1].content;
+  eq(/Make it look shot for real/.test(u2), false, 'house style off: no look line');
+  eq(asked.length, 1, 'and no rewrite for it');
+  eq(sh.prompts[im.id].flat, undefined, 'and no mark');
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed\n');
 if (fail) process.exit(1);
