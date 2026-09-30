@@ -1452,7 +1452,7 @@ body.comment-mode .frame{cursor:crosshair}
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-09-30 16:56 · 0819860+";</script>
+<script>window.SB_BUILD = "2026-09-30 17:42 · 0ac5b4b+";</script>
 
 <div id="app">
 
@@ -3518,29 +3518,19 @@ window.SB = window.SB || {};
       ? '- Shot type: ' + type + '.' + (line ? ' ' + line : '')
       : '- No shot type is set on this card. Take the framing from the shot description, and ' +
         'if it does not say, frame it as tightly as the action allows.');
-    out.push('- The shot description may narrow this further — to a pair of hands, a screen, ' +
-      'one eye. It never widens it. Nothing outside this framing is in the picture, however ' +
-      'fully any block in this instruction describes it.');
-    out.push('- Anyone the description has DOING something who does not fit inside this frame is ' +
-      'doing it off camera. The action is real and still happening — write it only where ' +
-      'the frame can see it, or in what it does to what the frame CAN see. Do not widen the shot ' +
-      'to fit them in, and do not draw them at its edge.');
+    out.push('- The shot description may narrow this (a pair of hands, a screen), never widen it. Anyone ' +
+      'acting outside the frame is off camera: show only what the frame can see, and do not widen the ' +
+      'shot to fit them in.');
     return out.join('\n');
   }
 
   const FIRST_FRAME_RIDER = [
     'THE FIRST FRAME IS ONE INSTANT',
-    '- You are describing a single photograph: the state of things at the moment this shot ' +
-    'opens, before anything the description says happens next has happened.',
-    '- A shot description is a short sequence. Words like "then", "after", "as", "walks in", ' +
-    '"enters", "arrives", "turns to", "reaches for", "picks up", "reveals", "cuts to" mark what ' +
-    'happens AFTER the first frame. None of it is in this image.',
-    '- If somebody or something is described as arriving, entering or appearing, the frame is ' +
-    'what the camera sees BEFORE they arrive. Do not put them in it, and do not gesture at them ' +
-    'with an open door, a shadow or a look off-screen unless the description opens that way.',
-    '- If the description opens mid-action, draw the first recognisable instant of that action, ' +
-    'not its result.',
-    '- Everything you leave out is not lost: the image-to-video prompt covers the movement.'
+    '- This is one photograph: the moment the shot opens. Whatever the description says happens next ' +
+    '("then", "walks in", "turns to", "picks up", "reveals") is not in it.',
+    '- Anyone who arrives later is absent, and not hinted at with an open door, a shadow or an ' +
+    'off-screen look unless the description opens that way.',
+    '- If it opens mid-action, show the first recognisable instant of the action, not its result.'
   ].join('\n');
 
   /* When a frame of another shot is supplied, the still is an EDIT of it. The
@@ -3771,12 +3761,10 @@ window.SB = window.SB || {};
    * opposite job: there, saying what the person looks like IS the work. */
   const GENDER_RIDER = [
     'WHO THESE PEOPLE ARE',
-    '- Anyone the CAST block describes is exactly who it says they are: use its words for ' +
-    'them, gendered or not. Never neutralise a person the board has cast.',
-    '- Anyone it does NOT describe — a passer-by, a second figure, a pair of hands, a face in ' +
-    'the background — has no gender until somebody decides one, and that is not your decision. ' +
-    'Write them as "the subject", "the person", "a figure", "they", or with no pronoun at all.',
-    '- The shot description is the board\u2019s own word too: if it says who someone is, follow it.'
+    '- Anyone the CAST block or the shot description describes is exactly who it says: use its words, ' +
+    'gendered or not.',
+    '- Anyone else (a passer-by, a pair of hands, a face in the background) has no gender: write ' +
+    '"the person", "a figure", "they", or no pronoun at all.'
   ].join('\n');
 
   /* ---------------- invented details, checked rather than asked ----------------
@@ -3885,14 +3873,10 @@ window.SB = window.SB || {};
 
   const NO_INVENT_RIDER = [
     'ADD NOTHING THAT IS NOT DESCRIBED',
-    '- Every garment, accessory and prop comes ONLY from the subject descriptions and the shot text. ' +
-    'If they do not mention it, it is not there.',
-    '- Never add clothing layers (coat, jacket, blazer, cardigan, sweater, hoodie, scarf), headwear, ' +
-    'glasses, jewellery, watches, bags, lanyards, headphones, umbrellas, extra props or extra people.',
-    '- Where a description is silent, the answer is nothing: plain and unadorned is correct. Weather, ' +
-    'season, a location or a job are not reasons to dress someone.',
-    '- Do not describe clothing in more detail than the description gives — no invented colours, ' +
-    'fabrics, logos or brands.'
+    '- Clothing, accessories and props come only from the descriptions and the shot text. Where they ' +
+    'are silent there is nothing: no coats, jackets, hats, scarves, glasses, jewellery, watches, bags, ' +
+    'lanyards, headphones or umbrellas, and no extra people. Weather, a place or a job is no reason to add any.',
+    '- Do not embellish what is described: no invented colours, fabrics, logos or brands.'
   ].join('\n');
 
   /* ---------------- the camera, checked rather than asked ----------------
@@ -4022,10 +4006,13 @@ window.SB = window.SB || {};
     const pos = beats.indexOf(shot) + 1;
     const lines = [];
 
+    /* Only what is worth saying: a lone shot in an untitled scene with no note used to get "Scene 1:
+       (untitled). This is shot 1A (beat 1 of 1)." */
+    if (!scene.heading && !scene.description && beats.length <= 1) return '';
     lines.push('SCENE CONTEXT');
-    lines.push('Scene ' + (f.sceneIdx + 1) + ': ' + (scene.heading || '(untitled)'));
+    lines.push('Scene ' + (f.sceneIdx + 1) + (scene.heading ? ': ' + scene.heading : '') + '.');
     if (scene.description) lines.push('Scene note: ' + SB.Refs.plain(p, scene.description));
-    lines.push('This is shot ' + f.code + (pos > 0 ? ' (beat ' + pos + ' of ' + beats.length + ')' : '') + '.');
+    lines.push('This is shot ' + f.code + (pos > 0 && beats.length > 1 ? ' (beat ' + pos + ' of ' + beats.length + ')' : '') + '.');
 
     if (beats.length > 1) {
       lines.push('The other beats in this scene, in order:');
@@ -4056,6 +4043,45 @@ window.SB = window.SB || {};
    * instant, and the movement out of it — and a board with no house style needs
    * them just as much. They used to sit behind the same early return, so
    * turning the brand off quietly took the craft rules with it. */
+  /* The last line the writer reads: put the rules above into the prompt's own words. It closes the
+     WHOLE instruction, after the cast block (it used to sit before it, mid-way). */
+  function closingFor(p, shot, role) {
+    /* Is a frame of another shot being handed over? Then this still is an edit
+     * of it, which changes both what to say and what to leave unsaid. */
+    const derived = (role === 'image' || role === 'both') &&
+      SB.Refs.feed(p, shot, role).some(function (e) {
+        return e.kind === 'shot' && e.images.length;
+      });
+    /* On an image job derived from another shot's frame, the house style is
+     * NOT sent. It is a list of things to put into the words — the grade, the
+     * grain, the lens, the practicals — and the source frame already carries
+     * every one of them. Sent anyway, the writer dutifully restates them, and
+     * an edit instruction full of "50mm, f/2.8, muted grade" comes back as a
+     * re-render of the scene rather than a change to the picture. The frame is
+     * the style reference now. (A combined image+video job still gets it: the
+     * video half is not derived from anything.) */
+    /* A frame-only video job is in exactly the position a derived still is in:
+     * the picture it starts from is supplied, so the look is inherited and the
+     * house style is a list of things to NOT say. A full-reference model is
+     * not — its format asks for appearance on purpose. */
+    const videoInherits = role === 'video' && SB.Model.videoInherits(SB.Model.videoModel(p));
+    return videoInherits
+      /* "as concrete description" is the right noun for a still and the wrong
+       * one here — it is the last thing the writer reads before it starts, and
+       * it was asking for description on the one job that must not describe. */
+      ? 'Fold these requirements into the prompt itself as concrete MOVEMENT — what happens, in ' +
+        'what order, at what pace. Nothing that is already visible in the supplied frame. Do not ' +
+        'quote the rules back, and do not add headings or commentary.'
+      : derived
+      ? 'Fold these requirements into the prompt itself as concrete description, but ONLY where ' +
+        'they describe what this frame CHANGES. Everything inherited from the supplied source ' +
+        'frame — the place, the lighting, the lens, the grade, the wardrobe — is already in that ' +
+        'image and must not be restated. Do not quote the rules back, and do not add headings ' +
+        'or commentary.'
+      : 'Fold these requirements into the prompt itself as concrete description — ' +
+        'do not quote the rules back, and do not add headings or commentary.';
+  }
+
   function systemFor(p, shot, role) {
     const b = brandOf(p);
     const parts = [];
@@ -4131,21 +4157,6 @@ window.SB = window.SB || {};
      * fold in the grade and the lighting, the writer restated the lens, the
      * practicals and the grain — rebuilding in words what the source frame
      * already carries. So there, the fold-in is scoped to what changes. */
-    parts.push('', videoInherits
-      /* "as concrete description" is the right noun for a still and the wrong
-       * one here — it is the last thing the writer reads before it starts, and
-       * it was asking for description on the one job that must not describe. */
-      ? 'Fold these requirements into the prompt itself as concrete MOVEMENT — what happens, in ' +
-        'what order, at what pace. Nothing that is already visible in the supplied frame. Do not ' +
-        'quote the rules back, and do not add headings or commentary.'
-      : derived
-      ? 'Fold these requirements into the prompt itself as concrete description, but ONLY where ' +
-        'they describe what this frame CHANGES. Everything inherited from the supplied source ' +
-        'frame — the place, the lighting, the lens, the grade, the wardrobe — is already in that ' +
-        'image and must not be restated. Do not quote the rules back, and do not add headings ' +
-        'or commentary.'
-      : 'Fold these requirements into the prompt itself as concrete description — ' +
-        'do not quote the rules back, and do not add headings or commentary.');
     return parts.join('\n');
   }
 
@@ -4158,7 +4169,7 @@ window.SB = window.SB || {};
     VIDEO_RIDER: VIDEO_RIDER,
     FIRST_FRAME_RIDER: FIRST_FRAME_RIDER,
     DERIVED_RIDER: DERIVED_RIDER,
-    REFERENCE_RIDER: REFERENCE_RIDER,
+    REFERENCE_RIDER: REFERENCE_RIDER, closingFor: closingFor,
     brandOf: brandOf,
     systemFor: systemFor,
     sequenceBlock: sequenceBlock
@@ -9699,7 +9710,7 @@ window.SB = window.SB || {};
       lines.push(kind.heading);
       mine.forEach(function (per, i) {
         const bits = [];
-        bits.push(rangeFor(per) + (per.name || 'unnamed'));
+        bits.push(per.name || 'unnamed');   // its image number is in the mapping below
         const d = (per.description || '').replace(/\s+/g, ' ').trim();
         bits.push(d || '(no description yet)');
         /* Marked rather than dropped: the image numbering has to mean the same
@@ -9793,10 +9804,9 @@ window.SB = window.SB || {};
      * subject into every description, and that copy went stale the moment the
      * persona was edited. This block is the live record, so it is declared to
      * win outright rather than deferring to whatever the description says. */
-    lines.push('The descriptions above are the CURRENT and AUTHORITATIVE record of how these ' +
-      'people, places and things look. Where the shot description says anything different about ' +
-      'their appearance, hair, wardrobe or surroundings, it is out of date — follow this block ' +
-      'and ignore it. The shot description still governs what they are DOING and where.');
+    lines.push('These descriptions are the CURRENT and AUTHORITATIVE record of how these subjects look: ' +
+      'where the shot description differs on appearance, hair, wardrobe or surroundings, follow them. ' +
+      'The shot description governs what they are DOING and where.');
 
     /* ...and then this block, which describes a whole person, was read as a
        list of things to draw. It is not: it is what they look like WHEN YOU CAN
@@ -9804,11 +9814,7 @@ window.SB = window.SB || {};
        close-up of a pair of hands says nothing about anyone's hair, and the
        block used to hand over the hair anyway, under a paragraph calling itself
        authoritative — so the hair went in. */
-    lines.push('Each description above is of the WHOLE subject. This shot may show very little ' +
-      'of it — a pair of hands, one face, a corner of a room. Write only the parts that are ' +
-      'inside the frame described above; everything else is out of shot, and putting it into ' +
-      'words puts it into the picture. Being described here is not a reason to widen the shot ' +
-      'or to pull back far enough to show it.');
+    lines.push('Each describes the WHOLE subject: write only the parts inside this frame.');
 
     /* ...and this block was being read as a guest list. It names everyone cast
      * in the shot and hands over a numbered reference image for each, which to
@@ -9818,12 +9824,9 @@ window.SB = window.SB || {};
     const late = arriving(p, shot);
     if (role === 'image' || role === 'both') {
       const who = role === 'both' ? 'In the FIRST-FRAME PROMPT, only' : 'Only';
-      lines.push('This block says how these subjects LOOK. It is not a list of who or what is ' +
-        'visible in the frame you are writing — the shot description decides that, and a ' +
-        'reference image being supplied does not mean the subject is in this frame. ' +
-        who + ' draw the ones present at the instant the shot opens. ' +
-        'Anything arriving, entering or appearing later is not in the frame yet' +
-        (role === 'both' ? ' — it belongs to the video prompt.' : '.'));
+      lines.push('Being described or supplied as a reference does not put a subject in the frame: the shot ' +
+        'description decides that. ' + who + ' draw those present as the shot opens' +
+        (role === 'both' ? '; later arrivals belong to the video prompt.' : '.'));
       if (late.length) {
         lines.push('MARKED AS ARRIVING, AND THEREFORE ABSENT FROM THE FIRST FRAME: ' +
           late.map(function (x) { return x.name || 'unnamed'; }).join(', ') + '. ' +
@@ -10440,7 +10443,7 @@ window.SB = window.SB || {};
     'No camera motion, no narration, no preamble.\n\n' +
     'SHOT DESCRIPTION:\n{{DESCRIPTION}}';
 
-  const IMG_TPL =
+  const IMG_TPL_V2 =
     'Write a single first-frame still-image prompt for {{MODEL}}.\n' +
     'Shot type: {{SHOT_TYPE}}. Scene: {{SCENE}}.\n' +
     'The description below is a short sequence. You are writing only its FIRST INSTANT — the ' +
@@ -10448,6 +10451,13 @@ window.SB = window.SB || {};
     'Anyone or anything described as arriving, entering or appearing later is not in this frame.\n' +
     'Describe subject, setting, composition, lens, lighting and mood in one dense paragraph. ' +
     'No camera motion, no narration, no preamble.\n\n' +
+    'SHOT DESCRIPTION:\n{{DESCRIPTION}}';
+
+  /* V3: the shot type, the scene and the first-instant rule each already have their own block in the
+     instruction; the template said all three again. */
+  const IMG_TPL =
+    'Write a single first-frame still-image prompt for {{MODEL}}: one dense paragraph describing the ' +
+    'subject, the setting, the composition, the lens and the light. No camera motion, no narration, no preamble.\n\n' +
     'SHOT DESCRIPTION:\n{{DESCRIPTION}}';
 
   const VID_TPL_V1 =
@@ -11345,7 +11355,7 @@ window.SB = window.SB || {};
      * which three things happen. Boards carry their own copy of that wording,
      * so it is replaced here; anything edited by hand is left exactly alone. */
     s.models.forEach(function (m) {
-      if (m.imageTemplate === IMG_TPL_V1) m.imageTemplate = IMG_TPL;
+      if (m.imageTemplate === IMG_TPL_V1 || m.imageTemplate === IMG_TPL_V2) m.imageTemplate = IMG_TPL;
     });
 
     /* The old video template asked for motion in one line while the house
@@ -12160,7 +12170,7 @@ window.SB = window.SB || {};
     keepStillTake: keepStillTake, useStillTake: useStillTake,
     dropStillTake: dropStillTake,
     useTake: useTake, dropTake: dropTake,
-    IMG_TPL: IMG_TPL, IMG_TPL_V1: IMG_TPL_V1,
+    IMG_TPL: IMG_TPL, IMG_TPL_V1: IMG_TPL_V1, IMG_TPL_V2: IMG_TPL_V2,
     VID_TPL: VID_TPL, VID_TPL_V1: VID_TPL_V1, VID_TPL_V2: VID_TPL_V2,
     H3_VID_TPL: H3_VID_TPL, H3_VID_TPL_V2: H3_VID_TPL_V2, tplsFor: tplsFor,
     FRAME_ONLY: FRAME_ONLY, FULL_REFERENCE: FULL_REFERENCE,
@@ -18970,7 +18980,7 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
   function fill(tpl, ctx) {
     return String(tpl || '').replace(/\{\{(\w+)\}\}/g, function (m, k) {
       return ctx[k] == null ? '' : String(ctx[k]);
-    });
+    }).replace(/ ?Scene: \.(?=\s|$)/g, '');   // an untitled scene left "Scene: ." behind
   }
 
   /* What this lane is told the shot is.
@@ -19073,8 +19083,7 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
     return ctx;
   }
 
-  const PREAMBLE = 'You write prompts for generative media models. Follow the instruction ' +
-    'block(s) below exactly. Return the prompts themselves only — no commentary, no markdown fences.\n\n';
+  const PREAMBLE = 'You write prompts for generative media models. Follow the instructions below exactly.\n\n';
 
   /* A template that never mentions the project's own fields would silently
    * drop them, so anything filled in is appended unless the template already
@@ -19143,6 +19152,7 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
     const parts = [SB.Brand.systemFor(P(), shot, role)];
     const cast = SB.Personas.block(P(), shot, model, role);
     if (cast) parts.push(cast);
+    if (parts.filter(Boolean).length) parts.push(SB.Brand.closingFor(P(), shot, role));
     return parts.filter(Boolean).join('\n\n');
   }
 
@@ -19287,7 +19297,7 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
    * the turn as a function call, returning MALFORMED_FUNCTION_CALL on ~90% of
    * calls, truncating mid-object and sometimes returning no content.parts at all. */
   const NO_SCHEMA_HINT =
-    '\n\nOutput format: a single JSON object and nothing else. No preamble, no plan, no bullet points, no commentary. A ```json fenced block is acceptable. Your entire reply must be the JSON.';
+    '\n\nReply with the JSON object only \u2014 no preamble, plan or commentary (a ```json fence is fine).';
 
   /* Pull the first balanced {...} out of prose, respecting strings and escapes.
    * The old /\{[\s\S]*\}/ was greedy: in a reply holding two objects it spanned
@@ -23927,7 +23937,7 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
       const pre = document.createElement('textarea');
       pre.rows = 24;
       pre.readOnly = true;
-      pre.value = SB.Brand.systemFor(p, shot, 'both');
+      pre.value = SB.Brand.systemFor(p, shot, 'both') + '\n\n' + SB.Brand.closingFor(p, shot, 'both');
       pre.style.fontSize = '11px';
       body.appendChild(pre);
       p.settings.brand.text = saved;

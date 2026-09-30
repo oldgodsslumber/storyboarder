@@ -509,7 +509,7 @@
       lines.push(kind.heading);
       mine.forEach(function (per, i) {
         const bits = [];
-        bits.push(rangeFor(per) + (per.name || 'unnamed'));
+        bits.push(per.name || 'unnamed');   // its image number is in the mapping below
         const d = (per.description || '').replace(/\s+/g, ' ').trim();
         bits.push(d || '(no description yet)');
         /* Marked rather than dropped: the image numbering has to mean the same
@@ -603,10 +603,9 @@
      * subject into every description, and that copy went stale the moment the
      * persona was edited. This block is the live record, so it is declared to
      * win outright rather than deferring to whatever the description says. */
-    lines.push('The descriptions above are the CURRENT and AUTHORITATIVE record of how these ' +
-      'people, places and things look. Where the shot description says anything different about ' +
-      'their appearance, hair, wardrobe or surroundings, it is out of date — follow this block ' +
-      'and ignore it. The shot description still governs what they are DOING and where.');
+    lines.push('These descriptions are the CURRENT and AUTHORITATIVE record of how these subjects look: ' +
+      'where the shot description differs on appearance, hair, wardrobe or surroundings, follow them. ' +
+      'The shot description governs what they are DOING and where.');
 
     /* ...and then this block, which describes a whole person, was read as a
        list of things to draw. It is not: it is what they look like WHEN YOU CAN
@@ -614,11 +613,7 @@
        close-up of a pair of hands says nothing about anyone's hair, and the
        block used to hand over the hair anyway, under a paragraph calling itself
        authoritative — so the hair went in. */
-    lines.push('Each description above is of the WHOLE subject. This shot may show very little ' +
-      'of it — a pair of hands, one face, a corner of a room. Write only the parts that are ' +
-      'inside the frame described above; everything else is out of shot, and putting it into ' +
-      'words puts it into the picture. Being described here is not a reason to widen the shot ' +
-      'or to pull back far enough to show it.');
+    lines.push('Each describes the WHOLE subject: write only the parts inside this frame.');
 
     /* ...and this block was being read as a guest list. It names everyone cast
      * in the shot and hands over a numbered reference image for each, which to
@@ -628,12 +623,9 @@
     const late = arriving(p, shot);
     if (role === 'image' || role === 'both') {
       const who = role === 'both' ? 'In the FIRST-FRAME PROMPT, only' : 'Only';
-      lines.push('This block says how these subjects LOOK. It is not a list of who or what is ' +
-        'visible in the frame you are writing — the shot description decides that, and a ' +
-        'reference image being supplied does not mean the subject is in this frame. ' +
-        who + ' draw the ones present at the instant the shot opens. ' +
-        'Anything arriving, entering or appearing later is not in the frame yet' +
-        (role === 'both' ? ' — it belongs to the video prompt.' : '.'));
+      lines.push('Being described or supplied as a reference does not put a subject in the frame: the shot ' +
+        'description decides that. ' + who + ' draw those present as the shot opens' +
+        (role === 'both' ? '; later arrivals belong to the video prompt.' : '.'));
       if (late.length) {
         lines.push('MARKED AS ARRIVING, AND THEREFORE ABSENT FROM THE FIRST FRAME: ' +
           late.map(function (x) { return x.name || 'unnamed'; }).join(', ') + '. ' +

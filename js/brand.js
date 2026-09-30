@@ -86,29 +86,19 @@
       ? '- Shot type: ' + type + '.' + (line ? ' ' + line : '')
       : '- No shot type is set on this card. Take the framing from the shot description, and ' +
         'if it does not say, frame it as tightly as the action allows.');
-    out.push('- The shot description may narrow this further — to a pair of hands, a screen, ' +
-      'one eye. It never widens it. Nothing outside this framing is in the picture, however ' +
-      'fully any block in this instruction describes it.');
-    out.push('- Anyone the description has DOING something who does not fit inside this frame is ' +
-      'doing it off camera. The action is real and still happening — write it only where ' +
-      'the frame can see it, or in what it does to what the frame CAN see. Do not widen the shot ' +
-      'to fit them in, and do not draw them at its edge.');
+    out.push('- The shot description may narrow this (a pair of hands, a screen), never widen it. Anyone ' +
+      'acting outside the frame is off camera: show only what the frame can see, and do not widen the ' +
+      'shot to fit them in.');
     return out.join('\n');
   }
 
   const FIRST_FRAME_RIDER = [
     'THE FIRST FRAME IS ONE INSTANT',
-    '- You are describing a single photograph: the state of things at the moment this shot ' +
-    'opens, before anything the description says happens next has happened.',
-    '- A shot description is a short sequence. Words like "then", "after", "as", "walks in", ' +
-    '"enters", "arrives", "turns to", "reaches for", "picks up", "reveals", "cuts to" mark what ' +
-    'happens AFTER the first frame. None of it is in this image.',
-    '- If somebody or something is described as arriving, entering or appearing, the frame is ' +
-    'what the camera sees BEFORE they arrive. Do not put them in it, and do not gesture at them ' +
-    'with an open door, a shadow or a look off-screen unless the description opens that way.',
-    '- If the description opens mid-action, draw the first recognisable instant of that action, ' +
-    'not its result.',
-    '- Everything you leave out is not lost: the image-to-video prompt covers the movement.'
+    '- This is one photograph: the moment the shot opens. Whatever the description says happens next ' +
+    '("then", "walks in", "turns to", "picks up", "reveals") is not in it.',
+    '- Anyone who arrives later is absent, and not hinted at with an open door, a shadow or an ' +
+    'off-screen look unless the description opens that way.',
+    '- If it opens mid-action, show the first recognisable instant of the action, not its result.'
   ].join('\n');
 
   /* When a frame of another shot is supplied, the still is an EDIT of it. The
@@ -339,12 +329,10 @@
    * opposite job: there, saying what the person looks like IS the work. */
   const GENDER_RIDER = [
     'WHO THESE PEOPLE ARE',
-    '- Anyone the CAST block describes is exactly who it says they are: use its words for ' +
-    'them, gendered or not. Never neutralise a person the board has cast.',
-    '- Anyone it does NOT describe — a passer-by, a second figure, a pair of hands, a face in ' +
-    'the background — has no gender until somebody decides one, and that is not your decision. ' +
-    'Write them as "the subject", "the person", "a figure", "they", or with no pronoun at all.',
-    '- The shot description is the board\u2019s own word too: if it says who someone is, follow it.'
+    '- Anyone the CAST block or the shot description describes is exactly who it says: use its words, ' +
+    'gendered or not.',
+    '- Anyone else (a passer-by, a pair of hands, a face in the background) has no gender: write ' +
+    '"the person", "a figure", "they", or no pronoun at all.'
   ].join('\n');
 
   /* ---------------- invented details, checked rather than asked ----------------
@@ -453,14 +441,10 @@
 
   const NO_INVENT_RIDER = [
     'ADD NOTHING THAT IS NOT DESCRIBED',
-    '- Every garment, accessory and prop comes ONLY from the subject descriptions and the shot text. ' +
-    'If they do not mention it, it is not there.',
-    '- Never add clothing layers (coat, jacket, blazer, cardigan, sweater, hoodie, scarf), headwear, ' +
-    'glasses, jewellery, watches, bags, lanyards, headphones, umbrellas, extra props or extra people.',
-    '- Where a description is silent, the answer is nothing: plain and unadorned is correct. Weather, ' +
-    'season, a location or a job are not reasons to dress someone.',
-    '- Do not describe clothing in more detail than the description gives — no invented colours, ' +
-    'fabrics, logos or brands.'
+    '- Clothing, accessories and props come only from the descriptions and the shot text. Where they ' +
+    'are silent there is nothing: no coats, jackets, hats, scarves, glasses, jewellery, watches, bags, ' +
+    'lanyards, headphones or umbrellas, and no extra people. Weather, a place or a job is no reason to add any.',
+    '- Do not embellish what is described: no invented colours, fabrics, logos or brands.'
   ].join('\n');
 
   /* ---------------- the camera, checked rather than asked ----------------
@@ -590,10 +574,13 @@
     const pos = beats.indexOf(shot) + 1;
     const lines = [];
 
+    /* Only what is worth saying: a lone shot in an untitled scene with no note used to get "Scene 1:
+       (untitled). This is shot 1A (beat 1 of 1)." */
+    if (!scene.heading && !scene.description && beats.length <= 1) return '';
     lines.push('SCENE CONTEXT');
-    lines.push('Scene ' + (f.sceneIdx + 1) + ': ' + (scene.heading || '(untitled)'));
+    lines.push('Scene ' + (f.sceneIdx + 1) + (scene.heading ? ': ' + scene.heading : '') + '.');
     if (scene.description) lines.push('Scene note: ' + SB.Refs.plain(p, scene.description));
-    lines.push('This is shot ' + f.code + (pos > 0 ? ' (beat ' + pos + ' of ' + beats.length + ')' : '') + '.');
+    lines.push('This is shot ' + f.code + (pos > 0 && beats.length > 1 ? ' (beat ' + pos + ' of ' + beats.length + ')' : '') + '.');
 
     if (beats.length > 1) {
       lines.push('The other beats in this scene, in order:');
@@ -624,6 +611,45 @@
    * instant, and the movement out of it — and a board with no house style needs
    * them just as much. They used to sit behind the same early return, so
    * turning the brand off quietly took the craft rules with it. */
+  /* The last line the writer reads: put the rules above into the prompt's own words. It closes the
+     WHOLE instruction, after the cast block (it used to sit before it, mid-way). */
+  function closingFor(p, shot, role) {
+    /* Is a frame of another shot being handed over? Then this still is an edit
+     * of it, which changes both what to say and what to leave unsaid. */
+    const derived = (role === 'image' || role === 'both') &&
+      SB.Refs.feed(p, shot, role).some(function (e) {
+        return e.kind === 'shot' && e.images.length;
+      });
+    /* On an image job derived from another shot's frame, the house style is
+     * NOT sent. It is a list of things to put into the words — the grade, the
+     * grain, the lens, the practicals — and the source frame already carries
+     * every one of them. Sent anyway, the writer dutifully restates them, and
+     * an edit instruction full of "50mm, f/2.8, muted grade" comes back as a
+     * re-render of the scene rather than a change to the picture. The frame is
+     * the style reference now. (A combined image+video job still gets it: the
+     * video half is not derived from anything.) */
+    /* A frame-only video job is in exactly the position a derived still is in:
+     * the picture it starts from is supplied, so the look is inherited and the
+     * house style is a list of things to NOT say. A full-reference model is
+     * not — its format asks for appearance on purpose. */
+    const videoInherits = role === 'video' && SB.Model.videoInherits(SB.Model.videoModel(p));
+    return videoInherits
+      /* "as concrete description" is the right noun for a still and the wrong
+       * one here — it is the last thing the writer reads before it starts, and
+       * it was asking for description on the one job that must not describe. */
+      ? 'Fold these requirements into the prompt itself as concrete MOVEMENT — what happens, in ' +
+        'what order, at what pace. Nothing that is already visible in the supplied frame. Do not ' +
+        'quote the rules back, and do not add headings or commentary.'
+      : derived
+      ? 'Fold these requirements into the prompt itself as concrete description, but ONLY where ' +
+        'they describe what this frame CHANGES. Everything inherited from the supplied source ' +
+        'frame — the place, the lighting, the lens, the grade, the wardrobe — is already in that ' +
+        'image and must not be restated. Do not quote the rules back, and do not add headings ' +
+        'or commentary.'
+      : 'Fold these requirements into the prompt itself as concrete description — ' +
+        'do not quote the rules back, and do not add headings or commentary.';
+  }
+
   function systemFor(p, shot, role) {
     const b = brandOf(p);
     const parts = [];
@@ -699,21 +725,6 @@
      * fold in the grade and the lighting, the writer restated the lens, the
      * practicals and the grain — rebuilding in words what the source frame
      * already carries. So there, the fold-in is scoped to what changes. */
-    parts.push('', videoInherits
-      /* "as concrete description" is the right noun for a still and the wrong
-       * one here — it is the last thing the writer reads before it starts, and
-       * it was asking for description on the one job that must not describe. */
-      ? 'Fold these requirements into the prompt itself as concrete MOVEMENT — what happens, in ' +
-        'what order, at what pace. Nothing that is already visible in the supplied frame. Do not ' +
-        'quote the rules back, and do not add headings or commentary.'
-      : derived
-      ? 'Fold these requirements into the prompt itself as concrete description, but ONLY where ' +
-        'they describe what this frame CHANGES. Everything inherited from the supplied source ' +
-        'frame — the place, the lighting, the lens, the grade, the wardrobe — is already in that ' +
-        'image and must not be restated. Do not quote the rules back, and do not add headings ' +
-        'or commentary.'
-      : 'Fold these requirements into the prompt itself as concrete description — ' +
-        'do not quote the rules back, and do not add headings or commentary.');
     return parts.join('\n');
   }
 
@@ -726,7 +737,7 @@
     VIDEO_RIDER: VIDEO_RIDER,
     FIRST_FRAME_RIDER: FIRST_FRAME_RIDER,
     DERIVED_RIDER: DERIVED_RIDER,
-    REFERENCE_RIDER: REFERENCE_RIDER,
+    REFERENCE_RIDER: REFERENCE_RIDER, closingFor: closingFor,
     brandOf: brandOf,
     systemFor: systemFor,
     sequenceBlock: sequenceBlock

@@ -352,7 +352,7 @@
       const pre = document.createElement('textarea');
       pre.rows = 24;
       pre.readOnly = true;
-      pre.value = SB.Brand.systemFor(p, shot, 'both');
+      pre.value = SB.Brand.systemFor(p, shot, 'both') + '\n\n' + SB.Brand.closingFor(p, shot, 'both');
       pre.style.fontSize = '11px';
       body.appendChild(pre);
       p.settings.brand.text = saved;

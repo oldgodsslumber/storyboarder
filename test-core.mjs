@@ -376,9 +376,9 @@ console.log('\n— gender is cast, not guessed —');
 
   /* the rider says it before the rewrite ever has to */
   const sys = B.systemFor(p, cast, 'image');
-  eq(/Never neutralise a person the board has cast/.test(sys), true,
+  eq(/exactly who it says: use its words, \s*gendered or not/.test(sys), true,
     'the writer is told the cast keeps its own words');
-  eq(/has no gender until somebody decides one/.test(sys), true,
+  eq(/has no gender/.test(sys), true,
     'and that nobody else gets one assigned');
 }
 
@@ -1245,7 +1245,7 @@ console.log('\n— people, places and things are one record —');
   eq(blk.indexOf('CAST') < blk.indexOf('LOCATIONS'), true, 'in a fixed order, whatever order they were cast in');
   eq(/Cold aisle/.test(blk) && /green LED/.test(blk), true,
     'a place and a thing carry their description exactly as a person does');
-  eq(/people, places and things/.test(blk), true,
+  eq(/AUTHORITATIVE record of how these subjects look/.test(blk), true,
     'and the block claims authority over all three, not just the wardrobe');
 
   /* a wardrobe repair is about people — a room on the card says nothing about
@@ -1284,8 +1284,8 @@ console.log('\n— a subject holds as many reference frames as it needs —');
   shot.personaIds = [per.id, mate.id];
 
   const blk = Per.block(p, shot, null);
-  eq(/image 1 — Ops lead/.test(blk), true, 'a subject cites its one image');
-  eq(/image 2 — Technician/.test(blk), true, 'and numbering runs on across subjects');
+  eq(/image 1 = Ops lead/.test(blk), true, 'a subject cites its one image');
+  eq(/image 2 = Technician/.test(blk), true, 'and numbering runs on across subjects');
   eq(/image 1 = Ops lead \(front view\)/.test(blk), true, 'the mapping names what it shows');
   eq(/images \d+–\d+/.test(blk), false, 'no ranges, because nobody can hold two');
   eq(/SAME\b[\s\S]*different angles/.test(blk), false,
@@ -1373,9 +1373,9 @@ console.log('\n— a first frame is one instant —');
   /* the block used to read as a guest list: it named everyone cast and handed
      over a numbered reference image each, so the writer drew them all */
   const img = Per.block(p, sh, null, 'image');
-  eq(/not a list of who or what is visible/.test(img), true,
+  eq(/does not put a subject in the frame/.test(img), true,
     'the image job is told the cast block is not a list of who is in frame');
-  eq(/present at the instant the shot opens/.test(img), true,
+  eq(/present as the shot opens/.test(img), true,
     'and that only what is there when it opens gets drawn');
   eq(/not a list of who or what is visible/.test(Per.block(p, sh, null, 'video')), false,
     'the video job is not — it covers the movement, arrivals included');
@@ -1755,7 +1755,7 @@ console.log('\n— a derived frame is an edit of the frame it came from —');
   eq(/HOUSE STYLE — every prompt/.test(sys), false,
     'and the house style is not sent again: the frame already carries it');
   eq(/THE HOUSE STYLE IS NOT REPEATED HERE/.test(sys), true, 'which is said, not silently done');
-  eq(/must not be restated/.test(sys), true,
+  eq(/must not be restated/.test(sys + B.closingFor(p, b, 'image')), true,
     'so the fold-in instruction is scoped to what actually changes');
 
   /* a combined job still writes the video half, which is derived from nothing */
@@ -3402,7 +3402,7 @@ console.log('\n— end to end against a stubbed local server —');
     eq(seen.init.headers.Authorization, 'Bearer sekrit', 'the key rides as a bearer token');
     eq(seen.body.model, 'mistral-7b', 'the model name is sent');
     eq(seen.body.messages[0].role, 'system', 'the system prompt goes in its own message');
-    eq(/JSON object and nothing else/.test(seen.body.messages[1].content), true,
+    eq(/Reply with the JSON object only/.test(seen.body.messages[1].content), true,
       'and the user turn carries the ask-in-words JSON wording');
     eq(seen.body.generationConfig, undefined, 'no Gemini-shaped fields leak into it');
     eq(out.imagePrompt, 'a wide shot, {no braces} inside',

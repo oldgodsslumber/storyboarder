@@ -136,7 +136,7 @@
     'No camera motion, no narration, no preamble.\n\n' +
     'SHOT DESCRIPTION:\n{{DESCRIPTION}}';
 
-  const IMG_TPL =
+  const IMG_TPL_V2 =
     'Write a single first-frame still-image prompt for {{MODEL}}.\n' +
     'Shot type: {{SHOT_TYPE}}. Scene: {{SCENE}}.\n' +
     'The description below is a short sequence. You are writing only its FIRST INSTANT — the ' +
@@ -144,6 +144,13 @@
     'Anyone or anything described as arriving, entering or appearing later is not in this frame.\n' +
     'Describe subject, setting, composition, lens, lighting and mood in one dense paragraph. ' +
     'No camera motion, no narration, no preamble.\n\n' +
+    'SHOT DESCRIPTION:\n{{DESCRIPTION}}';
+
+  /* V3: the shot type, the scene and the first-instant rule each already have their own block in the
+     instruction; the template said all three again. */
+  const IMG_TPL =
+    'Write a single first-frame still-image prompt for {{MODEL}}: one dense paragraph describing the ' +
+    'subject, the setting, the composition, the lens and the light. No camera motion, no narration, no preamble.\n\n' +
     'SHOT DESCRIPTION:\n{{DESCRIPTION}}';
 
   const VID_TPL_V1 =
@@ -1041,7 +1048,7 @@
      * which three things happen. Boards carry their own copy of that wording,
      * so it is replaced here; anything edited by hand is left exactly alone. */
     s.models.forEach(function (m) {
-      if (m.imageTemplate === IMG_TPL_V1) m.imageTemplate = IMG_TPL;
+      if (m.imageTemplate === IMG_TPL_V1 || m.imageTemplate === IMG_TPL_V2) m.imageTemplate = IMG_TPL;
     });
 
     /* The old video template asked for motion in one line while the house
@@ -1856,7 +1863,7 @@
     keepStillTake: keepStillTake, useStillTake: useStillTake,
     dropStillTake: dropStillTake,
     useTake: useTake, dropTake: dropTake,
-    IMG_TPL: IMG_TPL, IMG_TPL_V1: IMG_TPL_V1,
+    IMG_TPL: IMG_TPL, IMG_TPL_V1: IMG_TPL_V1, IMG_TPL_V2: IMG_TPL_V2,
     VID_TPL: VID_TPL, VID_TPL_V1: VID_TPL_V1, VID_TPL_V2: VID_TPL_V2,
     H3_VID_TPL: H3_VID_TPL, H3_VID_TPL_V2: H3_VID_TPL_V2, tplsFor: tplsFor,
     FRAME_ONLY: FRAME_ONLY, FULL_REFERENCE: FULL_REFERENCE,

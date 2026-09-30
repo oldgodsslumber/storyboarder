@@ -16,7 +16,7 @@
   function fill(tpl, ctx) {
     return String(tpl || '').replace(/\{\{(\w+)\}\}/g, function (m, k) {
       return ctx[k] == null ? '' : String(ctx[k]);
-    });
+    }).replace(/ ?Scene: \.(?=\s|$)/g, '');   // an untitled scene left "Scene: ." behind
   }
 
   /* What this lane is told the shot is.
@@ -119,8 +119,7 @@
     return ctx;
   }
 
-  const PREAMBLE = 'You write prompts for generative media models. Follow the instruction ' +
-    'block(s) below exactly. Return the prompts themselves only — no commentary, no markdown fences.\n\n';
+  const PREAMBLE = 'You write prompts for generative media models. Follow the instructions below exactly.\n\n';
 
   /* A template that never mentions the project's own fields would silently
    * drop them, so anything filled in is appended unless the template already
@@ -189,6 +188,7 @@
     const parts = [SB.Brand.systemFor(P(), shot, role)];
     const cast = SB.Personas.block(P(), shot, model, role);
     if (cast) parts.push(cast);
+    if (parts.filter(Boolean).length) parts.push(SB.Brand.closingFor(P(), shot, role));
     return parts.filter(Boolean).join('\n\n');
   }
 
@@ -333,7 +333,7 @@
    * the turn as a function call, returning MALFORMED_FUNCTION_CALL on ~90% of
    * calls, truncating mid-object and sometimes returning no content.parts at all. */
   const NO_SCHEMA_HINT =
-    '\n\nOutput format: a single JSON object and nothing else. No preamble, no plan, no bullet points, no commentary. A ```json fenced block is acceptable. Your entire reply must be the JSON.';
+    '\n\nReply with the JSON object only \u2014 no preamble, plan or commentary (a ```json fence is fine).';
 
   /* Pull the first balanced {...} out of prose, respecting strings and escapes.
    * The old /\{[\s\S]*\}/ was greedy: in a reply holding two objects it spanned

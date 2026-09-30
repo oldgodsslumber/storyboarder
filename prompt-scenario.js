@@ -391,7 +391,7 @@
       const gsys = SB.Brand.systemFor(SB.app.project, shots.a, 'image');
       t('and nothing in the system message forbids saying who she is',
         !/no gender references|avoid gendered|never use gendered/i.test(gsys) &&
-        /Never neutralise a person the board has cast/.test(gsys), '');
+        /exactly who it says: use its words, \s*gendered or not/.test(gsys), '');
       shots.a.personaIds = [];
       window.__reply = null;
 
@@ -731,7 +731,7 @@
         shots.a.image = { ref: 'frame1', w: 8, h: 8 };
 
         const sys = [SB.Brand.systemFor(P(), shots.a, 'video'),
-          SB.Personas.block(P(), shots.a, wan, 'video')].join('  ');
+          SB.Personas.block(P(), shots.a, wan, 'video'), SB.Brand.closingFor(P(), shots.a, 'video')].join('  ');
 
         t('the house style is not sent to a frame-only video job',
           sys.indexOf('muted professional grade') < 0 && sys.indexOf('HOUSE STYLE —') < 0,
@@ -890,11 +890,11 @@
           /WHAT THIS FRAME SHOWS/.test(sys) && /nothing below the chest/i.test(sys),
           sys.slice(0, 60));
         t('and that the description may crop tighter but never wider',
-          /never widens it/i.test(sys), '');
+          /never widen it/i.test(sys), '');
         t('and that somebody acting outside the frame is still acting',
-          /doing it off camera/i.test(sys), '');
+          /outside the frame is off camera/i.test(sys), '');
         t('the cast block is scoped to what the frame shows',
-          /Write only the parts that are inside the frame/i.test(sys), '');
+          /write only the parts inside this frame/i.test(sys), '');
         t('and no longer asks for the person "fully"',
           !/describe this person fully/i.test(sys), 'the old wording is still there');
 
