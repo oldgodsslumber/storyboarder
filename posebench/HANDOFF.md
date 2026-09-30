@@ -452,3 +452,9 @@ Only camera-space z moves, so the photo-angle view is unchanged. Results: knees 
   - A faint dark crease at the crotch.
   - Clicks on body areas wider than the mannequin (flanks, belly) miss, because picking uses the mannequin.
   - Undo doesn't revert a Body change.
+
+### Shoulders and holding (2026-09-30, after "the shoulders are too high, and the hands aren't holding objects")
+
+- **Shoulders and neck.** The torso bones now keep the body's own proportions, placed only on the figure's hips. They used to be stretched onto the mannequin's joints, whose chest is long and neck short, and that squashed the body's neck by about 40%: the head sank and the shoulders rode up to the jaw. Each torso bone still rides its mannequin joint.
+- **Palm orientation.** After the A-pose arm is swung down, the hand is turned about the arm until its thumb points forward, the way the mannequin's hand hangs and the way every held prop is placed. The forearm takes half the turn (`body.handTwist` records it: about 42° left, −20° right on the male).
+- **Fingers.** The model's rest fingers are each bent about 30° off the hand, by different amounts, so "flat" came out half-curled and pointing forward. `bodyFingers` now lays each finger out from its own knuckle: straight along the hand, curling toward the palm by `CURL`, with the thumb down and forward, curling across. Phone at the ear, mug and texting now sit in the hand the way they do on the mannequin.

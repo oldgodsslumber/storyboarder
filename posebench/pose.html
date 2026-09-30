@@ -922,7 +922,7 @@ const BODY_MAP=[   // body bone, the joint it rides, the joint (or body bone) it
 ];
 const FINGERS=['thumb','f_index','f_middle','f_ring','f_pinky'];
 // curl per joint (degrees, base to tip) for each hand shape; the thumb bends less and across
-const CURL={flat:{f:[0,0,0],t:[0,0,0]},relaxed:{f:[14,22,14],t:[8,10,6]},grip:{f:[58,74,48],t:[22,30,20]}};
+const CURL={flat:{f:[0,0,0],t:[0,0,0]},relaxed:{f:[18,28,18],t:[10,12,8]},grip:{f:[70,85,55],t:[30,35,25]}};
 const bodyBase={};
 function bodyGeo(kind){
   if(bodyBase[kind])return bodyBase[kind];
@@ -984,18 +984,17 @@ function fitBody(body,f){
   const put=(n,pos,rot,sy,sx)=>{fit[n]={pos,rot,sy,sx:sx==null?lat:sx};};
   const I=new Q();
   // torso: each bone on its joint (the in-between ones part way), its length stretched to reach the next
+  /* The torso keeps the body's OWN proportions (only placed on the figure's hips). Stretching each torso bone onto
+     the mannequin's joints squashed the neck by ~40% (the mannequin's chest is long and its neck short), so the
+     head sank and the shoulders rode up to the jaw. Each bone still rides its mannequin joint, so a bend or a turn
+     moves it the same; it just sits where the body has it. */
   const hipMid=P('lHip').add(P('rHip')).multiplyScalar(0.5), bHipMid=H('thigh.L').add(H('thigh.R')).multiplyScalar(0.5);
-  const sp=[['spine',hipMid.clone().add(H('spine').sub(bHipMid))],['spine.001',P('spine')],['spine.002',null],['spine.003',P('chest')],
-    ['spine.004',P('neck')],['spine.005',null],['spine.006',P('head')]];
-  const lerpAt=(i)=>{const a=sp[i-1][1],c=sp[i+1][1],ya=H(sp[i-1][0]).y,yb=H(sp[i][0]).y,yc=H(sp[i+1][0]).y;return a.clone().lerp(c,(yb-ya)/(yc-ya));};
-  sp[2][1]=lerpAt(2); sp[5][1]=lerpAt(5);
-  sp.forEach(([n,pos],i)=>{
-    if(i<sp.length-1){const bl=len(H(n),H(sp[i+1][0]))/Hs; put(n,pos,I,len(pos,sp[i+1][1])/bl);}
-    else put(n,pos,I,Hs*headK,Hs*headK);
-  });
+  const off=hipMid.clone().sub(bHipMid), at=n=>H(n).add(off);
+  ['spine','spine.001','spine.002','spine.003','spine.004','spine.005'].forEach(n=>put(n,at(n),I,Hs));
+  put('spine.006',at('spine.006'),I,Hs*headK,Hs*headK);
   for(const [S,p] of [['L','l'],['R','r']]){
-    // collarbone from the chest out to the shoulder joint
-    const sh=P('chest').add(H('shoulder.'+S).sub(H('spine.003')));
+    // collarbone from where the body has it out to the shoulder joint
+    const sh=at('shoulder.'+S);
     put('shoulder.'+S,sh,I,len(sh,P(p+'Shoulder'))/(len(H('shoulder.'+S),H('upper_arm.'+S))/Hs));
     // arm and leg chains: swing each A-pose bone onto the mannequin's rest direction, stretch to its length
     const chain=(bones,joints)=>{let acc=new Q();
@@ -1007,7 +1006,22 @@ function fitBody(body,f){
         put(n,P(joints[k]),q,sy,Hs*(n.startsWith('hand')?1:f.bulk));
       });
       return acc;};
-    const qa=chain(['upper_arm.'+S,'forearm.'+S,'hand.'+S],[p+'Shoulder',p+'Elbow',p+'Wrist']);
+    let qa=chain(['upper_arm.'+S,'forearm.'+S,'hand.'+S],[p+'Shoulder',p+'Elbow',p+'Wrist']);
+    /* Swung down, the body's hand was still turned as in its A-pose: palm not where the mannequin's palm is, so a
+       phone sat on the back of the hand and a cup beside the fist. The mannequin's hand hangs thumb forward, palm to
+       the thigh, and everything it holds is placed for that. So the hand is turned about the arm until its thumb
+       points forward; the forearm takes half the turn, as a real forearm does, so the wrist doesn't wring. */
+    {
+      const th=H('thumb.01.'+S).sub(H('hand.'+S)).applyQuaternion(qa); th.y=0;
+      if(th.lengthSq()>1e-10){
+        th.normalize(); const fwd=new V3(0,0,1);
+        const a=Math.atan2(new V3().crossVectors(th,fwd).dot(new V3(0,1,0)),th.dot(fwd));
+        const tw=(k)=>new Q().setFromAxisAngle(new V3(0,1,0),a*k);
+        fit['forearm.'+S].rot=tw(0.5).multiply(fit['forearm.'+S].rot);
+        qa=tw(1).multiply(qa); fit['hand.'+S].rot=qa;
+        body.handTwist=body.handTwist||{}; body.handTwist[p]=Math.round(a*RAD);
+      }
+    }
     const ql=chain(['thigh.'+S,'shin.'+S,'foot.'+S],[p+'Hip',p+'Knee',p+'Ankle']);
     put('toe.'+S,P(p+'Ankle').add(H('toe.'+S).sub(H('foot.'+S)).applyQuaternion(ql)),ql,Hs,Hs);
     body.qHand=body.qHand||{}; body.qHand[p]=qa;
@@ -1025,24 +1039,35 @@ function setBone(body,n,j,rotOverride){
   body.pivot[i]=f.joints[j].pivot;
 }
 // finger chains, curled per the hand shape, riding the wrist
+/* The model's rest fingers are no guide: each is already bent ~30° off the hand, by its own amount, so "flat" came
+   out half-curled and pointing forward, and curling from there went sideways. So the fingers are laid out from the
+   mannequin's hand instead (its hand hangs straight down, thumb forward, palm to the thigh): each finger starts at
+   the model's own knuckle and runs straight along the hand, and a curl turns it toward the palm, joint by joint.
+   The thumb starts down and forward, and a curl brings it across the palm. */
 function bodyFingers(body,f,p){
   if(!body.fit)return;
-  const {B}=body, S=p==='l'?'L':'R', Hs=baseHeight(f.T), c=CURL[f.hands[p]]||CURL.relaxed;
+  const {B}=body, S=p==='l'?'L':'R', s=p==='l'?1:-1, Hs=baseHeight(f.T), c=CURL[f.hands[p]]||CURL.relaxed;
   const qh=body.qHand[p], hand=B.bind[B.ix['hand.'+S]], wrist=f.restPos[p+'Wrist'];
+  const A=new V3(0,-1,0), F=new V3(0,0,1), N=new V3(-s,0,0);        // along the hand, thumb side, palm side
+  const H0=n=>B.bind[B.ix[n]].head;
   for(const fn of FINGERS){
-    const cv=fn==='thumb'?c.t:c.f; let prevRot=null, prevHead=null, prevBind=null;
+    const cv=fn==='thumb'?c.t:c.f, thumb=fn==='thumb';
+    // straight direction of this finger, and the way it bends
+    const d0=thumb?A.clone().multiplyScalar(0.9).addScaledVector(F,0.3).addScaledVector(N,0.2).normalize():A.clone();
+    const bendTo=thumb?N.clone().multiplyScalar(0.8).addScaledVector(A,0.2).normalize():N.clone();
+    const axis=new V3().crossVectors(d0,bendTo).normalize();
+    let head=wrist.clone().add(H0(fn+'.01.'+S).clone().sub(hand.head).multiplyScalar(Hs).applyQuaternion(qh)), ang=0;
     ['01','02','03'].forEach((k,si)=>{
       const n=fn+'.'+k+'.'+S, bd=B.bind[B.ix[n]];
-      let head, rot;
-      if(!prevRot){head=wrist.clone().add(bd.head.clone().sub(hand.head).multiplyScalar(Hs).applyQuaternion(qh)); rot=qh.clone().multiply(bd.rot);}
-      else{
-        head=prevHead.clone().add(bd.head.clone().sub(prevBind.head).multiplyScalar(Hs).applyQuaternion(prevRot.clone().multiply(prevBind.rot.clone().invert())));
-        rot=prevRot.clone().multiply(prevBind.rot.clone().invert()).multiply(bd.rot);
-      }
-      rot.multiply(new Q().setFromAxisAngle(new V3(1,0,0),cv[si]*DEG));
-      body.fit[n]={pos:head,rot:I0,sy:Hs,sx:Hs};
+      ang+=cv[si]*DEG;
+      const dir=d0.clone().applyAxisAngle(axis,ang);
+      const bindRot=qh.clone().multiply(bd.rot), by=new V3(0,1,0).applyQuaternion(bindRot);
+      const rot=new Q().setFromUnitVectors(by,dir).multiply(bindRot);
+      body.fit[n]={pos:head.clone(),rot:I0,sy:Hs,sx:Hs};
       setBone(body,n,p+'Wrist',rot);
-      prevRot=rot; prevHead=head; prevBind=bd;
+      const nx=k==='03'?null:fn+'.0'+(si+2)+'.'+S;
+      const L=nx?H0(nx).distanceTo(H0(n))*Hs:0;
+      head=head.clone().addScaledVector(dir,L);
     });
   }
 }
@@ -4733,7 +4758,7 @@ refreshPropUI();
   glideTick(performance.now());
   updateHandles();renderer.render(scene,camera);})();
 if(EMBED)try{window.parent.postMessage({type:'posebench:ready'},'*');}catch(e){}
-window.__pb={snapScene,applySceneFile,renderShot,setBodyStyle,get bodyStyle(){return bodyStyle;},steadyDepth,standingStill,viewAsPhoto,liveGuard,guardNew,photoWarnings,glitchMask,repairSeq,labelSwap,glitchSummary,glitchOverride,addHead,faceLoad,get takes(){return takes;},get glides(){return glides;},glideTick,glideFinish,camApply,get tl(){return tl;},makeTake,bakeTake,openTake,showTakeAt,exportTake,cutList,takeSnap,takeLoad,camImportVideo,addCam,addCut,tlPlay,setCamView,viewNow,blockingText,retarget,synthLandmarks,readPose,camFromImage,mpLoad,detLoad,findPeople,camApply,camStart,camSnap,get camState(){return camS;},get figures(){return figures;},get props(){return props;},get act(){return act;},cam,fitShot,setView,frameAll,PRESETS,WORK,SCENES,
+window.__pb={applyWork,snapScene,applySceneFile,renderShot,setBodyStyle,get bodyStyle(){return bodyStyle;},steadyDepth,standingStill,viewAsPhoto,liveGuard,guardNew,photoWarnings,glitchMask,repairSeq,labelSwap,glitchSummary,glitchOverride,addHead,faceLoad,get takes(){return takes;},get glides(){return glides;},glideTick,glideFinish,camApply,get tl(){return tl;},makeTake,bakeTake,openTake,showTakeAt,exportTake,cutList,takeSnap,takeLoad,camImportVideo,addCam,addCut,tlPlay,setCamView,viewNow,blockingText,retarget,synthLandmarks,readPose,camFromImage,mpLoad,detLoad,findPeople,camApply,camStart,camSnap,get camState(){return camS;},get figures(){return figures;},get props(){return props;},get act(){return act;},cam,fitShot,setView,frameAll,PRESETS,WORK,SCENES,
   camera,applyCam,selectJoint,solveChain,commit,applyNamed,goalFrame,eyePoint};
 })();
 </script>
