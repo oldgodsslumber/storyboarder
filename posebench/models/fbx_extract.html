@@ -1,0 +1,23 @@
+<!doctype html><html><body>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/libs/fflate.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/FBXLoader.js"></script>
+<script>
+window.extract=url=>new Promise((res,rej)=>new THREE.FBXLoader().load(url,obj=>{
+  obj.updateMatrixWorld(true);
+  const meshes=[]; obj.traverse(o=>{if(o.isSkinnedMesh)meshes.push(o);});
+  if(!meshes.length)return rej('no skinned mesh');
+  const sk=meshes[0].skeleton, names=sk.bones.map(b=>b.name);
+  const bones=sk.bones.map((b,i)=>({name:b.name,parent:names.indexOf(b.parent&&b.parent.name),m:new THREE.Matrix4().copy(sk.boneInverses[i]).invert().toArray()}));
+  const pos=[],idx=[],sj=[],sw=[]; let off=0;
+  for(const m of meshes){
+    const g=m.geometry, P=g.getAttribute('position'), J=g.getAttribute('skinIndex'), W=g.getAttribute('skinWeight'), v=new THREE.Vector3();
+    const map=m.skeleton.bones.map(b=>names.indexOf(b.name));
+    for(let i=0;i<P.count;i++){v.fromBufferAttribute(P,i).applyMatrix4(m.bindMatrix);pos.push(v.x,v.y,v.z);
+      for(let k=0;k<4;k++){sj.push(map[J.array[i*J.itemSize+k]]);sw.push(W.array[i*W.itemSize+k]);}}
+    if(g.index)for(let i=0;i<g.index.count;i++)idx.push(g.index.getX(i)+off); else for(let i=0;i<P.count;i++)idx.push(i+off);
+    off+=P.count;
+  }
+  res({bones,pos,idx,sj,sw,meshes:meshes.length});
+},undefined,e=>rej(String(e))));
+</script></body></html>

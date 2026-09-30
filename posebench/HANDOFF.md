@@ -462,3 +462,15 @@ Only camera-space z moves, so the photo-angle view is unchanged. Results: knees 
 ### Human (low-poly, original rig) (2026-09-30)
 
 A third **Body** option: the file's own rigged low-poly meshes (male mesh 0, ~9k tris; female mesh 2, ~4k), with the artist's weights untouched (`body(..., {own:true})` → `male_rig` / `female_rig` in bodies.js, which is now ~1.2 MB). Fitting, hands and fingers are the same code as the sculpted bodies. In the comparison (`models/body-compare.png`), the woman looks close to the sculpted one. The man tears at the hip and chest whenever a leg lifts or an arm comes forward, because his source thigh weights are crossed.
+
+### Human (auto-rigged, MIA) (2026-09-30)
+
+The sculpted meshes, rigged and weighted by ComfyUI-UniRig's MIA auto-rigger (Mixamo skeleton, all fingers). Pipeline:
+1. `node models/prep-bodies.mjs --export-mesh` writes `ComfyUI/input/3d/pb_body_{male,female}.glb`.
+2. `models/mia_run.py` queues MIA through the ComfyUI API. `GeomPackLoadMeshPath` sidesteps UniRig's cached file list.
+3. `models/fbx_extract.html/.js` (headless Chrome, three FBXLoader) turns `ComfyUI/output/pb_body_*_rig_mia.fbx` into `models/mia_*.json`.
+4. `node models/prep-bodies.mjs --mia` maps the Mixamo bones onto the runtime names (spine.005 is synthesized midway up the neck), gives each bone a bind frame aimed at its child, and welds.
+
+ComfyUI's isolated envs needed `comfy-aimdo` 0.5.5 (unirig and geometrypack) and `comfy-kitchen` 0.2.35 (unirig) after the 2026-09-28 core update, plus a ComfyUI restart.
+
+Result (`models/body-compare.png`, rows: sculpted with our weights / MIA / original rig): the MIA man bends cleanly where the original rig tears. The MIA hands open into claws on a grip, and the MIA woman's shoulders sit high. bodies.js now carries all three sets (~2.1 MB); trim once one is chosen.

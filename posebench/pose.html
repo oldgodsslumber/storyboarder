@@ -400,7 +400,7 @@
           <select id="capFmt"><option value="png">PNG</option><option value="jpeg">JPEG (smaller)</option></select></div>
         <label class="toggle"><span>Transparent background<span class="d">PNG only · hides floor &amp; grid</span></span><input type="checkbox" id="tAlpha"><i></i></label>
         <div class="field"><label for="bodyStyle">Body</label>
-          <select id="bodyStyle" title="What the figures look like, on screen and in every render. The posing is the same either way"><option value="human">Human (sculpted, with fingers)</option><option value="rigged">Human (low-poly, original rig)</option><option value="classic">Classic mannequin</option></select></div>
+          <select id="bodyStyle" title="What the figures look like, on screen and in every render. The posing is the same either way"><option value="human">Human (sculpted, with fingers)</option><option value="mia">Human (auto-rigged, MIA)</option><option value="rigged">Human (low-poly, original rig)</option><option value="classic">Classic mannequin</option></select></div>
         <div class="d" style="font-size:11px;color:var(--muted-2);margin:-2px 0 6px">Human body: <a href="https://sketchfab.com/3d-models/human-models-set-malefemale-rigged-7311fcfdc03e4234900eeced42a1e669" target="_blank" rel="noopener" style="color:inherit">"Human Models Set"</a> by <a href="https://sketchfab.com/lzyassoul" target="_blank" rel="noopener" style="color:inherit">lzyassoul</a>, <a href="http://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener" style="color:inherit">CC BY 4.0</a> (re-rigged)</div>
         <label class="toggle"><span>Grid in captures<span class="d">Off: renders, clips and passes leave the floor grid out, even while you see it here</span></span><input type="checkbox" id="tCapGrid"><i></i></label>
         <div class="lbl" style="margin-top:9px">Also capture <span style="color:var(--muted-2)">· ControlNet / guide images</span></div>
@@ -747,7 +747,7 @@ class Figure{
   }
   applyBodyStyle(){
     // which body this style wants: the sculpted one, the file's own low-poly rig, or none (classic)
-    const kind=bodyStyle==='classic'?null:(this.type==='female'?'female':'male')+(bodyStyle==='rigged'?'_rig':'');
+    const kind=bodyStyle==='classic'?null:(this.type==='female'?'female':'male')+({rigged:'_rig',mia:'_mia'}[bodyStyle]||'');
     if(kind&&(!this.body||this.body.kind!==kind)){
       if(this.body)disposeBody(this.body);
       this.body=makeBody(this,kind); if(this.body){this.group.add(this.body.mesh);this.body.mat.color.copy(lin(this.color));}
@@ -1086,7 +1086,7 @@ function bodyHighlight(body,sel,hov){
 }
 let bodyStyle='human';
 function setBodyStyle(v){
-  bodyStyle=v==='classic'||v==='rigged'?v:'human';
+  bodyStyle=['classic','rigged','mia'].includes(v)?v:'human';
   const el=document.getElementById('bodyStyle'); if(el)el.value=bodyStyle;
   figures.forEach(f=>f.applyBodyStyle());
 }

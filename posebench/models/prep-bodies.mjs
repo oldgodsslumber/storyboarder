@@ -223,6 +223,68 @@ function body(skinMi, skinIx, lowMi, highMis, opts = {}) {
 const bodies = { male: body(0, 0, 1, [5, 6], { auto: true }), female: body(2, 1, 3, [4]) };
 templateWeights(bodies.male, bodies.female);
 for (const b of Object.values(bodies)) smoothWeights(b, 6);
+/* --mia: the sculpted bodies as rigged and weighted by ComfyUI-UniRig's MIA ("Make it Animatable") auto-rigger:
+   models/mia_<body>.json, extracted from its FBX. Its Mixamo skeleton is mapped onto the bone names the runtime
+   drives; each bone gets a bind frame pointing at its child joint (any orthonormal frame is valid for skinning, and
+   this one is what the hand and finger layout expects). The weights are the rigger's, untouched. */
+function bodyFromMia(k) {
+  const f = path.join(here, 'mia_' + k + '.json'); if (!fs.existsSync(f)) return null;
+  const d = JSON.parse(fs.readFileSync(f, 'utf8'));
+  const base = n => n.replace(/^mixamorig[:_]?/i, '');
+  const MX = { Hips: 'spine', Spine: 'spine.001', Spine1: 'spine.002', Spine2: 'spine.003', Neck: 'spine.004', Head: 'spine.006' };
+  for (const [S, side] of [['L', 'Left'], ['R', 'Right']]) {
+    Object.assign(MX, { [side + 'Shoulder']: 'shoulder.' + S, [side + 'Arm']: 'upper_arm.' + S, [side + 'ForeArm']: 'forearm.' + S, [side + 'Hand']: 'hand.' + S,
+      [side + 'UpLeg']: 'thigh.' + S, [side + 'Leg']: 'shin.' + S, [side + 'Foot']: 'foot.' + S, [side + 'ToeBase']: 'toe.' + S });
+    for (const [fm, fk] of [['Thumb', 'thumb'], ['Index', 'f_index'], ['Middle', 'f_middle'], ['Ring', 'f_ring'], ['Pinky', 'f_pinky']])
+      for (let i = 1; i <= 3; i++) MX[side + 'Hand' + fm + i] = fk + '.0' + i + '.' + S;
+  }
+  const names = d.bones.map(b => base(b.name));
+  const missing = Object.keys(MX).filter(n => names.indexOf(n) < 0); if (missing.length) throw new Error(k + ': rig lacks ' + missing.join(', '));
+  // every source bone's weight goes to its nearest mapped ancestor (end bones, twist bones)
+  const to = names.map((n, i) => { let j = i; while (j >= 0 && !MX[names[j]]) j = d.bones[j].parent; return j < 0 ? KEEP.indexOf('spine') : KEEP.indexOf(MX[names[j]]); });
+  const headOf = n => { const m = d.bones[names.indexOf(n)].m; return [m[12], m[13], m[14]]; };
+  const inv = Object.fromEntries(Object.entries(MX).map(([a, b]) => [b, a]));
+  const endOf = { 'spine.006': 'HeadTop_End', 'toe.L': 'LeftToe_End', 'toe.R': 'RightToe_End' };
+  const tipOf = n => { const m = n.match(/^(thumb|f_\w+)\.03\.(L|R)$/); if (!m) return null; const side = m[2] === 'L' ? 'Left' : 'Right';
+    const fm = { thumb: 'Thumb', f_index: 'Index', f_middle: 'Middle', f_ring: 'Ring', f_pinky: 'Pinky' }[m[1]]; return side + 'Hand' + fm + '4'; };
+  const sub = (a, b) => a.map((v, i) => v - b[i]), nrm = a => { const L = Math.hypot(...a) || 1; return a.map(v => v / L); };
+  const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]], dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const heads = {}; KEEP.forEach(n => { if (inv[n]) heads[n] = headOf(inv[n]); });
+  heads['spine.005'] = heads['spine.004'].map((v, i) => (v + heads['spine.006'][i]) / 2);   // Mixamo has one neck bone
+  const bones = KEEP.map(n => {
+    const src = inv[n] || inv['spine.004'], m = d.bones[names.indexOf(src)].m;
+    const t = TAIL(n); let tail = t && heads[t] ? heads[t] : null;
+    if (!tail) { const e = endOf[n] || tipOf(n); if (e && names.indexOf(e) >= 0) tail = headOf(e); }
+    let y = tail ? nrm(sub(tail, heads[n])) : nrm([m[4], m[5], m[6]]);
+    let x = nrm([m[0], m[1], m[2]]); x = nrm(sub(x, y.map(v => v * dot(x, y)))); const z = cross(x, y);
+    return { name: n, head: heads[n], x, y, z, parent: -1 };
+  });
+  // the FBX comes unwelded (three corners per triangle): weld on position, so normals come out smooth
+  { const key = new Map(), P = [], SJs = [], SWs = [], remap = [];
+    for (let i = 0; i < d.pos.length / 3; i++) {
+      const k = [0, 1, 2].map(a => Math.round(d.pos[i * 3 + a] * 1e4)).join(',');
+      if (!key.has(k)) { key.set(k, P.length / 3); P.push(d.pos[i * 3], d.pos[i * 3 + 1], d.pos[i * 3 + 2]); for (let q = 0; q < 4; q++) { SJs.push(d.sj[i * 4 + q]); SWs.push(d.sw[i * 4 + q]); } }
+      remap.push(key.get(k));
+    }
+    const I = []; for (let t = 0; t < d.idx.length; t += 3) { const f = [remap[d.idx[t]], remap[d.idx[t + 1]], remap[d.idx[t + 2]]]; if (f[0] !== f[1] && f[1] !== f[2] && f[0] !== f[2]) I.push(...f); }
+    d.pos = P; d.sj = SJs; d.sw = SWs; d.idx = I; }
+  const nv = d.pos.length / 3, SJ = new Uint8Array(nv * 4), SW = new Uint8Array(nv * 4);
+  for (let v = 0; v < nv; v++) {
+    const acc = {}; for (let q = 0; q < 4; q++) { const w = d.sw[v * 4 + q]; if (w > 0) { const t = to[d.sj[v * 4 + q]]; acc[t] = (acc[t] || 0) + w; } }
+    const top = Object.entries(acc).sort((a, b) => b[1] - a[1]).slice(0, 4), sum = top.reduce((t, x) => t + x[1], 0) || 1;
+    const q = top.map(([t, w]) => [+t, Math.round(w / sum * 255)]); if (q.length) q[0][1] += 255 - q.reduce((t, x) => t + x[1], 0);
+    q.forEach(([t, w], i) => { SJ[v * 4 + i] = t; SW[v * 4 + i] = w; });
+  }
+  // normalise like the others: feet at 0, height 1, centred on the hips (x) and the ankles (z)
+  const HP = d.pos.slice(), hb = bbox(HP), H = hb.mx[1] - hb.mn[1];
+  const ox = bones[0].head[0], oy = hb.mn[1], oz = (heads['foot.L'][2] + heads['foot.R'][2]) / 2, N = p => [(p[0] - ox) / H, (p[1] - oy) / H, (p[2] - oz) / H];
+  for (let i = 0; i < HP.length; i += 3) { const q = N([HP[i], HP[i + 1], HP[i + 2]]); HP[i] = q[0]; HP[i + 1] = q[1]; HP[i + 2] = q[2]; }
+  bones.forEach(bn => { bn.head = N(bn.head).map(v => +v.toFixed(5)); ['x', 'y', 'z'].forEach(a => { bn[a] = bn[a].map(v => +v.toFixed(5)); }); });
+  if (process.argv.includes('--dump')) console.log('mia', k, 'verts', nv, 'tris', d.idx.length / 3, 'height units', H.toFixed(3), 'nose z', bones[KEEP.indexOf('spine.006')].y.map(v=>v.toFixed(2)).join(' '));
+  return { HP, HI: d.idx, SJ, SW, bones, tris: d.idx.length / 3, verts: nv };
+}
+for (const k of ['male', 'female']) { const b = process.argv.includes('--mia') ? bodyFromMia(k) : null; if (b) bodies[k + '_mia'] = b; }
+
 // the file's own low-poly rigged bodies, weights as the artist left them (Body: "Human, original rig")
 bodies.male_rig = body(0, 0, 1, [], { own: true });
 bodies.female_rig = body(2, 1, 3, [], { own: true });
@@ -315,3 +377,29 @@ window.PB_BODIES=${JSON.stringify(out)};
 `;
 fs.writeFileSync(path.join(here, '..', 'bodies.js'), js);
 console.log('wrote bodies.js', (js.length / 1024).toFixed(0), 'KB');
+
+/* --export-mesh: the cleaned sculpted meshes (welded, winding fixed, feet at 0, 1.75 m tall, facing +Z, A-pose) as
+   plain GLBs for an auto-rigger (ComfyUI-UniRig's MIA workflow), written to ComfyUI's input/3d. */
+if (process.argv.includes('--export-mesh')) {
+  const outDir = 'C:/ai/ComfyUI_WP/ComfyUI/input/3d';
+  for (const k of ['male', 'female']) {
+    const b = bodies[k], H = 1.75;
+    const P = new Float32Array(b.HP.length); b.HP.forEach((v, i) => { P[i] = v * H; });
+    const I = new Uint32Array(b.HI);
+    const mn = [0, 1, 2].map(a => Math.min(...Array.from({ length: P.length / 3 }, (_, i) => P[i * 3 + a])));
+    const mx = [0, 1, 2].map(a => Math.max(...Array.from({ length: P.length / 3 }, (_, i) => P[i * 3 + a])));
+    const binBuf = Buffer.concat([Buffer.from(P.buffer), Buffer.from(I.buffer)]);
+    const gltf = { asset: { version: '2.0', generator: 'storyboarder prep-bodies' }, scene: 0, scenes: [{ nodes: [0] }],
+      nodes: [{ mesh: 0, name: 'body_' + k }], meshes: [{ primitives: [{ attributes: { POSITION: 0 }, indices: 1 }] }],
+      buffers: [{ byteLength: binBuf.length }],
+      bufferViews: [{ buffer: 0, byteOffset: 0, byteLength: P.byteLength, target: 34962 }, { buffer: 0, byteOffset: P.byteLength, byteLength: I.byteLength, target: 34963 }],
+      accessors: [{ bufferView: 0, componentType: 5126, count: P.length / 3, type: 'VEC3', min: mn, max: mx }, { bufferView: 1, componentType: 5125, count: I.length, type: 'SCALAR' }] };
+    let js = Buffer.from(JSON.stringify(gltf)); js = Buffer.concat([js, Buffer.alloc((4 - js.length % 4) % 4, 0x20)]);
+    const bb = Buffer.concat([binBuf, Buffer.alloc((4 - binBuf.length % 4) % 4)]);
+    const head = Buffer.alloc(12); head.writeUInt32LE(0x46546C67, 0); head.writeUInt32LE(2, 4); head.writeUInt32LE(12 + 8 + js.length + 8 + bb.length, 8);
+    const ch = (buf, type) => { const h = Buffer.alloc(8); h.writeUInt32LE(buf.length, 0); h.writeUInt32LE(type, 4); return Buffer.concat([h, buf]); };
+    const file = path.join(outDir, 'pb_body_' + k + '.glb');
+    fs.writeFileSync(file, Buffer.concat([head, ch(js, 0x4E4F534A), ch(bb, 0x004E4942)]));
+    console.log('exported', file, (P.length / 3) + ' verts', 'height', (mx[1] - mn[1]).toFixed(3));
+  }
+}
