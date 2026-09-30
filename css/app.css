@@ -933,9 +933,29 @@ button.linkish{
 .pt-cell{min-width:0}
 .pt-scene{
   position:sticky;top:26px;z-index:1;
-  display:flex;align-items:baseline;gap:8px;padding:8px 12px 4px;
-  background:var(--bg);border-bottom:1px solid var(--line);
+  display:flex;align-items:center;gap:8px;padding:7px 12px 5px;
+  background:var(--bg);border-bottom:1px solid var(--line);cursor:pointer;user-select:none;
 }
+.pt-scene:hover{background:var(--bg2)}
+.pt-scene.folded{position:static}
+.pt-scene .chev{font-size:15px;line-height:1;color:var(--fg-dim);width:14px}
+.pt-scene .spacer{flex:1}
+.pt-scene-work{font-size:11px;color:var(--fg-dim);white-space:nowrap}
+.pt-scene-work.miss{color:var(--danger,#e06c5a)}
+.pt-scene-work.stale:not(.miss){color:var(--warn,#d9a441)}
+.pt-scene-strip{display:flex;gap:3px;overflow:hidden;max-width:40%}
+.pt-scene-strip img,.pt-scene-strip .blank{width:38px;height:22px;object-fit:cover;border-radius:2px;flex:none}
+.pt-scene-strip .blank{border:1px dashed var(--line2)}
+.pt-scene-write{margin-left:6px}
+.pt-scenebtns{display:flex;gap:4px;overflow-x:auto;min-width:0;flex:1 1 auto;scrollbar-width:thin}
+.pt-scenebtn{display:flex;align-items:center;gap:5px;flex:none;max-width:190px}
+.pt-scenebtn .sn{font-weight:700}
+.pt-scenebtn .sh{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:120px}
+@media (max-width:1100px){.pt-scenebtn .sh{display:none}}
+.pt-scenebtn .sm{display:flex;gap:3px;font-size:10px}
+.pt-scenebtn .mk.miss{color:var(--danger,#e06c5a)}
+.pt-scenebtn .mk.stale{color:var(--warn,#d9a441)}
+.pt-foldall{flex:none}
 .pt-scene .n{font-size:10px;text-transform:uppercase;letter-spacing:.7px;color:var(--accent);font-weight:700}
 .pt-scene .t{font-size:12px;color:var(--fg-dim)}
 .pt-empty{padding:22px 12px;color:var(--fg-dim);font-size:12px}

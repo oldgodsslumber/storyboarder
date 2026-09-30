@@ -1,6 +1,6 @@
 # Create panel: collapsible scenes, and a button per scene
 
-Status: **plan, not built** (2026-09-30).
+Status: **built on `V3-posebench` (2026-09-30)**, with the recommended answer to all three decisions: the board's scene opens first, bands get **Write missing (n)**, the Missing/Stale filters are gone.
 
 ## Why
 

@@ -617,16 +617,23 @@ so rather than looking blank. On a narrow window the two lanes stack instead of 
 a toggle: nothing in this panel is a click away, because the point of it is reading twenty
 rows quickly.
 
-Rows group under their scene, the header sticks, and the filters are the point of a table:
-**Missing** (no prompt yet), **Stale** (a subject on the card was edited after the prompt was
-written), **This scene**. Each filter carries its count, zero included — so "what is left to
-do" is a list you can work down.
+**Scenes fold.** Each scene is a band you click to fold or unfold (Alt-click does all of them). A folded
+scene is one line: its shots, how many prompts it still needs (red), how many have gone stale behind
+their cast (amber), how many can be pushed now, and a strip of its pictures. The panel opens on the
+scene selected on the board, scrolled to, with every other scene folded. What you fold is remembered
+per board in this browser, not in the project file.
 
-**Prompts are written one shot at a time**, from the 📝 Prompt button under each box. There is no
-button that writes a whole board: it was a fast way to produce text nobody had read, since
-every prompt it wrote was one you then opened and edited anyway. Generating over an existing
-prompt replaces it, and says so. "No shot" cards and empty descriptions can't be generated at
-all, and their buttons say why.
+**The header is a button per scene**, marked with the work left in it (● to write, ▲ stale). Click
+one to work on that scene: it opens, the others fold, and the table jumps to it. Ctrl-click opens it
+alongside what is already open. **Fold all** and **Unfold all** sit beside them. The old All / Missing
+/ Stale / This scene filters are gone; their counts now live on the scenes, where they say *where* the
+work is. (`create_panel_scenes_plan.md`)
+
+**Prompts are written one shot at a time**, from the 📝 Prompt button under each box, or a scene at a
+time: an open scene with prompts still missing has **Write missing (n)** on its band, which writes them
+one after another with the same writer. There is no button for a whole board, and pushing stays per
+row, because pushes cost credits. Generating over an existing prompt replaces it, and says so. "No shot"
+cards and empty descriptions can't be generated at all, and their buttons say why.
 
 The prompt boxes are deliberately much larger than the card's, because editing a paragraph in
 a box the width of a thumbnail is how prompts end up unedited.

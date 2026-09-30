@@ -939,9 +939,29 @@ button.linkish{
 .pt-cell{min-width:0}
 .pt-scene{
   position:sticky;top:26px;z-index:1;
-  display:flex;align-items:baseline;gap:8px;padding:8px 12px 4px;
-  background:var(--bg);border-bottom:1px solid var(--line);
+  display:flex;align-items:center;gap:8px;padding:7px 12px 5px;
+  background:var(--bg);border-bottom:1px solid var(--line);cursor:pointer;user-select:none;
 }
+.pt-scene:hover{background:var(--bg2)}
+.pt-scene.folded{position:static}
+.pt-scene .chev{font-size:15px;line-height:1;color:var(--fg-dim);width:14px}
+.pt-scene .spacer{flex:1}
+.pt-scene-work{font-size:11px;color:var(--fg-dim);white-space:nowrap}
+.pt-scene-work.miss{color:var(--danger,#e06c5a)}
+.pt-scene-work.stale:not(.miss){color:var(--warn,#d9a441)}
+.pt-scene-strip{display:flex;gap:3px;overflow:hidden;max-width:40%}
+.pt-scene-strip img,.pt-scene-strip .blank{width:38px;height:22px;object-fit:cover;border-radius:2px;flex:none}
+.pt-scene-strip .blank{border:1px dashed var(--line2)}
+.pt-scene-write{margin-left:6px}
+.pt-scenebtns{display:flex;gap:4px;overflow-x:auto;min-width:0;flex:1 1 auto;scrollbar-width:thin}
+.pt-scenebtn{display:flex;align-items:center;gap:5px;flex:none;max-width:190px}
+.pt-scenebtn .sn{font-weight:700}
+.pt-scenebtn .sh{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:120px}
+@media (max-width:1100px){.pt-scenebtn .sh{display:none}}
+.pt-scenebtn .sm{display:flex;gap:3px;font-size:10px}
+.pt-scenebtn .mk.miss{color:var(--danger,#e06c5a)}
+.pt-scenebtn .mk.stale{color:var(--warn,#d9a441)}
+.pt-foldall{flex:none}
 .pt-scene .n{font-size:10px;text-transform:uppercase;letter-spacing:.7px;color:var(--accent);font-weight:700}
 .pt-scene .t{font-size:12px;color:var(--fg-dim)}
 .pt-empty{padding:22px 12px;color:var(--fg-dim);font-size:12px}
@@ -1432,7 +1452,7 @@ body.comment-mode .frame{cursor:crosshair}
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-09-30 13:47 · af81957+";</script>
+<script>window.SB_BUILD = "2026-09-30 14:04 · 246399b+";</script>
 
 <div id="app">
 
@@ -20412,30 +20432,26 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
  * the two prompts, and which pictures go with it.
  *
  * It is the same data as the cards. Editing here edits the board; the boxes are
- * simply the right shape for the job, and the filters (missing, stale, this
- * scene) turn "what is left to do" into a list you can act on.
+ * simply the right shape for the job.
+ *
+ * Scenes fold (create_panel_scenes_plan.md). The table used to open as every
+ * row of every scene, a long scroll to the one scene you came for, with filters
+ * (All / Missing / Stale / This scene) nobody used. Now each scene is a band
+ * that folds to one line carrying its counts — prompts to write, stale, ready
+ * to push — and the header is a button per scene. It opens on the scene
+ * selected on the board, everything else folded.
  */
 (function (SB) {
   'use strict';
 
   let root = null;
   let bodyEl, statusEl, usageEl, limitEl, headEl;
-  let filter = 'all';
-  /* Which rows the filter let through when it was CHOSEN.
-   *
-   * The filter used to be re-applied on every render, and a render happens
-   * whenever anything lands — a clip, a written prompt, a frame. So the row
-   * most likely to stop matching was the one being worked in: type the last
-   * missing prompt of a card by hand, have a clip land on another card
-   * mid-sentence, and the row under the caret was gone, with the rest of the
-   * sentence going nowhere and no way to tell where it went.
-   *
-   * A filter is a way of choosing what to work on, not a rule the table has to
-   * keep obeying while you work. So it is applied when it is picked, and what
-   * it let through stays until it is picked again. Anything that newly matches
-   * still appears — that is the filter doing its job — nothing is taken away.
-   */
-  let pinned = null;
+  /* Folded scenes, by id. Per board, in this browser: a viewing preference,
+     not part of the film, so it is not saved in the project. */
+  let folded = null;
+  let startScene = null;          // the scene to scroll to on the next paint
+  const SCENE_RUN = {};           // scene id -> true while "Write missing" runs
+
   /* A push runs for minutes and this table re-renders on every keystroke, so
      nothing about a running job is kept here — it is read back out of
      SB.Imagine each time something is painted. These two only say that the
@@ -20463,7 +20479,7 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
     document.getElementById('modalRoot').appendChild(root);
     document.getElementById('btnPrompts').classList.add('on');
     watchJobs();
-    pinFilter();
+    startFolds();
     render();
   }
 
@@ -20566,52 +20582,48 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
     return one(im, 'imagePrompt') || one(vm, 'videoPrompt');
   }
 
-  function matches(r, im, vm) {
-    if (filter === 'missing') return isMissing(r, im, vm);
-    if (filter === 'stale') return isStale(r, im, vm);
-    if (filter === 'scene') return r.scene.id === SB.app.selectedSceneId;
-    return true;
-  }
+  /* ---------------------------------------------------------------- folds */
 
-  /* Take the filter's word for it, now. Everything it lets through is kept
-     until somebody asks again. */
-  function pinFilter() {
-    const im = SB.Model.imageModel(P()), vm = SB.Model.videoModel(P());
-    pinned = {};
-    allRows().forEach(function (r) {
-      if (matches(r, im, vm)) pinned[r.shot.id] = 1;
+  function foldKey() { return 'sb.create.folds.' + (P() && P().id); }
+  function saveFolds() {
+    try { localStorage.setItem(foldKey(), JSON.stringify(folded || {})); } catch (e) { }
+  }
+  function sceneWork(sc, im, vm) {
+    let miss = 0, stale = 0, ready = 0, n = 0;
+    sc.shots.forEach(function (sh) {
+      const r = { shot: sh };
+      n++;
+      miss += missingCount(r, im, vm);
+      if (isStale(r, im, vm)) stale++;
+      if (SB.Imagine && ((im && !pushBlock(sh, im, 'image')) || (vm && !pushBlock(sh, vm, 'video')))) ready++;
     });
+    return { n: n, miss: miss, stale: stale, ready: ready };
   }
-
-  /* What is on screen: what the filter let through when it was chosen, plus
-     anything that has come to match since. Never less.
-   *
-   * "Never less" has to include the ones that arrived AFTER the pin. A row
-   * that newly matched was shown but never pinned, so the first time it
-   * stopped matching it was deleted -- and the row that newly matches is
-   * exactly the one being worked on. Add a card, write its last missing
-   * prompt by hand, have anything land: the row went, mid-sentence, with the
-   * rest of what was typed. That is the bug this pinning exists to prevent,
-   * and it was still live on the rows most likely to hit it.
-   *
-   * So being on screen is what pins a row, not being on screen at one
-   * particular moment. */
-  function visible(im, vm) {
-    const rows = allRows();
-    if (filter === 'all') return rows;
-    if (!pinned) pinFilter();
-    return rows.filter(function (r) {
-      if (pinned[r.shot.id]) return true;
-      if (!matches(r, im, vm)) return false;
-      pinned[r.shot.id] = 1;
-      return true;
-    });
+  /* How the panel opens: the scene selected on the board, unfolded and
+     scrolled to; without one, the first scene with work left; else the
+     first. What was folded before is kept, but the scene you came for opens. */
+  function startFolds() {
+    const p = P();
+    const im = SB.Model.imageModel(p), vm = SB.Model.videoModel(p);
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem(foldKey()) || 'null'); } catch (e) { saved = null; }
+    const sel = p.scenes.filter(function (sc) { return sc.id === SB.app.selectedSceneId; })[0];
+    const work = p.scenes.filter(function (sc) { const w = sceneWork(sc, im, vm); return w.miss || w.stale; })[0];
+    const start = sel || work || p.scenes[0] || null;
+    if (saved && typeof saved === 'object') folded = saved;
+    else { folded = {}; p.scenes.forEach(function (sc) { folded[sc.id] = true; }); }
+    if (start) { delete folded[start.id]; startScene = start.id; }
+    saveFolds();
   }
-
-  /* A row still on screen because it was being worked on when it stopped
-     matching — which is worth saying, or the filter looks broken. */
-  function settled(r, im, vm) {
-    return filter !== 'all' && !matches(r, im, vm);
+  function isFolded(sc) { return !!(folded && folded[sc.id]); }
+  function setFold(id, on) { if (!folded) folded = {}; if (on) folded[id] = true; else delete folded[id]; saveFolds(); }
+  function foldAll(on) { P().scenes.forEach(function (sc) { setFold(sc.id, on); }); render(); }
+  /* One scene, the others folded, scrolled to. `add` keeps the others as they are. */
+  function openScene(id, add) {
+    if (!add) P().scenes.forEach(function (sc) { setFold(sc.id, sc.id !== id); });
+    else setFold(id, false);
+    startScene = id;
+    render();
   }
 
   /* --------------------------------------------------------------- header */
@@ -20661,31 +20673,31 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
 
     r1.appendChild(SB.el('h2', null, 'Create'));
 
-    const tabs = SB.el('div', 'lib-tabs');
-    const all = allRows();
-    const counts = {
-      all: all.length,
-      /* prompts left to write, not rows with something left */
-      missing: all.reduce(function (n, r) { return n + missingCount(r, im, vm); }, 0),
-      stale: all.filter(function (r) { return isStale(r, im, vm); }).length,
-      scene: all.filter(function (r) { return r.scene.id === SB.app.selectedSceneId; }).length
-    };
-    /* Every count is shown, zero included: "Missing" with the number left off
-       reads as "not counted", and none-left-to-do is the one moment this screen
-       most wants to say a number. */
-    [['all', 'All'], ['missing', 'Missing'], ['stale', 'Stale'],
-    ['scene', 'This scene']].forEach(function (t) {
-      const b = SB.el('button', 'tb toggle' + (filter === t[0] ? ' on' : ''),
-        t[1] + ' ' + counts[t[0]]);
-      b.onclick = function () {
-        filter = t[0];
-        pinFilter();              // re-picking a filter is how you re-narrow it
-        render();
-      };
-      tabs.appendChild(b);
+    /* A button per scene, marked with what is left to do in it. Click: that
+       scene, the others folded, scrolled to. Ctrl/Cmd-click: that one as well. */
+    const btns = SB.el('div', 'pt-scenebtns');
+    P().scenes.forEach(function (sc, si) {
+      const w = sceneWork(sc, im, vm);
+      const b = SB.el('button', 'tb toggle pt-scenebtn' + (isFolded(sc) ? '' : ' on'));
+      b.dataset.scene = sc.id;
+      b.appendChild(SB.el('span', 'sn', String(si + 1)));
+      b.appendChild(SB.el('span', 'sh', sc.heading || '(untitled)'));
+      const marks = SB.el('span', 'sm');
+      paintMarks(marks, w);
+      b.appendChild(marks);
+      b.title = 'Scene ' + (si + 1) + ' \u2014 ' + (sc.heading || '(untitled)') + '\n' + workText(w) +
+        '\nClick: work on this scene. Ctrl-click: open it as well.';
+      b.onclick = function (ev) { openScene(sc.id, ev.ctrlKey || ev.metaKey); };
+      btns.appendChild(b);
     });
+    const tabs = btns;
     r1.appendChild(tabs);
     r1.appendChild(SB.el('span', 'spacer'));
+    [['Fold all', true], ['Unfold all', false]].forEach(function (f) {
+      const b = SB.el('button', 'tb pt-foldall', f[0]);
+      b.onclick = function () { foldAll(f[1]); };
+      r1.appendChild(b);
+    });
 
     const x = SB.el('button', 'tb lib-x', '✕');
     x.title = 'Close (Esc)';
@@ -20850,7 +20862,7 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
     if (!root || !P()) return;
     const p = P();
     const im = SB.Model.imageModel(p), vm = SB.Model.videoModel(p);
-    const rows = visible(im, vm);
+    const rows = allRows();
     head(im, vm, rows);
     refreshUsage();
 
@@ -20868,39 +20880,124 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
       });
     grid.appendChild(hdr);
 
-    if (!rows.length) {
-      grid.appendChild(SB.el('div', 'pt-empty',
-        filter === 'missing' ? 'Every shot in this board has both its prompts.'
-          : filter === 'stale' ? 'No prompt has fallen behind its cast.'
-            : filter === 'scene'
-              ? (SB.app.selectedSceneId
-                ? 'That scene has no shots yet.'
-                : 'No scene is selected — pick one on the board or in the scene list.')
-              : 'No shots yet.'));
-    }
-
-    let lastScene = null;
-    rows.forEach(function (r) {
-      if (r.scene.id !== lastScene) {
-        lastScene = r.scene.id;
-        const band = SB.el('div', 'pt-scene');
-        band.appendChild(SB.el('span', 'n', 'Scene ' + (r.si + 1)));
-        band.appendChild(SB.el('span', 't', r.scene.heading || '(untitled)'));
-        grid.appendChild(band);
-      }
-      grid.appendChild(rowEl(r, im, vm));
+    if (!p.scenes.length) grid.appendChild(SB.el('div', 'pt-empty', 'No scenes yet.'));
+    p.scenes.forEach(function (sc, si) {
+      grid.appendChild(sceneBand(sc, si, im, vm));
+      if (isFolded(sc)) return;
+      if (!sc.shots.length) { grid.appendChild(SB.el('div', 'pt-empty', 'This scene has no shots yet.')); return; }
+      sc.shots.forEach(function (sh, sj) {
+        grid.appendChild(rowEl({ shot: sh, scene: sc, si: si, sj: sj, code: SB.Model.code(si, sj) }, im, vm));
+      });
     });
     bodyEl.appendChild(grid);
 
     const ready = SB.Providers.active().ready();
     if (!ready) setStatus(SB.Providers.active().notReady(), true);
+    if (startScene) {
+      const band = bodyEl.querySelector('.pt-scene[data-scene="' + startScene + '"]');
+      startScene = null;
+      if (band) {
+        /* measured, not offsetTop: the band's offset parent is the grid, and the
+           column-heading row sticks over the top of the scroll */
+        const hr = bodyEl.querySelector('.pt-head-row');
+        const under = hr ? hr.getBoundingClientRect().height : 0;
+        bodyEl.scrollTop += band.getBoundingClientRect().top - bodyEl.getBoundingClientRect().top - under;
+      }
+    }
   }
+
+  function workText(w) {
+    return w.n + ' shot' + (w.n === 1 ? '' : 's') + ' · ' +
+      (w.miss ? w.miss + ' prompt' + (w.miss === 1 ? '' : 's') + ' to write' : 'all written') +
+      (w.stale ? ' · ' + w.stale + ' stale' : '') +
+      (SB.Imagine ? ' · ▶ ' + w.ready + '/' + w.n + ' ready' : '');
+  }
+  function paintMarks(el, w) {
+    el.innerHTML = '';
+    if (w.miss) el.appendChild(SB.el('span', 'mk miss', '●' + w.miss));
+    if (w.stale) el.appendChild(SB.el('span', 'mk stale', '▲' + w.stale));
+  }
+
+  /* The scene's header: click to fold, Alt-click folds or unfolds them all.
+     Folded, it is the scene in one line — its counts and its pictures. */
+  function sceneBand(sc, si, im, vm) {
+    const w = sceneWork(sc, im, vm), fold = isFolded(sc);
+    const band = SB.el('div', 'pt-scene' + (fold ? ' folded' : ''));
+    band.dataset.scene = sc.id;
+    band.appendChild(SB.el('span', 'chev', fold ? '▸' : '▾'));
+    band.appendChild(SB.el('span', 'n', 'Scene ' + (si + 1)));
+    band.appendChild(SB.el('span', 't', sc.heading || '(untitled)'));
+    const cnt = SB.el('span', 'pt-scene-work' + (w.miss ? ' miss' : '') + (w.stale ? ' stale' : ''), workText(w));
+    band.appendChild(cnt);
+    band.appendChild(SB.el('span', 'spacer'));
+    const strip = SB.el('span', 'pt-scene-strip');
+    sc.shots.slice(0, 12).forEach(function (sh) {
+      const src = sh.image ? SB.Blobs.src(P(), sh.image)
+        : (SB.Pose && SB.Pose.has(sh) ? SB.Blobs.src(P(), sh.pose.image) : null);
+      if (src) { const i = document.createElement('img'); i.src = src; strip.appendChild(i); }
+      else strip.appendChild(SB.el('span', 'blank'));
+    });
+    band.appendChild(strip);
+    if (!fold && w.miss) band.appendChild(writeMissingBtn(sc, w));
+    band.title = 'Click to ' + (fold ? 'open' : 'fold') + ' this scene · Alt-click: all scenes';
+    band.onclick = function (ev) {
+      if (ev.target.closest('button')) return;
+      if (ev.altKey) { foldAll(!fold); return; }
+      setFold(sc.id, !fold);
+      render();
+    };
+    return band;
+  }
+
+  /* Every missing prompt in the scene, written one after another with the same
+     writer as the row buttons. No push-all: pushes cost credits, they stay per row. */
+  function writeMissingBtn(sc, w) {
+    const b = SB.Focus.costly(SB.el('button', 'mini primary pt-scene-write'));
+    const running = !!SCENE_RUN[sc.id];
+    b.textContent = running ? 'Writing…' : 'Write missing (' + w.miss + ')';
+    b.disabled = running;
+    b.title = 'Write every prompt this scene is still missing, one at a time.';
+    b.onclick = function () { writeScene(sc); };
+    return b;
+  }
+
+  function writeScene(sc) {
+    if (SCENE_RUN[sc.id]) return;
+    const p = P(), im = SB.Model.imageModel(p), vm = SB.Model.videoModel(p);
+    const jobs = [];
+    sc.shots.forEach(function (sh) {
+      if (sh.noShot || !SB.Model.described(sh)) return;
+      const roles = {};
+      const pi = im && sh.prompts[im.id], pv = vm && sh.prompts[vm.id];
+      if (im && !(pi && pi.imagePrompt) && !SB.Prompts.writing(sh.id, 'imagePrompt')) roles.image = true;
+      if (vm && !(pv && pv.videoPrompt) && !SB.Prompts.writing(sh.id, 'videoPrompt')) roles.video = true;
+      if (roles.image || roles.video) jobs.push({ sh: sh, roles: roles });
+    });
+    if (!jobs.length) { setStatus('Nothing in this scene can be written — the cards missing prompts have no description yet.', true); return; }
+    SCENE_RUN[sc.id] = true;
+    render();
+    let i = 0, failed = 0;
+    const next = function () {
+      if (i >= jobs.length) {
+        delete SCENE_RUN[sc.id];
+        setStatus('scene written' + (failed ? ' — ' + failed + ' failed; the rows say why' : ''), !!failed);
+        refreshUsage();
+        SB.Focus.defer('promptpanel', render);
+        return;
+      }
+      const j = jobs[i++];
+      setStatus('writing ' + code(j.sh) + ' (' + i + ' of ' + jobs.length + ')…');
+      SB.Prompts.generateFor(j.sh, j.roles).then(function () { paintGens(); refreshUsage(); next(); })
+        .catch(function () { failed++; paintGens(); next(); });
+    };
+    next();
+  }
+
 
   function rowEl(r, im, vm) {
     const sh = r.shot;
     const row = SB.el('div', 'pt-row' + (sh.noShot ? ' noshot' : '') +
-      (sh.video && sh.video.unseen ? ' fresh' : '') +
-      (settled(r, im, vm) ? ' settled' : ''));
+      (sh.video && sh.video.unseen ? ' fresh' : ''));
     row.dataset.shot = sh.id;
 
     /* ---- what it is ---- */
@@ -20917,12 +21014,6 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
         : 'This number is all that is left: the original is not in this file. Drop the ' +
           'picture in again to bring it with you.';
       line.appendChild(ser);
-    }
-    if (settled(r, im, vm)) {
-      const d = SB.el('span', 'badge done', 'done');
-      d.title = 'This one no longer matches the filter \u2014 it is kept on screen because it ' +
-        'was on screen. Click the filter again to narrow the list.';
-      line.appendChild(d);
     }
     c1.appendChild(line);
 
@@ -21397,8 +21488,25 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
           : 'Write this prompt from the description';
   }
 
+  function paintScenes() {
+    if (!root || !P() || !bodyEl) return;
+    const im = SB.Model.imageModel(P()), vm = SB.Model.videoModel(P());
+    P().scenes.forEach(function (sc) {
+      const w = sceneWork(sc, im, vm);
+      const band = bodyEl.querySelector('.pt-scene[data-scene="' + sc.id + '"] .pt-scene-work');
+      if (band) {
+        band.textContent = workText(w);
+        band.classList.toggle('miss', !!w.miss);
+        band.classList.toggle('stale', !!w.stale);
+      }
+      const mk = headEl && headEl.querySelector('.pt-scenebtn[data-scene="' + sc.id + '"] .sm');
+      if (mk) paintMarks(mk, w);
+    });
+  }
+
   function paintGens() {
     if (!root || !P() || !bodyEl) return;
+    paintScenes();
     bodyEl.querySelectorAll('[data-gen]').forEach(function (b) {
       const bits = b.dataset.gen.split(':');
       const f = SB.Model.findShot(P(), bits[0]);
@@ -21457,6 +21565,7 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
       if (ibb) ibb.remove();
       SB.Store.touch();
       SB.Board.refreshPromptStale();
+      paintScenes();
     });
     cell.appendChild(ta);
 

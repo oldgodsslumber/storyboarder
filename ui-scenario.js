@@ -463,20 +463,42 @@
       t('the row lists what it will feed',
         !!firstRow.querySelector('.pt-feed'), '');
 
-      // filters turn "what is left" into a list
-      const filterBtns = document.querySelectorAll('.lib-head .lib-tabs button');
-      t('filters offered: all, missing, stale, this scene', filterBtns.length === 4,
-        filterBtns.length);
-      const allRows = document.querySelectorAll('.pt-row').length;
-      filterBtns[1].click();                       // missing
-      const missingRows = document.querySelectorAll('.pt-row').length;
-      t('the missing filter narrows the list', missingRows < allRows,
-        missingRows + ' of ' + allRows);
-      t('and the row just filled in is not in it',
-        !document.querySelector('.pt-row[data-shot="' + ptShot.id + '"]'), '');
-      filterBtns[0].click();                       // all
-      t('going back to all restores every row',
-        document.querySelectorAll('.pt-row').length === allRows, '');
+      // scenes fold, and the header is a button per scene (create_panel_scenes_plan.md)
+      {
+        const bands = function () { return Array.prototype.slice.call(document.querySelectorAll('.pt-scene')); };
+        const btns = function () { return Array.prototype.slice.call(document.querySelectorAll('.lib-head .pt-scenebtn')); };
+        t('the old filters are gone', !document.querySelector('.lib-head .lib-tabs'), '');
+        t('a button per scene', btns().length === P().scenes.length, btns().length);
+        t('it opened on one scene, the rest folded',
+          bands().filter(function (b) { return !b.classList.contains('folded'); }).length === 1,
+          bands().map(function (b) { return b.classList.contains('folded') ? 'F' : 'O'; }).join(''));
+        const openId = bands().filter(function (b) { return !b.classList.contains('folded'); })[0].dataset.scene;
+        t('the one selected on the board', !SB.app.selectedSceneId || openId === SB.app.selectedSceneId, openId);
+        t('each band says what is left in it',
+          bands().every(function (b) { return /shot/.test(b.querySelector('.pt-scene-work').textContent); }), '');
+        const allRows = document.querySelectorAll('.pt-row').length;
+        document.querySelector('.pt-scene[data-scene="' + openId + '"]').click();
+        t('clicking a band folds it', document.querySelectorAll('.pt-row').length === 0 &&
+          document.querySelector('.pt-scene[data-scene="' + openId + '"]').classList.contains('folded'),
+          document.querySelectorAll('.pt-row').length);
+        document.querySelector('.pt-scene[data-scene="' + openId + '"]').click();
+        t('and again unfolds it', document.querySelectorAll('.pt-row').length === allRows, '');
+        Array.prototype.filter.call(document.querySelectorAll('.lib-head .pt-foldall'),
+          function (b) { return /Fold all/.test(b.textContent); })[0].click();
+        t('fold all', bands().every(function (b) { return b.classList.contains('folded'); }), '');
+        btns()[0].click();
+        t('a scene button opens that scene alone',
+          !bands()[0].classList.contains('folded') &&
+          bands().slice(1).every(function (b) { return b.classList.contains('folded'); }) &&
+          btns()[0].classList.contains('on'), '');
+        SB.PromptPanel.close(); SB.PromptPanel.open();
+        t('what is folded survives closing the panel',
+          bands().filter(function (b) { return !b.classList.contains('folded'); }).length >= 1, '');
+        Array.prototype.filter.call(document.querySelectorAll('.lib-head .pt-foldall'),
+          function (b) { return /Unfold all/.test(b.textContent); })[0].click();
+        t('unfold all shows every row',
+          document.querySelectorAll('.pt-row').length === document.querySelectorAll('.card').length, '');
+      }
 
       // the card-display toggles moved here with everything else
       const showBoxes = document.querySelectorAll('.pt-oncards input[type=checkbox]');
@@ -513,14 +535,20 @@
           Array.prototype.some.call(rowGen, function (b) { return b.disabled; }), '');
       }
 
-      // every filter shows its count, zero included
+      // every scene button carries its work left, and the band a Write missing when there is some
       {
-        const tabTxt = Array.prototype.map.call(
-          document.querySelectorAll('.lib-head .lib-tabs button'),
-          function (b) { return b.textContent; });
-        t('each filter carries a number', tabTxt.every(function (x) { return /\s\d+$/.test(x); }),
-          tabTxt.join(' / '));
-        t('including "this scene"', /This scene \d+/.test(tabTxt[3]), tabTxt[3]);
+        const im = SB.Model.imageModel(P()), vm = SB.Model.videoModel(P());
+        let miss = 0;
+        P().scenes[0].shots.forEach(function (sh) {
+          if (sh.noShot) return;
+          if (im && !((sh.prompts[im.id] || {}).imagePrompt)) miss++;
+          if (vm && !((sh.prompts[vm.id] || {}).videoPrompt)) miss++;
+        });
+        const mk = document.querySelector('.lib-head .pt-scenebtn .sm').textContent;
+        t('the scene button counts the prompts to write', miss ? mk.indexOf('\u25cf' + miss) >= 0 : !/\u25cf/.test(mk), mk + ' / ' + miss);
+        const wb = document.querySelector('.pt-scene .pt-scene-write');
+        t('an open scene with prompts to write offers Write missing', miss ? !!wb && /\(\d+\)/.test(wb.textContent) : !wb,
+          wb ? wb.textContent : 'none');
       }
 
       // gemini model picker + free-call counter came along
@@ -4114,16 +4142,13 @@
         app.changed(true);
         SB.PromptPanel.open();
 
-        /* pick Missing, the way somebody working through a board does */
-        const tabs = Array.prototype.slice.call(document.querySelectorAll('.lib-head .lib-tabs button'));
-        const missingTab = tabs.filter(function (b) { return /^Missing/.test(b.textContent); })[0];
-        t('the table offers a Missing filter', !!missingTab,
-          tabs.map(function (b) { return b.textContent; }).join(' / '));
-        missingTab.click();
+        /* work on the scene, the way somebody working through a board does */
+        document.querySelector('.lib-head .pt-scenebtn[data-scene="' + sc.id + '"]').click();
 
         const sh = made[1];
         const rowSel = '.pt-row[data-shot="' + sh.id + '"]';
-        t('the card with a prompt still to write is in it', !!document.querySelector(rowSel), '');
+        t('the card with a prompt still to write is in its open scene', !!document.querySelector(rowSel), '');
+        const workBefore = document.querySelector('.pt-scene[data-scene="' + sc.id + '"] .pt-scene-work').textContent;
 
         /* write the missing one by hand, which is what stops it matching */
         const boxes = document.querySelectorAll(rowSel + ' textarea.pt-text');
@@ -4149,15 +4174,10 @@
             const b = document.querySelectorAll(rowSel + ' textarea.pt-text');
             return b[b.length - 1].value === 'A slow push in along the bay';
           })(), '');
-        t('a row kept past the filter says so, or the filter looks broken',
-          !!document.querySelector(rowSel + ' .badge.done'), '');
-
-        /* picking the filter again is how you re-narrow it */
+        t('the scene count followed the typing, without a rebuild',
+          document.querySelector('.pt-scene[data-scene="' + sc.id + '"] .pt-scene-work').textContent !== workBefore,
+          workBefore);
         document.activeElement.blur();
-        Array.prototype.slice.call(document.querySelectorAll('.lib-head .lib-tabs button'))
-          .filter(function (b) { return /^Missing/.test(b.textContent); })[0].click();
-        t('picking the filter again drops what no longer matches',
-          !document.querySelector(rowSel), 'still there');
 
         SB.PromptPanel.close();
         made.forEach(function (x) { SB.Model.deleteShot(P(), x.id); });
