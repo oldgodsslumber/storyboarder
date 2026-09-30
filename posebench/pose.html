@@ -400,7 +400,7 @@
           <select id="capFmt"><option value="png">PNG</option><option value="jpeg">JPEG (smaller)</option></select></div>
         <label class="toggle"><span>Transparent background<span class="d">PNG only · hides floor &amp; grid</span></span><input type="checkbox" id="tAlpha"><i></i></label>
         <div class="field"><label for="bodyStyle">Body</label>
-          <select id="bodyStyle" title="What the figures look like, on screen and in every render. The posing is the same either way"><option value="human">Human (sculpted, with fingers)</option><option value="classic">Classic mannequin</option></select></div>
+          <select id="bodyStyle" title="What the figures look like, on screen and in every render. The posing is the same either way"><option value="human">Human (sculpted, with fingers)</option><option value="rigged">Human (low-poly, original rig)</option><option value="classic">Classic mannequin</option></select></div>
         <div class="d" style="font-size:11px;color:var(--muted-2);margin:-2px 0 6px">Human body: <a href="https://sketchfab.com/3d-models/human-models-set-malefemale-rigged-7311fcfdc03e4234900eeced42a1e669" target="_blank" rel="noopener" style="color:inherit">"Human Models Set"</a> by <a href="https://sketchfab.com/lzyassoul" target="_blank" rel="noopener" style="color:inherit">lzyassoul</a>, <a href="http://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener" style="color:inherit">CC BY 4.0</a> (re-rigged)</div>
         <label class="toggle"><span>Grid in captures<span class="d">Off: renders, clips and passes leave the floor grid out, even while you see it here</span></span><input type="checkbox" id="tCapGrid"><i></i></label>
         <div class="lbl" style="margin-top:9px">Also capture <span style="color:var(--muted-2)">· ControlNet / guide images</span></div>
@@ -738,8 +738,6 @@ class Figure{
     // where every joint sits at rest, in the figure's own space (rest = no rotation anywhere)
     this.restPos={};
     for(const n in this.joints){const v=new V3();let o=this.joints[n].pivot;while(o&&o!==this.group){v.add(o.position);o=o.parent;}this.restPos[n]=v;}
-    this.body=makeBody(this);
-    if(this.body)this.group.add(this.body.mesh);
     this.applyBodyStyle();
     this.setColor(this.color);
     this.group.scale.setScalar(this.height);
@@ -748,12 +746,18 @@ class Figure{
     reattachProps(this);
   }
   applyBodyStyle(){
-    const human=bodyStyle==='human'&&!!this.body;
+    // which body this style wants: the sculpted one, the file's own low-poly rig, or none (classic)
+    const kind=bodyStyle==='classic'?null:(this.type==='female'?'female':'male')+(bodyStyle==='rigged'?'_rig':'');
+    if(kind&&(!this.body||this.body.kind!==kind)){
+      if(this.body)disposeBody(this.body);
+      this.body=makeBody(this,kind); if(this.body){this.group.add(this.body.mesh);this.body.mat.color.copy(lin(this.color));}
+    }
+    const human=bodyStyle!=='classic'&&!!this.body;
     if(this.body)this.body.mesh.visible=human;
     // the mannequin stays in place, invisible, for picking and grounding: it is the skeleton the body follows
     for(const n in this.joints){this.joints[n].mat.visible=!human;this.joints[n].ballMat.visible=!human;}
   }
-  get human(){return bodyStyle==='human'&&!!this.body;}
+  get human(){return bodyStyle!=='classic'&&!!this.body;}
   setHand(p,shape){
     this.hands[p]=HANDS[shape]?shape:'relaxed';
     if(this.body)bodyFingers(this.body,this,p);
@@ -941,8 +945,8 @@ function bodyGeo(kind){
   return bodyBase[kind]={g,bones:d.bones,ix,bind,n:d.bones.length};
 }
 const _hlSel=new THREE.Color(), _hlHov=new THREE.Color();
-function makeBody(f){
-  const B=bodyGeo(f.type==='female'?'female':'male'); if(!B)return null;
+function makeBody(f,kind){
+  const B=bodyGeo(kind); if(!B)return null;
   const g=new THREE.BufferGeometry();
   for(const a of ['position','normal','skinIndex','skinWeight'])g.setAttribute(a,B.g.getAttribute(a));
   g.setIndex(B.g.index); g.boundingSphere=new THREE.Sphere(new V3(0,0.5,0),2);
@@ -959,7 +963,7 @@ function makeBody(f){
   mesh.bind(sk,new THREE.Matrix4()); mesh.bindMode='detached'; mesh.bindMatrix.identity(); mesh.bindMatrixInverse.identity();
   mesh.castShadow=true; mesh.receiveShadow=true; mesh.frustumCulled=false;
   mesh.userData={fig:f.id,body:true};
-  const body={B,mesh,mat,g,hl,sk,f,K:new Array(B.n),pivot:new Array(B.n),hlKey:''};
+  const body={kind,B,mesh,mat,g,hl,sk,f,K:new Array(B.n),pivot:new Array(B.n),hlKey:''};
   fitBody(body,f);
   // the renderer asks the skeleton for its matrices once a frame: each bone = its joint now x the fitted rest
   const Ginv=new THREE.Matrix4(), M=new THREE.Matrix4();
@@ -1082,7 +1086,7 @@ function bodyHighlight(body,sel,hov){
 }
 let bodyStyle='human';
 function setBodyStyle(v){
-  bodyStyle=v==='classic'?'classic':'human';
+  bodyStyle=v==='classic'||v==='rigged'?v:'human';
   const el=document.getElementById('bodyStyle'); if(el)el.value=bodyStyle;
   figures.forEach(f=>f.applyBodyStyle());
 }
@@ -1725,7 +1729,7 @@ function applySceneFile(s){
   if(s.bg)setBg(s.bg);
   if(typeof s.keyAz==='number')setKey(s.keyAz);
   capGrid=s.capGrid===true; $('tCapGrid').checked=capGrid;   // older scenes: off
-  setBodyStyle(s.bodyStyle==='classic'?'classic':'human');     // older scenes: the human body
+  setBodyStyle(s.bodyStyle);     // older scenes: the human body
   if(s.camera){const c=s.camera;cam.target.fromArray(c.target||[0,1,0]);cam.theta=c.theta;cam.phi=c.phi;cam.radius=c.radius;cam.shot=c.shot||'full';setLens(c.mm||35);applyCam();markShot();}
   else fitShot('full');
   if(typeof closeTimeline==='function'&&tl.take)closeTimeline();

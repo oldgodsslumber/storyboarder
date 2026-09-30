@@ -122,18 +122,25 @@ function body(skinMi, skinIx, lowMi, highMis, opts = {}) {
   const lowW = []; for (let v = 0; v < low.P.length / 3; v++) { const w = {}; for (let k = 0; k < 4; k++) { const wt = low.W[v * 4 + k]; if (wt > 0) { const t = to[low.J[v * 4 + k]]; w[t] = (w[t] || 0) + wt; } } lowW.push(w); }
 
   // the high mesh(es), welded
-  const HP = [], HI = []; const key = new Map();
-  for (const mi of highMis) {
-    const m = meshData(mi), remap = [];
+  const HP = [], HI = []; const key = new Map(), src = [];
+  // opts.own: the rigged mesh itself, with its own weights, untouched (the "original rig" bodies)
+  const sources = opts.own ? [{ P: LP, I: low.I, own: true }] : highMis.map(meshData);
+  for (const m of sources) {
+    const remap = [];
     for (let i = 0; i < m.P.length; i += 3) {
       const k = [m.P[i], m.P[i + 1], m.P[i + 2]].map(v => Math.round(v * 4e3)).join(',');   // ~1/14000 of the height: joins the seams a finer weld left open
-      if (!key.has(k)) { key.set(k, HP.length / 3); HP.push(m.P[i], m.P[i + 1], m.P[i + 2]); }
+      if (!key.has(k)) { key.set(k, HP.length / 3); HP.push(m.P[i], m.P[i + 1], m.P[i + 2]); src.push(i / 3); }
       remap.push(key.get(k));
     }
     for (let i = 0; i < m.I.length; i += 3) { const t = [remap[m.I[i]], remap[m.I[i + 1]], remap[m.I[i + 2]]]; if (t[0] !== t[1] && t[1] !== t[2] && t[0] !== t[2]) HI.push(...t); }
   }
   const nv = HP.length / 3, SJ = new Uint8Array(nv * 4), SW = new Uint8Array(nv * 4);
-  if (opts.auto) autoWeights(HP, bones, SJ, SW);
+  if (opts.own) src.forEach((u, v) => {
+    const top = Object.entries(lowW[u]).sort((x, y) => y[1] - x[1]).slice(0, 4), sum = top.reduce((t, x) => t + x[1], 0);
+    const q = top.map(([t, w]) => [+t, Math.round(w / sum * 255)]); q[0][1] += 255 - q.reduce((t, x) => t + x[1], 0);
+    q.forEach(([t, w], k) => { SJ[v * 4 + k] = t; SW[v * 4 + k] = w; });
+  });
+  else if (opts.auto) autoWeights(HP, bones, SJ, SW);
   else transfer();
   function transfer() {
   // weights: inverse-distance blend of the 4 nearest rigged vertices (a grid keeps it quick)
@@ -216,6 +223,9 @@ function body(skinMi, skinIx, lowMi, highMis, opts = {}) {
 const bodies = { male: body(0, 0, 1, [5, 6], { auto: true }), female: body(2, 1, 3, [4]) };
 templateWeights(bodies.male, bodies.female);
 for (const b of Object.values(bodies)) smoothWeights(b, 6);
+// the file's own low-poly rigged bodies, weights as the artist left them (Body: "Human, original rig")
+bodies.male_rig = body(0, 0, 1, [], { own: true });
+bodies.female_rig = body(2, 1, 3, [], { own: true });
 
 /* Weights smoothed over the surface: each pass, a vertex moves half way to its neighbours' average. Removes the
    stair-steps a nearest-vertex copy leaves (the shoulder tops tore into thin cracks when posed). Top four kept. */
