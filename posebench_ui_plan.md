@@ -1,6 +1,6 @@
 # Pose Bench: a shorter panel, controls where you're looking
 
-Status: **plan, not built** (2026-09-30).
+Status: **built on `V3-posebench` (2026-09-30)**, recommended answers to all four decisions. One change: shot-size keys are **Shift+1–4**, not W/F/M/K (F already frames and M mirrors). Body style moved from Capture to Scene look.
 
 ## Why
 

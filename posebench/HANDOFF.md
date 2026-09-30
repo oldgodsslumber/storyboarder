@@ -487,3 +487,14 @@ The **Build** box in the Props panel takes "a sedan" or "an office with four des
 - **Edit selected:** sends the current part list and the instruction, and expects the full updated list back.
 - **Look & fix:** three captures (front, three-quarter, side) go to the same endpoint as `image_url` parts. That needs a vision model loaded, e.g. qwen3-vl; otherwise the error says so. Its fixes (or "OK") then go back to the builder as an edit.
 - **Also fixed here:** captures now clear the selected prop's highlight tint. It used to leak into every render of a selected prop.
+
+## The short panel (2026-09-30, `posebench_ui_plan.md`)
+
+The rail is now a **Cast** strip, **one card** for the selection (`refreshCard()`: prop → `#cardProp` holding `#propPanel`; else the active figure → `#cardFig`; else `#cardNone`, "start here"), and three folds: Posing options, Scene look (with Body style) and File.
+
+Everything else moved rather than being rebuilt, so every element id and handler is unchanged:
+- **Top bar:** Poses ▾ / Props ▾ / Build / ? / Capture ▾ open `.pop` popovers (`openPop(id)`, one at a time; a click outside or Esc closes them).
+- **Camera pad:** `#camPad`, bottom-left, holds the old Camera section. It shifts up with the tray (`#stage.has-tray`) and the timeline. Its open state is in localStorage `posebench.camPad`.
+- **Joint popover:** `#jointPop` holds the old Joint section plus the hand selects. It opens when a limb is clicked (`openJointPop()` in pointerdown) and closes on an empty click, Esc, ✕ or selecting a prop. `placeJointPop()` runs every frame to keep it beside the joint, flipped and clamped to the viewport.
+- **Quick poses:** `LIMB_POSES` per part (arm, leg, head, torso), written for side X; `applyLimbPose` sets the named joints whole. "Camera" sets look-at. "Copy to other side" copies the limb to the other side.
+- **Keys:** 1–8 for views, Shift+1–4 for shot size (only while no take is open, because 1–9 cut cameras during takes).

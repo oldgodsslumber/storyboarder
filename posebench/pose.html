@@ -153,6 +153,32 @@
     box-shadow:0 3px 14px rgba(245,177,47,.28)}
   .capbtn:hover{background:var(--accent-hi)}
   #tray{position:absolute;left:14px;right:14px;bottom:12px;display:none;gap:8px;align-items:flex-end;pointer-events:none}
+  /* ---- the short panel (posebench_ui_plan.md): popovers, camera pad, joint popover ---- */
+  .fold{border-bottom:1px solid var(--line-soft)}
+  .fold>summary{padding:11px 18px;font-size:11.5px;font-weight:650;color:var(--muted);letter-spacing:.6px;text-transform:uppercase;cursor:pointer;list-style:none}
+  .fold>summary::-webkit-details-marker{display:none}
+  .fold>summary::before{content:'▸ ';color:var(--muted-2)} .fold[open]>summary::before{content:'▾ '}
+  .fold-in{padding:0 18px 14px}
+  .pop,#jointPop,#camPadBody{background:rgba(27,30,36,.97);border:1px solid var(--line);border-radius:10px;padding:12px 14px;
+    box-shadow:0 12px 40px rgba(0,0,0,.45)}
+  .pop{position:absolute;top:52px;right:14px;width:330px;max-height:calc(100% - 70px);overflow:auto;z-index:9;display:none}
+  .pop.open{display:block}
+  .capgrp{display:inline-flex}
+  .capgrp #capBtn{border-top-right-radius:0;border-bottom-right-radius:0}
+  .capbtn.capmore{padding:9px 9px;border-top-left-radius:0;border-bottom-left-radius:0;border-left:1px solid rgba(0,0,0,.25)}
+  .fbtn.on{border-color:var(--accent);color:var(--accent-hi)}
+  #camPad{position:absolute;left:14px;bottom:12px;z-index:7}
+  #stage.has-tray #camPad{bottom:98px} #stage.has-tl #camPad{bottom:124px} #stage.has-tl.has-tray #camPad{bottom:200px}
+  #camPadBtn{font-size:16px;padding:7px 10px}
+  #camPadBody{position:absolute;left:0;bottom:44px;width:300px;display:none}
+  #camPad.open #camPadBody{display:block}
+  #jointPop{position:absolute;width:290px;z-index:8;display:none;max-height:calc(100% - 20px);overflow:auto}
+  #jointPop.open{display:block}
+  #jointPop .jp-head{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-weight:650;font-size:13px}
+  #jointPop .jp-head span{flex:1}
+  #jpPoses{margin-bottom:8px} #jpPoses:empty{display:none}
+  #jpPoses .btn{font-size:11.5px;padding:6px 2px}
+  #jpHands{margin-bottom:6px}
   #tray.has{display:flex}
   #tray .strip{display:flex;gap:7px;overflow-x:auto;pointer-events:auto;padding:4px;background:rgba(15,17,21,.6);
     border:1px solid rgba(255,255,255,.07);border-radius:10px;backdrop-filter:blur(3px);max-width:100%}
@@ -251,15 +277,20 @@
     </div>
     <div id="scroll">
 
+      <!-- the cast, always -->
       <section class="sec">
-        <h2>Figures <span class="aside" id="figCount"></span></h2>
+        <h2>Cast <span class="aside" id="figCount"></span></h2>
         <div class="chips" id="figList"></div>
         <div class="row">
-          <button class="btn grow" id="addFig">+ Add</button>
+          <button class="btn grow" id="addFig">+ Figure</button>
           <button class="btn grow" id="dupFig">Duplicate</button>
           <button class="btn grow" id="delFig">Remove</button>
         </div>
-        <div class="gap"></div>
+      </section>
+
+      <!-- one card: whatever is selected (posebench_ui_plan.md) -->
+      <section class="sec card" id="cardFig">
+        <h2>Figure <span class="aside">click a limb to pose it</span></h2>
         <div class="row pillrow" id="figType">
           <button class="btn" data-type="male">Man</button>
           <button class="btn" data-type="female">Woman</button>
@@ -281,14 +312,71 @@
         </div>
         <div class="field" id="linkField" style="display:none"><label for="figLink">Who this is <span style="color:var(--muted-2)">· names them in the shot’s prompt</span></label><select id="figLink"></select></div>
         <div class="field"><label for="lookSel">Look at</label><select id="lookSel"></select></div>
-        <div class="split">
-          <div class="field"><label for="handL">Left hand</label><select id="handL"><option value="relaxed">Relaxed</option><option value="grip">Grip</option><option value="flat">Flat</option></select></div>
-          <div class="field"><label for="handR">Right hand</label><select id="handR"><option value="relaxed">Relaxed</option><option value="grip">Grip</option><option value="flat">Flat</option></select></div>
+      </section>
+      <section class="sec card" id="cardProp" hidden>
+        <h2>Prop <span class="aside">drag to move · Q/E turn</span></h2>
+        <div id="propPanel"></div>
+      </section>
+      <section class="sec card" id="cardNone" hidden>
+        <h2>Start here</h2>
+        <div class="grid g3">
+          <button class="btn" data-go="fig">+ Figure</button>
+          <button class="btn" data-go="poses">Poses</button>
+          <button class="btn" data-go="props">Props</button>
+          <button class="btn" data-go="build">Build</button>
+          <button class="btn" data-go="cam" style="grid-column:span 2">◉ Pose from camera</button>
         </div>
       </section>
 
-      <section class="sec">
-        <h2>Pose</h2>
+      <!-- settings, folded -->
+      <details class="fold" id="foldPose"><summary>Posing options</summary><div class="fold-in">
+        <label class="toggle"><span>Symmetric edits<span class="d">Sliders move both sides together</span></span><input type="checkbox" id="tSym"><i></i></label>
+        <label class="toggle"><span>Joint limits<span class="d">Keep joints anatomical</span></span><input type="checkbox" id="tLimits" checked><i></i></label>
+        <label class="toggle"><span>Keep on floor<span class="d">Lowest point touches the ground</span></span><input type="checkbox" id="tGround" checked><i></i></label>
+      </div></details>
+      <details class="fold" id="foldLook"><summary>Scene look</summary><div class="fold-in">
+        <div class="lbl">Background</div>
+        <div class="swatches" id="bgColors"></div>
+        <div class="axis" style="margin-top:12px">
+          <div class="lab"><span>Key light</span><span class="v" id="vKey">-40°</span></div>
+          <input type="range" id="rKey" min="-180" max="180" value="-40">
+          <div class="ends"><span>camera right</span><span>camera left</span></div>
+        </div>
+        <label class="toggle"><span>Floor shadow</span><input type="checkbox" id="tShadow" checked><i></i></label>
+        <label class="toggle"><span>Grid</span><input type="checkbox" id="tGrid" checked><i></i></label>
+        <label class="toggle"><span>Move / turn ring</span><input type="checkbox" id="tHandles" checked><i></i></label>
+        <div class="field"><label for="bodyStyle">Body</label>
+          <select id="bodyStyle" title="What the figures look like, on screen and in every render. The posing is the same either way"><option value="human">Human (sculpted, with fingers)</option><option value="mia">Human (auto-rigged, MIA)</option><option value="rigged">Human (low-poly, original rig)</option><option value="classic">Classic mannequin</option></select></div>
+        <div class="d" style="font-size:11px;color:var(--muted-2);margin:-2px 0 6px">Human body: <a href="https://sketchfab.com/3d-models/human-models-set-malefemale-rigged-7311fcfdc03e4234900eeced42a1e669" target="_blank" rel="noopener" style="color:inherit">"Human Models Set"</a> by <a href="https://sketchfab.com/lzyassoul" target="_blank" rel="noopener" style="color:inherit">lzyassoul</a>, <a href="http://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener" style="color:inherit">CC BY 4.0</a> (re-rigged)</div>
+      </div></details>
+      <details class="fold" id="foldFile"><summary>File</summary><div class="fold-in">
+        <div class="row">
+          <button class="btn grow" id="exportBtn">Export</button>
+          <button class="btn grow" id="importBtn">Import</button>
+          <button class="btn grow" id="newBtn">New</button>
+        </div>
+        <input type="file" id="importFile" accept=".json,application/json" hidden>
+      </div></details>
+    </div>
+  </aside>
+
+  <main id="stage">
+    <canvas id="view" tabindex="0" aria-label="3D viewport"></canvas>
+    <div id="guide"><div class="th"></div><div class="gl" id="guideLbl"></div></div>
+    <button id="railToggle" class="fbtn">☰ Controls</button>
+    <div id="hud">—</div>
+    <div id="topbar">
+      <button class="fbtn" id="undoBtn" title="Undo (Ctrl+Z)">↶<span class="lbl-long"> Undo</span></button>
+      <button class="fbtn" id="redoBtn" title="Redo (Ctrl+Shift+Z)">↷<span class="lbl-long"> Redo</span></button>
+      <button class="fbtn" id="tbPoses" data-pop="popPoses" title="Whole-body poses, two-person scenes, my poses, pose from camera">Poses ▾</button>
+      <button class="fbtn" id="tbProps" data-pop="popProps" title="Add a chair, desk, table, laptop, phone or cup">Props ▾</button>
+      <button class="fbtn" id="tbBuild" data-pop="popBuild" title="Build a set piece with the local model">Build</button>
+      <button class="fbtn" id="tbHelp" data-pop="popHelp" title="Mouse and keyboard">?</button>
+      <span class="capgrp"><button class="capbtn" id="capBtn" title="Capture (C)">◉ Capture</button><button class="capbtn capmore" id="tbCap" data-pop="popCap" title="Capture settings: aspect, size, passes, guides, turnaround">▾</button></span>
+      <button class="fbtn" id="hostCancel" style="display:none" title="Close without changing the card">Cancel</button>
+      <button class="capbtn" id="hostUse" style="display:none">Use for shot</button>
+    </div>
+    <div class="pop" id="popPoses">
         <button class="btn grow" id="camOpen" style="width:100%;margin-bottom:10px" title="Strike the pose yourself: the selected figure copies it from your webcam or a photo">◉ Pose from camera or photo</button>
         <div class="lbl">Work</div>
         <div class="grid g3" id="presets"></div>
@@ -301,9 +389,6 @@
           <button class="btn grow" id="resetPose">Reset pose</button>
         </div>
         <div class="gap"></div>
-        <label class="toggle"><span>Symmetric edits<span class="d">Sliders move both sides together</span></span><input type="checkbox" id="tSym"><i></i></label>
-        <label class="toggle"><span>Joint limits<span class="d">Keep joints anatomical</span></span><input type="checkbox" id="tLimits" checked><i></i></label>
-        <label class="toggle"><span>Keep on floor<span class="d">Lowest point touches the ground</span></span><input type="checkbox" id="tGround" checked><i></i></label>
         <div class="gap"></div>
         <div class="lbl">My poses</div>
         <div class="row" style="flex-wrap:nowrap">
@@ -311,10 +396,8 @@
           <button class="btn" id="savePose">Save</button>
         </div>
         <div class="lib" id="lib"></div>
-      </section>
-
-      <section class="sec">
-        <h2>Props <span class="aside">drag to move · Q/E turn</span></h2>
+    </div>
+    <div class="pop" id="popProps">
         <div class="grid g3" id="propAdd">
           <button class="btn" data-prop="chair">Chair</button>
           <button class="btn" data-prop="desk">Desk</button>
@@ -323,8 +406,10 @@
           <button class="btn" data-prop="phone">Phone</button>
           <button class="btn" data-prop="cup">Cup</button>
         </div>
-        <div id="propPanel" style="margin-top:10px"></div>
-        <div class="lbl" style="margin-top:12px">Build with the local model <span style="color:var(--muted-2)">· simple shapes, real sizes</span></div>
+      <div class="note" style="margin-top:8px">Or describe one: <a href="#" id="propToBuild">Build ▸</a></div>
+    </div>
+    <div class="pop" id="popBuild">
+        <div class="lbl">Build with the local model <span style="color:var(--muted-2)">· simple shapes, real sizes</span></div>
         <textarea id="buildText" rows="2" placeholder="a sedan · a bus stop · an office with four desks facing a window" style="width:100%;resize:vertical;font:inherit;font-size:12px;padding:6px;border-radius:6px;border:1px solid var(--line);background:var(--bg2);color:var(--fg)"></textarea>
         <div class="grid g3" style="margin-top:6px">
           <button class="btn primary" id="buildGo" title="Ask the local model to build this out of boxes and cylinders (Ctrl+Enter)">Build</button>
@@ -337,21 +422,66 @@
           <div class="field"><label for="llmModel">Model</label><input id="llmModel" placeholder="(whatever is loaded)" style="width:100%"></div>
           <div class="note" id="llmFrom"></div>
         </details>
-      </section>
-
-      <section class="sec">
-        <h2>Joint <span class="aside">click or drag the figure</span></h2>
-        <div class="jhead">
-          <button class="btn icon" id="jPrev" title="Previous joint ([)">‹</button>
-          <select id="jointSelect" aria-label="Selected joint"></select>
-          <button class="btn icon" id="jNext" title="Next joint (])">›</button>
+    </div>
+    <div class="pop" id="popCap">
+        <div class="split">
+          <div class="field"><label for="capAspect">Aspect</label>
+            <select id="capAspect">
+              <option value="vp">Viewport</option>
+              <option value="1.7778" selected>16:9</option>
+              <option value="2.39">2.39:1 scope</option>
+              <option value="1.5">3:2</option>
+              <option value="1">1:1</option>
+              <option value="0.8">4:5</option>
+              <option value="0.6667">2:3</option>
+              <option value="0.5625">9:16</option>
+            </select></div>
+          <div class="field"><label for="capSize">Long edge</label>
+            <select id="capSize">
+              <option>480</option><option>768</option><option selected>1024</option><option>1536</option><option>2048</option><option>3072</option>
+            </select></div>
         </div>
-        <div id="axes"></div>
-        <button class="btn grow" id="resetJoint" style="width:100%">Reset this joint</button>
-      </section>
-
-      <section class="sec">
-        <h2>Camera</h2>
+        <div class="field"><label for="capFmt">Format</label>
+          <select id="capFmt"><option value="png">PNG</option><option value="jpeg">JPEG (smaller)</option></select></div>
+        <label class="toggle"><span>Transparent background<span class="d">PNG only · hides floor &amp; grid</span></span><input type="checkbox" id="tAlpha"><i></i></label>
+        <label class="toggle"><span>Grid in captures<span class="d">Off: renders, clips and passes leave the floor grid out, even while you see it here</span></span><input type="checkbox" id="tCapGrid"><i></i></label>
+        <div class="lbl" style="margin-top:9px">Also capture <span style="color:var(--muted-2)">· ControlNet / guide images</span></div>
+        <div class="grid g4" id="passes">
+          <button class="btn" data-pass="depth" title="Inverse depth, near = white (Depth ControlNet, Wan VACE depth)">Depth</button>
+          <button class="btn" data-pass="openpose" title="OpenPose COCO-18 skeleton from the rig, with eyes/ears for head direction">OpenPose</button>
+          <button class="btn" data-pass="normal" title="Camera-space normals (Normal ControlNet)">Normal</button>
+          <button class="btn" data-pass="mask" title="Flat colour per figure (regional prompting, inpaint masks)">Mask</button>
+        </div>
+        <label class="toggle" style="margin-top:4px"><span>Floor in depth pass</span><input type="checkbox" id="tDepthFloor" checked><i></i></label>
+        <label class="toggle"><span>OpenPose: every face point<span class="d">Off = drop the ear/eyes turned away, like a detector (best for ControlNet)</span></span><input type="checkbox" id="tOpFace"><i></i></label>
+        <label class="toggle"><span>Frame guide</span><input type="checkbox" id="tGuide" checked><i></i></label>
+        <label class="toggle"><span>Rule of thirds</span><input type="checkbox" id="tThirds"><i></i></label>
+        <div class="gap"></div>
+        <div class="row">
+          <button class="btn primary grow" id="capBtn2">◉ Capture</button>
+          <button class="btn grow" id="turnBtn" title="Front, ¾, side and back of the selected figure in one sheet">Turnaround</button>
+        </div>
+        <div class="gap"></div>
+        <div class="tip"><b>Reference image</b> (H3, FLUX.2, Gemini…): neutral grey, eye-level <b>Front</b> + <b>¾</b>, or a <b>Turnaround</b>; prompt “match the pose, not the mannequin”.
+          <b>ControlNet / VACE:</b> feed the <b>Depth</b> or <b>OpenPose</b> pass instead — same camera, same frame.</div>
+    </div>
+    <div class="pop" id="popHelp">
+        <div class="keys">
+          <kbd>drag limb</kbd><span>pose it (hands &amp; feet use IK)</span>
+          <kbd>drag hips</kbd><span>crouch / shift, feet stay planted</span>
+          <kbd>drag ring</kbd><span>move figure · knob turns it</span>
+          <kbd>shift+drag</kbd><span>move figure on the floor</span>
+          <kbd>drag empty</kbd><span>orbit · alt+drag orbits anywhere</span>
+          <kbd>right-drag</kbd><span>pan · wheel zooms</span>
+          <kbd>ctrl+Z / Y</kbd><span>undo / redo</span>
+          <kbd>[ ]</kbd><span>previous / next joint</span>
+          <kbd>F · C · M</kbd><span>frame · capture · mirror</span>
+        </div>
+      <div class="keys" style="margin-top:6px"><kbd>1 – 8</kbd><span>camera views</span><kbd>shift+1 – 4</kbd><span>wide · full · medium · close</span></div>
+    </div>
+    <div id="camPad">
+      <button class="fbtn" id="camPadBtn" title="Camera — views, shot size, lens (keys 1–8, Shift+1–4)">📷</button>
+      <div id="camPadBody">
         <div class="grid g4" id="views">
           <button class="btn" data-view="front">Front</button>
           <button class="btn" data-view="tqL">¾ L</button>
@@ -374,107 +504,25 @@
           <div class="lab"><span>Lens</span><span class="v" id="vLens">35mm</span></div>
           <input type="range" id="rLens" min="14" max="135" value="35">
         </div>
-      </section>
-
-      <section class="sec">
-        <h2>Scene</h2>
-        <div class="lbl">Background</div>
-        <div class="swatches" id="bgColors"></div>
-        <div class="axis" style="margin-top:12px">
-          <div class="lab"><span>Key light</span><span class="v" id="vKey">-40°</span></div>
-          <input type="range" id="rKey" min="-180" max="180" value="-40">
-          <div class="ends"><span>camera right</span><span>camera left</span></div>
-        </div>
-        <label class="toggle"><span>Floor shadow</span><input type="checkbox" id="tShadow" checked><i></i></label>
-        <label class="toggle"><span>Grid</span><input type="checkbox" id="tGrid" checked><i></i></label>
-        <label class="toggle"><span>Move / turn ring</span><input type="checkbox" id="tHandles" checked><i></i></label>
-      </section>
-
-      <section class="sec">
-        <h2>Capture</h2>
-        <div class="split">
-          <div class="field"><label for="capAspect">Aspect</label>
-            <select id="capAspect">
-              <option value="vp">Viewport</option>
-              <option value="1.7778" selected>16:9</option>
-              <option value="2.39">2.39:1 scope</option>
-              <option value="1.5">3:2</option>
-              <option value="1">1:1</option>
-              <option value="0.8">4:5</option>
-              <option value="0.6667">2:3</option>
-              <option value="0.5625">9:16</option>
-            </select></div>
-          <div class="field"><label for="capSize">Long edge</label>
-            <select id="capSize">
-              <option>480</option><option>768</option><option selected>1024</option><option>1536</option><option>2048</option><option>3072</option>
-            </select></div>
-        </div>
-        <div class="field"><label for="capFmt">Format</label>
-          <select id="capFmt"><option value="png">PNG</option><option value="jpeg">JPEG (smaller)</option></select></div>
-        <label class="toggle"><span>Transparent background<span class="d">PNG only · hides floor &amp; grid</span></span><input type="checkbox" id="tAlpha"><i></i></label>
-        <div class="field"><label for="bodyStyle">Body</label>
-          <select id="bodyStyle" title="What the figures look like, on screen and in every render. The posing is the same either way"><option value="human">Human (sculpted, with fingers)</option><option value="mia">Human (auto-rigged, MIA)</option><option value="rigged">Human (low-poly, original rig)</option><option value="classic">Classic mannequin</option></select></div>
-        <div class="d" style="font-size:11px;color:var(--muted-2);margin:-2px 0 6px">Human body: <a href="https://sketchfab.com/3d-models/human-models-set-malefemale-rigged-7311fcfdc03e4234900eeced42a1e669" target="_blank" rel="noopener" style="color:inherit">"Human Models Set"</a> by <a href="https://sketchfab.com/lzyassoul" target="_blank" rel="noopener" style="color:inherit">lzyassoul</a>, <a href="http://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener" style="color:inherit">CC BY 4.0</a> (re-rigged)</div>
-        <label class="toggle"><span>Grid in captures<span class="d">Off: renders, clips and passes leave the floor grid out, even while you see it here</span></span><input type="checkbox" id="tCapGrid"><i></i></label>
-        <div class="lbl" style="margin-top:9px">Also capture <span style="color:var(--muted-2)">· ControlNet / guide images</span></div>
-        <div class="grid g4" id="passes">
-          <button class="btn" data-pass="depth" title="Inverse depth, near = white (Depth ControlNet, Wan VACE depth)">Depth</button>
-          <button class="btn" data-pass="openpose" title="OpenPose COCO-18 skeleton from the rig, with eyes/ears for head direction">OpenPose</button>
-          <button class="btn" data-pass="normal" title="Camera-space normals (Normal ControlNet)">Normal</button>
-          <button class="btn" data-pass="mask" title="Flat colour per figure (regional prompting, inpaint masks)">Mask</button>
-        </div>
-        <label class="toggle" style="margin-top:4px"><span>Floor in depth pass</span><input type="checkbox" id="tDepthFloor" checked><i></i></label>
-        <label class="toggle"><span>OpenPose: every face point<span class="d">Off = drop the ear/eyes turned away, like a detector (best for ControlNet)</span></span><input type="checkbox" id="tOpFace"><i></i></label>
-        <label class="toggle"><span>Frame guide</span><input type="checkbox" id="tGuide" checked><i></i></label>
-        <label class="toggle"><span>Rule of thirds</span><input type="checkbox" id="tThirds"><i></i></label>
-        <div class="gap"></div>
-        <div class="row">
-          <button class="btn primary grow" id="capBtn2">◉ Capture</button>
-          <button class="btn grow" id="turnBtn" title="Front, ¾, side and back of the selected figure in one sheet">Turnaround</button>
-        </div>
-        <div class="gap"></div>
-        <div class="tip"><b>Reference image</b> (H3, FLUX.2, Gemini…): neutral grey, eye-level <b>Front</b> + <b>¾</b>, or a <b>Turnaround</b>; prompt “match the pose, not the mannequin”.
-          <b>ControlNet / VACE:</b> feed the <b>Depth</b> or <b>OpenPose</b> pass instead — same camera, same frame.</div>
-      </section>
-
-      <section class="sec">
-        <h2>Scene file</h2>
-        <div class="row">
-          <button class="btn grow" id="exportBtn">Export</button>
-          <button class="btn grow" id="importBtn">Import</button>
-          <button class="btn grow" id="newBtn">New</button>
-        </div>
-        <input type="file" id="importFile" accept=".json,application/json" hidden>
-      </section>
-
-      <section class="sec" style="border-bottom:0">
-        <h2>Controls</h2>
-        <div class="keys">
-          <kbd>drag limb</kbd><span>pose it (hands &amp; feet use IK)</span>
-          <kbd>drag hips</kbd><span>crouch / shift, feet stay planted</span>
-          <kbd>drag ring</kbd><span>move figure · knob turns it</span>
-          <kbd>shift+drag</kbd><span>move figure on the floor</span>
-          <kbd>drag empty</kbd><span>orbit · alt+drag orbits anywhere</span>
-          <kbd>right-drag</kbd><span>pan · wheel zooms</span>
-          <kbd>ctrl+Z / Y</kbd><span>undo / redo</span>
-          <kbd>[ ]</kbd><span>previous / next joint</span>
-          <kbd>F · C · M</kbd><span>frame · capture · mirror</span>
-        </div>
-      </section>
+      </div>
     </div>
-  </aside>
-
-  <main id="stage">
-    <canvas id="view" tabindex="0" aria-label="3D viewport"></canvas>
-    <div id="guide"><div class="th"></div><div class="gl" id="guideLbl"></div></div>
-    <button id="railToggle" class="fbtn">☰ Controls</button>
-    <div id="hud">—</div>
-    <div id="topbar">
-      <button class="fbtn" id="undoBtn" title="Undo (Ctrl+Z)">↶<span class="lbl-long"> Undo</span></button>
-      <button class="fbtn" id="redoBtn" title="Redo (Ctrl+Shift+Z)">↷<span class="lbl-long"> Redo</span></button>
-      <button class="capbtn" id="capBtn" title="Capture (C)">◉ Capture</button>
-      <button class="fbtn" id="hostCancel" style="display:none" title="Close without changing the card">Cancel</button>
-      <button class="capbtn" id="hostUse" style="display:none">Use for shot</button>
+    <div id="jointPop" role="dialog" aria-label="Pose this part">
+      <div class="jp-head"><span id="jpTitle">—</span><button class="btn icon" id="jpClose" aria-label="Close">✕</button></div>
+      <div class="grid g4" id="jpPoses"></div>
+      <div id="jpHands">
+        <div class="split">
+          <div class="field"><label for="handL">Left hand</label><select id="handL"><option value="relaxed">Relaxed</option><option value="grip">Grip</option><option value="flat">Flat</option></select></div>
+          <div class="field"><label for="handR">Right hand</label><select id="handR"><option value="relaxed">Relaxed</option><option value="grip">Grip</option><option value="flat">Flat</option></select></div>
+        </div>
+      </div>
+        <div class="jhead">
+          <button class="btn icon" id="jPrev" title="Previous joint ([)">‹</button>
+          <select id="jointSelect" aria-label="Selected joint"></select>
+          <button class="btn icon" id="jNext" title="Next joint (])">›</button>
+        </div>
+        <div id="axes"></div>
+        <button class="btn grow" id="resetJoint" style="width:100%">Reset this joint</button>
+      <div class="row" style="margin-top:6px"><button class="btn grow" id="jpCopy" title="Put the other side in the same pose">Copy to other side</button></div>
     </div>
     <div id="tray">
       <div class="strip" id="strip"></div>
@@ -1761,6 +1809,7 @@ function activate(f){act=f;refreshFigUI();refreshJointList();buildAxes();highlig
 function selectJoint(n){
   if(!act||!act.joints[n])n='chest';
   sel=n; $('jointSelect').value=n; buildAxes(); highlightAll();
+  if(typeof jpOpen!=='undefined'&&jpOpen)refreshJointPop();
 }
 function highlightAll(){figures.forEach(f=>f.highlight(f===act?sel:null,hovered&&hovered.fig===f?hovered.joint:null));updateHud();}
 function refreshJointList(){
@@ -1813,6 +1862,7 @@ function syncFacing(){
 
 /* ================= figure panel ================= */
 function refreshFigUI(){
+  refreshCard();
   const list=$('figList'); list.innerHTML='';
   figures.forEach(f=>{
     const c=document.createElement('button'); c.className='chip'+(f===act?' sel':'');
@@ -1899,6 +1949,7 @@ canvas.addEventListener('pointerdown',e=>{
   if(f!==act)activate(f);
   if(selProp)selectProp(null);
   selectJoint(ud.joint);
+  openJointPop();
   if(e.shiftKey){
     // slide on a horizontal plane at the grabbed point's height so the figure tracks the cursor
     const plane=autoGround||f.seat?new THREE.Plane(new V3(0,1,0),-hit.point.y):new THREE.Plane().setFromNormalAndCoplanarPoint(camera.getWorldDirection(new V3()).negate(),hit.point);
@@ -1991,7 +2042,7 @@ function endDrag(e){
   if(!drag)return;
   if(drag.mode==='pinch'){if(pointers.size<2){drag=null;saveView();}return;}
   const d=drag; drag=null;
-  if(!d.moved){if(d.mode==='orbit'&&selProp)selectProp(null);return;}
+  if(!d.moved){if(d.mode==='orbit'){if(selProp)selectProp(null);closeJointPop();}return;}
   if(d.mode==='orbit'||d.mode==='pan'){saveView();return;}
   if(d.fig){d.fig.ground();}
   syncAxes(); commit();
@@ -2247,7 +2298,7 @@ function renderTray(){
     if(s.pass!=='beauty'){const b=document.createElement('span');b.textContent=s.pass;d.appendChild(b);}
     st.appendChild(d);
   });
-  $('tray').classList.toggle('has',shots.length>0);
+  $('tray').classList.toggle('has',shots.length>0); $('stage').classList.toggle('has-tray',shots.length>0);
   st.scrollLeft=st.scrollWidth;
 }
 function openViewer(i){
@@ -2320,7 +2371,7 @@ window.addEventListener('message',e=>{
 })();
 
 /* ---------- props panel ---------- */
-function selectProp(p){if(selProp)selProp.highlight(false);selProp=p||null;if(selProp)selProp.highlight(true);refreshPropUI();}
+function selectProp(p){if(selProp)selProp.highlight(false);selProp=p||null;if(selProp)selProp.highlight(true);if(selProp&&typeof closeJointPop==='function')closeJointPop();refreshPropUI();}
 
 /* ================= build: set pieces from a local model (build_plan.md) =================
  * Type "a sedan" and the local model (Storyboarder's Local provider: Oobabooga and whatever Qwen is loaded) answers
@@ -2551,6 +2602,7 @@ $('buildText').addEventListener('keydown',e=>{if(e.key==='Enter'&&(e.ctrlKey||e.
 const propName=p=>(p.type==='build'?(p.name||'Build'):PROP_LABEL[p.type])+(p.owner&&figById(p.owner)&&figures.length>1?' · '+figById(p.owner).name:'');
 function refreshPropUI(){
   if(typeof refreshBuildUI==='function')refreshBuildUI();
+  if(typeof refreshCard==='function')refreshCard();
   const box=$('propPanel'); box.innerHTML='';
   if(props.length){
     const chips=document.createElement('div'); chips.className='chips';
@@ -2793,6 +2845,12 @@ addEventListener('keydown',e=>{
   if(mod&&(e.key==='y'||e.key==='Y')){if(typing)return;e.preventDefault();redo();return;}
   if(typing||mod||e.altKey)return;
   if(t.tagName==='SELECT')return;
+  if(e.key==='Escape'&&(document.querySelector('.pop.open')||jpOpen)){closePops();closeJointPop();return;}
+  const dg=/^Digit([1-8])$/.exec(e.code||'');
+  if(dg&&!tl.take){const i=+dg[1]-1;
+    if(e.shiftKey){if(i<4){fitShot(SHOT_KEYS[i]);saveView();}}
+    else{setView(VIEW_KEYS[i]);saveView();}
+    return;}
   const k=e.key.toLowerCase();
   if(k==='f'){e.shiftKey?frameAll():fitShot(cam.shot);}
   else if(k==='c')capture();
@@ -2803,6 +2861,139 @@ addEventListener('keydown',e=>{
   else if(selProp&&(e.key==='Delete'||e.key==='Backspace')){e.preventDefault();deleteSelProp();}
   else if(e.key==='Escape'&&selProp)selectProp(null);
 });
+
+
+/* ================= the short panel (posebench_ui_plan.md) ================= */
+/* Popovers from the top bar: one open at a time; a click outside or Esc closes. */
+function closePops(except){document.querySelectorAll('.pop.open').forEach(p=>{if(p.id!==except)p.classList.remove('open');});
+  document.querySelectorAll('[data-pop]').forEach(b=>b.classList.toggle('on',!!except&&b.dataset.pop===except&&$(except).classList.contains('open')));}
+function openPop(id,force){
+  const p=$(id), was=p.classList.contains('open');
+  closePops(id);
+  p.classList.toggle('open',force||!was);
+  const btn=document.querySelector('[data-pop="'+id+'"]');
+  if(btn&&p.classList.contains('open')){
+    const sr=stage.getBoundingClientRect(), br=btn.getBoundingClientRect(), w=p.offsetWidth||330;
+    p.style.right='auto'; p.style.left=Math.max(8,Math.min(sr.width-w-8,br.right-sr.left-w))+'px'; p.style.top=(br.bottom-sr.top+6)+'px';
+  }
+  document.querySelectorAll('[data-pop]').forEach(b=>b.classList.toggle('on',b.dataset.pop===id&&p.classList.contains('open')));
+  if(id==='popBuild'&&p.classList.contains('open'))setTimeout(()=>$('buildText').focus(),0);
+}
+document.querySelectorAll('[data-pop]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();openPop(b.dataset.pop);}));
+addEventListener('pointerdown',e=>{
+  if(e.target.closest('.pop')||e.target.closest('[data-pop]'))return;
+  if(document.querySelector('.pop.open'))closePops();
+},true);
+$('propToBuild').onclick=e=>{e.preventDefault();openPop('popBuild',true);};
+// adding a prop from the popover closes it, so the drop is visible
+document.querySelectorAll('#popProps [data-prop]').forEach(b=>b.addEventListener('click',()=>closePops()));
+
+/* The one card: prop if a prop is selected, else the active figure, else "start here". */
+function refreshCard(){
+  const prop=!!selProp, fig=!prop&&!!act;
+  $('cardProp').hidden=!prop; $('cardFig').hidden=!fig; $('cardNone').hidden=prop||fig;
+}
+document.querySelectorAll('#cardNone [data-go]').forEach(b=>b.onclick=()=>{
+  const g=b.dataset.go;
+  if(g==='fig')$('addFig').click(); else if(g==='cam')$('camOpen').click();
+  else openPop({poses:'popPoses',props:'popProps',build:'popBuild'}[g],true);
+});
+
+/* The camera pad: views, shot size, lens, on the viewport. Open or closed is remembered. */
+const CAMPAD_KEY='posebench.camPad';
+function setCamPad(on){$('camPad').classList.toggle('open',on);$('camPadBtn').classList.toggle('on',on);try{localStorage.setItem(CAMPAD_KEY,on?'1':'0');}catch(e){}}
+$('camPadBtn').onclick=()=>setCamPad(!$('camPad').classList.contains('open'));
+try{setCamPad(localStorage.getItem(CAMPAD_KEY)==='1');}catch(e){}
+const VIEW_KEYS=['front','tqL','sideL','back','tqR','sideR','high','low'], SHOT_KEYS=['wide','full','medium','close'];
+
+/* ---- posing at the limb: the joint popover ---- */
+const partOf=n=>/Shoulder|Elbow|Wrist/.test(n)?'arm':/Hip|Knee|Ankle/.test(n)?'leg':/neck|head/.test(n)?'head':'torso';
+/* Quick poses per part, anatomical degrees (the same numbers mean the same movement on either side), written for
+   side X and applied to the clicked side. A pose sets every joint it names, whole: unnamed axes go to 0. */
+const LIMB_POSES={
+  arm:[
+    ['Down',{XShoulder:{x:3,z:9},XElbow:{x:12},XWrist:{}}],
+    ['On hip',{XShoulder:{x:-20,z:45,y:80},XElbow:{x:95,y:-20},XWrist:{z:-15}}],
+    ['Raise',{XShoulder:{x:165,z:8},XElbow:{x:8},XWrist:{}}],
+    ['Wave',{XShoulder:{x:10,z:85,y:-85},XElbow:{x:95},XWrist:{z:-10}}],
+    ['Point',{XShoulder:{x:85,z:6},XElbow:{x:4},XWrist:{}}],
+    ['Reach',{XShoulder:{x:65,z:12},XElbow:{x:30},XWrist:{z:15}}],
+    ['Across',{XShoulder:{x:55,z:-12,y:45},XElbow:{x:115},XWrist:{}}],
+    ['To ear',{XShoulder:{x:45,z:28,y:25},XElbow:{x:140,y:40},XWrist:{}}]],
+  leg:[
+    ['Straight',{XHip:{z:3},XKnee:{},XAnkle:{}}],
+    ['Step fwd',{XHip:{x:28},XKnee:{x:12},XAnkle:{x:-8}}],
+    ['Step back',{XHip:{x:-18},XKnee:{x:18},XAnkle:{x:18}}],
+    ['Knee up',{XHip:{x:85},XKnee:{x:95},XAnkle:{x:20}}],
+    ['Out',{XHip:{z:28},XKnee:{x:4},XAnkle:{z:-8}}],
+    ['Cross',{XHip:{x:8,z:-18},XKnee:{x:10},XAnkle:{}}]],
+  head:[
+    ['Level',{neck:{},head:{}}],
+    ['Look L',{neck:{y:28},head:{y:22}}],
+    ['Look R',{neck:{y:-28},head:{y:-22}}],
+    ['Up',{neck:{x:-18},head:{x:-15}}],
+    ['Down',{neck:{x:22},head:{x:18}}],
+    ['Tilt',{neck:{z:12},head:{z:8}}],
+    ['Camera','camera']],
+  torso:[
+    ['Upright',{spine:{},chest:{}}],
+    ['Lean fwd',{spine:{x:20},chest:{x:12}}],
+    ['Lean back',{spine:{x:-12},chest:{x:-8}}],
+    ['Twist L',{spine:{y:15},chest:{y:15}}],
+    ['Twist R',{spine:{y:-15},chest:{y:-15}}],
+    ['Slouch',{spine:{x:12},chest:{x:20},neck:{x:-12}}]],
+};
+let jpOpen=false;
+function applyLimbPose(map){
+  if(!act)return;
+  if(map==='camera'){act.look='camera';resolveFig(act);refreshLookSel();commit();return;}
+  const side=sideOf(sel)>0?'l':sideOf(sel)<0?'r':'r';
+  for(const [raw,v] of Object.entries(map)){
+    const n=raw.replace(/^X/,side); if(!act.joints[n])continue;
+    releaseFor(act,n);
+    for(const ax of ['x','y','z'])act.setA(n,ax,v[ax]||0);
+    act.clampJoint(n);
+  }
+  if(partOf(sel)==='head'&&act.look==='camera'){act.look=null;refreshLookSel();}
+  resolveFig(act); act.ground(); syncAxes(); commit();
+}
+function refreshJointPop(){
+  if(!act)return;
+  const part=partOf(sel), side=sideOf(sel);
+  $('jpTitle').textContent=labelOf(sel);
+  const box=$('jpPoses'); box.innerHTML='';
+  (LIMB_POSES[part]||[]).forEach(([name,map])=>{
+    const b=document.createElement('button'); b.className='btn'; b.textContent=name;
+    b.onclick=()=>applyLimbPose(map); box.appendChild(b);
+  });
+  // hand shape, for the arm that was clicked
+  const hands=$('jpHands'); hands.style.display=part==='arm'?'':'none';
+  const fl=$('handL').closest('.field'), fr=$('handR').closest('.field');
+  if(fl&&fr){fl.style.display=side>0?'':'none';fr.style.display=side<0?'':'none';}
+  $('jpCopy').style.display=side?'':'none';
+}
+function openJointPop(){jpOpen=true;$('jointPop').classList.add('open');refreshJointPop();placeJointPop();}
+function closeJointPop(){jpOpen=false;$('jointPop').classList.remove('open');}
+// beside the joint on screen, flipped to stay inside the viewport; called every frame while open
+function placeJointPop(){
+  if(!jpOpen||!act||!act.joints[sel])return;
+  const pop=$('jointPop'), W=stage.clientWidth, H=stage.clientHeight, w=pop.offsetWidth||290, h=pop.offsetHeight||300;
+  const v=act.joints[sel].pivot.getWorldPosition(new V3()).project(camera);
+  if(v.z>1){pop.style.visibility='hidden';return;} pop.style.visibility='';
+  const x=(v.x+1)/2*W, y=(1-v.y)/2*H;
+  let left=x+34; if(left+w>W-8)left=x-34-w; left=Math.max(8,Math.min(W-w-8,left));
+  const top=Math.max(8,Math.min(H-h-8,y-60));
+  pop.style.left=Math.round(left)+'px'; pop.style.top=Math.round(top)+'px';
+}
+$('jpClose').onclick=closeJointPop;
+$('jpCopy').onclick=()=>{
+  if(!act||!sideOf(sel))return;
+  const part=partOf(sel), names=part==='arm'?['Shoulder','Elbow','Wrist']:['Hip','Knee','Ankle'];
+  const from=sideOf(sel)>0?'l':'r', to=from==='l'?'r':'l';
+  names.forEach(n=>{releaseFor(act,to+n);for(const ax of ['x','y','z'])act.setA(to+n,ax,act.getA(from+n,ax));});
+  if(part==='arm')act.setHand(to,act.hands[from]);
+  resolveFig(act); act.ground(); commit(); refreshFigUI();
+};
 
 /* ================= resize / loop / hud ================= */
 function resize(){
@@ -5010,9 +5201,9 @@ refreshPropUI();
   figures.forEach(f=>{if(f.look==='camera')aimHead(f,camera.position);});
   tlTick(performance.now());
   glideTick(performance.now());
-  updateHandles();renderer.render(scene,camera);})();
+  updateHandles();renderer.render(scene,camera);placeJointPop();})();
 if(EMBED)try{window.parent.postMessage({type:'posebench:ready'},'*');}catch(e){}
-window.__pb={expandParts,cleanParts,askBuild,runBuild,placeBuild,get llm(){return llm;},applyWork,snapScene,applySceneFile,renderShot,setBodyStyle,get bodyStyle(){return bodyStyle;},steadyDepth,standingStill,viewAsPhoto,liveGuard,guardNew,photoWarnings,glitchMask,repairSeq,labelSwap,glitchSummary,glitchOverride,addHead,faceLoad,get takes(){return takes;},get glides(){return glides;},glideTick,glideFinish,camApply,get tl(){return tl;},makeTake,bakeTake,openTake,showTakeAt,exportTake,cutList,takeSnap,takeLoad,camImportVideo,addCam,addCut,tlPlay,setCamView,viewNow,blockingText,retarget,synthLandmarks,readPose,camFromImage,mpLoad,detLoad,findPeople,camApply,camStart,camSnap,get camState(){return camS;},get figures(){return figures;},get props(){return props;},get act(){return act;},cam,fitShot,setView,frameAll,PRESETS,WORK,SCENES,
+window.__pb={LIMB_POSES,applyLimbPose,selectJoint,openJointPop,expandParts,cleanParts,askBuild,runBuild,placeBuild,get llm(){return llm;},applyWork,snapScene,applySceneFile,renderShot,setBodyStyle,get bodyStyle(){return bodyStyle;},steadyDepth,standingStill,viewAsPhoto,liveGuard,guardNew,photoWarnings,glitchMask,repairSeq,labelSwap,glitchSummary,glitchOverride,addHead,faceLoad,get takes(){return takes;},get glides(){return glides;},glideTick,glideFinish,camApply,get tl(){return tl;},makeTake,bakeTake,openTake,showTakeAt,exportTake,cutList,takeSnap,takeLoad,camImportVideo,addCam,addCut,tlPlay,setCamView,viewNow,blockingText,retarget,synthLandmarks,readPose,camFromImage,mpLoad,detLoad,findPeople,camApply,camStart,camSnap,get camState(){return camS;},get figures(){return figures;},get props(){return props;},get act(){return act;},cam,fitShot,setView,frameAll,PRESETS,WORK,SCENES,
   camera,applyCam,selectJoint,solveChain,commit,applyNamed,goalFrame,eyePoint};
 })();
 </script>
