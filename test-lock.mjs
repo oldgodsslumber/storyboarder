@@ -183,5 +183,37 @@ console.log('\n\u2014 the house look: in the task, then checked \u2014');
   eq(sh.prompts[im.id].flat, undefined, 'and no mark');
 }
 
+console.log('\n\u2014 off the reference list: when the @ goes, or by hand \u2014');
+{
+  const { p, sh, gus } = board();
+  const ana = SB.Personas.add(p, { name: 'Ana', description: 'A woman in her thirties in a grey coat.' });
+  const names = () => SB.Personas.forShot(p, sh).map(x => x.name).join(',');
+  // Ana is @tagged in the description, which casts her
+  sh.description = SB.Refs.insert(sh.description + ' ', sh.description.length + 1, sh.description.length + 1, ana.id, 'Ana').text;
+  SB.Personas.castByTag(sh, ana.id);
+  eq(names(), 'Gus,Ana', 'an @ casts her');
+  // the @ is taken out: she comes off
+  sh.description = 'Gus sits at his desk and reads a letter.';
+  eq(names(), 'Gus', 'take the @ out and she is off the card');
+  eq(SB.Refs.feed(p, sh, 'image').some(e => e.id === ana.id), false, 'and off its references');
+  // put it back: she is back
+  sh.description = SB.Refs.insert(sh.description + ' ', sh.description.length + 1, sh.description.length + 1, ana.id, 'Ana').text;
+  eq(names(), 'Gus,Ana', 'put the @ back and so is she');
+  // cast by hand (Gus): stays with no @ at all
+  eq(SB.Refs.marked(p, sh).some(m => m.id === gus.id), false, 'Gus has no @ on this card');
+  eq(names().indexOf('Gus') >= 0, true, 'but was cast by hand, so he stays');
+  // the X: off entirely, the @ left as plain text
+  SB.Personas.removeFromShot(p, sh, ana.id);
+  eq(names(), 'Gus', 'the \u2715 takes her off');
+  eq(SB.Refs.marked(p, sh).some(m => m.id === ana.id), false, 'and her @ is plain text now');
+  eq(/Ana/.test(sh.description), true, 'the name itself is still in the words');
+  SB.Personas.removeFromShot(p, sh, gus.id);
+  eq(names(), '', 'the \u2715 works on somebody cast by hand too');
+  // a reload keeps who was cast by an @
+  SB.Personas.castByTag(sh, ana.id);
+  const q = SB.Model.migrate(JSON.parse(JSON.stringify(p)));
+  eq(q.scenes[0].shots[0].castAuto, [ana.id], 'which is remembered in the file');
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed\n');
 if (fail) process.exit(1);

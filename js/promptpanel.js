@@ -1348,6 +1348,20 @@
     }
   }
 
+  /* Take somebody off this card's references: uncast, and any @ of them left as plain text (the @ is what
+     makes them a reference). */
+  function offBtn(sh, id, label) {
+    const b = SB.el('button', 'mini feed-off', '\u2715');
+    b.title = 'Take ' + label + ' off this card \u2014 uncast, and any @' + label + ' left as plain text';
+    b.onclick = function (ev) {
+      ev.stopPropagation();
+      SB.Personas.removeFromShot(P(), sh, id);
+      SB.app.changed(true);
+      SB.toast(label + ' is off ' + code(sh));
+    };
+    return b;
+  }
+
   function feedList(sh, code, role) {
     const wrap = SB.el('div', 'pt-feed-list');
     const list = SB.Refs.feed(P(), sh, role);
@@ -1524,6 +1538,7 @@
       it.appendChild(nameEl);
       it.appendChild(SB.el('span', 'feed-who', e.label + (e.role ? ' · ' + e.role : '')));
       (function () { const w = whenBtn(sh, e.id, role); if (w) it.appendChild(w); })();
+      if (e.kind === 'subject') it.appendChild(offBtn(sh, e.id, e.label));
 
       it.title = (notSent
         ? 'Not sent with the clip. The still was built from this and approved; the clip ' +
@@ -1574,6 +1589,7 @@
       it.appendChild(SB.el('span', 'feed-file none', e.kind === 'dead' ? 'gone' : 'no picture'));
       it.appendChild(SB.el('span', 'feed-who', e.label));
       (function () { const w = whenBtn(sh, e.id, role); if (w) it.appendChild(w); })();
+      if (e.kind === 'subject') it.appendChild(offBtn(sh, e.id, e.label));
       it.title = e.label + (e.why ? ' — ' + e.why : '');
       wrap.appendChild(it);
     });

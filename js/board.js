@@ -1627,9 +1627,7 @@
            job was done */
         SB.Refs.rewrite(sh, function (t) { return SB.Refs.linkAll(P(), t); });
         loose.forEach(function (x) {
-          if ((sh.personaIds || []).indexOf(x.id) < 0) {
-            sh.personaIds = (sh.personaIds || []).concat([x.id]);
-          }
+          SB.Personas.castByTag(sh, x.id);
         });
         SB.app.changed(true);
         SB.toast(loose.length + (loose.length === 1 ? ' name' : ' names') + ' linked and cast');

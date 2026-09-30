@@ -263,6 +263,7 @@
     SB.Model.eachShot(p, function (sh) {
       sh.personaIds = (sh.personaIds || []).filter(function (x) { return x !== id; });
       sh.castEnters = (sh.castEnters || []).filter(function (x) { return x !== id; });
+      sh.castAuto = (sh.castAuto || []).filter(function (x) { return x !== id; });
     });
   }
 
@@ -270,19 +271,46 @@
    * Deduped: a file written by hand or by another tool can name the same
    * subject twice, which listed them twice in the block and made a nonsense of
    * the image numbering ("images 1–3" for a subject holding images 1 and 3). */
+  /* Somebody cast BY an @ (the @ casts them, `castAuto` remembers that) comes off the card again once no
+     box on it tags them any more. Taking the @ out used to leave them cast for good, feeding a picture, with
+     nothing on the card that could remove them. Cast by hand, they stay until taken off by hand. */
+  function taggedOn(p, shot) {
+    const on = {};
+    if (SB.Refs && SB.Refs.marked) SB.Refs.marked(p, shot).forEach(function (m) { on[m.id] = 1; });
+    return on;
+  }
   function forShot(p, shot) {
     const seen = {};
+    const auto = shot.castAuto || [];
+    const on = auto.length ? taggedOn(p, shot) : {};
     return (shot.personaIds || []).map(function (id) { return find(p, id); })
       .filter(function (per) {
         if (!per || seen[per.id]) return false;
+        if (auto.indexOf(per.id) >= 0 && !on[per.id]) return false;
         seen[per.id] = 1;
         return true;
       });
+  }
+  /* Cast by an @: remembered, so it can lapse with the tag. */
+  function castByTag(shot, id) {
+    shot.personaIds = shot.personaIds || [];
+    if (shot.personaIds.indexOf(id) < 0) {
+      shot.personaIds.push(id);
+      shot.castAuto = (shot.castAuto || []).concat([id]);
+    }
+  }
+  /* Off this card entirely: uncast, and any @ of them in its boxes left as plain text. */
+  function removeFromShot(p, shot, id) {
+    shot.personaIds = (shot.personaIds || []).filter(function (x) { return x !== id; });
+    shot.castAuto = (shot.castAuto || []).filter(function (x) { return x !== id; });
+    setEnters(shot, id, false);
+    if (SB.Refs && SB.Refs.rewrite) SB.Refs.rewrite(shot, function (t) { return SB.Refs.unmark(p, t, id); });
   }
 
   function toggleOnShot(p, shot, id) {
     shot.personaIds = shot.personaIds || [];
     const i = shot.personaIds.indexOf(id);
+    shot.castAuto = (shot.castAuto || []).filter(function (x) { return x !== id; });   // by hand now
     if (i >= 0) {
       shot.personaIds.splice(i, 1);
       setEnters(shot, id, false);      // taken off the card, so not arriving on it either
@@ -978,7 +1006,7 @@
     imagesOf: imagesOf, hero: hero, hasImage: hasImage,
     setImage: setImage, clearImage: clearImage, labelImage: labelImage,
     retiredOf: retiredOf, useRetired: useRetired, dropRetired: dropRetired,
-    forShot: forShot, framing: framing, clayPreamble: clayPreamble, refPreamble: refPreamble,toggleOnShot: toggleOnShot, block: block, generate: generate,
+    forShot: forShot, castByTag: castByTag, removeFromShot: removeFromShot, framing: framing, clayPreamble: clayPreamble, refPreamble: refPreamble,toggleOnShot: toggleOnShot, block: block, generate: generate,
     enters: enters, setEnters: setEnters, toggleEnters: toggleEnters,
     presentAtOpen: presentAtOpen, arriving: arriving, ARRIVAL_RE: ARRIVAL_RE,
     readsAsArrival: readsAsArrival,

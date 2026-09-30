@@ -341,7 +341,7 @@
     if (where && where.shot) {
       const ids = where.shot.personaIds = where.shot.personaIds || [];
       if (ids.indexOf(per.id) < 0) {
-        ids.push(per.id);
+        SB.Personas.castByTag(where.shot, per.id);
         SB.Board.refreshCastRows();
         SB.toast(name + ' cast on ' + (where.code || 'this card'));
       }

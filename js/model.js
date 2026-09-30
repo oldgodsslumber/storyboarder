@@ -580,6 +580,7 @@
        * one instant, so somebody who walks in during the shot must not be drawn
        * standing in it. A subset of personaIds, never anything else. */
       castEnters: [],
+      castAuto: [],                     // of personaIds, those cast by an @ (they lapse with it)
       broken: false,
       description: '',
       /* The still and the clip are different jobs and want different words.
@@ -981,6 +982,7 @@
         });
         repairTakes(sh);
         sh.personaIds = Array.isArray(sh.personaIds) ? sh.personaIds : [];
+        sh.castAuto = Array.isArray(sh.castAuto) ? sh.castAuto.filter(function (x) { return sh.personaIds.indexOf(x) >= 0; }) : [];
           sh.castEnters = (Array.isArray(sh.castEnters) ? sh.castEnters : [])
             .filter(function (id) { return sh.personaIds.indexOf(id) >= 0; });
           sh.image = SB.Blobs.adopt(p, sh.image);
@@ -1257,6 +1259,7 @@
         if (!sh.mxm || typeof sh.mxm !== 'object') sh.mxm = null;
         repairTakes(sh);
         sh.personaIds = Array.isArray(sh.personaIds) ? sh.personaIds : [];
+        sh.castAuto = Array.isArray(sh.castAuto) ? sh.castAuto.filter(function (x) { return sh.personaIds.indexOf(x) >= 0; }) : [];
         /* Empty for every board written before this, which is the right answer:
            nobody was marked as arriving, so everybody was already there. */
         sh.castEnters = (Array.isArray(sh.castEnters) ? sh.castEnters : [])
@@ -1614,7 +1617,7 @@
        out of the swap separated the chosen take from the ones it was chosen
        against */
     'videoAlts', 'imageAlts', 'imageAt',
-    'fields', 'prompts', 'personaIds', 'castEnters', 'comments', 'render', 'video',
+    'fields', 'prompts', 'personaIds', 'castAuto', 'castEnters', 'comments', 'render', 'video',
     /* the blocking is part of what the card IS: a swap moves it with the words
        it was blocked for, and a copy takes it (shared bytes, cloned record) */
     'pose',
@@ -1642,7 +1645,8 @@
     const t = toSceneId ? findScene(p, toSceneId) : f;
     if (!t) return null;
     const copy = newShot({ type: f.shot.type });
-    CONTENT_KEYS.forEach(function (k) { copy[k] = SB.clone(f.shot[k]); });
+    /* a field an older card never had keeps the new card's own default (cloning undefined throws) */
+    CONTENT_KEYS.forEach(function (k) { if (f.shot[k] !== undefined) copy[k] = SB.clone(f.shot[k]); });
     copy.id = SB.uid('sh');
     /* freestanding, with the words it had */
     copy.link = null;

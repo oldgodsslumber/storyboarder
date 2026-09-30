@@ -1444,3 +1444,6 @@ body.comment-mode .frame{cursor:crosshair}
 .pt-thumb-tag{position:absolute;left:3px;bottom:3px;font-size:9px;font-weight:700;line-height:1.3;
   padding:0 5px;border-radius:7px;color:var(--fg-dim);border:1px solid var(--line2);
   background:color-mix(in srgb, var(--bg) 75%, transparent);pointer-events:none}
+
+.pt-fe .feed-off{margin-left:auto;padding:0 5px;line-height:16px;opacity:.55}
+.pt-fe .feed-off:hover{opacity:1;color:var(--danger,#e06c5a)}
