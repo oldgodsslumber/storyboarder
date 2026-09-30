@@ -404,20 +404,21 @@ console.log('\n— two lanes, one board —');
   };
 
   /* the whole mechanism: a mark belongs to the lane it was typed in */
-  eq(names('image'), 'Nat,Mug', 'the image lane sees the shared box and its own');
+  /* the still reads its frame box alone once it is filled: Nat is marked only in the general description */
+  eq(names('image'), 'Mug', 'the image lane sees its own box only, once it is filled');
   eq(names('video'), 'Nat,Tech', 'the video lane sees the shared box and its own');
   eq(names(), 'Nat,Mug,Tech', 'and the card strip sees everything, in first-seen order');
 
   /* the numbers a prompt cites are the numbers that lane sends */
   eq(R.images(p, sh, 'image').map(function (e) { return e.n + ':' + e.label; }).join(' '),
-    '1:Nat 2:Mug', 'the image lane numbers its own pictures from one');
+    '1:Mug', 'the image lane numbers its own pictures from one');
   eq(R.images(p, sh, 'video').map(function (e) { return e.n + ':' + e.label; }).join(' '),
     '1:Nat 2:Tech', 'and so does the video lane — the same number means a different file');
 
   /* which is exactly why the cast block has to be numbered per lane */
   const imB = Per.block(p, sh, { id: 'm1', name: 'GPT Image', kind: 'image' }, 'image');
   const vmB = Per.block(p, sh, { id: 'm2', name: 'LTX 2.3', kind: 'video' }, 'video');
-  eq(/image 2 = Mug/.test(imB), true, 'the image mapping names what the image call sends');
+  eq(/image 1 = Mug/.test(imB), true, 'the image mapping names what the image call sends');
   eq(/Tech/.test(imB), false, 'and never names a subject only the clip is shown');
   eq(/Tech/.test(vmB), true, 'the video mapping names the one the clip is shown');
 
@@ -486,7 +487,11 @@ console.log('\n— every box, not just the first one —');
   const split = M.addShot(p, sc.id, {});
   split.description = 'At the desk with ' + R.mark(nat.id, 'Nat') + '.';
   split.imageDescription = 'The ' + R.mark(rig.id, 'Rig') + ' is set up.';
-  eq(R.images(p, split, 'image').length, 2, 'the still is built from two pictures');
+  eq(R.images(p, split, 'image').length, 1, 'the still is built from its frame box: one picture');
+  split.imageDescription = '';
+  eq(R.images(p, split, 'image').length, 1, 'with the frame box empty, the general description stands in');
+  eq(R.images(p, split, 'image')[0].label, 'Nat', 'and its marks with it');
+  split.imageDescription = 'The ' + R.mark(rig.id, 'Rig') + ' is set up.';
   eq(R.images(p, split, 'video').length, 1,
     'the video lane knows its own marks, whatever is done with them');
 

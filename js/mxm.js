@@ -260,7 +260,7 @@
         : x.kind === 'thing' ? 'an object, ' + x.name : x.name) + '.');
     });
     L.push('');
-    const scene = m.boxes.shared || m.boxes.first;
+    const scene = m.boxes.first || m.boxes.shared;   // the still reads its frame box, when there is one
     if (scene) L.push('Scene: ' + sentence(scene));
     m.figures.forEach(function (x) {
       const d = clause(x.description);
@@ -268,8 +268,7 @@
         : ((whereWord(x.fig) ? whereWord(x.fig) + ' figure' : 'Figure'));
       L.push(head + (x.asset ? ' ' + x.asset.label : '') + ': ' + x.name + (d ? ', ' + inline(d) : '') + '.');
     });
-    L.push('Moment: ' + (m.boxes.first && m.boxes.shared ? sentence(m.boxes.first)
-      : 'the first instant of the shot, before anything it describes as happening next has happened.'));
+    L.push('Moment: the first instant of the shot, before anything it describes as happening next has happened.');
     L.push('Camera: ' + (clay ? 'comes entirely from ' + clay.label + '. Match its framing, angle and lens exactly.'
       : (m.shotType ? m.shotType + '.' : 'as the scene describes.')));
     L.push('Style: ' + sentence(m.style));

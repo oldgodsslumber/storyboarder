@@ -129,7 +129,16 @@
    * which is what the card strip, the export and the printed board want: one
    * list of everything this card touches. A lane wants only its own, because
    * the numbers it hands out are the numbers its prompt will cite. */
+  /* The still reads its first-frame box, and only that, once there is anything in it. The general
+     description is a summary of the card that goes stale ("a high-rise office" long after the frame box said
+     otherwise), and joined to the frame box it was merged into every still. Empty, the general description
+     stands in, or the still would have nothing to work from. Its @ marks follow the same rule: a mark in the
+     general description is not a reference for a still whose frame box is filled. The video lane still reads
+     both: the general description, then the motion. */
   function boxes(shot, role) {
+    if (role === 'image') {
+      return [String(shot.imageDescription || '').trim() ? shot.imageDescription : shot.description];
+    }
     const out = [shot.description];
     if (role !== 'video') out.push(shot.imageDescription);
     if (role !== 'image') out.push(shot.videoDescription);

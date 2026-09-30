@@ -1457,7 +1457,7 @@ body.comment-mode .frame{cursor:crosshair}
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-09-30 18:47 · 80cef21+";</script>
+<script>window.SB_BUILD = "2026-09-30 19:25 · 05b4c7b+";</script>
 
 <div id="app">
 
@@ -8953,7 +8953,16 @@ window.SB = window.SB || {};
    * which is what the card strip, the export and the printed board want: one
    * list of everything this card touches. A lane wants only its own, because
    * the numbers it hands out are the numbers its prompt will cite. */
+  /* The still reads its first-frame box, and only that, once there is anything in it. The general
+     description is a summary of the card that goes stale ("a high-rise office" long after the frame box said
+     otherwise), and joined to the frame box it was merged into every still. Empty, the general description
+     stands in, or the still would have nothing to work from. Its @ marks follow the same rule: a mark in the
+     general description is not a reference for a still whose frame box is filled. The video lane still reads
+     both: the general description, then the motion. */
   function boxes(shot, role) {
+    if (role === 'image') {
+      return [String(shot.imageDescription || '').trim() ? shot.imageDescription : shot.description];
+    }
     const out = [shot.description];
     if (role !== 'video') out.push(shot.imageDescription);
     if (role !== 'image') out.push(shot.videoDescription);
@@ -15304,7 +15313,7 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
         : x.kind === 'thing' ? 'an object, ' + x.name : x.name) + '.');
     });
     L.push('');
-    const scene = m.boxes.shared || m.boxes.first;
+    const scene = m.boxes.first || m.boxes.shared;   // the still reads its frame box, when there is one
     if (scene) L.push('Scene: ' + sentence(scene));
     m.figures.forEach(function (x) {
       const d = clause(x.description);
@@ -15312,8 +15321,7 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
         : ((whereWord(x.fig) ? whereWord(x.fig) + ' figure' : 'Figure'));
       L.push(head + (x.asset ? ' ' + x.asset.label : '') + ': ' + x.name + (d ? ', ' + inline(d) : '') + '.');
     });
-    L.push('Moment: ' + (m.boxes.first && m.boxes.shared ? sentence(m.boxes.first)
-      : 'the first instant of the shot, before anything it describes as happening next has happened.'));
+    L.push('Moment: the first instant of the shot, before anything it describes as happening next has happened.');
     L.push('Camera: ' + (clay ? 'comes entirely from ' + clay.label + '. Match its framing, angle and lens exactly.'
       : (m.shotType ? m.shotType + '.' : 'as the scene describes.')));
     L.push('Style: ' + sentence(m.style));
@@ -17487,14 +17495,15 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
 
   /* ---- the two lanes ----
    *
-   * `description` is what we see and both prompts read it. These two are read
+   * `description` is the card in general: the video prompt reads it, and the still reads it only while the
+   * first-frame box is empty (refs.js boxes). These two are read
    * by one prompt each — and because a reference IS a mark in the text it was
    * written in, an @ in here is a picture that lane hands over and the other
    * never sees. That is the whole mechanism; there is no second list.
    */
   const LANES = [
     { role: 'image', key: 'imageDescription', label: 'first frame',
-      hint: 'Only what is true as the shot opens. @ anything the FIRST FRAME should be shown.' },
+      hint: 'What the still shows as the shot opens. Filled in, this is ALL the still prompt reads. @ anything it should see.' },
     { role: 'video', key: 'videoDescription', label: 'motion',
       /* NOT "@ anything the clip should be shown": a clip is shown the frame
          and nothing else. An @ here names somebody so the writer uses their
@@ -21495,7 +21504,7 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
         refreshFeedCell(sh.id);
         paintGens();          // a description is the thing "generate" waits for
       },
-      placeholder: 'What we see — both prompts read this. @ anything to be shown.',
+      placeholder: 'The card in general. The video prompt reads this; the still reads it only while its first-frame box is empty.',
       ctx: { shot: sh, code: r.code }
     });
     c2.appendChild(desc);
@@ -21513,7 +21522,7 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
    * other never sees — which is the whole reason the boxes are separate. */
   const LANE = {
     imagePrompt: { role: 'image', key: 'imageDescription', label: 'first frame',
-      hint: 'Only what is true as the shot opens. @ anything the first frame should see.' },
+      hint: 'What the still shows as the shot opens. Filled in, this is all the still prompt reads. @ anything it should see.' },
     videoPrompt: { role: 'video', key: 'videoDescription', label: 'motion',
       hint: 'What moves, in what order, how it ends. @ someone to name them \u2014 ' +
         'the clip is handed the frame, not their photo.' }

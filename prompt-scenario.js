@@ -107,8 +107,8 @@
           /The cup is still full/.test(iText), '');
         t('and is not told what happens next',
           !/lifts it and drinks/.test(iText), iText.slice(-200));
-        t('while the shared description reaches it',
-          /the lamp on/.test(iText), '');
+        t('and the general description does not: a filled frame box is all the still reads',
+          !/the lamp on/.test(iText), '');
 
         window.__calls = [];
         await SB.Prompts.generateFor(sh, { video: true });

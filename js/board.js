@@ -1461,14 +1461,15 @@
 
   /* ---- the two lanes ----
    *
-   * `description` is what we see and both prompts read it. These two are read
+   * `description` is the card in general: the video prompt reads it, and the still reads it only while the
+   * first-frame box is empty (refs.js boxes). These two are read
    * by one prompt each — and because a reference IS a mark in the text it was
    * written in, an @ in here is a picture that lane hands over and the other
    * never sees. That is the whole mechanism; there is no second list.
    */
   const LANES = [
     { role: 'image', key: 'imageDescription', label: 'first frame',
-      hint: 'Only what is true as the shot opens. @ anything the FIRST FRAME should be shown.' },
+      hint: 'What the still shows as the shot opens. Filled in, this is ALL the still prompt reads. @ anything it should see.' },
     { role: 'video', key: 'videoDescription', label: 'motion',
       /* NOT "@ anything the clip should be shown": a clip is shown the frame
          and nothing else. An @ here names somebody so the writer uses their

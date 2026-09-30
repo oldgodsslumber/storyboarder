@@ -651,7 +651,7 @@
         refreshFeedCell(sh.id);
         paintGens();          // a description is the thing "generate" waits for
       },
-      placeholder: 'What we see — both prompts read this. @ anything to be shown.',
+      placeholder: 'The card in general. The video prompt reads this; the still reads it only while its first-frame box is empty.',
       ctx: { shot: sh, code: r.code }
     });
     c2.appendChild(desc);
@@ -669,7 +669,7 @@
    * other never sees — which is the whole reason the boxes are separate. */
   const LANE = {
     imagePrompt: { role: 'image', key: 'imageDescription', label: 'first frame',
-      hint: 'Only what is true as the shot opens. @ anything the first frame should see.' },
+      hint: 'What the still shows as the shot opens. Filled in, this is all the still prompt reads. @ anything it should see.' },
     videoPrompt: { role: 'video', key: 'videoDescription', label: 'motion',
       hint: 'What moves, in what order, how it ends. @ someone to name them \u2014 ' +
         'the clip is handed the frame, not their photo.' }

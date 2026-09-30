@@ -215,5 +215,22 @@ console.log('\n\u2014 off the reference list: when the @ goes, or by hand \u2014
   eq(q.scenes[0].shots[0].castAuto, [ana.id], 'which is remembered in the file');
 }
 
+console.log('\n\u2014 the still reads its frame box, not the general description \u2014');
+{
+  const { p, sh } = board();
+  const im = p.settings.models.find(m => m.name === 'GPT Image'); p.settings.imageModelId = im.id;
+  sh.description = 'Gus reads a letter in a high-rise office.';
+  sh.imageDescription = 'Gus at a kitchen table at home, reading a letter.';
+  asked = []; replies = [{ imagePrompt: 'x, shot on an ARRI Alexa, 35mm f/2, shallow depth of field, window light, muted filmic grade, grain, skin texture' }];
+  await SB.Prompts.generateFor(sh, { image: true });
+  const all = JSON.stringify(asked[0]);
+  eq(/high-rise/.test(all), false, 'a stale general description never reaches the still');
+  has(all, 'kitchen table at home', 'its frame box does');
+  sh.imageDescription = '';
+  asked = []; replies = [{ imagePrompt: 'x, shot on an ARRI Alexa, 35mm f/2, shallow depth of field, window light, muted filmic grade, grain, skin texture' }];
+  await SB.Prompts.generateFor(sh, { image: true });
+  has(JSON.stringify(asked[0]), 'high-rise office', 'with the frame box empty, the general description stands in');
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed\n');
 if (fail) process.exit(1);
