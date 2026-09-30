@@ -658,11 +658,11 @@ for(const p of ['l','r']){
   CHAIN[p+'Hip']=[p+'Hip']; CHAIN[p+'Knee']=[p+'Hip',p+'Knee']; CHAIN[p+'Ankle']=[p+'Hip',p+'Knee'];
 }
 
-// proportions in metres
+// proportions in metres (arms trimmed ~5% on 2026-09-30: with the human bodies they read long — "gorillas")
 const TYPES={
-  male:  {name:'Man',  thigh:.45,shin:.43,ankleH:.075,hipDrop:.03, hipW:.092,pelvisUp:.09, spine:.15, chest:.25, neck:.085,head:1,  shW:.185,upperArm:.29,forearm:.26,hand:1,  foot:1,  g:1,  hipMesh:1,   waist:1.2, bust:false},
-  female:{name:'Woman',thigh:.43,shin:.40,ankleH:.07, hipDrop:.03, hipW:.094,pelvisUp:.085,spine:.145,chest:.225,neck:.085,head:.96,shW:.163,upperArm:.27,forearm:.24,hand:.9, foot:.9,  g:.88,hipMesh:1.16,waist:1.02,bust:true},
-  child: {name:'Child',thigh:.30,shin:.28,ankleH:.055,hipDrop:.025,hipW:.068,pelvisUp:.06, spine:.11, chest:.17, neck:.06, head:.9, shW:.122,upperArm:.19,forearm:.17,hand:.7, foot:.72, g:.72,hipMesh:1.05,waist:1.22,bust:false},
+  male:  {name:'Man',  thigh:.45,shin:.43,ankleH:.075,hipDrop:.03, hipW:.092,pelvisUp:.09, spine:.15, chest:.25, neck:.085,head:1,  shW:.185,upperArm:.28,forearm:.245,hand:1,  foot:1,  g:1,  hipMesh:1,   waist:1.2, bust:false},
+  female:{name:'Woman',thigh:.43,shin:.40,ankleH:.07, hipDrop:.03, hipW:.094,pelvisUp:.085,spine:.145,chest:.225,neck:.085,head:.96,shW:.163,upperArm:.26,forearm:.225,hand:.9, foot:.9,  g:.88,hipMesh:1.16,waist:1.02,bust:true},
+  child: {name:'Child',thigh:.30,shin:.28,ankleH:.055,hipDrop:.025,hipW:.068,pelvisUp:.06, spine:.11, chest:.17, neck:.06, head:.9, shW:.122,upperArm:.18,forearm:.16,hand:.7, foot:.72, g:.72,hipMesh:1.05,waist:1.22,bust:false},
 };
 const baseHeight=T=>T.ankleH+T.shin+T.thigh+T.hipDrop+T.pelvisUp+T.spine+T.chest+T.neck+0.212*T.head;
 
