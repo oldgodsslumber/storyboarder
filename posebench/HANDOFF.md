@@ -526,3 +526,10 @@ It's sent as `framing` in `posebench:done`. Storyboarder stores it on `pose.fram
 
 - **Dropping small props:** a laptop, phone or cup, let go after a drag (or newly added), settles onto whatever is under it. `surfaceUnder` casts a ray straight down onto the other props' meshes (tables, desks, Builds; not other small props or its own riders) and sets `p.on` to the prop it hit. With nothing under it, it goes to the floor. Before this, a drag kept the height it started at, so a laptop slid along the floor inside a table.
 - **Lift:** `p.lift` (metres) is set by the prop card's slider (0–250 cm; double-click resets) or Alt+↑/↓ (1 cm, 5 cm with Shift; the selected prop first, else the figure). `settleProp` moves riders (`q.on`) and seated figures with it. It's saved in `snap()`.
+
+## Desktop and Table props (2026-09-30)
+
+- **`table4`** ("Table"): a rectangular four-legged table, 1.6 × 0.9 m, `topH` 0.75, with an apron. The old `table` type is still the round café table, now labelled "Round table", so saved scenes keep their props.
+- **`monitor`** ("Desktop"): one prop holding a monitor on a stand (back, +z), a keyboard and a mouse (front, -z). The user is at -z, as with the laptop. It's in `SMALL_PROPS`, so it settles onto a desk, table or Build and can be lifted. Anchors: `look` is the screen centre, and `keysL`/`keysR` are on the keyboard. Added beside a figure, it turns to face them and sits toward the far side of the surface.
+- **Work preset "Desktop":** chair + desk + monitor, hands typing on the keyboard, looking at the screen (`def.monitor` in `applyWork`).
+- Blocking text now uses "an" before a vowel ("an office chair").

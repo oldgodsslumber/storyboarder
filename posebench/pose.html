@@ -406,8 +406,10 @@
         <div class="grid g3" id="propAdd">
           <button class="btn" data-prop="chair">Chair</button>
           <button class="btn" data-prop="desk">Desk</button>
-          <button class="btn" data-prop="table">Table</button>
+          <button class="btn" data-prop="table4">Table</button>
+          <button class="btn" data-prop="table">Round table</button>
           <button class="btn" data-prop="laptop">Laptop</button>
+          <button class="btn" data-prop="monitor">Desktop</button>
           <button class="btn" data-prop="phone">Phone</button>
           <button class="btn" data-prop="cup">Cup</button>
         </div>
@@ -1188,13 +1190,13 @@ const PRESETS={
 
 /* ================= props ================= */
 // Props face +Z like a figure; the "user side" of a desk or laptop is local -Z.
-const PROP_LABEL={chair:'Chair',desk:'Desk',table:'Table',laptop:'Laptop',phone:'Phone',cup:'Cup'};
+const PROP_LABEL={chair:'Chair',desk:'Desk',table:'Round table',table4:'Table',laptop:'Laptop',monitor:'Desktop monitor',phone:'Phone',cup:'Cup'};
 const BOXG=new THREE.BoxGeometry(1,1,1), CYLG=new THREE.CylinderGeometry(1,1,1,28), TORG=new THREE.TorusGeometry(1,0.28,8,18,Math.PI);
 const propById=id=>props.find(p=>p.id===id);
 class Prop{
   constructor(o={}){
     this.id=o.id||uid(); this.type=o.type; this.owner=o.owner||null; this.on=o.on||null; this.attach=null;
-    this.seatH=o.seatH||0.46; this.topH=o.topH||0.73;
+    this.seatH=o.seatH||0.46; this.topH=o.topH||(o.type==='table4'?0.75:0.73);
     this.parts=Array.isArray(o.parts)?o.parts:null; this.name=o.name||null; this.request=o.request||null;   // type 'build'
     this.lift=+o.lift||0;   // metres above where it sits: the floor, or (laptop, phone, cup) the surface under it
     this.group=new THREE.Group(); this.group.rotation.order='YXZ'; scene.add(this.group);
@@ -1232,6 +1234,22 @@ class Prop{
     }else if(t==='table'){
       const h=this.topH;
       this.add(CYLG,[0,h-0.015,0],[0.42,0.03,0.42]); this.add(CYLG,[0,(h-0.03)/2,0],[0.035,h-0.03,0.035]); this.add(CYLG,[0,0.012,0],[0.24,0.024,0.24]);
+    }else if(t==='table4'){
+      // a plain four-legged dining / meeting table: 1.6 x 0.9 m, legs set in under an apron
+      const h=this.topH;
+      this.add(BOXG,[0,h-0.02,0],[1.6,0.04,0.9]);
+      for(const x of [-0.72,0.72])for(const z of [-0.37,0.37])this.add(BOXG,[x,(h-0.04)/2,z],[0.06,h-0.04,0.06]);
+      for(const z of [-0.37,0.37])this.add(BOXG,[0,h-0.08,z],[1.38,0.08,0.025]);
+      for(const x of [-0.72,0.72])this.add(BOXG,[x,h-0.08,0],[0.025,0.08,0.68]);
+    }else if(t==='monitor'){
+      // a desktop: monitor on a stand at the back, keyboard and mouse at the front. Like the laptop, the user is at -z.
+      this.add(BOXG,[0,0.006,0.12],[0.22,0.012,0.17]);
+      this.add(BOXG,[0,0.12,0.15],[0.05,0.22,0.025]);
+      this.add(BOXG,[0,0.29,0.12],[0.56,0.34,0.03],{dark:true});
+      this.add(BOXG,[0,0.295,0.1045],[0.53,0.3,0.002],{light:true});
+      this.add(BOXG,[0,0.01,-0.14],[0.42,0.02,0.13]);
+      this.add(BOXG,[0,0.0205,-0.14],[0.39,0.002,0.1],{dark:true});
+      this.add(SPH,[-0.3,0.014,-0.14],[0.032,0.014,0.05],{dark:true});
     }else if(t==='laptop'){
       this.add(BOXG,[0,0.009,0],[0.32,0.018,0.22]);
       this.add(BOXG,[0,0.0185,-0.02],[0.28,0.002,0.1],{dark:true});
@@ -1253,7 +1271,8 @@ class Prop{
   anchor(name){
     this.group.updateMatrixWorld(true);
     if(this.type==='laptop'&&name==='look')return this.hinge.localToWorld(new V3(0,0.1,-0.01));
-    const L={keysL:[0.075,0.02,-0.035],keysR:[-0.075,0.02,-0.035]}[name]||[0,0,0];
+    const L=(this.type==='monitor'?{look:[0,0.3,0.1],keysL:[0.09,0.022,-0.15],keysR:[-0.09,0.022,-0.15]}
+      :{keysL:[0.075,0.02,-0.035],keysR:[-0.075,0.02,-0.035]})[name]||[0,0,0];
     return this.group.localToWorld(new V3(...L));
   }
   // hold in a hand: parented to the wrist pivot so it follows every pose change
@@ -1597,6 +1616,9 @@ const WORK={
   'Laptop':{seat:true,desk:true,laptop:true,hands:{l:'flat',r:'flat'},look:{prop:'laptop'},
     base:{spine:{x:12},chest:{x:6},lShoulder:{x:28,z:14,y:24},rShoulder:{x:28,z:14,y:24},lElbow:{x:95,y:75},rElbow:{x:95,y:75}},
     goals:[{side:'l',kind:'type',prop:'laptop'},{side:'r',kind:'type',prop:'laptop'}]},
+  'Desktop':{seat:true,desk:true,monitor:true,hands:{l:'flat',r:'flat'},look:{prop:'monitor'},
+    base:{spine:{x:6},chest:{x:3},lShoulder:{x:28,z:14,y:24},rShoulder:{x:28,z:14,y:24},lElbow:{x:95,y:75},rElbow:{x:95,y:75}},
+    goals:[{side:'l',kind:'type',prop:'monitor'},{side:'r',kind:'type',prop:'monitor'}]},
   'Seated talk':{seat:true,look:'other',
     base:{spine:{x:2},rShoulder:{x:25,z:14,y:-10},rElbow:{x:95,y:-30}},goals:[LAP,{side:'r',kind:'gesture',low:true}]},
   'Phone call':{props:[{type:'phone',side:'r'}],hands:{r:'grip'},base:{neck:{z:-5},rShoulder:{x:45,z:28,y:25},rElbow:{x:140,y:40}},goals:[{side:'r',kind:'ear'}]},
@@ -1633,6 +1655,10 @@ function applyWork(f,def){
     if(def.desk){
       const dh=ch.seatH+0.27, dp=ch.group.position.clone().addScaledVector(A.fwd,0.62);
       const d=new Prop({type:'desk',owner:f.id,topH:dh,pos:dp.toArray(),turn:f.turn}); props.push(d); ids.desk=d.id;
+      if(def.monitor){
+        const mp=dp.clone().addScaledVector(A.fwd,-0.06); mp.y=dh;
+        const m=new Prop({type:'monitor',owner:f.id,on:d.id,pos:mp.toArray(),turn:f.turn}); props.push(m); ids.monitor=m.id;
+      }
       if(def.laptop){
         const lp=dp.clone().addScaledVector(A.fwd,-0.15); lp.y=dh;
         const l=new Prop({type:'laptop',owner:f.id,on:d.id,pos:lp.toArray(),turn:f.turn}); props.push(l); ids.laptop=l.id;
@@ -2765,7 +2791,7 @@ function turnProp(p,deg){
    and only a NEW laptop beside a desk or table was put on top (never on a Build). Now a laptop, phone or cup drops,
    when let go, onto whatever is under it (a table, a desk, a Build: a ray straight down finds its top), or the
    floor. Anything can then be lifted from there, and what rides on it goes up with it. */
-const SMALL_PROPS=['laptop','phone','cup'];
+const SMALL_PROPS=['laptop','monitor','phone','cup'];
 function surfaceUnder(pr){
   const riders=new Set(props.filter(q=>q.on===pr.id).map(q=>q.id));
   const cands=props.filter(q=>q!==pr&&!q.attach&&!SMALL_PROPS.includes(q.type)&&!riders.has(q.id));
@@ -2799,8 +2825,8 @@ function layFlat(p,surf){
   else p.group.position.y=y;
 }
 function nearestSurface(pos){
-  return props.filter(q=>q.type==='desk'||q.type==='table').map(q=>[q,new V3(q.group.position.x,0,q.group.position.z).distanceTo(new V3(pos.x,0,pos.z))])
-    .filter(x=>x[1]<(x[0].type==='desk'?0.75:0.5)).sort((a,b)=>a[1]-b[1]).map(x=>x[0])[0]||null;
+  return props.filter(q=>q.type==='desk'||q.type==='table'||q.type==='table4').map(q=>[q,new V3(q.group.position.x,0,q.group.position.z).distanceTo(new V3(pos.x,0,pos.z))])
+    .filter(x=>x[1]<(x[0].type==='desk'?0.75:x[0].type==='table4'?0.9:0.5)).sort((a,b)=>a[1]-b[1]).map(x=>x[0])[0]||null;
 }
 function holdProp(p,v){
   if(p.attach){const f=figById(p.attach.fig);p.detach();layFlat(p,nearestSurface(p.group.position));if(f){f.goals=f.goals.filter(g=>!(g.prop===p.id));}}
@@ -2819,12 +2845,14 @@ function addProp(type){
     if(side){p=new Prop({type});props.push(p);p.attachTo(f,side);f.setHand(side,'grip');refreshFigUI();}
   }
   if(!p){
-    const d={chair:0.9,desk:1.1,table:1.1,laptop:0.7,phone:0.6,cup:0.6}[type];
+    const d={chair:0.9,desk:1.1,table:1.1,table4:1.2,laptop:0.7,monitor:0.7,phone:0.6,cup:0.6}[type];
     const pos=base.clone().addScaledVector(A.fwd,d);
     p=new Prop({type,pos:pos.toArray(),turn:f?f.turn+(type==='chair'?180:0):0}); props.push(p);
-    if(type==='laptop'||type==='phone'||type==='cup'){
+    if(SMALL_PROPS.includes(type)){
       const surf=nearestSurface(pos);
       if(surf){p.group.position.x=surf.group.position.x;p.group.position.z=surf.group.position.z;p.turn=surf.turn+(f?0:0);}
+      // a desktop faces whoever added it, pushed toward the far side of the surface
+      if(surf&&type==='monitor'&&f){p.turn=f.turn;p.group.position.addScaledVector(A.fwd,0.12);}
       layFlat(p,surf); settleProp(p);
     }
   }
@@ -2850,7 +2878,7 @@ function refreshLookSel(){
   const s=$('lookSel'); s.innerHTML='';
   const opts=[['none','Nothing (free)'],['camera','The camera']];
   figures.forEach(f=>{if(f!==act)opts.push(['fig:'+f.id,f.name]);});
-  props.forEach(p=>{if(['laptop','phone','cup'].includes(p.type))opts.push(['prop:'+p.id,propName(p)]);});
+  props.forEach(p=>{if(SMALL_PROPS.includes(p.type))opts.push(['prop:'+p.id,propName(p)]);});
   opts.forEach(([v,t])=>{const o=document.createElement('option');o.value=v;o.textContent=t;s.appendChild(o);});
   const L=act&&act.look;
   s.value=!L?'none':L==='camera'?'camera':L.fig?'fig:'+L.fig:'prop:'+L.prop;
@@ -3156,7 +3184,7 @@ $('nLift').addEventListener('keydown',e=>e.stopPropagation());
 function refreshSitSel(){
   const s=$('sitSel'); if(!s)return; s.innerHTML='';
   const opts=[['','Nothing (standing)']];
-  props.forEach(p=>{if(!p.attach&&!['phone','cup','laptop'].includes(p.type))opts.push([p.id,propName(p)]);});
+  props.forEach(p=>{if(!p.attach&&!SMALL_PROPS.includes(p.type))opts.push([p.id,propName(p)]);});
   opts.forEach(([v,t])=>{const o=document.createElement('option');o.value=v;o.textContent=t;s.appendChild(o);});
   s.value=act&&act.seat&&propById(act.seat)?act.seat:'';
   s.disabled=opts.length<2; s.title=opts.length<2?'Add a chair, table, desk or a Build to sit on':'';
@@ -5235,7 +5263,7 @@ function blockingText(asp){
     const free=props.filter(p=>!p.attach);
     if(free.length){
       const c={}; free.forEach(p=>{c[p.type]=(c[p.type]||0)+1;});
-      const word=(t,n)=>{const w=t==='chair'?'office chair':PROP_LABEL[t].toLowerCase();return n>1?n+' '+w+'s':'a '+w;};
+      const word=(t,n)=>{const w=t==='chair'?'office chair':PROP_LABEL[t].toLowerCase();return n>1?n+' '+w+'s':(/^[aeiou]/.test(w)?'an ':'a ')+w;};
       lines.push('Props: '+Object.keys(c).map(t=>word(t,c[t])).join(', ')+'.');
     }
     return lines.join('\n');
