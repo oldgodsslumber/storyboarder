@@ -521,3 +521,8 @@ Everything else moved rather than being rebuilt, so every element id and handler
 - **Also measured:** the angle (the same wording as `blockingText`) and `cam.mm`.
 
 It's sent as `framing` in `posebench:done`. Storyboarder stores it on `pose.framing`, sets `sh.type` (falling back to the size when the board doesn't offer the type), and says so in the toast. The lens and angle reach the still's instructions (`SB.Prompts.blockingCamera`).
+
+## Props sit on what's under them, and lift (2026-09-30)
+
+- **Dropping small props:** a laptop, phone or cup, let go after a drag (or newly added), settles onto whatever is under it. `surfaceUnder` casts a ray straight down onto the other props' meshes (tables, desks, Builds; not other small props or its own riders) and sets `p.on` to the prop it hit. With nothing under it, it goes to the floor. Before this, a drag kept the height it started at, so a laptop slid along the floor inside a table.
+- **Lift:** `p.lift` (metres) is set by the prop card's slider (0–250 cm; double-click resets) or Alt+↑/↓ (1 cm, 5 cm with Shift; the selected prop first, else the figure). `settleProp` moves riders (`q.on`) and seated figures with it. It's saved in `snap()`.

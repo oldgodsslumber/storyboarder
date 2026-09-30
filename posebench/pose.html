@@ -1196,6 +1196,7 @@ class Prop{
     this.id=o.id||uid(); this.type=o.type; this.owner=o.owner||null; this.on=o.on||null; this.attach=null;
     this.seatH=o.seatH||0.46; this.topH=o.topH||0.73;
     this.parts=Array.isArray(o.parts)?o.parts:null; this.name=o.name||null; this.request=o.request||null;   // type 'build'
+    this.lift=+o.lift||0;   // metres above where it sits: the floor, or (laptop, phone, cup) the surface under it
     this.group=new THREE.Group(); this.group.rotation.order='YXZ'; scene.add(this.group);
     this.mat=new THREE.MeshStandardMaterial({color:lin('#8e949c'),roughness:0.7,metalness:0});
     this.dark=new THREE.MeshStandardMaterial({color:lin('#2b2f35'),roughness:0.35,metalness:0});
@@ -1279,7 +1280,7 @@ class Prop{
       // held props keep their exact grip (e.g. a phone aligned ear-to-mouth)
       grip:this.attach?{p:[p.x,p.y,p.z].map(r),q:[q.x,q.y,q.z,q.w].map(r)}:undefined,
       parts:this.type==='build'?this.parts:undefined,name:this.type==='build'?this.name:undefined,
-      request:this.type==='build'?this.request:undefined};
+      request:this.type==='build'?this.request:undefined,lift:this.lift?Math.round(this.lift*1e4)/1e4:undefined};
   }
   dispose(){if(this.group.parent)this.group.parent.remove(this.group);this.mat.dispose();this.dark.dispose();this.light.dispose();}
 }
@@ -2138,6 +2139,7 @@ function endDrag(e){
   if(!d.moved){if(d.mode==='orbit'){if(selProp)selectProp(null);closeJointPop();}return;}
   if(d.mode==='orbit'||d.mode==='pan'){saveView();return;}
   if(d.fig){d.fig.ground();}
+  if(d.mode==='prop'&&d.prop){settleProp(d.prop);refreshPropUI();}
   syncAxes(); commit();
 }
 canvas.addEventListener('pointerup',endDrag);
@@ -2720,6 +2722,15 @@ function refreshPropUI(){
     const r=a.querySelector('input'); r.value=((p.turn+180)%360+360)%360-180;
     r.oninput=()=>{turnProp(p,parseFloat(r.value));a.querySelector('.v').textContent=r.value+'°';};
     r.onchange=commit; box.appendChild(a);
+    const L=document.createElement('div'); L.className='axis';
+    const small=SMALL_PROPS.includes(p.type), on=small&&p.on&&propById(p.on);
+    L.innerHTML=`<div class="lab"><span>Lift</span><span class="v">${Math.round(p.lift*1000)/10} cm</span></div><input type="range" min="0" max="250" step="0.5">`+
+      `<div class="ends"><span>${on?'on the '+esc(propName(on).toLowerCase()):small?'on the floor':'from the floor'}</span><span>Alt+↑/↓</span></div>`;
+    const rl=L.querySelector('input'); rl.value=p.lift*100;
+    rl.title=small?'Drag it over a table, desk or Build and let go: it sits on top. Lift raises it from there.':'Raise it off the floor; whatever sits on it goes up too. Double-click: back down.';
+    rl.oninput=()=>{setPropLift(p,parseFloat(rl.value));L.querySelector('.v').textContent=rl.value+' cm';};
+    rl.onchange=commit; rl.ondblclick=()=>{setPropLift(p,0);refreshPropUI();commit();};
+    box.appendChild(L);
   }
   if(p.type==='chair'&&act){
     const b=document.createElement('button'); b.className='btn'; b.style.width='100%';
@@ -2748,6 +2759,38 @@ function turnProp(p,deg){
   figures.forEach(f=>{if(f.seat===p.id)f.ground();});
   resolveAll();
 }
+
+/* ---- props sit on what's under them, and lift ----
+   A laptop dragged over a table used to slide along the floor inside it: a drag keeps the height it started at,
+   and only a NEW laptop beside a desk or table was put on top (never on a Build). Now a laptop, phone or cup drops,
+   when let go, onto whatever is under it (a table, a desk, a Build: a ray straight down finds its top), or the
+   floor. Anything can then be lifted from there, and what rides on it goes up with it. */
+const SMALL_PROPS=['laptop','phone','cup'];
+function surfaceUnder(pr){
+  const riders=new Set(props.filter(q=>q.on===pr.id).map(q=>q.id));
+  const cands=props.filter(q=>q!==pr&&!q.attach&&!SMALL_PROPS.includes(q.type)&&!riders.has(q.id));
+  if(!cands.length)return null;
+  cands.forEach(q=>q.group.updateMatrixWorld(true));
+  _down.set(new V3(pr.group.position.x,50,pr.group.position.z),new V3(0,-1,0));
+  const hit=_down.intersectObjects([].concat(...cands.map(q=>q.meshes)),false)[0];
+  const q=hit&&propById(hit.object.userData.prop);
+  return q?{prop:q,y:hit.point.y}:null;
+}
+function settleProp(pr){
+  if(!pr||pr.attach)return;
+  let base=0;
+  if(SMALL_PROPS.includes(pr.type)){const u=surfaceUnder(pr); pr.on=u?u.prop.id:null; base=u?u.y:0;}
+  if(pr.type==='phone'){pr.group.rotation.set(0,pr.group.rotation.y,-Math.PI/2);base+=0.004;}
+  else if(pr.type==='cup')base+=0.05;
+  const dy=base+pr.lift-pr.group.position.y;
+  if(Math.abs(dy)<1e-6)return;
+  pr.group.position.y+=dy;
+  props.forEach(q=>{if(q.on===pr.id&&!q.attach)q.group.position.y+=dy;});
+  figures.forEach(f=>{if(f.seat===pr.id)f.ground();});
+  resolveAll();
+}
+function setPropLift(pr,cm){if(!pr||pr.attach)return;pr.lift=clamp(cm,0,250)/100;settleProp(pr);}
+
 function layFlat(p,surf){
   p.on=surf?surf.id:null;
   const y=surf?surf.topH:0;
@@ -2782,7 +2825,7 @@ function addProp(type){
     if(type==='laptop'||type==='phone'||type==='cup'){
       const surf=nearestSurface(pos);
       if(surf){p.group.position.x=surf.group.position.x;p.group.position.z=surf.group.position.z;p.turn=surf.turn+(f?0:0);}
-      layFlat(p,surf);
+      layFlat(p,surf); settleProp(p);
     }
   }
   selectProp(p); commit();
@@ -2937,8 +2980,11 @@ addEventListener('keydown',e=>{
   }
   if(mod&&(e.key==='z'||e.key==='Z')){if(typing)return;e.preventDefault();e.shiftKey?redo():undo();return;}
   if(mod&&(e.key==='y'||e.key==='Y')){if(typing)return;e.preventDefault();redo();return;}
-  if(!typing&&!mod&&e.altKey&&act&&(e.key==='ArrowUp'||e.key==='ArrowDown')){
-    e.preventDefault(); setLift(act,act.lift*100+(e.key==='ArrowUp'?1:-1)*(e.shiftKey?5:1)); commit(); return;}
+  if(!typing&&!mod&&e.altKey&&(e.key==='ArrowUp'||e.key==='ArrowDown')&&(selProp&&!selProp.attach||act)){
+    e.preventDefault(); const st=(e.key==='ArrowUp'?1:-1)*(e.shiftKey?5:1);
+    if(selProp&&!selProp.attach){setPropLift(selProp,selProp.lift*100+st);refreshPropUI();}
+    else setLift(act,act.lift*100+st);
+    commit(); return;}
   if(typing||mod||e.altKey)return;
   if(t.tagName==='SELECT')return;
   if(e.key==='Escape'&&(document.querySelector('.pop.open')||jpOpen)){closePops();closeJointPop();return;}
@@ -5376,7 +5422,7 @@ refreshPropUI();
   glideTick(performance.now());
   updateHandles();renderer.render(scene,camera);placeJointPop();})();
 if(EMBED)try{window.parent.postMessage({type:'posebench:ready'},'*');}catch(e){}
-window.__pb={activate,shotFraming,visMinY,sitOnSurface,setLift,standUp,addProp,get props(){return props;},LIMB_POSES,applyLimbPose,selectJoint,openJointPop,expandParts,cleanParts,askBuild,runBuild,placeBuild,get llm(){return llm;},applyWork,snapScene,applySceneFile,renderShot,setBodyStyle,get bodyStyle(){return bodyStyle;},steadyDepth,standingStill,viewAsPhoto,liveGuard,guardNew,photoWarnings,glitchMask,repairSeq,labelSwap,glitchSummary,glitchOverride,addHead,faceLoad,get takes(){return takes;},get glides(){return glides;},glideTick,glideFinish,camApply,get tl(){return tl;},makeTake,bakeTake,openTake,showTakeAt,exportTake,cutList,takeSnap,takeLoad,camImportVideo,addCam,addCut,tlPlay,setCamView,viewNow,blockingText,retarget,synthLandmarks,readPose,camFromImage,mpLoad,detLoad,findPeople,camApply,camStart,camSnap,get camState(){return camS;},get figures(){return figures;},get props(){return props;},get act(){return act;},cam,fitShot,setView,frameAll,PRESETS,WORK,SCENES,
+window.__pb={settleProp,setPropLift,surfaceUnder,activate,shotFraming,visMinY,sitOnSurface,setLift,standUp,addProp,get props(){return props;},LIMB_POSES,applyLimbPose,selectJoint,openJointPop,expandParts,cleanParts,askBuild,runBuild,placeBuild,get llm(){return llm;},applyWork,snapScene,applySceneFile,renderShot,setBodyStyle,get bodyStyle(){return bodyStyle;},steadyDepth,standingStill,viewAsPhoto,liveGuard,guardNew,photoWarnings,glitchMask,repairSeq,labelSwap,glitchSummary,glitchOverride,addHead,faceLoad,get takes(){return takes;},get glides(){return glides;},glideTick,glideFinish,camApply,get tl(){return tl;},makeTake,bakeTake,openTake,showTakeAt,exportTake,cutList,takeSnap,takeLoad,camImportVideo,addCam,addCut,tlPlay,setCamView,viewNow,blockingText,retarget,synthLandmarks,readPose,camFromImage,mpLoad,detLoad,findPeople,camApply,camStart,camSnap,get camState(){return camS;},get figures(){return figures;},get props(){return props;},get act(){return act;},cam,fitShot,setView,frameAll,PRESETS,WORK,SCENES,
   camera,applyCam,selectJoint,solveChain,commit,applyNamed,goalFrame,eyePoint};
 })();
 </script>
