@@ -511,3 +511,13 @@ Everything else moved rather than being rebuilt, so every element id and handler
   - The height is `seatTop()`: a ray cast straight down onto the prop's meshes, so a Build's top is found without knowing its shape.
   - A low seat slopes the thighs down (hip 88→56°) until the feet reach the floor; a high one leaves them hanging.
   - Moving or turning the prop carries the figure, as with chairs.
+
+## The shot type from the frame (2026-09-30, `shot_type_plan.md`)
+
+`shotFraming(asp)` reads the capture camera, not the last shot-size button:
+- **Size** comes from the main figure (the selected one if it's in shot, else the nearest cast figure, else the nearest): full length → Wide; hips up → Medium; head and shoulders → Close-up; a head over 60% of the frame height, or over 42% and cut at the top → Extreme close-up.
+- **Two shot:** two or more figures with their heads in shot at Medium or Close-up.
+- **Over the shoulder:** the nearest figure has its back to camera, is cut by the edge or looms (head over 1.6× the other's), and faces another.
+- **Also measured:** the angle (the same wording as `blockingText`) and `cam.mm`.
+
+It's sent as `framing` in `posebench:done`. Storyboarder stores it on `pose.framing`, sets `sh.type` (falling back to the size when the board doesn't offer the type), and says so in the toast. The lens and angle reach the still's instructions (`SB.Prompts.blockingCamera`).

@@ -135,9 +135,23 @@
     return placed ? '' : '\n\n' + block;
   }
 
+  /* The blocking's camera: its lens, and its height (the angle Pose Bench measured). Older blockings carry the
+     lens and say the angle in their text ("Camera: 35mm lens, eye level."). */
+  function blockingCamera(shot) {
+    const ps = shot && shot.pose;
+    if (!ps || !ps.image) return null;
+    const lens = Math.round(+ps.lens || 0) || (/(\d{2,3})mm lens/.exec(ps.text || '') || [])[1] | 0;
+    if (!lens) return null;
+    const angle = (ps.framing && ps.framing.angle) ||
+      ((/Camera: \d+mm lens, ([^.]+)\./.exec(ps.text || '') || [])[1] || '').replace(/^(high|low) angle/, 'a $1 angle') || 'eye level';
+    return { lens: lens, angle: angle };
+  }
   function imageBlock(shot, m) {
     const ctx = contextFor(shot, 'image'); ctx.MODEL = m.name;
-    ctx.LOOK = SB.Brand.lookLineFor(P(), shot);
+    const bc = blockingCamera(shot);
+    ctx.LOOK = [SB.Brand.lookLineFor(P(), shot),
+      bc ? 'The blocking is framed on a ' + bc.lens + 'mm lens at ' + bc.angle + ': use that focal length and that camera height.' : '']
+      .filter(Boolean).join('\n');
     let body = fill(m.imageTemplate, ctx);
     /* A template that doesn't place {{LOOK}} (every board's own copy) gets it right after its task, ahead of
        the shot description, so it is part of the ask rather than a note at the end. */
@@ -758,7 +772,7 @@
   SB.Prompts = {
     generateFor: generateFor, writeMxm: writeMxm, mxmImage: mxmImage, mxmVideoJob: mxmVideoJob,
     writing: writing, writingAny: writingAny, onWriting: onWriting,
-    jobsFor: jobsFor, fill: fill, raw: ask
+    jobsFor: jobsFor, fill: fill, raw: ask, blockingCamera: blockingCamera
   };
 
 })(window.SB);

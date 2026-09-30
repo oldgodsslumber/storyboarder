@@ -5195,6 +5195,52 @@ function blockingText(asp){
     return lines.join('\n');
   });
 }
+/* ---- the shot type the frame actually is (shot_type_plan.md) ----
+   Read from what the capture camera sees, not from the shot-size button last pressed. The main figure is the
+   selected one if it's in shot, else the nearest cast figure, else the nearest. */
+function shotFraming(asp){
+  const W=stage.clientWidth,H=stage.clientHeight;
+  const r=asp<W/H?{x:(W-H*asp)/2,y:0,w:H*asp,h:H}:{x:0,y:(H-W/asp)/2,w:W,h:W/asp};
+  return withShotCamera(1000,Math.round(1000/asp),r,()=>{
+    const P=v=>v.clone().project(camera), IN=p=>Math.abs(p.x)<=1&&Math.abs(p.y)<=1&&p.z<1&&p.z>-1;
+    const camPos=camera.position.clone(), W3=j=>j.pivot.getWorldPosition(new V3());
+    const info=figures.map(f=>{
+      f.group.updateMatrixWorld(true);
+      const eye=P(eyePoint(f)), pel=P(W3(f.joints.pelvis)), feet=P(W3(f.joints.lAnkle).add(W3(f.joints.rAnkle)).multiplyScalar(0.5));
+      const top=P(f.joints.head.pivot.localToWorld(new V3(0,0.24*f.T.head,0))), chin=P(W3(f.joints.head));
+      const shL=P(W3(f.joints.lShoulder)), shR=P(W3(f.joints.rShoulder));
+      const cq=f.joints.chest.pivot.getWorldQuaternion(new Q());
+      const fw=new V3(0,0,1).applyQuaternion(cq); fw.y=0; fw.normalize();
+      const toCam=camPos.clone().sub(W3(f.joints.chest)); toCam.y=0; toCam.normalize();
+      const inHead=IN(eye), inPel=IN(pel);
+      return {f,cast:!!f.link,inHead,inPel,inFeet:IN(feet),facing:fw.dot(toCam),topIn:IN(top),
+        headH:Math.abs(top.y-chin.y)/2,                              // share of the frame's height the head takes
+        edge:!IN(shL)||!IN(shR)||Math.abs(eye.x)>0.55,               // cut by the frame edge
+        visible:inHead||inPel||IN(shL)||IN(shR),dist:W3(f.joints.pelvis).distanceTo(camPos)};
+    });
+    const vis=info.filter(x=>x.visible).sort((a,b)=>a.dist-b.dist);
+    const main=info.find(x=>x.f===act&&x.visible)||vis.find(x=>x.cast)||vis[0]||null;
+    let size='Wide';
+    if(main){
+      // a face filling the frame, or a big head cut at the top: extreme close-up; head and shoulders: close-up
+      if(main.headH>0.6||(!main.topIn&&main.headH>0.42)||(!main.inHead&&!main.inPel))size='Extreme close-up';
+      else if(main.inHead&&main.inFeet)size='Wide';
+      else if(main.inPel)size='Medium';
+      else size='Close-up';
+    }
+    let type=size;
+    const near=vis[0];
+    // the near figure seen from behind and looming (cut by the edge, or far bigger than the one it faces)
+    const faced=near?vis.find(x=>x!==near&&x.inHead&&x.facing>0.2):null;
+    if(near&&faced&&near.facing<-0.3&&(near.edge||near.headH>1.6*faced.headH))type='Over the shoulder';
+    else if((size==='Medium'||size==='Close-up')&&vis.filter(x=>x.inHead&&(x.inPel||size==='Close-up')).length>=2)type='Two shot';
+    const tilt=Math.atan2(camPos.y-cam.target.y,Math.hypot(camPos.x-cam.target.x,camPos.z-cam.target.z)||1)*RAD;
+    const dy=main?camPos.y-eyePoint(main.f).y:0;
+    const angle=tilt>22?'a high angle, looking down':tilt<-12?'a low angle, looking up'
+      :Math.abs(dy)<0.2?'eye level':dy>0?'a little above eye level':'a little below eye level';
+    return {type,size,angle,lens:cam.mm};
+  });
+}
 function hostPost(m){try{window.parent.postMessage(Object.assign({token:host.token},m),'*');}catch(e){}}
 // what the card being saved uses of the open take (see the notes above)
 function hostLink(){
@@ -5297,7 +5343,7 @@ $('hostUse').onclick=()=>{
   }
   const sc=snapScene(); delete sc.takes;   // takes travel on their own: they belong to the scene, not this card
   const text=blockingText(asp);
-  hostPost({type:'posebench:done',scene:sc,lens:cam.mm,takes:takes.map(takeSnap),link,
+  hostPost({type:'posebench:done',scene:sc,lens:cam.mm,framing:shotFraming(asp),takes:takes.map(takeSnap),link,
     beauty:apiCapture({aspect:asp,longEdge:host.longEdge}),
     text,
     cast:figures.filter(f=>f.link).map(f=>({fig:f.id,personaId:f.link,name:figWho(f),color:f.color,colorName:COLOR_WORDS[f.color]||'grey',
@@ -5330,7 +5376,7 @@ refreshPropUI();
   glideTick(performance.now());
   updateHandles();renderer.render(scene,camera);placeJointPop();})();
 if(EMBED)try{window.parent.postMessage({type:'posebench:ready'},'*');}catch(e){}
-window.__pb={visMinY,sitOnSurface,setLift,standUp,addProp,get props(){return props;},LIMB_POSES,applyLimbPose,selectJoint,openJointPop,expandParts,cleanParts,askBuild,runBuild,placeBuild,get llm(){return llm;},applyWork,snapScene,applySceneFile,renderShot,setBodyStyle,get bodyStyle(){return bodyStyle;},steadyDepth,standingStill,viewAsPhoto,liveGuard,guardNew,photoWarnings,glitchMask,repairSeq,labelSwap,glitchSummary,glitchOverride,addHead,faceLoad,get takes(){return takes;},get glides(){return glides;},glideTick,glideFinish,camApply,get tl(){return tl;},makeTake,bakeTake,openTake,showTakeAt,exportTake,cutList,takeSnap,takeLoad,camImportVideo,addCam,addCut,tlPlay,setCamView,viewNow,blockingText,retarget,synthLandmarks,readPose,camFromImage,mpLoad,detLoad,findPeople,camApply,camStart,camSnap,get camState(){return camS;},get figures(){return figures;},get props(){return props;},get act(){return act;},cam,fitShot,setView,frameAll,PRESETS,WORK,SCENES,
+window.__pb={activate,shotFraming,visMinY,sitOnSurface,setLift,standUp,addProp,get props(){return props;},LIMB_POSES,applyLimbPose,selectJoint,openJointPop,expandParts,cleanParts,askBuild,runBuild,placeBuild,get llm(){return llm;},applyWork,snapScene,applySceneFile,renderShot,setBodyStyle,get bodyStyle(){return bodyStyle;},steadyDepth,standingStill,viewAsPhoto,liveGuard,guardNew,photoWarnings,glitchMask,repairSeq,labelSwap,glitchSummary,glitchOverride,addHead,faceLoad,get takes(){return takes;},get glides(){return glides;},glideTick,glideFinish,camApply,get tl(){return tl;},makeTake,bakeTake,openTake,showTakeAt,exportTake,cutList,takeSnap,takeLoad,camImportVideo,addCam,addCut,tlPlay,setCamView,viewNow,blockingText,retarget,synthLandmarks,readPose,camFromImage,mpLoad,detLoad,findPeople,camApply,camStart,camSnap,get camState(){return camS;},get figures(){return figures;},get props(){return props;},get act(){return act;},cam,fitShot,setView,frameAll,PRESETS,WORK,SCENES,
   camera,applyCam,selectJoint,solveChain,commit,applyNamed,goalFrame,eyePoint};
 })();
 </script>

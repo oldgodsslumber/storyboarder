@@ -117,6 +117,10 @@ console.log('\n— a still with a blocking: the clay render opens the prompt —
   has(t, 'The tan figure is Gus (image 2).', 'and which figure is whom');
   eq(t.endsWith('\n\nGus reads a letter at his desk.'), true, 'then the writer’s words, and nothing after them');
   has(JSON.stringify(asked[0]), 'do not mention the blocking, a render, mannequins, clay', 'the writer leaves the clay render to the app');
+  has(JSON.stringify(asked[0]), 'The blocking is framed on a 35mm lens at eye level: use that focal length and that camera height.', 'the writer is told the blocking\u2019s lens and height');
+  eq(SB.Prompts.blockingCamera(sh).lens, 35, 'read off the blocking');
+  sh.pose.framing = { type: 'Close-up', size: 'Close-up', angle: 'a high angle, looking down' };
+  eq(SB.Prompts.blockingCamera(sh).angle, 'a high angle, looking down', 'with the angle Pose Bench measured, when it sent one');
 }
 
 console.log('\n— a clip on a frame-only model —');

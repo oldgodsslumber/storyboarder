@@ -282,13 +282,25 @@
           }),
         text: String(d.text || '').slice(0, 4000),
         lens: +d.lens || 0,
+        /* what the frame is (shotFraming in Pose Bench): its type, its size, the camera's angle */
+        framing: d.framing && typeof d.framing === 'object' ? { type: String(d.framing.type || ''),
+          size: String(d.framing.size || ''), angle: String(d.framing.angle || '') } : null,
         aspect: editor && editor.shotId === shotId ? editor.aspect : (prev && prev.aspect) || '',
         at: Date.now(),
         perf: cleanLink(d.link)
       };
+      /* The blocking decides the shot type: it is the latest, most exact decision about the frame. A type the
+         board doesn't offer (a removed "Two shot") falls back to the size. */
+      let typed = '';
+      const fr = sh.pose.framing, offered = (p.settings.shotTypes || []);
+      if (fr) {
+        const want = offered.indexOf(fr.type) >= 0 ? fr.type : offered.indexOf(fr.size) >= 0 ? fr.size : '';
+        if (want && want !== sh.type) { sh.type = want; typed = want; }
+      }
       SB.app.changed(true);
       const L = sh.pose.perf;
-      SB.toast('Blocking saved on ' + (f.code || 'the card') + ' — it now goes first in this card’s references' +
+      SB.toast('Blocking saved on ' + (f.code || 'the card') + (typed ? '. Shot type \u2192 ' + typed + ' (from the blocking)' : '') +
+        ' — it now goes first in this card’s references' +
         (L ? '; its clip is ' + L.name + (L.camName ? ', camera ' + L.camName : '') + ', ' +
           (L.out - L.in).toFixed(1) + 's' : '') +
         (prev ? '. Takes made from the old blocking are marked.' : '.'));

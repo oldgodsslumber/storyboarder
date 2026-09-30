@@ -1,6 +1,6 @@
 # Shot type: editable in Create, and set by the blocking
 
-Status: **plan, not built** (2026-09-30).
+Status: **built on `V3-posebench` (2026-09-30)**. Decisions: the blocking always sets the type on Use for shot; Two shot and Over the shoulder are detected; the writer is told the blocking's lens and height. Thresholds as built: Extreme close-up when the head takes over 60% of the frame height, or over 42% and is cut at the top. Over the shoulder when the nearest figure's back is to camera and it is cut by the frame edge or its head is over 1.6× the size of the one it faces.
 
 ## Why
 

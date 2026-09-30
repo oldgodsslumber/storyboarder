@@ -1316,22 +1316,7 @@
        new card arrives with this one already marked as a reference, so its
        frame is fed and the description only has to say what changes. */
 
-    const sel = document.createElement('select');
-    sel.className = 'type';
-    const types = P().settings.shotTypes.slice();
-    if (sh.type && types.indexOf(sh.type) < 0) types.unshift(sh.type);
-    types.forEach(function (t) {
-      const o = document.createElement('option');
-      o.value = t; o.textContent = t;
-      if (t === sh.type) o.selected = true;
-      sel.appendChild(o);
-    });
-    sel.addEventListener('change', function () {
-      sh.type = sel.value;
-      SB.app.changed(false);
-      refreshFraming(sh.id);          // the badge is about to agree, or to go
-      SB.PromptPanel.follow();
-    });
+    const sel = typeSelect(sh);
     head.appendChild(sel);
     head.appendChild(framingHost(sh));
 
@@ -1804,6 +1789,27 @@
     const b = SB.el('span', 'badge warn invented', 'added: ' + said.join(', '));
     b.title = 'The writer added things no description on this card mentions — "' + said.join('", "') + '" — and kept them through one rewrite. Take them out, or put them in the description if they belong.';
     return b;
+  }
+
+  /* The shot-type dropdown: the card's, and the Create panel's (one helper, so the two cannot drift). */
+  function typeSelect(sh, cls) {
+    const sel = document.createElement('select');
+    sel.className = cls || 'type';
+    const types = P().settings.shotTypes.slice();
+    if (sh.type && types.indexOf(sh.type) < 0) types.unshift(sh.type);
+    types.forEach(function (t) {
+      const o = document.createElement('option');
+      o.value = t; o.textContent = t;
+      if (t === sh.type) o.selected = true;
+      sel.appendChild(o);
+    });
+    sel.addEventListener('change', function () {
+      sh.type = sel.value;
+      SB.app.changed(false);
+      refreshFraming(sh.id);          // the badge is about to agree, or to go
+      SB.PromptPanel.follow();
+    });
+    return sel;
   }
 
   function flatBadge(sh, m, field) {
@@ -2406,7 +2412,7 @@
     if (drift) render();
   }
 
-  SB.Board = {
+  SB.Board = { typeSelect: typeSelect,
     render: render,
     syncSceneFields: syncSceneFields,
     syncSceneAi: syncSceneAi,

@@ -623,8 +623,15 @@
       if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
     };
     c1.appendChild(thumb);
-    c1.appendChild(SB.el('div', 'pt-type' + (sh.noShot ? ' noshot' : ''),
-      sh.noShot ? 'no shot' + (sh.type ? ' · ' + sh.type : '') : (sh.type || '—')));
+    if (sh.noShot) c1.appendChild(SB.el('div', 'pt-type noshot', 'no shot' + (sh.type ? ' · ' + sh.type : '')));
+    else {
+      const ts = SB.Board.typeSelect(sh, 'pt-typesel');
+      ts.title = 'The shot type: what the writer is told this frame shows. A blocking sets it when you press Use for shot.';
+      c1.appendChild(ts);
+    }
+    /* what the blocking decided about the camera: the lens and height the writer is told to use */
+    const cam = SB.Prompts.blockingCamera ? SB.Prompts.blockingCamera(sh) : null;
+    if (cam) c1.appendChild(SB.el('div', 'pt-cam', cam.lens + 'mm \u00b7 ' + cam.angle));
     /* the same badge the card carries, on the screen where the prompts are
        actually read — this is where a wrong shot type is noticed */
     c1.appendChild(SB.Board.framingHost(sh));

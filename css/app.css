@@ -972,6 +972,8 @@ button.linkish{
 .pt-thumb.none{font-size:9px;color:var(--fg-dim);border:1px dashed var(--line2)}
 .pt-thumb:hover{outline:1px solid var(--accent)}
 .pt-type{font-size:10px;color:var(--fg-dim)}
+.pt-typesel{font-size:11px;padding:2px 4px;max-width:100%}
+.pt-cam{font-size:10px;color:var(--fg-dim);font-variant-numeric:tabular-nums}
 
 /* the description, as a reference box so marks stay live */
 .pt-desc{
