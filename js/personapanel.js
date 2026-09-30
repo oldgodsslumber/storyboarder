@@ -559,7 +559,15 @@
         { type: 'OBJECT', properties: { imagePrompt: { type: 'STRING' } }, required: ['imagePrompt'] },
         sys
       ).then(function (out) {
-        per.imagePrompt = out.imagePrompt || '';
+        /* the key asked for, or a near miss a schema-less model is apt to use */
+        const got = out && (out.imagePrompt || out.prompt || out.image_prompt || out.text ||
+          (typeof out === 'object' ? Object.values(out).filter(function (v) { return typeof v === 'string' && v.trim(); })[0] : ''));
+        if (!got || !String(got).trim()) {
+          write.disabled = false;
+          SB.toast('The writer answered without a prompt \u2014 try again, or switch writer in the Create panel.', true);
+          return;
+        }
+        per.imagePrompt = String(got).trim();
         ip.value = per.imagePrompt;
         write.disabled = false;
         SB.app.changed(true);

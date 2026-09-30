@@ -358,16 +358,35 @@
   }
 
   /* One JSON-shaped question to the writer model, wherever it runs. */
+  /* The shape a schema asks for, as a JSON skeleton with its key names. A model with no JSON mode (a local
+     server, Gemma) used to be told only "one JSON object", never WHICH keys, so it answered {"prompt": ...}
+     where {"imagePrompt": ...} was read, and the result was silently blank. */
+  function shapeOf(sc) {
+    if (!sc || typeof sc !== 'object') return '...';
+    const t = String(sc.type || '').toUpperCase();
+    if (t === 'OBJECT') {
+      const o = {};
+      Object.keys(sc.properties || {}).forEach(function (k) { o[k] = shapeOf(sc.properties[k]); });
+      return o;
+    }
+    if (t === 'ARRAY') return [shapeOf(sc.items)];
+    if (t === 'NUMBER' || t === 'INTEGER') return 0;
+    if (t === 'BOOLEAN') return false;
+    return '...';
+  }
   function ask(text, schema, system) {
     const prov = SB.Providers.active();
     if (!prov.ready()) return Promise.reject(new Error(prov.notReady()));
     const mdl = prov.model();
+    const hint = schema
+      ? NO_SCHEMA_HINT + '\nUse exactly this shape and these key names: ' + JSON.stringify(shapeOf(schema))
+      : NO_SCHEMA_HINT;
 
     function build(withSchema) {
       return prov.body(mdl, text, {
         schema: withSchema ? schema : null,
         system: system,
-        hint: NO_SCHEMA_HINT
+        hint: hint
       });
     }
 

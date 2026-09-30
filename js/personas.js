@@ -955,7 +955,11 @@
       : SB.Brand.REFERENCE_RIDER;
 
     return SB.Prompts.raw(text, GEN_SCHEMA, system).then(function (out) {
-      const made = (out.personas || []).map(function (x) {
+      /* a schema-less writer may call the list something else, or send the list bare */
+      const list = Array.isArray(out) ? out : (out && (out.personas || out.people || out.cast ||
+        Object.values(out).filter(Array.isArray)[0])) || [];
+      if (!list.length) throw new Error('The writer answered without any ' + brief.unit[1] + ' \u2014 try again, or switch writer in the Create panel.');
+      const made = list.filter(function (x) { return x && typeof x === 'object'; }).map(function (x) {
         return add(p, {
           kind: k.id, name: x.name, description: x.description, imagePrompt: x.imagePrompt
         });
