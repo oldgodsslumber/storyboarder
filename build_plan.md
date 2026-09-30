@@ -1,6 +1,6 @@
 # Build: a local LLM makes set pieces out of simple shapes
 
-Status: **plan, not built** (2026-09-30).
+Status: **phase 1 built on `V3-posebench` (2026-09-30)**: Build box, Edit selected, Look & fix (a button), Storyboarder's Local provider as the endpoint. The library and the MCP bridge are phase 2, not built. `response_format` is not sent (Oobabooga ignores or rejects it depending on loader); the reply is parsed leniently, with one retry.
 
 ## Why
 

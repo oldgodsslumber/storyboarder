@@ -474,3 +474,16 @@ The sculpted meshes, rigged and weighted by ComfyUI-UniRig's MIA auto-rigger (Mi
 ComfyUI's isolated envs needed `comfy-aimdo` 0.5.5 (unirig and geometrypack) and `comfy-kitchen` 0.2.35 (unirig) after the 2026-09-28 core update, plus a ComfyUI restart.
 
 Result (`models/body-compare.png`, rows: sculpted with our weights / MIA / original rig): the MIA man bends cleanly where the original rig tears. The MIA hands open into claws on a grip, and the MIA woman's shoulders sit high. bodies.js now carries all three sets (~2.1 MB); trim once one is chosen.
+
+## Build: set pieces from the local model (2026-09-30, `build_plan.md` phase 1)
+
+The **Build** box in the Props panel takes "a sedan" or "an office with four desks facing a window".
+- **Where it goes:** the request goes to Storyboarder's Local provider, which the host passes in `posebench:open` as `d.llm` = {url, model, key}. Standalone, the address comes from the "Local model" fold (localStorage `posebench.llm`, default `http://127.0.0.1:5000`), posted to `/v1/chat/completions`.
+- **What's sent:** `BUILD_SYSTEM` (the format, a real-size table, rules) plus three worked examples (`BUILD_EXAMPLES`: chair, sedan, small office).
+- **Reading the reply:** `parseLoose` strips `<think>` blocks and takes the first `{` to the last `}`. One retry passes the parse error back.
+- `expandParts` handles the shapes box, cylinder, sphere, cone, wedge, torus and plane. It expands `repeat` {count, along, mirror x|z} and `on` (rest on top of a part), clamps sizes and positions, caps at 200 parts, and counts what it skipped.
+- `cleanParts` grounds the build (unless the request says it floats), centres the footprint, and drops a part that sits wholly inside another of the same shape.
+- **Placement:** the result is a `Prop` of type `'build'` with `parts`, `name` and `request` in its `snap()`, built from shared geometries. A small build goes in front of the active figure, turned to face them; a big one (over 3 m) goes at the camera target.
+- **Edit selected:** sends the current part list and the instruction, and expects the full updated list back.
+- **Look & fix:** three captures (front, three-quarter, side) go to the same endpoint as `image_url` parts. That needs a vision model loaded, e.g. qwen3-vl; otherwise the error says so. Its fixes (or "OK") then go back to the builder as an edit.
+- **Also fixed here:** captures now clear the selected prop's highlight tint. It used to leak into every render of a selected prop.

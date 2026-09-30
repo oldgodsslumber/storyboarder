@@ -324,6 +324,19 @@
           <button class="btn" data-prop="cup">Cup</button>
         </div>
         <div id="propPanel" style="margin-top:10px"></div>
+        <div class="lbl" style="margin-top:12px">Build with the local model <span style="color:var(--muted-2)">· simple shapes, real sizes</span></div>
+        <textarea id="buildText" rows="2" placeholder="a sedan · a bus stop · an office with four desks facing a window" style="width:100%;resize:vertical;font:inherit;font-size:12px;padding:6px;border-radius:6px;border:1px solid var(--line);background:var(--bg2);color:var(--fg)"></textarea>
+        <div class="grid g3" style="margin-top:6px">
+          <button class="btn primary" id="buildGo" title="Ask the local model to build this out of boxes and cylinders (Ctrl+Enter)">Build</button>
+          <button class="btn" id="buildEdit" disabled title="Change the selected build the way the box says">Edit selected</button>
+          <button class="btn" id="buildLook" disabled title="Show the selected build to the vision model from three angles and let it fix what reads wrong. Needs a vision model (e.g. qwen3-vl) loaded">Look &amp; fix</button>
+        </div>
+        <div class="note" id="buildNote" style="margin-top:6px"></div>
+        <details id="buildCfg" style="margin-top:6px"><summary class="note" style="cursor:pointer">Local model</summary>
+          <div class="field"><label for="llmUrl">Server</label><input id="llmUrl" placeholder="http://127.0.0.1:5000" style="width:100%"></div>
+          <div class="field"><label for="llmModel">Model</label><input id="llmModel" placeholder="(whatever is loaded)" style="width:100%"></div>
+          <div class="note" id="llmFrom"></div>
+        </details>
       </section>
 
       <section class="sec">
@@ -1128,9 +1141,11 @@ class Prop{
   constructor(o={}){
     this.id=o.id||uid(); this.type=o.type; this.owner=o.owner||null; this.on=o.on||null; this.attach=null;
     this.seatH=o.seatH||0.46; this.topH=o.topH||0.73;
+    this.parts=Array.isArray(o.parts)?o.parts:null; this.name=o.name||null; this.request=o.request||null;   // type 'build'
     this.group=new THREE.Group(); this.group.rotation.order='YXZ'; scene.add(this.group);
     this.mat=new THREE.MeshStandardMaterial({color:lin('#8e949c'),roughness:0.7,metalness:0});
     this.dark=new THREE.MeshStandardMaterial({color:lin('#2b2f35'),roughness:0.35,metalness:0});
+    this.light=new THREE.MeshStandardMaterial({color:lin('#c3c8cf'),roughness:0.75,metalness:0});
     this.meshes=[]; this.build();
     if(o.pos)this.group.position.fromArray(o.pos);
     if(o.turn)this.turn=o.turn;
@@ -1138,7 +1153,7 @@ class Prop{
   get turn(){return this.group.rotation.y*RAD;}
   set turn(v){this.group.rotation.y=v*DEG;}
   add(geo,pos,scale,o={}){
-    const m=new THREE.Mesh(geo,o.dark?this.dark:this.mat);
+    const m=new THREE.Mesh(geo,o.dark?this.dark:o.light?this.light:this.mat);
     m.position.set(...pos); m.scale.set(...scale); if(o.rot)m.rotation.set(...o.rot);
     m.castShadow=true; m.receiveShadow=true; m.userData={prop:this.id};
     (o.parent||this.group).add(m); this.meshes.push(m); return m;
@@ -1175,6 +1190,9 @@ class Prop{
     }else if(t==='cup'){
       this.add(CYLG,[0,0,0],[0.04,0.1,0.04]); this.add(CYLG,[0,0.049,0],[0.034,0.004,0.034],{dark:true});
       this.add(TORG,[0.04,0,0],[0.026,0.026,0.026],{rot:[0,0,-Math.PI/2]});
+    }else if(t==='build'){
+      (this.parts||[]).forEach(q=>{const g=buildGeo(q);
+        this.add(g.geo,q.at,g.scale,{rot:(q.rot||[0,0,0]).map(v=>v*DEG),dark:q.shade==='dark',light:q.shade==='light'});});
     }
   }
   anchor(name){
@@ -1198,16 +1216,18 @@ class Prop{
     scene.add(this.group); this.group.position.set(p.x,Math.max(0.01,p.y),p.z); this.group.rotation.set(0,0,0); this.group.scale.setScalar(1);
     this.attach=null;
   }
-  highlight(on){this.mat.emissive.copy(on?HL_SEL:BLACK);}
+  highlight(on){[this.mat,this.light,this.dark].forEach(m=>m.emissive.copy(on?HL_SEL:BLACK));}
   snap(){
     const p=this.group.position;
     const r=v=>Math.round(v*1e5)/1e5, q=this.group.quaternion;
     return {id:this.id,type:this.type,owner:this.owner,on:this.on,attach:this.attach,seatH:this.seatH,topH:this.topH,
       pos:[p.x,p.y,p.z].map(v=>Math.round(v*1e4)/1e4),turn:Math.round(this.turn*100)/100,
       // held props keep their exact grip (e.g. a phone aligned ear-to-mouth)
-      grip:this.attach?{p:[p.x,p.y,p.z].map(r),q:[q.x,q.y,q.z,q.w].map(r)}:undefined};
+      grip:this.attach?{p:[p.x,p.y,p.z].map(r),q:[q.x,q.y,q.z,q.w].map(r)}:undefined,
+      parts:this.type==='build'?this.parts:undefined,name:this.type==='build'?this.name:undefined,
+      request:this.type==='build'?this.request:undefined};
   }
-  dispose(){if(this.group.parent)this.group.parent.remove(this.group);this.mat.dispose();this.dark.dispose();}
+  dispose(){if(this.group.parent)this.group.parent.remove(this.group);this.mat.dispose();this.dark.dispose();this.light.dispose();}
 }
 function reattachProps(f){props.forEach(p=>{if(p.attach&&p.attach.fig===f.id)p.attachTo(f,p.attach.side);});}
 function removeProp(p){
@@ -2136,6 +2156,7 @@ function renderShot(outW,outH,region,opt){
   const transparent=pass==='beauty'&&!!opt.transparent, jpeg=pass==='beauty'&&opt.fmt==='jpeg'&&!transparent;
   const was={grid:grid.visible,shadow:shadowPlane.visible,handles:handles.visible,pr:renderer.getPixelRatio(),hov:hovered};
   hovered=null; figures.forEach(f=>f.highlight(null,null)); handles.visible=false;
+  if(selProp)selProp.highlight(false);   // a selected prop's tint is for working, never for the picture
   let unswap=null;
   if(pass!=='beauty'){
     grid.visible=false; shadowPlane.visible=pass==='depth'&&$('tDepthFloor').checked;
@@ -2156,7 +2177,7 @@ function renderShot(outW,outH,region,opt){
   }finally{
     if(unswap)unswap();
     grid.visible=was.grid; shadowPlane.visible=was.shadow; handles.visible=was.handles; renderer.setClearColor(bgHex,1);
-    renderer.setPixelRatio(was.pr); hovered=was.hov; resize(); highlightAll();
+    renderer.setPixelRatio(was.pr); hovered=was.hov; resize(); highlightAll(); if(selProp)selProp.highlight(true);
   }
   return url;
 }
@@ -2300,8 +2321,236 @@ window.addEventListener('message',e=>{
 
 /* ---------- props panel ---------- */
 function selectProp(p){if(selProp)selProp.highlight(false);selProp=p||null;if(selProp)selProp.highlight(true);refreshPropUI();}
-const propName=p=>PROP_LABEL[p.type]+(p.owner&&figById(p.owner)&&figures.length>1?' · '+figById(p.owner).name:'');
+
+/* ================= build: set pieces from a local model (build_plan.md) =================
+ * Type "a sedan" and the local model (Storyboarder's Local provider: Oobabooga and whatever Qwen is loaded) answers
+ * with a list of simple shapes in real metres. They're expanded, checked, grounded and centred here and become one
+ * prop of type 'build': movable, turnable, saved with the scene, in every render and pass. The parts are plain data,
+ * so a scene with a car in it re-renders the same for anyone, with or without a model. */
+const CONEG=new THREE.ConeGeometry(1,1,28), TORFULL=new THREE.TorusGeometry(1,0.3,10,28);
+// a ramp: full height at the back (-Z), down to the floor at the front (+Z); 1 x 1 x 1 around its centre
+const WEDGEG=(()=>{const g=new THREE.BufferGeometry(), a=-0.5,b=0.5;
+  const P=[[a,a,a],[b,a,a],[b,a,b],[a,a,b],[a,b,a],[b,b,a]];
+  const F=[[0,2,1],[0,3,2],[0,1,5],[0,5,4],[3,4,5],[3,5,2],[0,4,3],[1,2,5]];
+  const pos=[];F.forEach(f=>f.forEach(i=>pos.push(...P[i])));
+  g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));g.computeVertexNormals();return g;})();
+const esc=v=>String(v).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const BUILD_SHAPES=['box','cylinder','sphere','cone','wedge','torus','plane'];
+function buildGeo(q){
+  const [x,y,z]=q.size;
+  switch(q.shape){
+    case 'cylinder':return {geo:CYLG,scale:[x/2,y,z/2]};
+    case 'sphere':return {geo:SPH,scale:[x/2,y/2,z/2]};
+    case 'cone':return {geo:CONEG,scale:[x/2,y,z/2]};
+    case 'wedge':return {geo:WEDGEG,scale:[x,y,z]};
+    case 'torus':return {geo:TORFULL,scale:[x/2.6,y/2.6,z/0.6]};
+    case 'plane':return {geo:BOXG,scale:[x,Math.max(y,0.01),Math.max(z,0.01)]};
+    default:return {geo:BOXG,scale:[x,y,z]};
+  }
+}
+/* The model's answer -> plain parts. Helpers first (repeat, mirror, on), then limits. Anything malformed is
+   dropped and counted rather than failing the whole build. */
+function expandParts(json){
+  const notes=[]; let skipped=0;
+  const num=v=>typeof v==='number'&&isFinite(v);
+  const vec=(v,d)=>Array.isArray(v)&&v.length===3&&v.every(num)?v.slice():d;
+  let src=Array.isArray(json&&json.parts)?json.parts:[];
+  const out=[];
+  src.forEach((q,i)=>{
+    if(!q||typeof q!=='object'){skipped++;return;}
+    const shape=String(q.shape||'box').toLowerCase();
+    if(!BUILD_SHAPES.includes(shape)){skipped++;return;}
+    const size=vec(q.size,null); if(!size){skipped++;return;}
+    const base={id:String(q.id||('part'+i)).slice(0,40),shape,size,at:vec(q.at,[0,size[1]/2,0]),rot:vec(q.rot,[0,0,0]),
+      shade:['light','mid','dark'].includes(q.shade)?q.shade:'mid',on:typeof q.on==='string'?q.on:null,group:q.group?String(q.group).slice(0,40):null};
+    let copies=[base];
+    const r=q.repeat&&typeof q.repeat==='object'?q.repeat:null;
+    if(r){
+      const n=Math.max(1,Math.min(50,Math.round(num(r.count)?r.count:1))), along=vec(r.along,null)||vec(r.offset,null);
+      if(along&&n>1)for(let k=1;k<n;k++)copies.push(Object.assign({},base,{id:base.id+'_'+(k+1),at:base.at.map((v,j)=>v+along[j]*k)}));
+      const m=String(r.mirror||'').toLowerCase();
+      if(m==='x'||m==='z'){const ax=m==='x'?0:2;
+        copies=copies.concat(copies.map(c=>Object.assign({},c,{id:c.id+'_m',at:c.at.map((v,j)=>j===ax?-v:v),
+          rot:m==='x'?[c.rot[0],-c.rot[1],-c.rot[2]]:[-c.rot[0],-c.rot[1],c.rot[2]]})));}
+    }
+    out.push(...copies);
+  });
+  // "on": sit on top of another part (x and z kept unless given as 0 0)
+  const byId=Object.fromEntries(out.map(q=>[q.id,q]));
+  out.forEach(q=>{if(q.on&&byId[q.on]&&byId[q.on]!==q){const t=byId[q.on];q.at[1]=t.at[1]+t.size[1]/2+q.size[1]/2;}});
+  // limits
+  let clamped=0;
+  out.forEach(q=>{
+    const s0=q.size.join(),a0=q.at.join();
+    q.size=q.size.map(v=>clamp(Math.abs(v),0.01,30)); q.at=q.at.map(v=>clamp(v,-40,40)); q.rot=q.rot.map(v=>((v+180)%360+360)%360-180);
+    if(q.size.join()!==s0||q.at.join()!==a0)clamped++;
+  });
+  if(out.length>200){notes.push((out.length-200)+' parts over the 200 limit left out');out.length=200;}
+  if(skipped)notes.push(skipped+' part'+(skipped>1?'s':'')+' skipped (malformed)');
+  if(clamped)notes.push(clamped+' part'+(clamped>1?'s':'')+' clamped to size limits');
+  return {name:String((json&&json.name)||'build').slice(0,40),parts:out,notes};
+}
+// axis-aligned box of a part, rotation included
+function partBox(q){
+  const e=new THREE.Euler(...q.rot.map(v=>v*DEG)), h=new V3(...q.size).multiplyScalar(0.5), b=new THREE.Box3();
+  for(let i=0;i<8;i++){const c=new V3(i&1?h.x:-h.x,i&2?h.y:-h.y,i&4?h.z:-h.z).applyEuler(e).add(new V3(...q.at));b.expandByPoint(c);}
+  return b;
+}
+/* Ground (lowest part on the floor, unless asked to float), centre on the footprint, drop parts entirely inside
+   another of the same shape (a model often writes a body twice). */
+function cleanParts(parts,opts={}){
+  const notes=[];
+  if(!parts.length)return {parts,notes};
+  const boxes=parts.map(partBox), all=new THREE.Box3(); boxes.forEach(b=>all.union(b));
+  const dy=opts.float?0:-all.min.y, cx=-(all.min.x+all.max.x)/2, cz=-(all.min.z+all.max.z)/2;
+  parts.forEach(q=>{q.at=[q.at[0]+cx,q.at[1]+dy,q.at[2]+cz].map(v=>Math.round(v*1000)/1000);q.size=q.size.map(v=>Math.round(v*1000)/1000);});
+  const bx=parts.map(partBox), keep=parts.filter((q,i)=>!parts.some((o,j)=>j!==i&&o.shape===q.shape&&
+    bx[j].containsBox(bx[i])&&!(bx[i].containsBox(bx[j])&&j>i)));
+  if(keep.length<parts.length)notes.push((parts.length-keep.length)+' duplicate part'+(parts.length-keep.length>1?'s':'')+' removed');
+  return {parts:keep,notes};
+}
+
+/* ---- the model ---- */
+const LLM_KEY='posebench.llm';
+let llm=(()=>{try{return Object.assign({url:'',model:'',key:''},JSON.parse(localStorage.getItem(LLM_KEY)||'{}'));}catch(e){return {url:'',model:'',key:''};}})();
+let llmFromHost=false;
+function llmBase(){let u=String(llm.url||'').trim()||'http://127.0.0.1:5000';u=u.replace(/\/+$/,'').replace(/\/v1(\/[^?#]*)?$/i,'');if(!/^https?:\/\//i.test(u))u='http://'+u;return u;}
+const BUILD_SYSTEM=`You build simple 3D set pieces for film blocking out of primitive shapes. Answer with ONE JSON object and nothing else.
+
+FORMAT
+{"name": "<short name>", "parts": [ {"id": "...", "shape": "...", "size": [x, y, z], "at": [x, y, z], "rot": [x, y, z], "shade": "...", "repeat": {...}, "on": "..."} ]}
+- Units: metres. Y is up. The floor is y = 0. The FRONT of the object faces +Z (toward the camera); its left is +X.
+- shape: box | cylinder | sphere | cone | wedge | torus | plane.
+- size: the part's bounding box [width x, height y, depth z]. A cylinder stands upright (y is its length); lay it on its side with rot. A wedge is a ramp: full height at the back (-z), down to the floor at the front (+z).
+- at: the CENTRE of the part. A box of height 0.7 resting on the floor has at y = 0.35.
+- rot: degrees about x, y, z (optional). A wheel is a cylinder with rot [0, 0, 90].
+- shade: light | mid | dark (optional; windows, tyres, screens and seats are dark).
+- repeat (optional): {"count": n, "along": [dx, dy, dz]} makes n copies stepping by that offset; {"mirror": "x"} adds a copy on the other side of x = 0 (or "z"). They combine.
+- on (optional): the id of a part to rest on top of (sets this part's y).
+
+RULES
+- Real-world sizes. Car 4.5 long x 1.8 wide x 1.45 high, wheels 0.65 diameter. Van 5.2 x 2.0 x 2.3. Bus 12 x 2.5 x 3.2. Door 0.9 x 2.1. Desk 1.4 x 0.75 high x 0.7. Chair seat 0.45 high. Table 0.75 high. Counter 0.9 high. Sofa 2.0 x 0.85 x 0.9. Bed 2.0 x 0.55 x 1.6. Ceiling 2.7. Bus shelter 4 x 2.5 x 1.5. Lectern 1.1 high.
+- Build on the floor (nothing below y = 0).
+- Rooms: floor, back wall and side walls only. Leave the front (+z) wall and the ceiling off so the camera can see in, unless asked.
+- 5 to 60 parts. Nothing smaller than 5 cm. Use repeat for rows and pairs instead of writing them out.
+- Recognisable silhouette first, detail second.`;
+const BUILD_EXAMPLES=[
+  ['an office chair',`{"name":"office chair","parts":[{"id":"seat","shape":"box","size":[0.48,0.08,0.46],"at":[0,0.46,0],"shade":"dark"},{"id":"back","shape":"box","size":[0.44,0.5,0.06],"at":[0,0.78,-0.22],"rot":[-8,0,0],"shade":"dark"},{"id":"post","shape":"cylinder","size":[0.06,0.36,0.06],"at":[0,0.24,0]},{"id":"foot","shape":"box","size":[0.06,0.04,0.3],"at":[0,0.04,0.15],"repeat":{"count":1,"mirror":"z"}},{"id":"footx","shape":"box","size":[0.3,0.04,0.06],"at":[0.15,0.04,0],"repeat":{"mirror":"x"}}]}`],
+  ['a sedan',`{"name":"sedan","parts":[{"id":"body","shape":"box","size":[1.8,0.65,4.5],"at":[0,0.6,0]},{"id":"cabin","shape":"box","size":[1.6,0.55,2.3],"at":[0,1.2,-0.25]},{"id":"windscreen","shape":"wedge","size":[1.56,0.5,0.7],"at":[0,1.18,1.2],"shade":"dark"},{"id":"rear_window","shape":"wedge","size":[1.56,0.45,0.5],"at":[0,1.17,-1.6],"rot":[0,180,0],"shade":"dark"},{"id":"side_window","shape":"box","size":[0.02,0.35,1.9],"at":[0.81,1.25,-0.25],"shade":"dark","repeat":{"mirror":"x"}},{"id":"wheel","shape":"cylinder","size":[0.65,0.24,0.65],"at":[0.84,0.33,1.4],"rot":[0,0,90],"shade":"dark","repeat":{"count":2,"along":[0,0,-2.8],"mirror":"x"}},{"id":"headlight","shape":"box","size":[0.3,0.12,0.04],"at":[0.6,0.7,2.25],"shade":"light","repeat":{"mirror":"x"}}]}`],
+  ['a small office with two desks facing each other',`{"name":"small office","parts":[{"id":"floor","shape":"box","size":[5,0.05,4],"at":[0,0.025,0]},{"id":"back_wall","shape":"box","size":[5,2.7,0.12],"at":[0,1.35,-2]},{"id":"side_wall","shape":"box","size":[0.12,2.7,4],"at":[2.5,1.35,0],"repeat":{"mirror":"x"}},{"id":"window","shape":"box","size":[1.6,1.2,0.04],"at":[0,1.5,-1.93],"shade":"light"},{"id":"desk_top","shape":"box","size":[1.4,0.04,0.7],"at":[0,0.73,-0.5],"repeat":{"count":2,"along":[0,0,1.0]}},{"id":"desk_leg","shape":"box","size":[0.05,0.71,0.05],"at":[0.65,0.355,-0.8],"repeat":{"count":2,"along":[0,0,0.6],"mirror":"x"}},{"id":"desk_leg2","shape":"box","size":[0.05,0.71,0.05],"at":[0.65,0.355,0.2],"repeat":{"count":2,"along":[0,0,0.6],"mirror":"x"}},{"id":"monitor","shape":"box","size":[0.55,0.35,0.04],"at":[0,0.95,-0.7],"shade":"dark","repeat":{"count":2,"along":[0,0,1.4]}}]}`]
+];
+function stripThink(t){return String(t||'').replace(/<think>[\s\S]*?<\/think>/gi,'').replace(/^[\s\S]*<\/think>/i,'');}
+function parseLoose(t){
+  const s=stripThink(t), a=s.indexOf('{'), b=s.lastIndexOf('}');
+  if(a<0||b<=a)throw new Error('no JSON object in the reply');
+  return JSON.parse(s.slice(a,b+1));
+}
+async function llmChat(messages,opts={}){
+  const body={messages,temperature:opts.temperature==null?0.4:opts.temperature,max_tokens:opts.max||8000,stream:false};
+  if(llm.model)body.model=llm.model;
+  const h={'Content-Type':'application/json'}; if(llm.key)h.Authorization='Bearer '+llm.key;
+  let r;
+  try{r=await fetch(llmBase()+'/v1/chat/completions',{method:'POST',headers:h,body:JSON.stringify(body)});}
+  catch(e){throw new Error('Could not reach the local model at '+llmBase()+' — is it running with its API on?');}
+  if(!r.ok)throw new Error('The local model answered '+r.status+': '+(await r.text()).slice(0,200));
+  const d=await r.json(), ch=d.choices&&d.choices[0], m=ch&&ch.message, txt=(m&&m.content)||(ch&&ch.text)||'';
+  if(!stripThink(txt).trim())throw new Error(m&&m.reasoning?'The model spent its whole reply thinking — give it more room (max tokens / context).':'The model returned nothing.');
+  return txt;
+}
+/* Ask for a build (or an edit of one). One retry, with the parse error, if the JSON doesn't come back clean. */
+async function askBuild(request,base){
+  const msgs=[{role:'system',content:BUILD_SYSTEM}];
+  BUILD_EXAMPLES.forEach(([q,a])=>{msgs.push({role:'user',content:'Build: '+q});msgs.push({role:'assistant',content:a});});
+  msgs.push({role:'user',content:base
+    ?'Here is the current build, as its full part list:\n'+JSON.stringify({name:base.name,parts:base.parts})+'\n\nChange it: '+request+'\nAnswer with the complete updated JSON object.'
+    :'Build: '+request});
+  let txt=await llmChat(msgs), json;
+  try{json=parseLoose(txt);}
+  catch(e){
+    msgs.push({role:'assistant',content:stripThink(txt).slice(0,4000)});
+    msgs.push({role:'user',content:'That was not valid JSON ('+e.message+'). Answer again with only the JSON object.'});
+    json=parseLoose(await llmChat(msgs));
+  }
+  return json;
+}
+function buildNote(t,err){const n=$('buildNote');n.textContent=t||'';n.style.color=err?'var(--danger,#e06c5a)':'';}
+let building=false;
+function refreshBuildUI(){
+  const sel=selProp&&selProp.type==='build';
+  $('buildGo').disabled=building; $('buildEdit').disabled=building||!sel; $('buildLook').disabled=building||!sel;
+  $('llmFrom').textContent=llmFromHost?'Set by Storyboarder (Settings → API → Local).':'Saved in this browser.';
+  $('llmUrl').value=llm.url||''; $('llmModel').value=llm.model||'';
+  $('llmUrl').disabled=$('llmModel').disabled=llmFromHost;
+}
+function placeBuild(res,request,into){
+  const cl=cleanParts(res.parts,{float:/\bfloat|hanging|on the (desk|table)\b/i.test(request)});
+  const notes=res.notes.concat(cl.notes);
+  if(!cl.parts.length)throw new Error('The model\u2019s answer had no usable parts.');
+  let p=into;
+  if(p){p.parts=cl.parts;p.name=res.name||p.name;p.request=request;p.build();}
+  else{
+    const f=act, A=f?figAxes(f):{fwd:new V3(0,0,1)};
+    const all=new THREE.Box3(); cl.parts.forEach(q=>all.union(partBox(q)));
+    const depth=all.max.z-all.min.z, big=Math.max(all.max.x-all.min.x,depth)>3;
+    // in front of the active figure, clear of it; a big set (a room) goes where the camera is looking
+    const pos=f&&!big?f.joints.pelvis.pivot.getWorldPosition(new V3()).setY(0).addScaledVector(A.fwd,depth/2+0.8)
+      :new V3(cam.target.x,0,cam.target.z);
+    p=new Prop({type:'build',parts:cl.parts,name:res.name,request,pos:pos.toArray(),turn:f&&!big?f.turn+180:0}); props.push(p);
+  }
+  selectProp(p); commit(); refreshBuildUI();
+  return notes;
+}
+async function runBuild(mode){
+  const text=$('buildText').value.trim();
+  if((mode==='new'||mode==='edit')&&!text){buildNote('Say what to build first.',true);return;}
+  const target=mode==='new'?null:selProp&&selProp.type==='build'?selProp:null;
+  building=true; refreshBuildUI();
+  const t0=performance.now();
+  try{
+    let request=text, base=target?{name:target.name,parts:target.parts}:null;
+    if(mode==='look'){
+      buildNote('Looking at it from three angles\u2026');
+      const fixes=await lookAt(target);
+      if(/^\s*(ok|looks right|no (changes|fixes))/i.test(fixes)){buildNote('The vision model thinks it reads right as it is.');return;}
+      request='Fix these problems (the build is meant to be: '+(target.request||target.name)+'):\n'+fixes;
+    }
+    buildNote(mode==='new'?'Building "'+text+'"\u2026':mode==='edit'?'Changing it\u2026':'Applying the fixes\u2026');
+    const json=await askBuild(request,base), res=expandParts(json);
+    const notes=placeBuild(res,mode==='new'?text:(target.request||text),target);
+    buildNote((mode==='new'?'Built':'Updated')+' "'+(res.name||'build')+'": '+res.parts.length+' parts in '+Math.round((performance.now()-t0)/1000)+' s'+
+      (notes.length?' \u2014 '+notes.join('; '):'')+'.');
+  }catch(e){buildNote(e.message||String(e),true);}
+  finally{building=false;refreshBuildUI();}
+}
+/* Look and fix: three captures of the build go to the (vision) model; it answers with a short list of fixes, which
+   then go to the builder as an edit. */
+async function lookAt(p){
+  const saved={t:cam.target.clone(),th:cam.theta,ph:cam.phi,r:cam.radius};
+  const b=new THREE.Box3().setFromObject(p.group), c=b.getCenter(new V3()), sz=b.getSize(new V3());
+  const imgs=[];
+  try{
+    for(const [dth,ph] of [[0,1.45],[0.8,1.2],[Math.PI/2,1.5]]){
+      cam.target.copy(c); cam.theta=p.group.rotation.y+dth; cam.phi=ph; cam.radius=Math.max(sz.x,sz.y,sz.z)*1.9+0.5; applyCam();
+      imgs.push(apiCapture({aspect:4/3,longEdge:512}));
+    }
+  }finally{Object.assign(cam,{theta:saved.th,phi:saved.ph,radius:saved.r});cam.target.copy(saved.t);applyCam();}
+  const content=[{type:'text',text:'These are three views (front, three-quarter, side) of a grey clay model built from simple shapes. It is meant to be: '+
+    (p.request||p.name)+'.\nDoes it read as that? If it does, answer only "OK". Otherwise list at most 5 concrete fixes, each one line, naming parts and directions (e.g. "the wheels float above the floor", "the cabin is too far forward").'}]
+    .concat(imgs.map(u=>({type:'image_url',image_url:{url:u}})));
+  try{return stripThink(await llmChat([{role:'user',content}],{temperature:0.2,max:3000})).trim();}
+  catch(e){throw new Error('Look & fix needs a vision model loaded (e.g. qwen3-vl): '+e.message);}
+}
+$('buildGo').onclick=()=>runBuild('new');
+$('buildEdit').onclick=()=>runBuild('edit');
+$('buildLook').onclick=()=>runBuild('look');
+$('buildText').addEventListener('keydown',e=>{if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){e.preventDefault();runBuild(selProp&&selProp.type==='build'&&e.shiftKey?'edit':'new');}e.stopPropagation();});
+['llmUrl','llmModel'].forEach(id=>{$(id).addEventListener('keydown',e=>e.stopPropagation());$(id).onchange=()=>{
+  llm.url=$('llmUrl').value.trim(); llm.model=$('llmModel').value.trim();
+  try{localStorage.setItem(LLM_KEY,JSON.stringify(llm));}catch(e){}}});
+
+const propName=p=>(p.type==='build'?(p.name||'Build'):PROP_LABEL[p.type])+(p.owner&&figById(p.owner)&&figures.length>1?' · '+figById(p.owner).name:'');
 function refreshPropUI(){
+  if(typeof refreshBuildUI==='function')refreshBuildUI();
   const box=$('propPanel'); box.innerHTML='';
   if(props.length){
     const chips=document.createElement('div'); chips.className='chips';
@@ -2316,7 +2565,7 @@ function refreshPropUI(){
   }
   const p=selProp;
   const head=document.createElement('div'); head.className='ptitle';
-  head.innerHTML=`<span>${PROP_LABEL[p.type]}</span>`;
+  head.innerHTML=`<span>${p.type==='build'?esc(p.name||'Build'):PROP_LABEL[p.type]}</span>`;
   const del=document.createElement('button'); del.className='btn'; del.textContent='Delete'; del.onclick=deleteSelProp; head.appendChild(del);
   box.appendChild(head);
   if(!p.attach){
@@ -4661,6 +4910,7 @@ window.addEventListener('message',e=>{
   if(!EMBED||e.source!==window.parent)return;
   const d=e.data; if(!d||typeof d!=='object')return;
   if(d.type==='posebench:open'){
+    if(d.llm&&typeof d.llm==='object'){llm=Object.assign({url:'',model:'',key:''},d.llm);llmFromHost=true;refreshBuildUI();}
     host.token=d.token; host.cast=Array.isArray(d.cast)?d.cast.filter(c=>c&&c.id):[]; host.shot=d.shot||'';
     host.aspect=aspectValue(d.aspect)||16/9; host.longEdge=+d.longEdge||1536;
     props.forEach(p=>p.dispose()); props=[]; selProp=null; figures.forEach(f=>f.dispose()); figures=[]; act=null;
@@ -4762,7 +5012,7 @@ refreshPropUI();
   glideTick(performance.now());
   updateHandles();renderer.render(scene,camera);})();
 if(EMBED)try{window.parent.postMessage({type:'posebench:ready'},'*');}catch(e){}
-window.__pb={applyWork,snapScene,applySceneFile,renderShot,setBodyStyle,get bodyStyle(){return bodyStyle;},steadyDepth,standingStill,viewAsPhoto,liveGuard,guardNew,photoWarnings,glitchMask,repairSeq,labelSwap,glitchSummary,glitchOverride,addHead,faceLoad,get takes(){return takes;},get glides(){return glides;},glideTick,glideFinish,camApply,get tl(){return tl;},makeTake,bakeTake,openTake,showTakeAt,exportTake,cutList,takeSnap,takeLoad,camImportVideo,addCam,addCut,tlPlay,setCamView,viewNow,blockingText,retarget,synthLandmarks,readPose,camFromImage,mpLoad,detLoad,findPeople,camApply,camStart,camSnap,get camState(){return camS;},get figures(){return figures;},get props(){return props;},get act(){return act;},cam,fitShot,setView,frameAll,PRESETS,WORK,SCENES,
+window.__pb={expandParts,cleanParts,askBuild,runBuild,placeBuild,get llm(){return llm;},applyWork,snapScene,applySceneFile,renderShot,setBodyStyle,get bodyStyle(){return bodyStyle;},steadyDepth,standingStill,viewAsPhoto,liveGuard,guardNew,photoWarnings,glitchMask,repairSeq,labelSwap,glitchSummary,glitchOverride,addHead,faceLoad,get takes(){return takes;},get glides(){return glides;},glideTick,glideFinish,camApply,get tl(){return tl;},makeTake,bakeTake,openTake,showTakeAt,exportTake,cutList,takeSnap,takeLoad,camImportVideo,addCam,addCut,tlPlay,setCamView,viewNow,blockingText,retarget,synthLandmarks,readPose,camFromImage,mpLoad,detLoad,findPeople,camApply,camStart,camSnap,get camState(){return camS;},get figures(){return figures;},get props(){return props;},get act(){return act;},cam,fitShot,setView,frameAll,PRESETS,WORK,SCENES,
   camera,applyCam,selectJoint,solveChain,commit,applyNamed,goalFrame,eyePoint};
 })();
 </script>

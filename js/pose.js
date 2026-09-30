@@ -387,7 +387,10 @@
         send(editor.frame, {
           type: 'posebench:open', token: editor.token, scene: o.scene,
           cast: castFor(p, f.shot), aspect: editor.aspect, longEdge: LONG_EDGE, shot: editor.code,
-          takes: o.takes, link: perfLink(f.shot)
+          takes: o.takes, link: perfLink(f.shot),
+          /* Build (build_plan.md) talks to the same local model as the Local writer */
+          llm: SB.Providers && SB.Store ? { url: SB.Providers.baseUrl(), model: SB.Store.getOoba().model || '',
+            key: SB.Store.getOoba().key || '' } : null
         });
         return;
       }

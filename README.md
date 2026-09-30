@@ -1211,6 +1211,15 @@ node test-lock.mjs     # nothing invented: the rider, the check, the clay-render
 `test-typing.mjs` exists because `test-ui.mjs` dispatches synthetic `beforeinput` events,
 which cannot catch focus, selection or caret bugs — real clicks and keypresses can.
 
+## Build: set pieces from a local model
+
+In Pose Bench's Props panel, **Build** asks the local model (Settings → API → Local, the same Oobabooga/Qwen the
+Local writer uses) to make what you type out of boxes, cylinders and wedges, in real sizes: "a sedan", "a bus stop",
+"an office with four desks facing a window". It lands as one prop you can move, turn and delete, saved with the
+scene and in every render and pass. **Edit selected** changes a build in words ("make it a pickup"). **Look & fix**
+shows it to a vision model (qwen3-vl) from three angles and applies the fixes it suggests. A build is plain data,
+so a scene with one re-renders the same for anyone, model or not. (`build_plan.md`)
+
 ## Credits
 
 Pose Bench's human body (Body: Human) is based on "Human Models Set - Male/Female (Rigged)"
