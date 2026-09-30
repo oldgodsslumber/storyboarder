@@ -399,6 +399,9 @@
         <div class="field"><label for="capFmt">Format</label>
           <select id="capFmt"><option value="png">PNG</option><option value="jpeg">JPEG (smaller)</option></select></div>
         <label class="toggle"><span>Transparent background<span class="d">PNG only · hides floor &amp; grid</span></span><input type="checkbox" id="tAlpha"><i></i></label>
+        <div class="field"><label for="bodyStyle">Body</label>
+          <select id="bodyStyle" title="What the figures look like, on screen and in every render. The posing is the same either way"><option value="human">Human (sculpted, with fingers)</option><option value="classic">Classic mannequin</option></select></div>
+        <div class="d" style="font-size:11px;color:var(--muted-2);margin:-2px 0 6px">Human body: <a href="https://sketchfab.com/3d-models/human-models-set-malefemale-rigged-7311fcfdc03e4234900eeced42a1e669" target="_blank" rel="noopener" style="color:inherit">"Human Models Set"</a> by <a href="https://sketchfab.com/lzyassoul" target="_blank" rel="noopener" style="color:inherit">lzyassoul</a>, <a href="http://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener" style="color:inherit">CC BY 4.0</a> (re-rigged)</div>
         <label class="toggle"><span>Grid in captures<span class="d">Off: renders, clips and passes leave the floor grid out, even while you see it here</span></span><input type="checkbox" id="tCapGrid"><i></i></label>
         <div class="lbl" style="margin-top:9px">Also capture <span style="color:var(--muted-2)">· ControlNet / guide images</span></div>
         <div class="grid g4" id="passes">
@@ -583,6 +586,7 @@
   </main>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="bodies.js"></script>
 <script>
 "use strict";
 (function(){
@@ -710,7 +714,7 @@ class Figure{
   set turn(v){this.group.rotation.y=v*DEG;}
   build(){
     const keep=this.joints.pelvis?{pose:this.getPose(),pel:this.pelvisOffset()}:null;
-    this.geos.forEach(g=>g.dispose()); this.mats.forEach(m=>m.dispose());
+    this.geos.forEach(g=>g.dispose()); this.mats.forEach(m=>m.dispose()); if(this.body){disposeBody(this.body);this.body=null;}
     this.group.clear(); this.joints={}; this.meshes=[]; this.geos=[]; this.mats=[];
     const T=this.T=TYPES[this.type];
     const pelvisY=T.ankleH+T.shin+T.thigh+T.hipDrop;
@@ -731,21 +735,35 @@ class Figure{
     }
     this.handParts={};
     this.addMeshes(T,T.g*this.bulk);
+    // where every joint sits at rest, in the figure's own space (rest = no rotation anywhere)
+    this.restPos={};
+    for(const n in this.joints){const v=new V3();let o=this.joints[n].pivot;while(o&&o!==this.group){v.add(o.position);o=o.parent;}this.restPos[n]=v;}
+    this.body=makeBody(this);
+    if(this.body)this.group.add(this.body.mesh);
+    this.applyBodyStyle();
     this.setColor(this.color);
     this.group.scale.setScalar(this.height);
     this.setHand('l',this.hands.l); this.setHand('r',this.hands.r);
     if(keep){this.setPose(keep.pose,keep.pel);}
     reattachProps(this);
   }
+  applyBodyStyle(){
+    const human=bodyStyle==='human'&&!!this.body;
+    if(this.body)this.body.mesh.visible=human;
+    // the mannequin stays in place, invisible, for picking and grounding: it is the skeleton the body follows
+    for(const n in this.joints){this.joints[n].mat.visible=!human;this.joints[n].ballMat.visible=!human;}
+  }
+  get human(){return bodyStyle==='human'&&!!this.body;}
   setHand(p,shape){
     this.hands[p]=HANDS[shape]?shape:'relaxed';
+    if(this.body)bodyFingers(this.body,this,p);
     const H=HANDS[this.hands[p]], hp=this.handParts[p]; if(!hp)return;
     const {k,s,fingers,thumb}=hp;
     fingers.position.set(H.f[0]*s*k,H.f[1]*k,H.f[2]*k); fingers.rotation.set(H.fr[0],H.fr[1],H.fr[2]*s); fingers.scale.set(H.fs[0]*k,H.fs[1]*k,H.fs[2]*k);
     thumb.position.set(H.t[0]*s*k,H.t[1]*k,H.t[2]*k); thumb.rotation.set(H.tr[0],H.tr[1],H.tr[2]*s);
   }
   makeJoint(n,parent,x,y,z){
-    const p=new THREE.Group(); p.rotation.order='XZY'; p.position.set(x,y,z); parent.add(p);
+    const p=new THREE.Group(); p.rotation.order='XZY'; p.position.set(x,y,z); p.userData.jn=n; parent.add(p);
     const sp=specOf(n), side=sideOf(n), sgn={}, lim={};
     for(const ax of ['x','y','z']){
       const d=sp.dofs[ax];
@@ -814,12 +832,14 @@ class Figure{
     this.color=hex;
     const c=lin(hex), b=c.clone().multiplyScalar(0.72);
     for(const n in this.joints){this.joints[n].mat.color.copy(c);this.joints[n].ballMat.color.copy(b);}
+    if(this.body)this.body.mat.color.copy(c);
   }
   highlight(selName,hovName){
     for(const n in this.joints){
       const j=this.joints[n], e=n===selName?HL_SEL:(n===hovName?HL_HOV:null);
       j.mat.emissive.copy(e||BLACK); j.ballMat.emissive.copy(e||BLACK);
     }
+    if(this.body)bodyHighlight(this.body,selName,hovName);
   }
   // anatomical degrees
   getA(n,ax){const j=this.joints[n];return j.pivot.rotation[ax]*RAD*j.sgn[ax];}
@@ -880,11 +900,169 @@ class Figure{
     this.setPose(s.pose,s.pelvis);
     const p=s.pos||[0,0,0]; this.group.position.set(p[0],p[1],p[2]); this.turn=s.turn||0;
   }
-  dispose(){this.geos.forEach(g=>g.dispose());this.mats.forEach(m=>m.dispose());scene.remove(this.group);}
+  dispose(){this.geos.forEach(g=>g.dispose());this.mats.forEach(m=>m.dispose());if(this.body)disposeBody(this.body);scene.remove(this.group);}
 }
 const BLACK=new THREE.Color(0), _v=new V3();
 function nextName(){let i=1;while(figures.some(f=>f.name==='Figure '+i))i++;return 'Figure '+i;}
 const figById=id=>figures.find(f=>f.id===id);
+
+/* ================= the human body =================
+ * A sculpted body ("Human Models Set - Male/Female (Rigged)" by lzyassoul, CC-BY-4.0 — credited in bodies.js and the
+ * README) drawn over the mannequin, which stays as the invisible skeleton: posing, IK, limits, picking, grounding and
+ * props all still work on the mannequin, and the body follows it. Each body bone rides one mannequin joint. At build
+ * time the body is fitted to the figure — every bone's head put on its joint, each limb stretched to the figure's
+ * own limb length, the A-pose arms swung down to the mannequin's rest — so the body always has the figure's
+ * proportions, and a pose moves it exactly as it moves the mannequin. Fingers are curled from the hand shape. */
+const BODY_MAP=[   // body bone, the joint it rides, the joint (or body bone) its length reaches to
+  ['spine','pelvis'],['spine.001','spine'],['spine.002','spine'],['spine.003','chest'],
+  ['spine.004','neck'],['spine.005','neck'],['spine.006','head'],
+  ...['L','R'].flatMap(S=>{const p=S==='L'?'l':'r';return [
+    ['shoulder.'+S,'chest'],['upper_arm.'+S,p+'Shoulder'],['forearm.'+S,p+'Elbow'],['hand.'+S,p+'Wrist'],
+    ['thigh.'+S,p+'Hip'],['shin.'+S,p+'Knee'],['foot.'+S,p+'Ankle'],['toe.'+S,p+'Ankle']];}),
+];
+const FINGERS=['thumb','f_index','f_middle','f_ring','f_pinky'];
+// curl per joint (degrees, base to tip) for each hand shape; the thumb bends less and across
+const CURL={flat:{f:[0,0,0],t:[0,0,0]},relaxed:{f:[14,22,14],t:[8,10,6]},grip:{f:[58,74,48],t:[22,30,20]}};
+const bodyBase={};
+function bodyGeo(kind){
+  if(bodyBase[kind])return bodyBase[kind];
+  const d=window.PB_BODIES&&PB_BODIES[kind]; if(!d)return null;
+  const bytes=b=>{const s=atob(b),u=new Uint8Array(s.length);for(let i=0;i<s.length;i++)u[i]=s.charCodeAt(i);return u;};
+  const pi=new Int16Array(bytes(d.pos).buffer), pos=new Float32Array(pi.length); for(let i=0;i<pi.length;i++)pos[i]=pi[i]/32767;
+  const ib=bytes(d.idx), idx=d.idx32?new Uint32Array(ib.buffer):new Uint16Array(ib.buffer);
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.BufferAttribute(pos,3)); g.setIndex(new THREE.BufferAttribute(idx,1));
+  g.setAttribute('skinIndex',new THREE.Uint8BufferAttribute(bytes(d.sj),4));
+  g.setAttribute('skinWeight',new THREE.Uint8BufferAttribute(bytes(d.sw),4,true));
+  g.computeVertexNormals();
+  const ix=Object.fromEntries(d.bones.map((b,i)=>[b.name,i]));
+  const bind=d.bones.map(b=>{const R=new THREE.Matrix4().makeBasis(new V3(...b.x),new V3(...b.y),new V3(...b.z));
+    return {head:new V3(...b.head),rot:new Q().setFromRotationMatrix(R),inv:new THREE.Matrix4().copy(R).setPosition(...b.head).invert()};});
+  return bodyBase[kind]={g,bones:d.bones,ix,bind,n:d.bones.length};
+}
+const _hlSel=new THREE.Color(), _hlHov=new THREE.Color();
+function makeBody(f){
+  const B=bodyGeo(f.type==='female'?'female':'male'); if(!B)return null;
+  const g=new THREE.BufferGeometry();
+  for(const a of ['position','normal','skinIndex','skinWeight'])g.setAttribute(a,B.g.getAttribute(a));
+  g.setIndex(B.g.index); g.boundingSphere=new THREE.Sphere(new V3(0,0.5,0),2);
+  const hl=new THREE.BufferAttribute(new Float32Array(B.g.getAttribute('position').count*2),2); g.setAttribute('aHl',hl);
+  const mat=new THREE.MeshStandardMaterial({roughness:0.62,metalness:0,skinning:true,side:THREE.DoubleSide});
+  mat.onBeforeCompile=sh=>{
+    sh.uniforms.uHlSel={value:HL_SEL}; sh.uniforms.uHlHov={value:HL_HOV};
+    sh.vertexShader='attribute vec2 aHl;\nvarying vec2 vHl;\n'+sh.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\nvHl=aHl;');
+    sh.fragmentShader='uniform vec3 uHlSel;\nuniform vec3 uHlHov;\nvarying vec2 vHl;\n'+sh.fragmentShader.replace('#include <emissivemap_fragment>','#include <emissivemap_fragment>\ntotalEmissiveRadiance+=uHlSel*vHl.x+uHlHov*vHl.y;');
+  };
+  const bones=B.bones.map(()=>new THREE.Bone());
+  const sk=new THREE.Skeleton(bones,B.bones.map(()=>new THREE.Matrix4()));
+  const mesh=new THREE.SkinnedMesh(g,mat);
+  mesh.bind(sk,new THREE.Matrix4()); mesh.bindMode='detached'; mesh.bindMatrix.identity(); mesh.bindMatrixInverse.identity();
+  mesh.castShadow=true; mesh.receiveShadow=true; mesh.frustumCulled=false;
+  mesh.userData={fig:f.id,body:true};
+  const body={B,mesh,mat,g,hl,sk,f,K:new Array(B.n),pivot:new Array(B.n),hlKey:''};
+  fitBody(body,f);
+  // the renderer asks the skeleton for its matrices once a frame: each bone = its joint now x the fitted rest
+  const Ginv=new THREE.Matrix4(), M=new THREE.Matrix4();
+  sk.update=function(){
+    Ginv.copy(f.group.matrixWorld).invert();
+    for(let i=0;i<B.n;i++){
+      M.multiplyMatrices(Ginv,body.pivot[i].matrixWorld).multiply(body.K[i]);
+      M.toArray(this.boneMatrices,i*16);
+    }
+    if(this.boneTexture)this.boneTexture.needsUpdate=true;
+  };
+  return body;
+}
+function disposeBody(b){b.g.dispose();b.mat.dispose();if(b.sk.boneTexture)b.sk.boneTexture.dispose();if(b.mesh.parent)b.mesh.parent.remove(b.mesh);}
+// fit the body to the figure: K[i] = rest(joint)^-1 x rest(bone, fitted) x bind(bone)^-1
+function fitBody(body,f){
+  const {B}=body, T=f.T, Hs=baseHeight(T), P=n=>f.restPos[n].clone(), H=n=>B.bind[B.ix[n]].head.clone().multiplyScalar(Hs);
+  const down=new V3(0,-1,0), fit={};   // name -> {pos, rot (world), sx, sy}
+  const yOf=n=>new V3(0,1,0).applyQuaternion(B.bind[B.ix[n]].rot);
+  const lat=Hs*f.bulk, len=(a,b)=>a.distanceTo(b);
+  const headK=(T.head*0.212/Hs)/(0.212/baseHeight(TYPES.male));
+  const put=(n,pos,rot,sy,sx)=>{fit[n]={pos,rot,sy,sx:sx==null?lat:sx};};
+  const I=new Q();
+  // torso: each bone on its joint (the in-between ones part way), its length stretched to reach the next
+  const hipMid=P('lHip').add(P('rHip')).multiplyScalar(0.5), bHipMid=H('thigh.L').add(H('thigh.R')).multiplyScalar(0.5);
+  const sp=[['spine',hipMid.clone().add(H('spine').sub(bHipMid))],['spine.001',P('spine')],['spine.002',null],['spine.003',P('chest')],
+    ['spine.004',P('neck')],['spine.005',null],['spine.006',P('head')]];
+  const lerpAt=(i)=>{const a=sp[i-1][1],c=sp[i+1][1],ya=H(sp[i-1][0]).y,yb=H(sp[i][0]).y,yc=H(sp[i+1][0]).y;return a.clone().lerp(c,(yb-ya)/(yc-ya));};
+  sp[2][1]=lerpAt(2); sp[5][1]=lerpAt(5);
+  sp.forEach(([n,pos],i)=>{
+    if(i<sp.length-1){const bl=len(H(n),H(sp[i+1][0]))/Hs; put(n,pos,I,len(pos,sp[i+1][1])/bl);}
+    else put(n,pos,I,Hs*headK,Hs*headK);
+  });
+  for(const [S,p] of [['L','l'],['R','r']]){
+    // collarbone from the chest out to the shoulder joint
+    const sh=P('chest').add(H('shoulder.'+S).sub(H('spine.003')));
+    put('shoulder.'+S,sh,I,len(sh,P(p+'Shoulder'))/(len(H('shoulder.'+S),H('upper_arm.'+S))/Hs));
+    // arm and leg chains: swing each A-pose bone onto the mannequin's rest direction, stretch to its length
+    const chain=(bones,joints)=>{let acc=new Q();
+      bones.forEach((n,k)=>{
+        const d=yOf(n).applyQuaternion(acc), to=k<joints.length-1?P(joints[k+1]).sub(P(joints[k])).normalize():down;
+        const q=k<joints.length-1||n.startsWith('hand')?new Q().setFromUnitVectors(d,to).multiply(acc):acc.clone(); acc=q;
+        const next=k<bones.length-1?bones[k+1]:null;
+        const sy=next&&k<joints.length-1?len(P(joints[k]),P(joints[k+1]))/(len(H(n),H(next))/Hs):Hs;
+        put(n,P(joints[k]),q,sy,Hs*(n.startsWith('hand')?1:f.bulk));
+      });
+      return acc;};
+    const qa=chain(['upper_arm.'+S,'forearm.'+S,'hand.'+S],[p+'Shoulder',p+'Elbow',p+'Wrist']);
+    const ql=chain(['thigh.'+S,'shin.'+S,'foot.'+S],[p+'Hip',p+'Knee',p+'Ankle']);
+    put('toe.'+S,P(p+'Ankle').add(H('toe.'+S).sub(H('foot.'+S)).applyQuaternion(ql)),ql,Hs,Hs);
+    body.qHand=body.qHand||{}; body.qHand[p]=qa;
+  }
+  body.fit=fit;
+  for(const [n,j] of BODY_MAP)setBone(body,n,j);
+  bodyFingers(body,f,'l'); bodyFingers(body,f,'r');
+}
+const _S=new THREE.Matrix4(), _R=new THREE.Matrix4();
+function setBone(body,n,j,rotOverride){
+  const {B,f}=body, i=B.ix[n], b=body.fit[n], bd=B.bind[i];
+  const rot=(rotOverride||b.rot.clone().multiply(bd.rot));
+  const M=new THREE.Matrix4().makeRotationFromQuaternion(rot).multiply(_S.makeScale(b.sx,b.sy,b.sx)).setPosition(b.pos);
+  body.K[i]=new THREE.Matrix4().makeTranslation(...f.restPos[j].clone().negate().toArray()).multiply(M).multiply(bd.inv);
+  body.pivot[i]=f.joints[j].pivot;
+}
+// finger chains, curled per the hand shape, riding the wrist
+function bodyFingers(body,f,p){
+  if(!body.fit)return;
+  const {B}=body, S=p==='l'?'L':'R', Hs=baseHeight(f.T), c=CURL[f.hands[p]]||CURL.relaxed;
+  const qh=body.qHand[p], hand=B.bind[B.ix['hand.'+S]], wrist=f.restPos[p+'Wrist'];
+  for(const fn of FINGERS){
+    const cv=fn==='thumb'?c.t:c.f; let prevRot=null, prevHead=null, prevBind=null;
+    ['01','02','03'].forEach((k,si)=>{
+      const n=fn+'.'+k+'.'+S, bd=B.bind[B.ix[n]];
+      let head, rot;
+      if(!prevRot){head=wrist.clone().add(bd.head.clone().sub(hand.head).multiplyScalar(Hs).applyQuaternion(qh)); rot=qh.clone().multiply(bd.rot);}
+      else{
+        head=prevHead.clone().add(bd.head.clone().sub(prevBind.head).multiplyScalar(Hs).applyQuaternion(prevRot.clone().multiply(prevBind.rot.clone().invert())));
+        rot=prevRot.clone().multiply(prevBind.rot.clone().invert()).multiply(bd.rot);
+      }
+      rot.multiply(new Q().setFromAxisAngle(new V3(1,0,0),cv[si]*DEG));
+      body.fit[n]={pos:head,rot:I0,sy:Hs,sx:Hs};
+      setBone(body,n,p+'Wrist',rot);
+      prevRot=rot; prevHead=head; prevBind=bd;
+    });
+  }
+}
+const I0=new Q();
+// highlight: how much of each vertex belongs to the selected / hovered joint
+function bodyHighlight(body,sel,hov){
+  const key=(sel||'')+'|'+(hov||''); if(key===body.hlKey)return; body.hlKey=key;
+  const {B}=body, si=body.g.getAttribute('skinIndex').array, sw=body.g.getAttribute('skinWeight').array, a=body.hl.array;
+  const on=body.pivot.map(pv=>pv.userData.jn===sel?1:0), onH=body.pivot.map(pv=>pv.userData.jn===hov?1:0);
+  for(let v=0,n=a.length/2;v<n;v++){let x=0,y=0;for(let k=0;k<4;k++){const b=si[v*4+k],w=sw[v*4+k]/255;x+=on[b]*w;y+=onH[b]*w;}a[v*2]=x;a[v*2+1]=y;}
+  body.hl.needsUpdate=true;
+}
+let bodyStyle='human';
+function setBodyStyle(v){
+  bodyStyle=v==='classic'?'classic':'human';
+  const el=document.getElementById('bodyStyle'); if(el)el.value=bodyStyle;
+  figures.forEach(f=>f.applyBodyStyle());
+}
+// the control passes on the body: the same maths as the plain pass materials, skinned
+const SKIN_VS=(decl,body)=>'#include <common>\n#include <skinning_pars_vertex>\n'+decl+'\nvoid main(){\n#include <skinbase_vertex>\n#include <beginnormal_vertex>\n#include <skinnormal_vertex>\n#include <begin_vertex>\n#include <skinning_vertex>\n'+body+'\n}';
 
 /* ================= presets (anatomical degrees) ================= */
 const ARMS_DOWN={lShoulder:{z:9,x:3},rShoulder:{z:9,x:3},lElbow:{x:12},rElbow:{x:12},lHip:{z:3},rHip:{z:3}};
@@ -1485,7 +1663,7 @@ const SKEY='posebench.v2.scene', LKEY='posebench.v2.poses';
 function saveScene(s){if(!EMBED)store.set(SKEY,s);}
 const hist={stack:[],i:-1};
 let capGrid=false;   // "Grid in captures": saved with the scene, so a card's clips and passes follow it
-function snapScene(){return {v:2,capGrid,figures:figures.map(f=>f.snap()),props:props.map(p=>p.snap()),active:act&&act.id,
+function snapScene(){return {v:2,capGrid,bodyStyle,figures:figures.map(f=>f.snap()),props:props.map(p=>p.snap()),active:act&&act.id,
   camera:{target:cam.target.toArray().map(v=>Math.round(v*1e4)/1e4),theta:cam.theta,phi:cam.phi,radius:cam.radius,mm:cam.mm,shot:cam.shot},
   bg:bgHex,keyAz,takes:takes.map(takeSnap)};}
 const poseKey=s=>JSON.stringify({f:s.figures,p:s.props,a:s.active});
@@ -1522,6 +1700,7 @@ function applySceneFile(s){
   if(s.bg)setBg(s.bg);
   if(typeof s.keyAz==='number')setKey(s.keyAz);
   capGrid=s.capGrid===true; $('tCapGrid').checked=capGrid;   // older scenes: off
+  setBodyStyle(s.bodyStyle==='classic'?'classic':'human');     // older scenes: the human body
   if(s.camera){const c=s.camera;cam.target.fromArray(c.target||[0,1,0]);cam.theta=c.theta;cam.phi=c.phi;cam.radius=c.radius;cam.shot=c.shot||'full';setLens(c.mm||35);applyCam();markShot();}
   else fitShot('full');
   if(typeof closeTimeline==='function'&&tl.take)closeTimeline();
@@ -1824,17 +2003,25 @@ const normalMat=new THREE.ShaderMaterial({
   // camera-space normals: red = right, green = up, blue = toward camera
   fragmentShader:'varying vec3 vN;void main(){gl_FragColor=vec4(normalize(vN)*0.5+0.5,1.0);}'});
 const MASK_COLORS=[[1,0,0],[0,1,0],[0,0,1],[1,1,0],[1,0,1],[0,1,1],[1,0.5,0],[0.5,0,1]];
+const skinDepthMat=new THREE.ShaderMaterial({uniforms:depthMat.uniforms,skinning:true,
+  vertexShader:SKIN_VS('varying float vD;','vec4 mv=modelViewMatrix*vec4(transformed,1.0);vD=-mv.z;gl_Position=projectionMatrix*mv;'),
+  fragmentShader:depthMat.fragmentShader});
+const skinNormalMat=new THREE.ShaderMaterial({skinning:true,
+  vertexShader:SKIN_VS('varying vec3 vN;','vN=normalize(normalMatrix*objectNormal);gl_Position=projectionMatrix*modelViewMatrix*vec4(transformed,1.0);'),
+  fragmentShader:normalMat.fragmentShader});
 function swapPassMaterials(pass){
   const undo=[], tmp=[];
   const set=(m,mat)=>{undo.push([m,m.material]);m.material=mat;};
   figures.forEach((f,i)=>{
-    let mat=pass==='depth'?depthMat:normalMat;
+    let mat=pass==='depth'?depthMat:normalMat, smat=pass==='depth'?skinDepthMat:skinNormalMat;
     if(pass==='mask'){
-      mat=new THREE.ShaderMaterial({uniforms:{uC:{value:new V3(...MASK_COLORS[i%MASK_COLORS.length])}},vertexShader:VS_FLAT,
-        fragmentShader:'uniform vec3 uC;void main(){gl_FragColor=vec4(uC,1.0);}'});
-      tmp.push(mat);
+      const u={uC:{value:new V3(...MASK_COLORS[i%MASK_COLORS.length])}}, fs='uniform vec3 uC;void main(){gl_FragColor=vec4(uC,1.0);}';
+      mat=new THREE.ShaderMaterial({uniforms:u,vertexShader:VS_FLAT,fragmentShader:fs});
+      smat=new THREE.ShaderMaterial({uniforms:u,skinning:true,vertexShader:SKIN_VS('','gl_Position=projectionMatrix*modelViewMatrix*vec4(transformed,1.0);'),fragmentShader:fs});
+      tmp.push(mat,smat);
     }
-    f.meshes.forEach(m=>set(m,mat));
+    if(f.human)set(f.body.mesh,smat);        // the mannequin under it stays invisible
+    else f.meshes.forEach(m=>set(m,mat));
   });
   // props: same depth/normal treatment; one neutral grey in the mask so they never read as a person
   let pm=pass==='depth'?depthMat:normalMat;
@@ -2259,6 +2446,8 @@ $('tGrid').onchange=e=>{grid.visible=e.target.checked;};
 $('tHandles').onchange=e=>{showHandles=e.target.checked;};
 ['capAspect','capSize','tGuide','tThirds'].forEach(id=>$(id).addEventListener('change',updateGuide));
 $('tCapGrid').onchange=e=>{capGrid=e.target.checked;commit();};
+$('bodyStyle').value=bodyStyle;
+$('bodyStyle').onchange=e=>{setBodyStyle(e.target.value);commit();};
 $('tAlpha').onchange=e=>{if(e.target.checked&&$('capFmt').value==='jpeg'){$('capFmt').value='png';toast('Transparent needs PNG — switched format');}};
 $('capFmt').onchange=e=>{if(e.target.value==='jpeg'&&$('tAlpha').checked){$('tAlpha').checked=false;toast('JPEG has no transparency — turned it off');}};
 $('capBtn').onclick=capture; $('capBtn2').onclick=capture; $('turnBtn').onclick=turnaround;
@@ -4544,7 +4733,7 @@ refreshPropUI();
   glideTick(performance.now());
   updateHandles();renderer.render(scene,camera);})();
 if(EMBED)try{window.parent.postMessage({type:'posebench:ready'},'*');}catch(e){}
-window.__pb={steadyDepth,standingStill,viewAsPhoto,liveGuard,guardNew,photoWarnings,glitchMask,repairSeq,labelSwap,glitchSummary,glitchOverride,addHead,faceLoad,get takes(){return takes;},get glides(){return glides;},glideTick,glideFinish,camApply,get tl(){return tl;},makeTake,bakeTake,openTake,showTakeAt,exportTake,cutList,takeSnap,takeLoad,camImportVideo,addCam,addCut,tlPlay,setCamView,viewNow,blockingText,retarget,synthLandmarks,readPose,camFromImage,mpLoad,detLoad,findPeople,camApply,camStart,camSnap,get camState(){return camS;},get figures(){return figures;},get props(){return props;},get act(){return act;},cam,fitShot,setView,frameAll,PRESETS,WORK,SCENES,
+window.__pb={snapScene,applySceneFile,renderShot,setBodyStyle,get bodyStyle(){return bodyStyle;},steadyDepth,standingStill,viewAsPhoto,liveGuard,guardNew,photoWarnings,glitchMask,repairSeq,labelSwap,glitchSummary,glitchOverride,addHead,faceLoad,get takes(){return takes;},get glides(){return glides;},glideTick,glideFinish,camApply,get tl(){return tl;},makeTake,bakeTake,openTake,showTakeAt,exportTake,cutList,takeSnap,takeLoad,camImportVideo,addCam,addCut,tlPlay,setCamView,viewNow,blockingText,retarget,synthLandmarks,readPose,camFromImage,mpLoad,detLoad,findPeople,camApply,camStart,camSnap,get camState(){return camS;},get figures(){return figures;},get props(){return props;},get act(){return act;},cam,fitShot,setView,frameAll,PRESETS,WORK,SCENES,
   camera,applyCam,selectJoint,solveChain,commit,applyNamed,goalFrame,eyePoint};
 })();
 </script>

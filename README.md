@@ -1213,6 +1213,14 @@ node test-lock.mjs     # nothing invented: the check, the wardrobe lock, the cla
 `test-typing.mjs` exists because `test-ui.mjs` dispatches synthetic `beforeinput` events,
 which cannot catch focus, selection or caret bugs — real clicks and keypresses can.
 
+## Credits
+
+Pose Bench's human body (Body: Human) is based on "Human Models Set - Male/Female (Rigged)"
+(https://sketchfab.com/3d-models/human-models-set-malefemale-rigged-7311fcfdc03e4234900eeced42a1e669) by lzyassoul
+(https://sketchfab.com/lzyassoul), licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/).
+We changed it: the male is re-weighted, both bodies are welded, re-wound and packed by `posebench/models/prep-bodies.mjs`.
+The same credit sits in the app under the Body setting and at the top of `posebench/bodies.js`.
+
 ## Files
 
 ```

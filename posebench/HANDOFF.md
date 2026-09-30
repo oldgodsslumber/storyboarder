@@ -431,3 +431,24 @@ A neutral standing photo came out with bent knees, a forward torso and forearms 
 - slides the ankles in depth under the centre of mass, with the knees following half way.
 
 Only camera-space z moves, so the photo-angle view is unchanged. Results: knees went from 14–27° to 4–11°, and the spine from 10–16° lean to 3–4°. Hands-on-hips elbows stay bent (they're real). Squats, seated poses, a bird-dog and a mid-stride photo are not steadied. Takes don't use it (a walk seen from the front can pass for standing).
+
+## The human body (2026-09-30, after "is it worth upgrading our dummy?")
+
+**Body** (Capture panel: Human / Classic mannequin; saved as `bodyStyle` in the scene; older scenes open as Human) swaps what the figures look like, on screen and in every render and pass. Nothing about posing changed. The mannequin stays in place as an invisible skeleton (`mat.visible=false`), and posing, IK, limits, picking (the raycaster ignores `visible`), grounding and props all still work on it. The body follows it.
+
+- **Source:** "Human Models Set - Male/Female (Rigged)" by lzyassoul, CC-BY-4.0. The credit sits in the UI, the README and `bodies.js`. The source zip is in `posebench/models/`. Unzip it to `models/sketchfab/` (gitignored), then run `node posebench/models/prep-bodies.mjs [--dump]` to write `posebench/bodies.js` (~940 KB). `build.mjs` inlines it into `js/posebench-src.js`.
+- **Prep:**
+  - Woman: the rigged low-poly weights are copied to the 17k high mesh (nearest four vertices).
+  - Man: his source skin is broken (left-thigh weights sit on the right leg, the toe bones take half the shin). He gets nearest-bone weights kept to his own side (`autoWeights`), then the woman's weights carried over through each bone (`templateWeights`); his separate fingers keep their own. His 33k high mesh is meshes 5+6 (the right arm is a separate piece).
+  - Both: welded, winding made consistent per connected piece (the man's faces were mixed), weights smoothed six passes over the surface (`smoothWeights`: this removed the torn shoulder tops), and the Rigify rig trimmed to 53 bones (the torso chain, limbs, toes, 30 finger bones; palms, face and breasts fold into their parent).
+- **Runtime (`makeBody`/`fitBody`):**
+  - Each body bone rides one mannequin joint (`BODY_MAP`). At build time the body is fitted to the figure: every bone head goes on its joint, each bone is stretched along its length to the figure's own segment, the A-pose arms and legs are swung onto the mannequin's rest direction, and the head is scaled for a child.
+  - `K[i] = rest(joint)^-1 · fitted bone · bind^-1`. Each frame the skeleton's `update` writes `inverse(group) · pivot.matrixWorld · K[i]`. The mesh is a detached-bind `SkinnedMesh` inside the figure's group, `DoubleSide`.
+  - The fingers curl from the hand shape (`CURL`, about each finger bone's X).
+  - Highlight: the `aHl` attribute is the share of each vertex belonging to the selected or hovered joint, injected as emissive.
+  - Passes use skinned copies of the depth, normal and mask materials (`SKIN_VS`).
+- **Types:** Man and Child use the male body (the child's head is scaled up); Woman uses the female one. Bulk widens the limbs laterally.
+- **Known limits:**
+  - A faint dark crease at the crotch.
+  - Clicks on body areas wider than the mannequin (flanks, belly) miss, because picking uses the mannequin.
+  - Undo doesn't revert a Body change.
