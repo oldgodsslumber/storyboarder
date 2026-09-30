@@ -54,8 +54,9 @@
       descHint: 'Age range, build, hair, and the exact outfit — fabric and colour.',
       noImage: 'No reference image — describe this person identically every time, as far as this frame shows them.',
       refBrief: 'a clean, front-facing reference frame of this person: plain background, ' +
-        'even natural light, neutral expression, full length from head to feet with the whole ' +
-        'outfit in frame. ' + NEUTRAL_REF
+        'even natural light, a relaxed, natural expression, full length from head to feet with the whole ' +
+        'outfit in frame. They look like a real, ordinary person photographed as they are \u2014 ' +
+        'everyday features, natural build, real skin texture, no retouching, no model looks. ' + NEUTRAL_REF
     },
     {
       id: 'place', label: 'Location', plural: 'Locations', one: 'location',
@@ -874,7 +875,8 @@
         'like "Ops lead" when the script leaves them unnamed.',
       desc: 'who they are on camera and, critically, exactly what they look like and are WEARING. ' +
         'Age range, build, hair, skin tone, and a specific outfit described down to fabric and colour. ' +
-        'This text is what keeps them identical from shot to shot, so be concrete and complete.'
+        'This text is what keeps them identical from shot to shot, so be concrete and complete. ' +
+        'They are ordinary people who do this work, not models or actors: everyday faces with real asymmetry and character, natural builds of every kind, visible age (lines, greying, a little weight, tired eyes where it fits), hair that is lived in, skin with its texture and blemishes. Attractive the way real people are, never glamorous: no chiselled jaws, flawless skin, perfect teeth, sculpted brows or catalogue looks. Describe one or two specific, ordinary features that make them this person.'
     },
     place: {
       ask: 'recurring',

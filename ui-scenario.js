@@ -2979,7 +2979,7 @@
 
       tab('Brand style');
       t('brand tab holds the house style',
-        /CONSTRAINTS[\s\S]*STYLE & TONE/.test(
+        /CAMERA[\s\S]*THE AI LOOK/.test(
           document.querySelector('.modal .tab-panel.on textarea').value), '');
       t('house style can be switched off (the wardrobe lock is gone)',
         document.querySelectorAll('.modal .tab-panel.on input[type=checkbox]').length === 1 &&

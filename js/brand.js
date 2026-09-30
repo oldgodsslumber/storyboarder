@@ -11,47 +11,48 @@
 (function (SB) {
   'use strict';
 
+  /* The house style is about how the picture is SHOT and how real it looks — camera, lens, light, grade,
+   * texture — and nothing about what is in it. The first version also asked for props, set dressing,
+   * diversity and "thriving, confident individuals", which fought the descriptions and the no-invention
+   * rule (the writer obeyed the stricter one, so half the style vanished) and decided things the board
+   * decides. What is in the shot comes from the card; this says how to photograph it. (2026-09-30) */
   const DEFAULT_BRAND = [
-    'CONSTRAINTS',
-    '- Cinematic + technical: maintain professional photographic detail — focal length, aperture, distance/angle, depth of field, and lighting notes for the frame.',
-    '- Vary angles subtly (slight high/low tilt, over-shoulder, profile, foreground obstructions) while staying coherent with the rest of the scene.',
-    '- Include tactile props or environmental elements that support the story (fabric, glass, rain, reflections, paper, steam).',
-    '- Finishing: "Capture RAW", "muted professional grade", "smooth tonal rolloff", "subtle cinematic grain", "controlled contrast".',
+    'CAMERA',
+    '- Shot on a real camera: a cinema camera (ARRI Alexa look) or a full-frame stills camera. Name the ' +
+      'focal length, the aperture and the camera height for this frame.',
+    '- Frame the way a camera operator does: the framing the shot asks for, with a slightly imperfect, ' +
+      'natural composition \u2014 not perfect symmetry, not a subject pasted dead centre.',
     '',
-    'STYLE & TONE',
-    '- Authentic, documentary-style realism.',
-    '- Natural expressions: relaxed faces, genuine smiles, subtle emotion — never exaggerated.',
-    '- Real human gestures: mid-conversation, mid-task, mid-thought.',
-    '- Diversity across age, gender presentation, life stage and cultural background.',
-    '- Inclusive and global representation appropriate for the region.',
-    '- Slight imperfections that feel lived-in (gentle motion, natural falloff, real textures).',
-    '- Professional yet approachable tone.',
-    '- Colour palette matches real-world lighting — warm neutrals, soft highlights, no artificial gloss.',
+    'LENS & FOCUS',
+    '- Real lens behaviour: one plane of focus, a natural falloff in front of and behind it, soft ' +
+      'out-of-focus backgrounds where the aperture allows.',
+    '- Mild lens character: a touch of vignetting, gentle edge softness, no digital perfection.',
     '',
-    'CAMERA & TECHNICAL FEEL',
-    '- Natural light only: window light, office daylight, practical lamps, soft outdoor light.',
-    '- Shallow depth of field with a clear focal point that guides the viewer.',
-    '- Clean exposure — avoid harsh highlights, avoid blown-out whites.',
-    '- Soft contrast and realistic colour (no HDR, no overly sharp digital edges).',
-    '- Subtle grain or film-inspired softness is fine where it supports realism.',
-    '- Composition avoids clichés (staged handshakes, pointing at screens, contrived poses).',
+    'LIGHT',
+    '- Motivated, natural light that fits the place: window light, overcast daylight, practical lamps.',
+    '- Soft falloff and real shadows that keep detail. No studio-perfect key light, no rim-light halo, ' +
+      'no light with no source.',
     '',
-    'ENVIRONMENT & COMPOSITION',
-    '- People centred in believable, everyday moments.',
-    '- Thriving, confident, efficient individuals — not product-first imagery.',
-    '- Open office spaces, home offices, industry environments, outdoor movement.',
-    '- Work settings that feel modern, diverse and relatable.',
-    '- Industry scenes that show clear context through subtle cues, not overemphasis.',
-    '- Well-organised compositions with a single clear focal point.',
-    '- Avoid cluttered backgrounds; aim for clean, lived-in realism.',
-    '- Depth created through blurred backgrounds, reflections or foreground elements.',
+    'COLOUR & GRADE',
+    '- A muted, filmic grade: warm neutrals, true-to-life colour, controlled contrast, highlights that ' +
+      'roll off smoothly. Clean exposure, no blown whites.',
+    '- No HDR, no oversaturation, no teal-and-orange push.',
     '',
-    'OVERALL MOOD',
-    '- Confident, approachable, human.',
-    '- Calm, clear and aspirational without being glossy.',
-    '- Feels like a real moment you walked into — not staged or overproduced.',
-    '- Warm, modern, people-centric storytelling.',
-    '- The image communicates authenticity, trust, competence, clarity and human connection.'
+    'TEXTURE & REALISM',
+    '- Real skin: pores, fine lines, natural unevenness and colour variation.',
+    '- Real materials: fabric weave and creases, worn edges, scuffs, dust and fingerprints on surfaces.',
+    '- Subtle film grain. The frame should feel like a real moment someone photographed.',
+    '- Natural expressions and relaxed body language, caught mid-action \u2014 never posed for the camera.',
+    '- People look like real, ordinary people, not models: everyday faces with asymmetry and character, ' +
+      'natural builds, visible age, unretouched skin.',
+    '',
+    'AVOID \u2014 THE AI LOOK',
+    '- Plastic, airbrushed or waxy skin; a glossy CGI sheen; over-sharpened detail.',
+    '- Perfect symmetry, glowing edges, flat even lighting, dreamy haze or bloom.',
+    '- Stock-photo smiles, eyes locked on the lens, mannequin stillness.',
+    '- Supermodel or influencer looks: chiselled, flawless, symmetrical faces, perfect teeth and hair, ' +
+      'idealised bodies.',
+    '- Text, logos, watermarks or signage nobody asked for.'
   ].join('\n');
 
   /* Motion inherits the same rules; these are the ones that only make sense once
@@ -137,12 +138,13 @@
     'THIS IS A REFERENCE FRAME, AND IT IS EXEMPT FROM THE HOUSE STYLE ABOVE',
     '- The house style describes finished SHOTS. This is a reference: a neutral record of what ' +
     'something looks like, so a model can reproduce it exactly.',
-    '- The Finishing, grade, grain, contrast, lens, aperture and depth-of-field rules above do ' +
-    'NOT apply here and must not appear in what you write. No "capture RAW", no "muted ' +
-    'professional grade", no "cinematic grain", no focal length, no f-number, no shallow focus.',
+    '- The CAMERA, LENS & FOCUS, LIGHT and COLOUR & GRADE rules above do NOT apply here and must ' +
+    'not appear in what you write: no focal length, no f-number, no shallow focus, no grade, no grain.',
     '- Everything sharp, evenly lit, true colour, plain background. The subject and its wardrobe ' +
     'or surface is the whole content of the frame.',
-    '- Composition, palette and the sense of the world still follow the house style.'
+    '- TEXTURE & REALISM and AVOID still apply in full: this must look like a photograph of a real ' +
+    'thing, not a render. A person is photographed as they are \u2014 an ordinary, real-looking person, ' +
+    'natural and unretouched, never a model or a glamour portrait.'
   ].join('\n');
 
   /* The craft rules for movement. True of every video job, full-reference or

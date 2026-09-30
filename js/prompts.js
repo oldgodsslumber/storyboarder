@@ -197,7 +197,8 @@
      there whatever the writer did — and visible in the stored prompt, where it can be edited. */
   function decorateImage(shot) {
     return function (raw) {
-      return [SB.Personas.refPreamble(P(), shot), SB.Personas.clayPreamble(P(), shot),
+      /* the blocking first: it is image 1 (or the top-left panel), so its paragraph opens the prompt */
+      return [SB.Personas.clayPreamble(P(), shot), SB.Personas.refPreamble(P(), shot),
         String(raw || '').trim()].filter(Boolean).join('\n\n');
     };
   }
