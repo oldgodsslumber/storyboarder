@@ -951,6 +951,24 @@ section('a still carries every reference the card names');
   t('no numbered image list survives beside it',
     !/image 2 = /.test(block), block.slice(0, 300));
 
+  /* A reframe of another card's frame is an EDIT of it: that frame travels alone as image 1, never as a
+     panel of a sheet, and the app's opening says so. */
+  {
+    const src = SB.Model.addShot(pM, sc.id, { type: 'Medium' });
+    src.description = 'The desk, wide.'; src.image = SB.Blobs.image(pM, 'data:image/png;base64,iVBORw0KGgo=', 16, 9);
+    const re = SB.Model.addShot(pM, sc.id, { type: 'Close-up' });
+    const code = SB.Model.findShot(pM, src.id).code;
+    re.personaIds = sh.personaIds.slice();
+    re.imageDescription = SB.Refs.insert('Reframe ', 8, 8, src.id, code).text + ' tighter.';
+    t('a reframe plans no sheet, even with a subject beside it', SB.Imagine.sheetPlan(pM, re, 'image').length === 0,
+      SB.Imagine.sheetPlan(pM, re, 'image').map(x => x.label).join(','));
+    const rr = SB.Imagine.refsFor(pM, re, 'image');
+    t('its one picture is the source frame', rr.carries === 1 && rr.first && rr.first.kind === 'shot', JSON.stringify(rr.first));
+    t('and the app opens the prompt saying so',
+      /^Image \d+ is the rendered frame of shot .+\. Keep everything in it/.test(SB.Personas.refPreamble(pM, re)), SB.Personas.refPreamble(pM, re));
+    SB.Model.deleteShot(pM, re.id); SB.Model.deleteShot(pM, src.id);
+  }
+
   /* The same card on the still's EXPORT twin (vexport.js): the files go up one
      by one, so no sheet, all three travel, and the prompt numbers them. */
   {

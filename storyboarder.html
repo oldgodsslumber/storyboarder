@@ -1454,7 +1454,7 @@ body.comment-mode .frame{cursor:crosshair}
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-09-30 17:59 · 8c2de70+";</script>
+<script>window.SB_BUILD = "2026-09-30 18:35 · 371d1b9+";</script>
 
 <div id="app">
 
@@ -7518,8 +7518,15 @@ window.SB = window.SB || {};
   /* The still's picker is on an EXPORT twin (vexport.js): the files are
      uploaded one by one, so there is no sheet and every picture travels. */
   function imageExport(p) { const m = SB.Model.imageModel(p); return !!(m && m.export); }
+  /* A still that reframes another card's frame is an EDIT of that frame, so that frame is the picture that
+     travels, whole and alone. Packed into a sheet it became a small "left panel" that nothing said to edit,
+     and the writer was told to start "from image 1" when there was no image 1, only a sheet. */
+  function sourceFrame(p, shot) {
+    return SB.Refs.images(p, shot, 'image').filter(function (e) { return e.kind === 'shot'; })[0] || null;
+  }
   function sheetPlan(p, shot, role) {
     if ((role || 'image') === 'image' && imageExport(p)) return [];
+    if ((role || 'image') === 'image' && sourceFrame(p, shot)) return [];
     const list = SB.Refs.images(p, shot, role || 'image').slice(0, SHEET_MAX);
     if (list.length < 2) return [];
     const plan = SHEET_PLAN[list.length];
@@ -7667,7 +7674,8 @@ window.SB = window.SB || {};
    * for pictures that are thrown away. */
   function single(p, list) {
     let chain = Promise.resolve([]);
-    list.slice(0, 1).forEach(function (e) {
+    const src = list.filter(function (e) { return e.kind === 'shot'; })[0];   // a reframe sends its source frame
+    (src ? [src] : list.slice(0, 1)).forEach(function (e) {
       chain = chain.then(function (acc) {
         return SB.Renders.file(p, e.render).then(function (f) {
           if (f) return { blob: f, name: f.name, label: e.label, n: e.n };
@@ -8303,7 +8311,7 @@ window.SB = window.SB || {};
       wordsOnly: wordsOnly,
       carries: carries,
       sheet: sheet ? plan : null,
-      first: feed[0] || null,
+      first: sourceFrame(p, shot) || feed[0] || null,
       byKey: transport() === 'key'
     };
   }
@@ -10084,10 +10092,19 @@ window.SB = window.SB || {};
       const say = all.map(function (e) {
         return 'image ' + e.n + ' is ' + (e.kind === 'shot' ? 'the rendered frame of shot ' + e.label : e.label) + (e.role ? ' (' + e.role + ')' : '');
       }).join('; ');
-      return say.charAt(0).toUpperCase() + say.slice(1) + '. Match each subject exactly to their own image \u2014 face, ' +
-        'hair, build and wardrobe \u2014 and take nothing else from those images: not their background, pose, framing or light.';
+      const src = all.filter(function (e) { return e.kind === 'shot'; })[0];
+      return say.charAt(0).toUpperCase() + say.slice(1) + '. ' +
+        (src ? 'Image ' + src.n + ' is the frame this one is edited from: keep everything in it \u2014 the place, the light, the lens ' +
+          'and the grade \u2014 and change only what this prompt describes. ' : '') +
+        'Match each subject exactly to their own image \u2014 face, hair, build and wardrobe' +
+        (src ? '.' : ' \u2014 and take nothing else from those images: not their background, pose, framing or light.');
     }
     const first = sent.first;
+    /* A reframe of another card's frame: the app says so itself, so the image model always gets it. */
+    if (first && first.kind === 'shot') {
+      return 'Image ' + (first.n || 1) + ' is the rendered frame of shot ' + first.label + '. Keep everything in it ' +
+        '\u2014 the place, the people, the light, the lens and the grade \u2014 and change only what this prompt describes.';
+    }
     if (!first || first.kind !== 'subject') return '';
     return 'Image 1 is ' + first.label + (first.role ? ' (' + first.role + ')' : '') + '. Wherever ' +
       first.label + ' is in this shot, match them exactly to image 1 — face, hair, build and wardrobe. ' +

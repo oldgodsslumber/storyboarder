@@ -2528,8 +2528,15 @@
   /* The still's picker is on an EXPORT twin (vexport.js): the files are
      uploaded one by one, so there is no sheet and every picture travels. */
   function imageExport(p) { const m = SB.Model.imageModel(p); return !!(m && m.export); }
+  /* A still that reframes another card's frame is an EDIT of that frame, so that frame is the picture that
+     travels, whole and alone. Packed into a sheet it became a small "left panel" that nothing said to edit,
+     and the writer was told to start "from image 1" when there was no image 1, only a sheet. */
+  function sourceFrame(p, shot) {
+    return SB.Refs.images(p, shot, 'image').filter(function (e) { return e.kind === 'shot'; })[0] || null;
+  }
   function sheetPlan(p, shot, role) {
     if ((role || 'image') === 'image' && imageExport(p)) return [];
+    if ((role || 'image') === 'image' && sourceFrame(p, shot)) return [];
     const list = SB.Refs.images(p, shot, role || 'image').slice(0, SHEET_MAX);
     if (list.length < 2) return [];
     const plan = SHEET_PLAN[list.length];
@@ -2677,7 +2684,8 @@
    * for pictures that are thrown away. */
   function single(p, list) {
     let chain = Promise.resolve([]);
-    list.slice(0, 1).forEach(function (e) {
+    const src = list.filter(function (e) { return e.kind === 'shot'; })[0];   // a reframe sends its source frame
+    (src ? [src] : list.slice(0, 1)).forEach(function (e) {
       chain = chain.then(function (acc) {
         return SB.Renders.file(p, e.render).then(function (f) {
           if (f) return { blob: f, name: f.name, label: e.label, n: e.n };
@@ -3313,7 +3321,7 @@
       wordsOnly: wordsOnly,
       carries: carries,
       sheet: sheet ? plan : null,
-      first: feed[0] || null,
+      first: sourceFrame(p, shot) || feed[0] || null,
       byKey: transport() === 'key'
     };
   }

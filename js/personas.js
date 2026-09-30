@@ -824,10 +824,19 @@
       const say = all.map(function (e) {
         return 'image ' + e.n + ' is ' + (e.kind === 'shot' ? 'the rendered frame of shot ' + e.label : e.label) + (e.role ? ' (' + e.role + ')' : '');
       }).join('; ');
-      return say.charAt(0).toUpperCase() + say.slice(1) + '. Match each subject exactly to their own image \u2014 face, ' +
-        'hair, build and wardrobe \u2014 and take nothing else from those images: not their background, pose, framing or light.';
+      const src = all.filter(function (e) { return e.kind === 'shot'; })[0];
+      return say.charAt(0).toUpperCase() + say.slice(1) + '. ' +
+        (src ? 'Image ' + src.n + ' is the frame this one is edited from: keep everything in it \u2014 the place, the light, the lens ' +
+          'and the grade \u2014 and change only what this prompt describes. ' : '') +
+        'Match each subject exactly to their own image \u2014 face, hair, build and wardrobe' +
+        (src ? '.' : ' \u2014 and take nothing else from those images: not their background, pose, framing or light.');
     }
     const first = sent.first;
+    /* A reframe of another card's frame: the app says so itself, so the image model always gets it. */
+    if (first && first.kind === 'shot') {
+      return 'Image ' + (first.n || 1) + ' is the rendered frame of shot ' + first.label + '. Keep everything in it ' +
+        '\u2014 the place, the people, the light, the lens and the grade \u2014 and change only what this prompt describes.';
+    }
     if (!first || first.kind !== 'subject') return '';
     return 'Image 1 is ' + first.label + (first.role ? ' (' + first.role + ')' : '') + '. Wherever ' +
       first.label + ' is in this shot, match them exactly to image 1 — face, hair, build and wardrobe. ' +
