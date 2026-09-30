@@ -1457,7 +1457,7 @@ body.comment-mode .frame{cursor:crosshair}
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-09-30 19:25 · 05b4c7b+";</script>
+<script>window.SB_BUILD = "2026-09-30 20:12 · c0f94b5+";</script>
 
 <div id="app">
 
@@ -15886,7 +15886,7 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
       const u = (e.render && SB.Renders.dataUrl(p, e.render)) || SB.Blobs.src(p, e.img);
       const ext = /^data:image\/png/i.test(u) ? 'png' : /^data:image\/webp/i.test(u) ? 'webp' : 'jpg';
       const name = e.kind === 'pose' ? 'blocking' : String(e.label || 'ref').replace(/[^a-z0-9]+/gi, '_').replace(/^_|_$/g, '').toLowerCase();
-      return { n: e.n, cite: 'image ' + e.n, url: u, kind: e.kind, label: e.kind === 'pose' ? 'the blocking (clay render)' : e.label,
+      return { n: e.n, id: e.id, cite: 'image ' + e.n, url: u, kind: e.kind, label: e.kind === 'pose' ? 'the blocking (clay render)' : e.label,
         file: (e.n < 10 ? '0' : '') + e.n + '_' + (name || 'ref') + '.' + ext };
     });
   }
@@ -22246,6 +22246,7 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
         it.appendChild(SB.el('span', 'feed-who', a.kind === 'clay-clip' ? 'the blocking, animated (clay clip)'
           : a.kind === 'clay-still' ? 'the blocking (clay render)' : a.role));
         it.title = a.h3 + ' — ' + a.role + '. Goes up as ' + a.file + ' in the MiniMax package.';
+        if (a.kind === 'subject' && a.subjectId) it.appendChild(offBtn(sh, a.subjectId, a.role));
         it.classList.add('mxm-fe');
         wrap.appendChild(it);
       });
@@ -22269,6 +22270,7 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
         it.appendChild(SB.el('span', 'feed-file', x.file));
         it.appendChild(SB.el('span', 'feed-who', x.cite + ' \u00b7 ' + x.label));
         it.title = x.cite + ' = ' + x.label + '. Uploaded by hand, in this order.';
+        if (x.kind === 'subject' && x.id) it.appendChild(offBtn(sh, x.id, x.label));
         wrap.appendChild(it);
       });
       if (!files.length) wrap.appendChild(SB.el('div', 'pt-none', 'no files \u2014 the prompt is the whole call'));
@@ -22302,6 +22304,7 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
         it.appendChild(SB.el('span', 'feed-who', a.cite + ' \u00b7 ' + (a.kind === 'clay-clip' ? 'the blocking, animated'
           : a.kind === 'clay-still' ? 'the blocking (clay render)' : a.role)));
         it.title = a.cite + ' = ' + a.role + '. Uploaded by hand, in this order.';
+        if (a.kind === 'subject' && a.subjectId) it.appendChild(offBtn(sh, a.subjectId, a.role));
         wrap.appendChild(it);
       });
       if (!list.length) wrap.appendChild(SB.el('div', 'pt-none', 'no files \u2014 the prompt is the whole call'));

@@ -1393,6 +1393,7 @@
         it.appendChild(SB.el('span', 'feed-who', a.kind === 'clay-clip' ? 'the blocking, animated (clay clip)'
           : a.kind === 'clay-still' ? 'the blocking (clay render)' : a.role));
         it.title = a.h3 + ' — ' + a.role + '. Goes up as ' + a.file + ' in the MiniMax package.';
+        if (a.kind === 'subject' && a.subjectId) it.appendChild(offBtn(sh, a.subjectId, a.role));
         it.classList.add('mxm-fe');
         wrap.appendChild(it);
       });
@@ -1416,6 +1417,7 @@
         it.appendChild(SB.el('span', 'feed-file', x.file));
         it.appendChild(SB.el('span', 'feed-who', x.cite + ' \u00b7 ' + x.label));
         it.title = x.cite + ' = ' + x.label + '. Uploaded by hand, in this order.';
+        if (x.kind === 'subject' && x.id) it.appendChild(offBtn(sh, x.id, x.label));
         wrap.appendChild(it);
       });
       if (!files.length) wrap.appendChild(SB.el('div', 'pt-none', 'no files \u2014 the prompt is the whole call'));
@@ -1449,6 +1451,7 @@
         it.appendChild(SB.el('span', 'feed-who', a.cite + ' \u00b7 ' + (a.kind === 'clay-clip' ? 'the blocking, animated'
           : a.kind === 'clay-still' ? 'the blocking (clay render)' : a.role)));
         it.title = a.cite + ' = ' + a.role + '. Uploaded by hand, in this order.';
+        if (a.kind === 'subject' && a.subjectId) it.appendChild(offBtn(sh, a.subjectId, a.role));
         wrap.appendChild(it);
       });
       if (!list.length) wrap.appendChild(SB.el('div', 'pt-none', 'no files \u2014 the prompt is the whole call'));

@@ -114,7 +114,7 @@
       const u = (e.render && SB.Renders.dataUrl(p, e.render)) || SB.Blobs.src(p, e.img);
       const ext = /^data:image\/png/i.test(u) ? 'png' : /^data:image\/webp/i.test(u) ? 'webp' : 'jpg';
       const name = e.kind === 'pose' ? 'blocking' : String(e.label || 'ref').replace(/[^a-z0-9]+/gi, '_').replace(/^_|_$/g, '').toLowerCase();
-      return { n: e.n, cite: 'image ' + e.n, url: u, kind: e.kind, label: e.kind === 'pose' ? 'the blocking (clay render)' : e.label,
+      return { n: e.n, id: e.id, cite: 'image ' + e.n, url: u, kind: e.kind, label: e.kind === 'pose' ? 'the blocking (clay render)' : e.label,
         file: (e.n < 10 ? '0' : '') + e.n + '_' + (name || 'ref') + '.' + ext };
     });
   }
