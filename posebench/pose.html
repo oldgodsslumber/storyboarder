@@ -311,6 +311,11 @@
           <input type="range" id="rTurn" min="-180" max="180" value="0">
         </div>
         <div class="field" id="linkField" style="display:none"><label for="figLink">Who this is <span style="color:var(--muted-2)">· names them in the shot’s prompt</span></label><select id="figLink"></select></div>
+        <div class="axis">
+          <div class="lab"><span>Lift</span><input class="num" type="number" id="nLift" step="0.5" title="cm"></div>
+          <input type="range" id="rLift" min="-30" max="30" step="0.5" value="0" title="Raise or lower the figure from where the floor or the seat puts it (Alt+↑/↓: 1 cm, with Shift 5 cm). Double-click: back to 0">
+        </div>
+        <div class="field"><label for="sitSel">Sit on</label><select id="sitSel"></select></div>
         <div class="field"><label for="lookSel">Look at</label><select id="lookSel"></select></div>
       </section>
       <section class="sec card" id="cardProp" hidden>
@@ -768,6 +773,8 @@ class Figure{
     this.joints={}; this.meshes=[]; this.geos=[]; this.mats=[]; this.handParts={};
     // seat = chair prop id, look = {fig}|{prop}|'camera', goals = live hand targets (see resolveFig)
     this.seat=null; this.look=null; this.goals=[]; this.hands={l:'relaxed',r:'relaxed'};
+    this.seatAt=null;   // [x, z, turn°] on the seat prop, in its own space (null = a chair's centre)
+    this.lift=0;        // metres up (+) or down (-) from where the floor or the seat puts the figure
     this.link=o.link||null;   // storyboarder subject (persona) id this figure stands for
     this.build();
   }
@@ -931,16 +938,13 @@ class Figure{
       else out[n]={x:v.x||0,y:-(v.y||0),z:-(v.z||0)};}
     const p=this.pelvisOffset(); this.setPose(out,[-p[0],p[1],p[2]]);
   }
+  /* The lowest point of what you SEE goes on the floor: the human body when it's shown (it sits a little
+     differently from the mannequin under it — standing, it floated 1.5 cm), else the mannequin. Then Lift. */
   ground(force){
     if(this.seat){placeOnSeat(this);return;}
     if(!autoGround&&!force)return;
-    this.group.updateMatrixWorld(true);
-    let min=Infinity; const v=_v;
-    for(const m of this.meshes){
-      const pos=m.geometry.attributes.position, mw=m.matrixWorld;
-      for(let i=0;i<pos.count;i+=2){v.fromBufferAttribute(pos,i).applyMatrix4(mw);if(v.y<min)min=v.y;}
-    }
-    if(isFinite(min)){this.group.position.y-=min;this.group.updateMatrixWorld(true);}
+    const min=visMinY(this);
+    if(isFinite(min)){this.group.position.y+=this.lift-min;this.group.updateMatrixWorld(true);}
   }
   box(names){
     this.group.updateMatrixWorld(true);
@@ -953,13 +957,15 @@ class Figure{
     const p=this.group.position;
     return {id:this.id,name:this.name,type:this.type,color:this.color,bulk:this.bulk,height:this.height,
       pos:[p.x,p.y,p.z].map(v=>Math.round(v*1e4)/1e4),turn:Math.round(this.turn*100)/100,pelvis:this.pelvisOffset(),pose:this.getPose(),
-      seat:this.seat,look:this.look,goals:this.goals,hands:Object.assign({},this.hands),link:this.link};
+      seat:this.seat,look:this.look,goals:this.goals,hands:Object.assign({},this.hands),link:this.link,
+      seatAt:this.seatAt||undefined,lift:this.lift?Math.round(this.lift*1e4)/1e4:undefined};
   }
   load(s){
     this.name=s.name||this.name;
     const rebuild=s.type!==this.type||s.bulk!==this.bulk;
     this.type=s.type||'male'; this.bulk=s.bulk||1; this.color=s.color||this.color; this.height=s.height||1;
     this.seat=s.seat||null; this.look=s.look||null; this.goals=JSON.parse(JSON.stringify(s.goals||[])); this.link=s.link||null;
+    this.seatAt=Array.isArray(s.seatAt)?s.seatAt.slice(0,3):null; this.lift=+s.lift||0;
     this.hands=Object.assign({l:'relaxed',r:'relaxed'},s.hands);
     if(rebuild)this.build(); else {this.setColor(this.color);this.group.scale.setScalar(this.height);this.setHand('l',this.hands.l);this.setHand('r',this.hands.r);}
     this.setPose(s.pose,s.pelvis);
@@ -1309,16 +1315,73 @@ function minY(f,joints){
   }
   return min;
 }
+/* The lowest point of what is visible: the skinned human body when it's shown, else the mannequin. `joints`
+   narrows it to the parts riding those joints (the seat of the trousers: pelvis and hips; the feet: ankles). */
+function visMinY(f,joints){
+  if(!f.human)return minY(f,joints);
+  const b=f.body; f.group.updateMatrixWorld(true); b.sk.update();
+  if(!b.jv){   // vertex lists per joint, by each vertex's heaviest bone
+    b.jv={}; const si=b.g.getAttribute('skinIndex').array, sw=b.g.getAttribute('skinWeight').array, n=si.length/4;
+    for(let v=0;v<n;v++){let k=0;for(let q=1;q<4;q++)if(sw[v*4+q]>sw[v*4+k])k=q;const jn=b.pivot[si[v*4+k]].userData.jn;(b.jv[jn]=b.jv[jn]||[]).push(v);}
+  }
+  const P=b.g.getAttribute('position'), si=b.g.getAttribute('skinIndex').array, sw=b.g.getAttribute('skinWeight').array;
+  const M=_seatM, t=new V3(), v=new V3(), G=f.group.matrixWorld;
+  let min=Infinity;
+  const one=i=>{t.set(0,0,0);for(let k=0;k<4;k++){const w=sw[i*4+k]/255;if(!w)continue;M.fromArray(b.sk.boneMatrices,si[i*4+k]*16);t.add(v.fromBufferAttribute(P,i).applyMatrix4(M).multiplyScalar(w));}
+    t.applyMatrix4(G); if(t.y<min)min=t.y;};
+  if(joints)joints.forEach(j=>(b.jv[j]||[]).forEach(one));
+  else for(let i=0;i<P.count;i+=2)one(i);
+  return isFinite(min)?min:minY(f,joints);
+}
+const _seatM=new THREE.Matrix4();
 // office chair gas lift: seat top a little below knee height so the feet land flat
 const autoSeatH=f=>clamp((f.T.shin+f.T.ankleH)*f.height-0.03,0.34,0.52);
+// the prop's own box, in its own space
+function propLocalBox(pr){
+  pr.group.updateMatrixWorld(true);
+  const inv=new THREE.Matrix4().copy(pr.group.matrixWorld).invert(), b=new THREE.Box3(), M=new THREE.Matrix4();
+  pr.meshes.forEach(m=>{if(!m.geometry.boundingBox)m.geometry.computeBoundingBox();
+    b.union(m.geometry.boundingBox.clone().applyMatrix4(M.multiplyMatrices(inv,m.matrixWorld)));});
+  return b;
+}
+// how high the seat is under a point: a chair's cushion, else whatever the prop's top is straight below it
+const _down=new THREE.Raycaster();
+function seatTop(pr,world){
+  if(pr.type==='chair')return pr.group.position.y+pr.seatH;
+  pr.group.updateMatrixWorld(true);
+  const top=new THREE.Box3().setFromObject(pr.group).max.y;
+  _down.set(new V3(world.x,top+1,world.z),new V3(0,-1,0));
+  const hit=_down.intersectObjects(pr.meshes,false)[0];
+  return hit?hit.point.y:top;
+}
 function placeOnSeat(f){
-  const ch=propById(f.seat); if(!ch){f.seat=null;return;}
-  f.group.rotation.y=ch.group.rotation.y;
+  const ch=propById(f.seat); if(!ch){f.seat=null;f.seatAt=null;return;}
+  const at=f.seatAt||[0,-0.02,0];
+  f.group.rotation.y=ch.group.rotation.y+at[2]*DEG;
   f.group.updateMatrixWorld(true); ch.group.updateMatrixWorld(true);
-  const pel=f.joints.pelvis.pivot.getWorldPosition(new V3()), want=ch.group.localToWorld(new V3(0,0,-0.02));
+  const pel=f.joints.pelvis.pivot.getWorldPosition(new V3()), want=ch.group.localToWorld(new V3(at[0],0,at[1]));
   f.group.position.x+=want.x-pel.x; f.group.position.z+=want.z-pel.z;
-  f.group.position.y+=ch.group.position.y+ch.seatH-minY(f,['pelvis','lHip','rHip']);
   f.group.updateMatrixWorld(true);
+  f.group.position.y+=seatTop(ch,want)+f.lift-visMinY(f,['pelvis','lHip','rHip']);
+  f.group.updateMatrixWorld(true);
+}
+/* Sit on the edge of any prop that isn't a chair: the side nearest the figure, hips set in from the edge so
+   the knees are just past it, facing out. */
+function edgeSeat(f,pr){
+  const b=propLocalBox(pr); pr.group.updateMatrixWorld(true);
+  const pel=pr.group.worldToLocal(f.joints.pelvis.pivot.getWorldPosition(new V3()));
+  const c=b.getCenter(new V3());
+  /* The side the figure is standing beyond (how far outside each face, scaled by the prop's size that way, so
+     a long bench is sat on along its length, not on its end). Standing over the prop: the nearest face. */
+  const W=Math.max(b.max.x-b.min.x,0.01), D=Math.max(b.max.z-b.min.z,0.01);
+  const out={'+x':(pel.x-b.max.x)/W,'-x':(b.min.x-pel.x)/W,'+z':(pel.z-b.max.z)/D,'-z':(b.min.z-pel.z)/D};
+  const side=Object.keys(out).sort((a,q)=>out[q]-out[a])[0];
+  // hips set in from the edge so the thighs rest on it and the knees are just past it; on a small top, near its edge
+  const half=(side[1]==='x'?W:D)/2, inset=Math.min(f.T.thigh*f.height*0.45,half*0.7);
+  const along=clamp(side[1]==='x'?pel.z:pel.x,side[1]==='x'?b.min.z+0.25:b.min.x+0.25,side[1]==='x'?b.max.z-0.25:b.max.x-0.25);
+  const edge={'+x':[b.max.x-inset,isFinite(along)?along:c.z,90],'-x':[b.min.x+inset,isFinite(along)?along:c.z,-90],
+    '+z':[isFinite(along)?along:c.x,b.max.z-inset,0],'-z':[isFinite(along)?along:c.x,b.min.z+inset,180]}[side];
+  return edge.map(v=>Math.round(v*1000)/1000);
 }
 function fitFeet(f){
   const gq=f.group.getWorldQuaternion(new Q());
@@ -1326,16 +1389,45 @@ function fitFeet(f){
     let best=null;
     for(let fl=40;fl<=112;fl+=2){
       f.setA(s+'Knee','x',fl); setWorldQuat(f,s+'Ankle',gq);
-      const y=minY(f,[s+'Ankle']), c=Math.abs(y)+Math.abs(fl-88)*0.0004;
+      const y=visMinY(f,[s+'Ankle']), c=Math.abs(y)+Math.abs(fl-88)*0.0004;
       if(!best||c<best.c)best={c,fl};
     }
     f.setA(s+'Knee','x',best.fl); setWorldQuat(f,s+'Ankle',gq);
   }
 }
 function seatFigure(f,ch){
-  f.seat=ch.id;
-  const h=autoSeatH(f); if(Math.abs(ch.seatH-h)>1e-3){ch.seatH=h;ch.build();if(selProp===ch)ch.highlight(true);}
+  f.seat=ch.id; if(ch.type==='chair')f.seatAt=null;
+  if(ch.type==='chair'){const h=autoSeatH(f); if(Math.abs(ch.seatH-h)>1e-3){ch.seatH=h;ch.build();if(selProp===ch)ch.highlight(true);}}
   placeOnSeat(f); fitFeet(f); placeOnSeat(f);
+  /* The feet used to hang ~7 cm above the floor: the chair's height was a formula, never checked. Now the
+     gap (or the sink) left after fitting the legs is taken out of the chair's height, twice for the settle. */
+  if(ch.type==='chair')for(let k=0;k<2;k++){
+    const gap=Math.min(visMinY(f,['lAnkle']),visMinY(f,['rAnkle']));
+    if(Math.abs(gap)<0.004)break;
+    ch.seatH=clamp(ch.seatH-gap,0.3,0.62); ch.build(); if(selProp===ch)ch.highlight(true);
+    placeOnSeat(f); fitFeet(f); placeOnSeat(f);
+  }
+}
+// sit on any prop: a chair as before, anything else on its edge
+function sitOnSurface(f,pr){
+  if(pr.type==='chair'){sitOn(f,pr);return;}
+  releaseLegs(f);
+  const cur=f.getPose();
+  for(const n of ['pelvis','spine','lHip','rHip','lKnee','rKnee','lAnkle','rAnkle'])cur[n]=Object.assign({},SEAT_BASE[n]||{});
+  f.setPose(cur,[0,0,0]);
+  f.seatAt=edgeSeat(f,pr); seatFigure(f,pr);
+  /* A low seat (a bench, a step): the thighs slope down until the feet reach the floor, as they would. A high
+     one (a table, a desk) leaves them hanging, which is right too. */
+  const gap=()=>Math.min(visMinY(f,['lAnkle']),visMinY(f,['rAnkle']));
+  if(gap()>0.01){
+    let best={g:gap(),h:88};
+    for(const h of [80,72,64,56]){
+      ['lHip','rHip'].forEach(n=>f.setA(n,'x',h)); placeOnSeat(f); fitFeet(f); placeOnSeat(f);
+      const g=gap(); if(Math.abs(g)<Math.abs(best.g))best={g,h}; if(g<0.01)break;
+    }
+    ['lHip','rHip'].forEach(n=>f.setA(n,'x',best.h)); placeOnSeat(f); fitFeet(f); placeOnSeat(f);
+  }
+  resolveFig(f);
 }
 
 /* ================= look-at ================= */
@@ -1879,6 +1971,7 @@ function refreshFigUI(){
   $('rBulk').value=Math.round(act.bulk*100); $('vBulk').textContent=Math.round(act.bulk*100)+'%';
   $('handL').value=act.hands.l; $('handR').value=act.hands.r;
   refreshLookSel(); refreshLinkSel(); camWho(); syncFacing();
+  if(typeof syncLift==='function'){syncLift();refreshSitSel();}
 }
 function refreshAll(){refreshFigUI();refreshJointList();selectJoint(sel);}
 function addFigure(from){
@@ -2602,6 +2695,7 @@ $('buildText').addEventListener('keydown',e=>{if(e.key==='Enter'&&(e.ctrlKey||e.
 const propName=p=>(p.type==='build'?(p.name||'Build'):PROP_LABEL[p.type])+(p.owner&&figById(p.owner)&&figures.length>1?' · '+figById(p.owner).name:'');
 function refreshPropUI(){
   if(typeof refreshBuildUI==='function')refreshBuildUI();
+  if(typeof refreshSitSel==='function')refreshSitSel();
   if(typeof refreshCard==='function')refreshCard();
   const box=$('propPanel'); box.innerHTML='';
   if(props.length){
@@ -2701,14 +2795,14 @@ function sitOn(f,ch){
   f.setPose(cur,[0,0,0]); seatFigure(f,ch); resolveFig(f);
 }
 function standUp(f){
-  const ch=propById(f.seat); f.seat=null;
+  const ch=propById(f.seat); f.seat=null; f.seatAt=null;
   const cur=f.getPose(), st=PRESETS['Stand'];
   for(const n of ['pelvis','spine','lHip','rHip','lKnee','rKnee','lAnkle','rAnkle'])cur[n]=Object.assign({},st[n]||{});
   f.setPose(cur,[0,0,0]);
   if(ch){const A=figAxes(f);f.group.position.addScaledVector(A.fwd,0.45);}
   f.ground(true); resolveFig(f);
 }
-function releaseLegs(f){if(f.seat)f.seat=null;}
+function releaseLegs(f){if(f.seat){f.seat=null;f.seatAt=null;}}
 function refreshLookSel(){
   const s=$('lookSel'); s.innerHTML='';
   const opts=[['none','Nothing (free)'],['camera','The camera']];
@@ -2843,6 +2937,8 @@ addEventListener('keydown',e=>{
   }
   if(mod&&(e.key==='z'||e.key==='Z')){if(typing)return;e.preventDefault();e.shiftKey?redo():undo();return;}
   if(mod&&(e.key==='y'||e.key==='Y')){if(typing)return;e.preventDefault();redo();return;}
+  if(!typing&&!mod&&e.altKey&&act&&(e.key==='ArrowUp'||e.key==='ArrowDown')){
+    e.preventDefault(); setLift(act,act.lift*100+(e.key==='ArrowUp'?1:-1)*(e.shiftKey?5:1)); commit(); return;}
   if(typing||mod||e.altKey)return;
   if(t.tagName==='SELECT')return;
   if(e.key==='Escape'&&(document.querySelector('.pop.open')||jpOpen)){closePops();closeJointPop();return;}
@@ -2993,6 +3089,37 @@ $('jpCopy').onclick=()=>{
   names.forEach(n=>{releaseFor(act,to+n);for(const ax of ['x','y','z'])act.setA(to+n,ax,act.getA(from+n,ax));});
   if(part==='arm')act.setHand(to,act.hands[from]);
   resolveFig(act); act.ground(); commit(); refreshFigUI();
+};
+
+
+/* ---- Lift and Sit on (figure card) ---- */
+function setLift(f,cm){
+  if(!f)return; const v=clamp(cm,-30,30)/100, d=v-f.lift; f.lift=v;
+  if(f.seat||autoGround)f.ground(true); else{f.group.position.y+=d;f.group.updateMatrixWorld(true);}
+  resolveFig(f); syncLift();
+}
+function syncLift(){
+  if(!act)return; const cm=Math.round(act.lift*1000)/10;
+  $('rLift').value=cm; if(document.activeElement!==$('nLift'))$('nLift').value=cm;
+}
+$('rLift').addEventListener('input',()=>setLift(act,parseFloat($('rLift').value)));
+$('rLift').addEventListener('change',commit);
+$('rLift').addEventListener('dblclick',()=>{setLift(act,0);commit();});
+$('nLift').addEventListener('change',()=>{const v=parseFloat($('nLift').value);if(!isNaN(v)){setLift(act,v);commit();}});
+$('nLift').addEventListener('keydown',e=>e.stopPropagation());
+function refreshSitSel(){
+  const s=$('sitSel'); if(!s)return; s.innerHTML='';
+  const opts=[['','Nothing (standing)']];
+  props.forEach(p=>{if(!p.attach&&!['phone','cup','laptop'].includes(p.type))opts.push([p.id,propName(p)]);});
+  opts.forEach(([v,t])=>{const o=document.createElement('option');o.value=v;o.textContent=t;s.appendChild(o);});
+  s.value=act&&act.seat&&propById(act.seat)?act.seat:'';
+  s.disabled=opts.length<2; s.title=opts.length<2?'Add a chair, table, desk or a Build to sit on':'';
+}
+$('sitSel').onchange=()=>{
+  if(!act)return; const id=$('sitSel').value;
+  if(!id){if(act.seat)standUp(act);}
+  else{const pr=propById(id); if(pr)sitOnSurface(act,pr);}
+  syncAxes(); refreshPropUI(); refreshSitSel(); commit();
 };
 
 /* ================= resize / loop / hud ================= */
@@ -5203,7 +5330,7 @@ refreshPropUI();
   glideTick(performance.now());
   updateHandles();renderer.render(scene,camera);placeJointPop();})();
 if(EMBED)try{window.parent.postMessage({type:'posebench:ready'},'*');}catch(e){}
-window.__pb={LIMB_POSES,applyLimbPose,selectJoint,openJointPop,expandParts,cleanParts,askBuild,runBuild,placeBuild,get llm(){return llm;},applyWork,snapScene,applySceneFile,renderShot,setBodyStyle,get bodyStyle(){return bodyStyle;},steadyDepth,standingStill,viewAsPhoto,liveGuard,guardNew,photoWarnings,glitchMask,repairSeq,labelSwap,glitchSummary,glitchOverride,addHead,faceLoad,get takes(){return takes;},get glides(){return glides;},glideTick,glideFinish,camApply,get tl(){return tl;},makeTake,bakeTake,openTake,showTakeAt,exportTake,cutList,takeSnap,takeLoad,camImportVideo,addCam,addCut,tlPlay,setCamView,viewNow,blockingText,retarget,synthLandmarks,readPose,camFromImage,mpLoad,detLoad,findPeople,camApply,camStart,camSnap,get camState(){return camS;},get figures(){return figures;},get props(){return props;},get act(){return act;},cam,fitShot,setView,frameAll,PRESETS,WORK,SCENES,
+window.__pb={visMinY,sitOnSurface,setLift,standUp,addProp,get props(){return props;},LIMB_POSES,applyLimbPose,selectJoint,openJointPop,expandParts,cleanParts,askBuild,runBuild,placeBuild,get llm(){return llm;},applyWork,snapScene,applySceneFile,renderShot,setBodyStyle,get bodyStyle(){return bodyStyle;},steadyDepth,standingStill,viewAsPhoto,liveGuard,guardNew,photoWarnings,glitchMask,repairSeq,labelSwap,glitchSummary,glitchOverride,addHead,faceLoad,get takes(){return takes;},get glides(){return glides;},glideTick,glideFinish,camApply,get tl(){return tl;},makeTake,bakeTake,openTake,showTakeAt,exportTake,cutList,takeSnap,takeLoad,camImportVideo,addCam,addCut,tlPlay,setCamView,viewNow,blockingText,retarget,synthLandmarks,readPose,camFromImage,mpLoad,detLoad,findPeople,camApply,camStart,camSnap,get camState(){return camS;},get figures(){return figures;},get props(){return props;},get act(){return act;},cam,fitShot,setView,frameAll,PRESETS,WORK,SCENES,
   camera,applyCam,selectJoint,solveChain,commit,applyNamed,goalFrame,eyePoint};
 })();
 </script>

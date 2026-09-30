@@ -498,3 +498,16 @@ Everything else moved rather than being rebuilt, so every element id and handler
 - **Joint popover:** `#jointPop` holds the old Joint section plus the hand selects. It opens when a limb is clicked (`openJointPop()` in pointerdown) and closes on an empty click, Esc, ✕ or selecting a prop. `placeJointPop()` runs every frame to keep it beside the joint, flipped and clamped to the viewport.
 - **Quick poses:** `LIMB_POSES` per part (arm, leg, head, torso), written for side X; `applyLimbPose` sets the named joints whole. "Camera" sets look-at. "Copy to other side" copies the limb to the other side.
 - **Keys:** 1–8 for views, Shift+1–4 for shot size (only while no take is open, because 1–9 cut cameras during takes).
+
+## Floor, Lift, and sitting on anything (2026-09-30)
+
+- **"Keep on floor" grounds what you see.** `visMinY(f, joints)` gives the lowest point of the skinned human body when it's shown (vertices bucketed by joint on first use, in `body.jv`), else the mannequin. Before, the mannequin was grounded and the human body floated 1.5 cm standing and 2.6 cm kneeling.
+- **Chair feet land.** `seatFigure` now measures the gap under the feet after `fitFeet` and takes it out of the chair's `seatH`, twice. Seated feet used to hang about 7 cm.
+- **Lift** (`f.lift`, metres; figure card slider ±30 cm; Alt+↑/↓ 1 cm, Shift 5 cm; double-click resets) is added after the floor or the seat places the figure. It's saved in `snap()`.
+- **Sit on** (figure card): any prop that isn't held (chair, table, desk, or a Build).
+  - A chair works as before.
+  - Anything else, via `sitOnSurface` → `edgeSeat`: the side the figure is standing beyond, scaled by the prop's size so a bench is sat on along its length. The hips are set in from that edge (0.45 × thigh, at most 70% of the half-width), and the figure faces out.
+  - `f.seatAt = [x, z, turn°]` in the prop's space is saved.
+  - The height is `seatTop()`: a ray cast straight down onto the prop's meshes, so a Build's top is found without knowing its shape.
+  - A low seat slopes the thighs down (hip 88→56°) until the feet reach the floor; a high one leaves them hanging.
+  - Moving or turning the prop carries the figure, as with chairs.
