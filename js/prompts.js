@@ -193,19 +193,17 @@
   }
 
   /* What the app writes around the writer's words (clay_reference_prompting_plan.md): the
-     clay render's own paragraph ahead of a still, and the wardrobe lock after both. Written
-     by the app, not asked for, so it is there whatever the writer did — and visible in the
-     stored prompt, where it can be read and edited. */
+     clay render's own paragraph ahead of a still. Written by the app, not asked for, so it is
+     there whatever the writer did — and visible in the stored prompt, where it can be edited. */
   function decorateImage(shot) {
     return function (raw) {
       return [SB.Personas.refPreamble(P(), shot), SB.Personas.clayPreamble(P(), shot),
-        String(raw || '').trim(),
-        SB.Brand.wardrobeLock(P(), shot, 'image')].filter(Boolean).join('\n\n');
+        String(raw || '').trim()].filter(Boolean).join('\n\n');
     };
   }
   function decorateVideo(shot) {
     return function (raw) {
-      return [String(raw || '').trim(), SB.Brand.wardrobeLock(P(), shot, 'video')].filter(Boolean).join('\n\n');
+      return String(raw || '').trim();
     };
   }
   const invented = function (shot, text) { return SB.Brand.inventedProblems(P(), shot, text); };

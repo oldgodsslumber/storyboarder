@@ -1,6 +1,8 @@
 # Clay references for GPT Image and Seedance, and no invented details
 
 Status: **§2 and §3 built on `V3-posebench` (2026-09-29).** The no-invention rider, check, marks and wardrobe
+
+**2026-09-30: the wardrobe lock was taken out** at the user's request. Every prompt got an app-written clothing paragraph tacked on the end, which was clutter; the writer rider and the invention check (with one rewrite and the card mark) stay. Prompts stored with the paragraph have it stripped on load (`stripLocks` in model.js).
 lock work for every model, with a board switch. The GPT Image clay-render opening is built, along with the
 panel/template fix. Tests: `test-lock.mjs`.
 

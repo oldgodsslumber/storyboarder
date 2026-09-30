@@ -808,6 +808,31 @@
    * written as a persona is a person, and its lone `image` becomes the first
    * frame. Frozen version snapshots come through here too, so nothing
    * downstream has to know which era a record was written in. */
+  /* For a while the app ended every stored prompt with a wardrobe paragraph of its own
+     ("Gus wears exactly: … Nothing else." and a line ruling out coats, hats and bags). It
+     was taken out; this takes it off prompts stored meanwhile — only a closing paragraph
+     that is nothing but those lines, so anything written by hand stays. */
+  const LOCK_LINE = [
+    /^.{1,80} wears exactly: .+\. Nothing else\.$/,
+    /^(?:Everyone\u2019s clothing stays exactly as in the first frame — nothing is put on, taken off or added\. )?No coats, jackets, hats, scarves, glasses, jewellery, watches, bags, extra props or extra people beyond those described\.$/
+  ];
+  function stripLock(t) {
+    if (typeof t !== 'string' || t.indexOf('described.') < 0) return t;
+    const paras = t.split('\n\n');
+    const isLock = function (para) { return para.split('\n').every(function (l) { return LOCK_LINE.some(function (re) { return re.test(l.trim()); }); }); };
+    while (paras.length > 1 && isLock(paras[paras.length - 1])) paras.pop();
+    return paras.join('\n\n');
+  }
+  function stripLocks(sh) {
+    [sh.prompts, sh.mxm].forEach(function (bag) {
+      if (!bag || typeof bag !== 'object') return;
+      Object.keys(bag).forEach(function (k) {
+        const rec = bag[k];
+        if (typeof rec === 'string') bag[k] = stripLock(rec);
+        else if (rec && typeof rec === 'object') Object.keys(rec).forEach(function (f) { if (typeof rec[f] === 'string') rec[f] = stripLock(rec[f]); });
+      });
+    });
+  }
   function migratePersona(p, x) {
     x.id = x.id || SB.uid('per');
     x.kind = SB.Personas.kindOf(x).id;
@@ -943,6 +968,7 @@
           if (!sh.shoot || typeof sh.shoot !== 'object') sh.shoot = {};
           if (!sh.fields || typeof sh.fields !== 'object') sh.fields = {};
           if (!sh.prompts || typeof sh.prompts !== 'object') sh.prompts = {};
+          stripLocks(sh);
         });
       });
       (v.snapshot.personas || []).forEach(function (per) { migratePersona(p, per); });
@@ -1092,8 +1118,7 @@
     if (typeof s.brand.custom !== 'boolean') s.brand.custom = false;
     if (!s.brand.custom) delete s.brand.text;
     if (typeof s.showImagePrompt !== 'boolean') s.showImagePrompt = false;
-    /* the wardrobe lock (brand.js): on unless a board turned it off */
-    if (typeof s.wardrobeLock !== 'boolean') s.wardrobeLock = true;
+    delete s.wardrobeLock;   // the wardrobe lock was taken out (see stripLock)
     /* MiniMax package style and negatives (mxm.js); empty means the defaults */
     s.mxm = (s.mxm && typeof s.mxm === 'object') ? s.mxm : {};
     if (typeof s.mxm.style !== 'string') s.mxm.style = '';
@@ -1162,6 +1187,7 @@
         sh.fields = (sh.fields && typeof sh.fields === 'object') ? sh.fields : {};
         sh.comments = Array.isArray(sh.comments) ? sh.comments : [];
         sh.prompts = sh.prompts || {};
+        stripLocks(sh);
         sh.render = goodRender(sh.render);
         if (sh.render) p.renderSeq = Math.max(p.renderSeq | 0, sh.render.serial);
         /* A clip claims from the same counter, so a board whose counter is

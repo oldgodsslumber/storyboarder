@@ -351,8 +351,10 @@
    * common thing a written prompt added (clay_reference_prompting_plan.md).
    * Neither GPT Image nor Seedance takes a negative prompt, so the only defence
    * is the words: the writer is told (NO_INVENT_RIDER), the answer is checked
-   * (inventedProblems) and gets one rewrite, and the app appends a wardrobe
-   * lock it writes itself (wardrobeLock).
+   * (inventedProblems) and gets one rewrite. (A wardrobe paragraph the app
+   * appended to every prompt was tried and taken out: it padded every prompt
+   * for a job the writer and the check already do; model.js strips it from
+   * prompts stored while it existed.)
    *
    * The check is a list of the things writers add — layers, headwear,
    * eyewear, jewellery, bags, and the props that come with a coat — each one
@@ -458,64 +460,6 @@
     '- Do not describe clothing in more detail than the description gives — no invented colours, ' +
     'fabrics, logos or brands.'
   ].join('\n');
-
-  /* ---------------- the wardrobe lock ----------------
-   *
-   * Written by the app and appended to the prompt the writer returns, so it is
-   * there whatever the writer did: each person in the picture, wearing exactly
-   * what their description says, and a line ruling out the usual additions.
-   * The clothing is the part of the description that names garments — the
-   * rest (hair, build, age) is the reference picture's job. */
-  const GARMENT_RE = new RegExp('\\b(?:' + INVENT_TERMS.concat([
-    'shirts?', 't-shirts?', 'tees?', 'blouses?', 'tops?', 'tank tops?', 'camisoles?', 'polo', 'turtlenecks?',
-    'suits?', 'tuxedos?', 'dress(?:es)?', 'gowns?', 'skirts?', 'trousers', 'pants', 'slacks', 'jeans', 'chinos',
-    'shorts', 'leggings', 'joggers', 'sweatpants', 'uniforms?', 'overalls', 'scrubs', 'jumpsuits?', 'robes?',
-    'shoes', 'sneakers', 'trainers', 'boots', 'heels', 'loafers', 'sandals', 'flats', 'socks', 'belts?',
-    'headsets?', 'hijabs?', 'turbans?', 'veils?', 'rings?'
-  ]).join('|') + ')\\b', 'i');
-  function wardrobeOf(desc) {
-    const text = String(desc || '').replace(/\s+/g, ' ').trim();
-    if (!text) return '';
-    const keep = [];
-    text.split(/(?<=[.;!?])\s+/).forEach(function (sentence) {
-      if (!GARMENT_RE.test(sentence)) return;
-      // "A man in a white shirt, …" / "She wears …" / "Dressed in …": the clothes start after the verb
-      let t = sentence.replace(/[.;!?]+$/, '');
-      const lead = /^.{0,48}?\b(?:wearing|wears|dressed in|clad in|in)\b\s+/i.exec(t);
-      if (lead) t = t.slice(lead[0].length);
-      const parts = t.split(/,\s*|\s+and\s+(?=[a-z-]+\s)/i).filter(function (x) { return GARMENT_RE.test(x); });
-      if (parts.length) keep.push(parts.join(', '));
-    });
-    return keep.join('; ');
-  }
-  function lockOn(p) { return !(p && p.settings && p.settings.wardrobeLock === false); }
-  const LOCK_OUT = 'No coats, jackets, hats, scarves, glasses, jewellery, watches, bags, extra props or ' +
-    'extra people beyond those described.';
-  /* role 'image': everyone in the first frame, by name, wearing exactly their
-     clothes. role 'video' on a frame-only model: the frame shows the clothes,
-     so the lock is that nothing changes. '' when turned off or nobody's cast. */
-  function wardrobeLock(p, shot, role) {
-    if (!lockOn(p) || !shot) return '';
-    if (role === 'video') {
-      if (!SB.Model.videoInherits(SB.Model.videoModel(p))) return '';
-      return 'Everyone\u2019s clothing stays exactly as in the first frame — nothing is put on, taken ' +
-        'off or added. ' + LOCK_OUT;
-    }
-    let people = [];
-    try {
-      const fr = SB.Personas.framing ? SB.Personas.framing(p, shot) : null;
-      people = SB.Refs.feed(p, shot, 'image').filter(function (e) {
-        return e.kind === 'subject' && SB.Personas.kindOf(e.subject).id === 'person' && !(fr && fr.arrives(e.id));
-      }).map(function (e) { return e.subject; });
-    } catch (e) { people = []; }
-    const lines = [];
-    people.forEach(function (per) {
-      const w = wardrobeOf(per.description);
-      if (w) lines.push((per.name || 'They') + ' wears exactly: ' + w.replace(/[.\s]+$/, '') + '. Nothing else.');
-    });
-    lines.push(LOCK_OUT);
-    return lines.join('\n');
-  }
 
   /* ---------------- the camera, checked rather than asked ----------------
    *
@@ -777,7 +721,6 @@
     genderedTerms: genderedTerms, castSides: castSides,
     genderProblems: genderProblems, GENDER_RIDER: GENDER_RIDER,
     inventedTerms: inventedTerms, inventedProblems: inventedProblems, NO_INVENT_RIDER: NO_INVENT_RIDER,
-    wardrobeOf: wardrobeOf, wardrobeLock: wardrobeLock, LOCK_OUT: LOCK_OUT,
     VIDEO_RIDER: VIDEO_RIDER,
     FIRST_FRAME_RIDER: FIRST_FRAME_RIDER,
     DERIVED_RIDER: DERIVED_RIDER,

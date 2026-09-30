@@ -1,4 +1,4 @@
-/* test-lock.mjs — nothing invented: the writer rider, the invention check, the wardrobe lock, the clay opening.
+/* test-lock.mjs — nothing invented: the writer rider, the invention check, the clay opening — and no wardrobe paragraph.
  * usage: node test-lock.mjs
  */
 import { readFileSync } from 'node:fs';
@@ -54,10 +54,20 @@ sandbox.fetch = (url, init) => {
   return Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve(JSON.stringify({ choices: [{ message: { content: JSON.stringify(r) } }] })) });
 };
 
-console.log('\n— the wardrobe, read from a description —');
-eq(SB.Brand.wardrobeOf('A man in a white shirt, headset and dark slacks.'), 'a white shirt, headset, dark slacks', 'a sentence of clothes');
-eq(SB.Brand.wardrobeOf('Red blazer, short dark hair.'), 'Red blazer', 'hair is left to the picture');
-eq(SB.Brand.wardrobeOf('Short brown hair, freckles.'), '', 'no clothes described: nothing to lock');
+console.log('\n— the old wardrobe paragraph comes off stored prompts —');
+{
+  const { p, sh } = board();
+  const LOCK = 'Gus wears exactly: a white shirt, a headset, dark slacks. Nothing else.\nNo coats, jackets, hats, scarves, glasses, jewellery, watches, bags, extra props or extra people beyond those described.';
+  const VLOCK = 'Everyone\u2019s clothing stays exactly as in the first frame — nothing is put on, taken off or added. No coats, jackets, hats, scarves, glasses, jewellery, watches, bags, extra props or extra people beyond those described.';
+  sh.prompts = { a: { imagePrompt: 'Gus reads a letter.\n\n' + LOCK, videoPrompt: 'Gus stands.\n\n' + VLOCK }, b: { imagePrompt: 'Gus reads.\n\nMy own closing note about hats.' } };
+  p.settings.wardrobeLock = true;
+  const q = SB.Model.migrate(JSON.parse(JSON.stringify(p))) || p;
+  const sh2 = q.scenes[0].shots[0];
+  eq(sh2.prompts.a.imagePrompt, 'Gus reads a letter.', 'a still loses the paragraph');
+  eq(sh2.prompts.a.videoPrompt, 'Gus stands.', 'and a clip its line');
+  eq(sh2.prompts.b.imagePrompt, 'Gus reads.\n\nMy own closing note about hats.', 'a closing paragraph written by hand stays');
+  eq(q.settings.wardrobeLock, undefined, 'and the setting is gone');
+}
 
 console.log('\n— the invention check —');
 {
@@ -83,18 +93,12 @@ console.log('\n— a still, written —');
   has(JSON.stringify(asked[1]), 'You added things nobody described: \\"trench coat\\"', 'which names it');
   const pr = sh.prompts[im.id];
   eq(pr.imagePrompt.indexOf('Gus reads a letter at his desk.'), 0, 'the corrected words are stored');
-  has(pr.imagePrompt, 'Gus wears exactly: a white shirt, a headset, dark slacks. Nothing else.', 'then the lock: his clothes, from his description');
-  has(pr.imagePrompt, SB.Brand.LOCK_OUT, 'and the usual additions ruled out');
+  eq(pr.imagePrompt, 'Gus reads a letter at his desk.', 'and nothing is tacked on after them');
   eq(pr.invented, undefined, 'nothing survived, so nothing is marked');
   // a writer that will not let go of the coat
   asked = []; replies = [{ imagePrompt: 'Gus in a trench coat reads.' }];
   await SB.Prompts.generateFor(sh, { image: true });
   eq(sh.prompts[im.id].invented, { imagePrompt: ['trench coat'] }, 'a coat that survives is kept, and marked');
-  // the lock can be turned off per board
-  p.settings.wardrobeLock = false;
-  asked = []; replies = [{ imagePrompt: 'Gus reads.' }];
-  await SB.Prompts.generateFor(sh, { image: true });
-  eq(sh.prompts[im.id].imagePrompt, 'Gus reads.', 'with the lock off, the words alone');
 }
 
 console.log('\n— a still with a blocking: the clay render opens the prompt —');
@@ -111,8 +115,7 @@ console.log('\n— a still with a blocking: the clay render opens the prompt —
   eq(t.indexOf('Image 1 is a grey clay layout render of this exact shot.'), 0, 'the app’s own paragraph comes first');
   has(t, 'Do not reproduce its grey untextured material, mannequin bodies, featureless faces, studio floor, grid or backdrop.', 'saying what not to copy');
   has(t, 'The tan figure is Gus (image 2).', 'and which figure is whom');
-  has(t, '\n\nGus reads a letter at his desk.\n\n', 'then the writer’s words');
-  has(t, 'Gus wears exactly:', 'then the lock');
+  eq(t.endsWith('\n\nGus reads a letter at his desk.'), true, 'then the writer’s words, and nothing after them');
   has(JSON.stringify(asked[0]), 'do not mention the blocking, a render, mannequins, clay', 'the writer leaves the clay render to the app');
 }
 
@@ -126,7 +129,7 @@ console.log('\n— a clip on a frame-only model —');
   eq(asked.length, 2, 'a jacket put on out of nowhere is caught too');
   const t = sh.prompts[vm2.id].videoPrompt;
   eq(t.indexOf('Gus folds the letter and stands.'), 0, 'the corrected motion is stored');
-  has(t, 'Everyone’s clothing stays exactly as in the first frame', 'then the clip’s lock: nothing put on or taken off');
+  eq(t, 'Gus folds the letter and stands.', 'and nothing is tacked on');
 }
 
 console.log('\n— MiniMax keeps its formats —');

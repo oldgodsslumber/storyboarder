@@ -33,7 +33,7 @@
     if (face) lines.push('@Image1 shows ' + face + '’s appearance: face, hair, skin tone and build.');
     if (who.length) lines.push(who.join('; ').replace(/^t/, 'T') + '.');
     if (act) lines.push(act);
-    lines.push('Photorealistic, natural light. One continuous take. ' + SB.Brand.LOCK_OUT);
+    lines.push('Photorealistic, natural light. One continuous take.');
     return lines.join(' ');
   }
 
