@@ -3315,6 +3315,11 @@
     if (!model) {
       return { short: 'no model', long: 'No ' + role + ' model is selected for this board.' };
     }
+    if (model.export) {
+      return { short: 'export', long: 'This is the export version of ' + model.name.replace(/ \u00b7 export$/, '') +
+        ': its prompt is for uploading the files yourself (\u2913 Files downloads them in order). Pick the ' +
+        '\u201cSend from Storyboarder\u201d version to push it from here.' };
+    }
     if (shot.noShot) {
       return { short: 'no shot', long: 'A \u201cno shot\u201d card is never generated.' };
     }

@@ -213,17 +213,22 @@
     const none = document.createElement('option');
     none.value = ''; none.textContent = role === 'image' ? '(no image model)' : '(no video model)';
     sel.appendChild(none);
-    [['image', 'Image models'], ['video', 'Video models']].forEach(function (g) {
+    /* Each picker offers its own kind only. The video one lists every model
+       twice: pushed from here (one picture, the first frame), or exported, where
+       you upload the files yourself and the prompt is written for all of them
+       (vexport.js). */
+    const cur = role === 'image' ? p.settings.imageModelId : p.settings.videoModelId;
+    const groups = role === 'image' ? [['image', 'Image models', '']]
+      : [['video', 'Send from Storyboarder', ''], ['video', 'Export \u2014 upload the files yourself', SB.Model.EXPORT_SUFFIX]];
+    groups.forEach(function (g) {
       const list = p.settings.models.filter(function (m) { return m.kind === g[0]; });
       if (!list.length) return;
       const og = document.createElement('optgroup');
       og.label = g[1];
       list.forEach(function (m) {
         const o = document.createElement('option');
-        o.value = m.id; o.textContent = m.name;
-        if (m.id === (role === 'image' ? p.settings.imageModelId : p.settings.videoModelId)) {
-          o.selected = true;
-        }
+        o.value = m.id + g[2]; o.textContent = m.name + (g[2] ? ' \u00b7 export' : '');
+        if (o.value === cur) o.selected = true;
         og.appendChild(o);
       });
       sel.appendChild(og);
@@ -683,7 +688,9 @@
            box you had just filled, until something else forced a redraw. */
         wrap.classList.toggle('using-shared', !(sh[lane.key] || '').trim());
       },
-      placeholder: lane.hint,
+      placeholder: field === 'videoPrompt' && (SB.Model.videoModel(P()) || {}).export
+        ? 'What moves, in what order, how it ends. @ someone to name them — their photo goes up with the clip.'
+        : lane.hint,
       ctx: { shot: sh, code: r.code }
     });
     wrap.appendChild(box);
@@ -1363,6 +1370,39 @@
           (m.clip ? '' : '; record a performance in Pose Bench for the motion')));
       }
       mxmButton(wrap, sh, role);
+      return wrap;
+    }
+    /* Exported: every file the clip is given, in upload order, as the prompt
+       cites them, and one button that downloads them with the prompt. */
+    const vmod = role === 'video' ? SB.Model.videoModel(P()) : null;
+    if (vmod && vmod.export && SB.VExport) {
+      const list = SB.VExport.assets(P(), sh);
+      list.forEach(function (a) {
+        const it = SB.el('div', 'pt-fe' + (a.kind === 'first-frame' ? ' pt-frame' : ''));
+        it.appendChild(SB.el('span', 'feed-n', a.video ? 'V' + a.cite.split(' ')[1] : a.cite.split(' ')[1]));
+        const th = SB.el('span', 'feed-thumb');
+        const fig = a.kind === 'subject' ? a.manifest.figures.filter(function (x) { return x.asset && x.asset.n === a.n; })[0] : null;
+        const src = a.kind === 'clay-clip' || a.kind === 'clay-still' ? SB.Blobs.src(P(), sh.pose.image)
+          : a.kind === 'first-frame' ? (sh.image ? SB.Blobs.src(P(), sh.image) : '') : (fig ? SB.Blobs.src(P(), fig.img) : '');
+        if (src) { const im = document.createElement('img'); im.src = src; th.appendChild(im); }
+        else th.textContent = a.video ? '\u25b6' : '?';
+        it.appendChild(th);
+        it.appendChild(SB.el('span', 'feed-file', a.file));
+        it.appendChild(SB.el('span', 'feed-who', a.cite + ' \u00b7 ' + (a.kind === 'clay-clip' ? 'the blocking, animated'
+          : a.kind === 'clay-still' ? 'the blocking (clay render)' : a.role)));
+        it.title = a.cite + ' = ' + a.role + '. Uploaded by hand, in this order.';
+        wrap.appendChild(it);
+      });
+      if (!list.length) wrap.appendChild(SB.el('div', 'pt-none', 'no files \u2014 the prompt is the whole call'));
+      const b = SB.el('button', 'mini vexp-btn', '\u2913 Files');
+      b.title = 'Download ' + list.length + ' file' + (list.length === 1 ? '' : 's') + ' in upload order, with prompt.txt and ORDER.txt';
+      b.onclick = function () {
+        b.disabled = true; setStatus('packing the files for ' + code + '\u2026');
+        SB.VExport.zip(P(), sh, vmod).then(function (z) { SB.VExport.save(z.blob, z.name); setStatus(''); })
+          .catch(function (e) { setStatus(e.message || String(e), true); })
+          .then(function () { b.disabled = false; });
+      };
+      wrap.appendChild(b);
       return wrap;
     }
     if (role === 'video') {

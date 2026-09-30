@@ -629,6 +629,17 @@ alongside what is already open. **Fold all** and **Unfold all** sit beside them.
 / Stale / This scene filters are gone; their counts now live on the scenes, where they say *where* the
 work is. (`create_panel_scenes_plan.md`)
 
+**The two model pickers each offer their own kind.** The first-frame picker lists image models only. The video
+picker lists every video model twice:
+- **Send from Storyboarder:** the ImagineArt push. It hands the clip one picture, the card's first frame, so the
+  prompt is motion only.
+- **Export — upload the files yourself:** the lane lists every file in upload order, and the prompt cites them the
+  same way. The files are the blocking (the clay clip if a performance is linked, else the clay still), the first
+  frame if the card has one, and each subject's photo, as "image N" / "video N". **⤓ Files** downloads them with
+  prompt.txt and ORDER.txt. The prompt never assumes a single supplied frame, and nothing is pushed.
+
+Export prompts are kept apart from Send prompts, so switching between them loses nothing. (`js/vexport.js`)
+
 **Prompts are written one shot at a time**, from the 📝 Prompt button under each box, or a scene at a
 time: an open scene with prompts still missing has **Write missing (n)** on its band, which writes them
 one after another with the same writer. There is no button for a whole board, and pushing stays per
@@ -1206,6 +1217,7 @@ node test-store.mjs    # autosave/open against a stubbed File System Access API
 node test-prompts.mjs  # the prompt pipeline against a stubbed Gemini endpoint
 node test-mxm.mjs      # the MiniMax package: labels = file order, brief, H3 sections, Write
 node test-lock.mjs     # nothing invented: the rider, the check, the clay-render opening
+node test-vexport.mjs  # video models, exported: the twin, its prompt, its files
 ```
 
 `test-typing.mjs` exists because `test-ui.mjs` dispatches synthetic `beforeinput` events,

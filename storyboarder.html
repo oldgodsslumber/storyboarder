@@ -1452,7 +1452,7 @@ body.comment-mode .frame{cursor:crosshair}
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-09-30 14:47 · 0e90920+";</script>
+<script>window.SB_BUILD = "2026-09-30 15:11 · 04bc402+";</script>
 
 <div id="app">
 
@@ -8233,6 +8233,11 @@ window.SB = window.SB || {};
     if (!model) {
       return { short: 'no model', long: 'No ' + role + ' model is selected for this board.' };
     }
+    if (model.export) {
+      return { short: 'export', long: 'This is the export version of ' + model.name.replace(/ \u00b7 export$/, '') +
+        ': its prompt is for uploading the files yourself (\u2913 Files downloads them in order). Pick the ' +
+        '\u201cSend from Storyboarder\u201d version to push it from here.' };
+    }
     if (shot.noShot) {
       return { short: 'no shot', long: 'A \u201cno shot\u201d card is never generated.' };
     }
@@ -9664,6 +9669,9 @@ window.SB = window.SB || {};
        * says to write what they DO and not how they look. Sending both put
        * two vocabularies and two opposite instructions in one request. */
       if (SB.H3 && SB.H3.stock(model)) return '';
+      /* Exported (vexport.js): the files are uploaded by hand, all of them, so
+         the block is the numbered list, not "the supplied frame". */
+      if (model && model.export && SB.VExport) return SB.VExport.castBlock(p, shot, cast);
       return videoCastBlock(p, shot, cast, model);
     }
     /* One reference per subject, so one number — the ranges this used to
@@ -10455,6 +10463,26 @@ window.SB = window.SB || {};
     'words; if it does, write that move and name its speed, and no other. Otherwise say nothing ' +
     'about the camera at all: the subject moves, the frame does not.\n' +
     'Open on the action, not on the scene. Do not re-describe anything already in the frame.\n' +
+    'Keep it one paragraph, no preamble.\n\n' +
+    'SHOT DESCRIPTION:\n{{DESCRIPTION}}';
+
+  /* The EXPORT twin's template (vexport.js). Everything the stock one says
+   * about "the first frame is supplied, so the model can already see" is
+   * false here: the files are uploaded by hand, the blocking carries the
+   * layout and movement, and each subject's picture carries their look. */
+  const VID_EXPORT_TPL =
+    'Write a single reference-to-video prompt for {{MODEL}}. The files listed in the instructions are ' +
+    'uploaded with the call, in that order: the blocking (if there is one) gives the layout, the camera ' +
+    'and the movement; the first frame (if there is one) is where the clip opens; each subject\u2019s ' +
+    'picture gives how they look.\n' +
+    'Shot type: {{SHOT_TYPE}}. Scene: {{SCENE}}.\n' +
+    'Write what happens, in order: what moves first, what follows, at what pace, and where the shot ends. ' +
+    'Be specific about the action \u2014 which hand, which direction, how far, how fast, what the body and ' +
+    'the face are doing. Name each person, and cite their file the first time.\n' +
+    'THE CAMERA IS LOCKED OFF unless the shot description asks for a move in words or the blocking clip ' +
+    'moves; if so, write that move and name its speed, and no other.\n' +
+    'Describe nobody\u2019s look beyond what their picture or description gives, and add no clothing, ' +
+    'props or people.\n' +
     'Keep it one paragraph, no preamble.\n\n' +
     'SHOT DESCRIPTION:\n{{DESCRIPTION}}';
 
@@ -11356,7 +11384,7 @@ window.SB = window.SB || {};
       if (!s.models.some(function (m) { return m.name === d.name; })) s.models.push(d);
     });
 
-    const has = function (id) { return s.models.some(function (m) { return m.id === id; }); };
+    const has = function (id) { return s.models.some(function (m) { return m.id === baseId(id); }); };
     // older files carried a single activeModelId
     if (s.activeModelId && has(s.activeModelId)) {
       const old = s.models.filter(function (m) { return m.id === s.activeModelId; })[0];
@@ -12065,8 +12093,29 @@ window.SB = window.SB || {};
     return hit;
   }
 
+  /* A video model's EXPORT twin (vexport.js): the same model seen through an
+     id ending in EXPORT_SUFFIX, marked export and full-reference. Built on the
+     base by prototype, so an edit to the base's templates reaches it; its
+     prompts are stored under its own id. */
+  const EXPORT_SUFFIX = '~export';
+  const TWINS = typeof WeakMap === 'function' ? new WeakMap() : null;
+  function exportTwin(base) {
+    if (!base || base.kind !== 'video') return null;
+    let t = TWINS && TWINS.get(base);
+    if (!t) {
+      t = Object.create(base);
+      t.id = base.id + EXPORT_SUFFIX; t.baseId = base.id; t.export = true;
+      t.name = base.name + ' \u00b7 export'; t.videoRefs = FULL_REFERENCE;
+      if (!(SB.H3 && SB.H3.stock && SB.H3.stock(base))) t.videoTemplate = VID_EXPORT_TPL;   // H3 keeps its own format
+      if (TWINS) TWINS.set(base, t);
+    }
+    return t;
+  }
+  function baseId(id) { return typeof id === 'string' && id.slice(-EXPORT_SUFFIX.length) === EXPORT_SUFFIX ? id.slice(0, -EXPORT_SUFFIX.length) : id; }
   function modelById(p, id) {
-    return p.settings.models.filter(function (m) { return m.id === id; })[0] || null;
+    const b = baseId(id);
+    const m = p.settings.models.filter(function (x) { return x.id === b; })[0] || null;
+    return b !== id ? exportTwin(m) : m;
   }
   function imageModel(p) { return modelById(p, p.settings.imageModelId); }
   function videoModel(p) { return modelById(p, p.settings.videoModelId); }
@@ -12085,7 +12134,7 @@ window.SB = window.SB || {};
     VID_TPL: VID_TPL, VID_TPL_V1: VID_TPL_V1, VID_TPL_V2: VID_TPL_V2,
     H3_VID_TPL: H3_VID_TPL, H3_VID_TPL_V2: H3_VID_TPL_V2, tplsFor: tplsFor,
     FRAME_ONLY: FRAME_ONLY, FULL_REFERENCE: FULL_REFERENCE,
-    videoInherits: videoInherits,
+    videoInherits: videoInherits, exportTwin: exportTwin, baseId: baseId, EXPORT_SUFFIX: EXPORT_SUFFIX,
     newProject: newProject, migrate: migrate, foldLineEndings: foldLineEndings,
     newShot: newShot, newScene: newScene,
     defaultModels: defaultModels, defaultExport: defaultExport, guessSlug: guessSlug,
@@ -15549,6 +15598,121 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
 
 </script>
 <script>
+/* ===== js/vexport.js ===== */
+/* vexport.js — video models, exported.
+ *
+ * Every video model is offered twice in the Create panel: "Send from
+ * Storyboarder" (the ImagineArt push, which hands a clip ONE picture, the
+ * card's first frame, so its prompt is motion only) and "Export" (you upload
+ * the files to the tool yourself). An exported clip isn't limited to one
+ * picture: it gets the blocking (the clay clip if a performance is linked,
+ * else the clay still), the first frame if the card has one, and each
+ * subject's photo, all uploaded in order. So its prompt is written against
+ * that numbered list, and nothing about it assumes a single frame.
+ *
+ * The export twin is not stored anywhere: it is the base model seen through an
+ * id with EXPORT on the end (model.js), with its prompts kept under that id so
+ * the two versions never overwrite each other. The file list is the MiniMax
+ * package's manifest (mxm.js), relabelled in plain "image N / video N". */
+(function (SB) {
+  'use strict';
+
+  function isExport(m) { return !!(m && m.export); }
+
+  /* The files, in upload order, labelled the way the prompt cites them. */
+  function assets(p, shot) {
+    if (!SB.Mxm) return [];
+    const m = SB.Mxm.manifest(p, shot, 'video');
+    let pic = 0, vid = 0;
+    return m.assets.map(function (a) {
+      const video = a.kind === 'clay-clip';
+      return Object.assign({}, a, { cite: video ? 'video ' + (++vid) : 'image ' + (++pic), video: video, manifest: m });
+    });
+  }
+
+  /* The cast and reference block the writer gets for an exported clip. */
+  function castBlock(p, shot, cast) {
+    const list = assets(p, shot);
+    const fr = SB.Personas.framing ? SB.Personas.framing(p, shot) : { arrives: function () { return false; } };
+    const lines = ['FILES UPLOADED WITH THIS CLIP, IN THIS ORDER (the person making it uploads each one by hand):'];
+    const clay = list.filter(function (a) { return a.kind === 'clay-clip' || a.kind === 'clay-still'; })[0];
+    const first = list.filter(function (a) { return a.kind === 'first-frame'; })[0];
+    list.forEach(function (a) {
+      lines.push('  ' + a.cite + ' = ' + (a.kind === 'subject' ? a.role : a.role) +
+        (a.kind === 'subject' && fr.arrives(a.subjectId) ? ' [ARRIVES DURING THE SHOT]' : ''));
+    });
+    if (!list.length) lines.push('  (none; the clip is made from these words alone)');
+    if (clay) {
+      lines.push(clay.cite.charAt(0).toUpperCase() + clay.cite.slice(1) + ' is a 3D BLOCKING of this exact shot: grey ' +
+        'mannequins stand in for the people and grey shapes for the set. Take ONLY the layout, the camera' +
+        (clay.video ? ', the timing and every movement' : ' and the poses') + ' from it. Say plainly that its grey ' +
+        'material, mannequins, floor and grid must not appear. Do not otherwise describe the blocking.');
+    }
+    if (first) lines.push(first.cite.charAt(0).toUpperCase() + first.cite.slice(1) + ' is the approved first frame: the clip opens exactly on it.');
+    else lines.push('No first frame is supplied, so give the setting in one short sentence from the shot description.');
+    const withPic = list.filter(function (a) { return a.kind === 'subject'; });
+    if (withPic.length) {
+      lines.push('Each person or thing with a picture keeps its face, hair, build and wardrobe EXACTLY as in its picture. ' +
+        'The first time you name one, cite its file ("Gus (image 2)"); after that, the name alone.');
+    }
+    // cast with no picture: described in words, since the words are all the tool gets
+    const pictured = {};
+    withPic.forEach(function (a) { pictured[a.subjectId] = 1; });
+    const bare = cast.filter(function (x) { return !pictured[x.id]; });
+    if (bare.length) {
+      lines.push('NO PICTURE, DESCRIBE IN WORDS:');
+      bare.forEach(function (x) {
+        const d = (x.description || '').replace(/\s+/g, ' ').trim();
+        lines.push('  ' + (x.name || 'unnamed') + ': ' + (d || '(no description yet)') +
+          (fr.arrives(x.id) ? ' [ARRIVES DURING THE SHOT]' : ''));
+      });
+    }
+    lines.push('Anyone marked as arriving is not there when the clip opens: their entrance is movement this prompt covers.');
+    return lines.join('\n');
+  }
+
+  function toBytes(d) {
+    if (d instanceof Blob) return d.arrayBuffer().then(function (b) { return new Uint8Array(b); });
+    if (typeof d === 'string' && /^data:/.test(d)) return Promise.resolve(SB.Zip.fromDataUrl(d));
+    return Promise.resolve(new TextEncoder().encode(String(d)));
+  }
+
+  /* One zip: <code>_<model>/01_clay.mp4 … prompt.txt ORDER.txt */
+  function zip(p, shot, model) {
+    const list = assets(p, shot);
+    const pr = ((shot.prompts || {})[model.id] || {}).videoPrompt || '';
+    const f = SB.Model.findShot(p, shot.id);
+    const dir = ((f && f.code) || 'shot') + '_' + String(model.name || 'video').replace(/[^a-z0-9]+/gi, '_').replace(/^_|_$/g, '').toLowerCase();
+    const m = list[0] ? list[0].manifest : null;
+    const out = [];
+    return list.reduce(function (chain, a) {
+      return chain.then(function () {
+        return SB.Mxm.assetData(p, shot, a, m).then(function (d) {
+          if (!d) throw new Error('the file for ' + a.cite + ' (' + a.role + ') is missing');
+          out.push({ name: a.file, data: d });
+        });
+      });
+    }, Promise.resolve()).then(function () {
+      out.push({ name: 'prompt.txt', data: pr + '\n' });
+      out.push({ name: 'ORDER.txt', data: list.map(function (a) { return a.file + '  =  ' + a.cite + ': ' + a.role; }).join('\n') +
+        (list.length ? '\n' : '(no files: the prompt is the whole call)\n') });
+      return Promise.all(out.map(function (x) { return toBytes(x.data).then(function (b) { return { name: dir + '/' + x.name, data: b }; }); }));
+    }).then(function (entries) { return { blob: SB.Zip.store(entries), name: dir + '.zip' }; });
+  }
+
+  function save(blob, name) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
+  }
+
+  SB.VExport = { isExport: isExport, assets: assets, castBlock: castBlock, zip: zip, save: save };
+})(window.SB);
+
+</script>
+<script>
 /* ===== js/seedtest.js ===== */
 /* seedtest.js — the Seedance reference-mode experiments (clay_reference_prompting_plan.md, E1–E3).
  *
@@ -18892,7 +19056,7 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
        the frame's content with the opposite rule attached: describe this one,
        rather than do not describe it. */
     const describes = !!(SB.H3 && SB.H3.stock(m));
-    return '=== IMAGE-TO-VIDEO PROMPT — INSTRUCTIONS ===\n' +
+    return (m.export ? '=== REFERENCE-TO-VIDEO PROMPT — INSTRUCTIONS ===\n' : '=== IMAGE-TO-VIDEO PROMPT — INSTRUCTIONS ===\n') +
       fill(m.videoTemplate, ctx) + extras(shot, m.videoTemplate) +
       (placed ? '' : frameBlock(shot, { describes: describes })) + '\n';
   }
@@ -20640,17 +20804,22 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
     const none = document.createElement('option');
     none.value = ''; none.textContent = role === 'image' ? '(no image model)' : '(no video model)';
     sel.appendChild(none);
-    [['image', 'Image models'], ['video', 'Video models']].forEach(function (g) {
+    /* Each picker offers its own kind only. The video one lists every model
+       twice: pushed from here (one picture, the first frame), or exported, where
+       you upload the files yourself and the prompt is written for all of them
+       (vexport.js). */
+    const cur = role === 'image' ? p.settings.imageModelId : p.settings.videoModelId;
+    const groups = role === 'image' ? [['image', 'Image models', '']]
+      : [['video', 'Send from Storyboarder', ''], ['video', 'Export \u2014 upload the files yourself', SB.Model.EXPORT_SUFFIX]];
+    groups.forEach(function (g) {
       const list = p.settings.models.filter(function (m) { return m.kind === g[0]; });
       if (!list.length) return;
       const og = document.createElement('optgroup');
       og.label = g[1];
       list.forEach(function (m) {
         const o = document.createElement('option');
-        o.value = m.id; o.textContent = m.name;
-        if (m.id === (role === 'image' ? p.settings.imageModelId : p.settings.videoModelId)) {
-          o.selected = true;
-        }
+        o.value = m.id + g[2]; o.textContent = m.name + (g[2] ? ' \u00b7 export' : '');
+        if (o.value === cur) o.selected = true;
         og.appendChild(o);
       });
       sel.appendChild(og);
@@ -21110,7 +21279,9 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
            box you had just filled, until something else forced a redraw. */
         wrap.classList.toggle('using-shared', !(sh[lane.key] || '').trim());
       },
-      placeholder: lane.hint,
+      placeholder: field === 'videoPrompt' && (SB.Model.videoModel(P()) || {}).export
+        ? 'What moves, in what order, how it ends. @ someone to name them — their photo goes up with the clip.'
+        : lane.hint,
       ctx: { shot: sh, code: r.code }
     });
     wrap.appendChild(box);
@@ -21790,6 +21961,39 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
           (m.clip ? '' : '; record a performance in Pose Bench for the motion')));
       }
       mxmButton(wrap, sh, role);
+      return wrap;
+    }
+    /* Exported: every file the clip is given, in upload order, as the prompt
+       cites them, and one button that downloads them with the prompt. */
+    const vmod = role === 'video' ? SB.Model.videoModel(P()) : null;
+    if (vmod && vmod.export && SB.VExport) {
+      const list = SB.VExport.assets(P(), sh);
+      list.forEach(function (a) {
+        const it = SB.el('div', 'pt-fe' + (a.kind === 'first-frame' ? ' pt-frame' : ''));
+        it.appendChild(SB.el('span', 'feed-n', a.video ? 'V' + a.cite.split(' ')[1] : a.cite.split(' ')[1]));
+        const th = SB.el('span', 'feed-thumb');
+        const fig = a.kind === 'subject' ? a.manifest.figures.filter(function (x) { return x.asset && x.asset.n === a.n; })[0] : null;
+        const src = a.kind === 'clay-clip' || a.kind === 'clay-still' ? SB.Blobs.src(P(), sh.pose.image)
+          : a.kind === 'first-frame' ? (sh.image ? SB.Blobs.src(P(), sh.image) : '') : (fig ? SB.Blobs.src(P(), fig.img) : '');
+        if (src) { const im = document.createElement('img'); im.src = src; th.appendChild(im); }
+        else th.textContent = a.video ? '\u25b6' : '?';
+        it.appendChild(th);
+        it.appendChild(SB.el('span', 'feed-file', a.file));
+        it.appendChild(SB.el('span', 'feed-who', a.cite + ' \u00b7 ' + (a.kind === 'clay-clip' ? 'the blocking, animated'
+          : a.kind === 'clay-still' ? 'the blocking (clay render)' : a.role)));
+        it.title = a.cite + ' = ' + a.role + '. Uploaded by hand, in this order.';
+        wrap.appendChild(it);
+      });
+      if (!list.length) wrap.appendChild(SB.el('div', 'pt-none', 'no files \u2014 the prompt is the whole call'));
+      const b = SB.el('button', 'mini vexp-btn', '\u2913 Files');
+      b.title = 'Download ' + list.length + ' file' + (list.length === 1 ? '' : 's') + ' in upload order, with prompt.txt and ORDER.txt';
+      b.onclick = function () {
+        b.disabled = true; setStatus('packing the files for ' + code + '\u2026');
+        SB.VExport.zip(P(), sh, vmod).then(function (z) { SB.VExport.save(z.blob, z.name); setStatus(''); })
+          .catch(function (e) { setStatus(e.message || String(e), true); })
+          .then(function () { b.disabled = false; });
+      };
+      wrap.appendChild(b);
       return wrap;
     }
     if (role === 'video') {
@@ -24689,7 +24893,7 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
               .map(function (m) { delete m.__open; return m; });
             if (!p.settings.models.length) p.settings.models = SB.Model.defaultModels();
             const has = function (id) {
-              return p.settings.models.some(function (m) { return m.id === id; });
+              return p.settings.models.some(function (m) { return m.id === SB.Model.baseId(id); });
             };
             if (!has(p.settings.imageModelId)) {
               p.settings.imageModelId = SB.Model.firstOfKind(p.settings.models, 'image');

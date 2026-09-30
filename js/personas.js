@@ -489,6 +489,9 @@
        * says to write what they DO and not how they look. Sending both put
        * two vocabularies and two opposite instructions in one request. */
       if (SB.H3 && SB.H3.stock(model)) return '';
+      /* Exported (vexport.js): the files are uploaded by hand, all of them, so
+         the block is the numbered list, not "the supplied frame". */
+      if (model && model.export && SB.VExport) return SB.VExport.castBlock(p, shot, cast);
       return videoCastBlock(p, shot, cast, model);
     }
     /* One reference per subject, so one number — the ranges this used to

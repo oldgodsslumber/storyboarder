@@ -1429,7 +1429,7 @@
               .map(function (m) { delete m.__open; return m; });
             if (!p.settings.models.length) p.settings.models = SB.Model.defaultModels();
             const has = function (id) {
-              return p.settings.models.some(function (m) { return m.id === id; });
+              return p.settings.models.some(function (m) { return m.id === SB.Model.baseId(id); });
             };
             if (!has(p.settings.imageModelId)) {
               p.settings.imageModelId = SB.Model.firstOfKind(p.settings.models, 'image');

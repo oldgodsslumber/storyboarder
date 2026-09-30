@@ -159,7 +159,7 @@
        the frame's content with the opposite rule attached: describe this one,
        rather than do not describe it. */
     const describes = !!(SB.H3 && SB.H3.stock(m));
-    return '=== IMAGE-TO-VIDEO PROMPT — INSTRUCTIONS ===\n' +
+    return (m.export ? '=== REFERENCE-TO-VIDEO PROMPT — INSTRUCTIONS ===\n' : '=== IMAGE-TO-VIDEO PROMPT — INSTRUCTIONS ===\n') +
       fill(m.videoTemplate, ctx) + extras(shot, m.videoTemplate) +
       (placed ? '' : frameBlock(shot, { describes: describes })) + '\n';
   }

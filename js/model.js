@@ -189,6 +189,26 @@
     'Keep it one paragraph, no preamble.\n\n' +
     'SHOT DESCRIPTION:\n{{DESCRIPTION}}';
 
+  /* The EXPORT twin's template (vexport.js). Everything the stock one says
+   * about "the first frame is supplied, so the model can already see" is
+   * false here: the files are uploaded by hand, the blocking carries the
+   * layout and movement, and each subject's picture carries their look. */
+  const VID_EXPORT_TPL =
+    'Write a single reference-to-video prompt for {{MODEL}}. The files listed in the instructions are ' +
+    'uploaded with the call, in that order: the blocking (if there is one) gives the layout, the camera ' +
+    'and the movement; the first frame (if there is one) is where the clip opens; each subject\u2019s ' +
+    'picture gives how they look.\n' +
+    'Shot type: {{SHOT_TYPE}}. Scene: {{SCENE}}.\n' +
+    'Write what happens, in order: what moves first, what follows, at what pace, and where the shot ends. ' +
+    'Be specific about the action \u2014 which hand, which direction, how far, how fast, what the body and ' +
+    'the face are doing. Name each person, and cite their file the first time.\n' +
+    'THE CAMERA IS LOCKED OFF unless the shot description asks for a move in words or the blocking clip ' +
+    'moves; if so, write that move and name its speed, and no other.\n' +
+    'Describe nobody\u2019s look beyond what their picture or description gives, and add no clothing, ' +
+    'props or people.\n' +
+    'Keep it one paragraph, no preamble.\n\n' +
+    'SHOT DESCRIPTION:\n{{DESCRIPTION}}';
+
   /* MiniMax H3 does not take a paragraph. Its published prompt guide
    * (VIDEO_PROMPT_WRITING_GUIDE_ref_en.md) specifies a six-section rewrite with
    * its own reference labels, relationship markers and shot syntax; a prose
@@ -1087,7 +1107,7 @@
       if (!s.models.some(function (m) { return m.name === d.name; })) s.models.push(d);
     });
 
-    const has = function (id) { return s.models.some(function (m) { return m.id === id; }); };
+    const has = function (id) { return s.models.some(function (m) { return m.id === baseId(id); }); };
     // older files carried a single activeModelId
     if (s.activeModelId && has(s.activeModelId)) {
       const old = s.models.filter(function (m) { return m.id === s.activeModelId; })[0];
@@ -1796,8 +1816,29 @@
     return hit;
   }
 
+  /* A video model's EXPORT twin (vexport.js): the same model seen through an
+     id ending in EXPORT_SUFFIX, marked export and full-reference. Built on the
+     base by prototype, so an edit to the base's templates reaches it; its
+     prompts are stored under its own id. */
+  const EXPORT_SUFFIX = '~export';
+  const TWINS = typeof WeakMap === 'function' ? new WeakMap() : null;
+  function exportTwin(base) {
+    if (!base || base.kind !== 'video') return null;
+    let t = TWINS && TWINS.get(base);
+    if (!t) {
+      t = Object.create(base);
+      t.id = base.id + EXPORT_SUFFIX; t.baseId = base.id; t.export = true;
+      t.name = base.name + ' \u00b7 export'; t.videoRefs = FULL_REFERENCE;
+      if (!(SB.H3 && SB.H3.stock && SB.H3.stock(base))) t.videoTemplate = VID_EXPORT_TPL;   // H3 keeps its own format
+      if (TWINS) TWINS.set(base, t);
+    }
+    return t;
+  }
+  function baseId(id) { return typeof id === 'string' && id.slice(-EXPORT_SUFFIX.length) === EXPORT_SUFFIX ? id.slice(0, -EXPORT_SUFFIX.length) : id; }
   function modelById(p, id) {
-    return p.settings.models.filter(function (m) { return m.id === id; })[0] || null;
+    const b = baseId(id);
+    const m = p.settings.models.filter(function (x) { return x.id === b; })[0] || null;
+    return b !== id ? exportTwin(m) : m;
   }
   function imageModel(p) { return modelById(p, p.settings.imageModelId); }
   function videoModel(p) { return modelById(p, p.settings.videoModelId); }
@@ -1816,7 +1857,7 @@
     VID_TPL: VID_TPL, VID_TPL_V1: VID_TPL_V1, VID_TPL_V2: VID_TPL_V2,
     H3_VID_TPL: H3_VID_TPL, H3_VID_TPL_V2: H3_VID_TPL_V2, tplsFor: tplsFor,
     FRAME_ONLY: FRAME_ONLY, FULL_REFERENCE: FULL_REFERENCE,
-    videoInherits: videoInherits,
+    videoInherits: videoInherits, exportTwin: exportTwin, baseId: baseId, EXPORT_SUFFIX: EXPORT_SUFFIX,
     newProject: newProject, migrate: migrate, foldLineEndings: foldLineEndings,
     newShot: newShot, newScene: newScene,
     defaultModels: defaultModels, defaultExport: defaultExport, guessSlug: guessSlug,
