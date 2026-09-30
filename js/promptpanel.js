@@ -218,8 +218,7 @@
        you upload the files yourself and the prompt is written for all of them
        (vexport.js). */
     const cur = role === 'image' ? p.settings.imageModelId : p.settings.videoModelId;
-    const groups = role === 'image' ? [['image', 'Image models', '']]
-      : [['video', 'Send from Storyboarder', ''], ['video', 'Export \u2014 upload the files yourself', SB.Model.EXPORT_SUFFIX]];
+    const groups = [[role, 'Send from Storyboarder', ''], [role, 'Export \u2014 upload the files yourself', SB.Model.EXPORT_SUFFIX]];
     groups.forEach(function (g) {
       const list = p.settings.models.filter(function (m) { return m.kind === g[0]; });
       if (!list.length) return;
@@ -1370,6 +1369,33 @@
           (m.clip ? '' : '; record a performance in Pose Bench for the motion')));
       }
       mxmButton(wrap, sh, role);
+      return wrap;
+    }
+    /* A still, exported: every reference as its own numbered file, no sheet. */
+    const imod = role === 'image' ? SB.Model.imageModel(P()) : null;
+    if (imod && imod.export && SB.VExport) {
+      const files = SB.VExport.imageFiles(P(), sh);
+      files.forEach(function (x) {
+        const it = SB.el('div', 'pt-fe');
+        it.appendChild(SB.el('span', 'feed-n', String(x.n)));
+        const th = SB.el('span', 'feed-thumb');
+        if (x.url) { const im = document.createElement('img'); im.src = x.url; th.appendChild(im); }
+        it.appendChild(th);
+        it.appendChild(SB.el('span', 'feed-file', x.file));
+        it.appendChild(SB.el('span', 'feed-who', x.cite + ' \u00b7 ' + x.label));
+        it.title = x.cite + ' = ' + x.label + '. Uploaded by hand, in this order.';
+        wrap.appendChild(it);
+      });
+      if (!files.length) wrap.appendChild(SB.el('div', 'pt-none', 'no files \u2014 the prompt is the whole call'));
+      const b = SB.el('button', 'mini vexp-btn', '\u2913 Files');
+      b.title = 'Download ' + files.length + ' file' + (files.length === 1 ? '' : 's') + ' in upload order, with prompt.txt and ORDER.txt';
+      b.onclick = function () {
+        b.disabled = true; setStatus('packing the files for ' + code + '\u2026');
+        SB.VExport.zipImage(P(), sh, imod).then(function (z) { SB.VExport.save(z.blob, z.name); setStatus(''); })
+          .catch(function (e) { setStatus(e.message || String(e), true); })
+          .then(function () { b.disabled = false; });
+      };
+      wrap.appendChild(b);
       return wrap;
     }
     /* Exported: every file the clip is given, in upload order, as the prompt

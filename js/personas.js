@@ -823,6 +823,17 @@
         'or a collage — the picture wanted is the single shot described below, with these subjects in it ' +
         'looking exactly as they do in their panels.';
     }
+    /* Exported: every picture is uploaded, in order, so the opening names each
+       one (the blocking has its own paragraph from clayPreamble). */
+    if (sent.export) {
+      const all = SB.Refs.images(p, shot, 'image').filter(function (e) { return e.kind !== 'pose'; });
+      if (!all.length) return '';
+      const say = all.map(function (e) {
+        return 'image ' + e.n + ' is ' + (e.kind === 'shot' ? 'the rendered frame of shot ' + e.label : e.label) + (e.role ? ' (' + e.role + ')' : '');
+      }).join('; ');
+      return say.charAt(0).toUpperCase() + say.slice(1) + '. Match each subject exactly to their own image \u2014 face, ' +
+        'hair, build and wardrobe \u2014 and take nothing else from those images: not their background, pose, framing or light.';
+    }
     const first = sent.first;
     if (!first || first.kind !== 'subject') return '';
     return 'Image 1 is ' + first.label + (first.role ? ' (' + first.role + ')' : '') + '. Wherever ' +

@@ -951,6 +951,26 @@ section('a still carries every reference the card names');
   t('no numbered image list survives beside it',
     !/image 2 = /.test(block), block.slice(0, 300));
 
+  /* The same card on the still's EXPORT twin (vexport.js): the files go up one
+     by one, so no sheet, all three travel, and the prompt numbers them. */
+  {
+    const was = pM.settings.imageModelId;
+    pM.settings.imageModelId = im.id + SB.Model.EXPORT_SUFFIX;
+    const ex = SB.Model.imageModel(pM);
+    t('an image model has an export twin', !!ex && ex.export === true && ex.kind === 'image', ex && ex.name);
+    t('exported, the three plan no sheet', SB.Imagine.sheetPlan(pM, sh, 'image').length === 0, '');
+    const rx = SB.Imagine.refsFor(pM, sh, 'image');
+    t('and all three travel, as three files', rx.carries === 3 && !rx.sheet && rx.export === true, JSON.stringify(rx));
+    const bx = SB.Personas.block(pM, sh, ex, 'image');
+    t('the mapping numbers every image', /image 1 = /.test(bx) && /image 3 = /.test(bx), bx.slice(0, 300));
+    t('says all three are uploaded', /All 3 are uploaded with this call/.test(bx), bx.slice(0, 400));
+    t('and says nothing about a sheet', !/REFERENCE SHEET|panel/.test(bx), bx.slice(0, 300));
+    const pre = SB.Personas.refPreamble(pM, sh);
+    t('the app\u2019s opening names each image', /^Image 1 is /.test(pre) && /image 3 is /.test(pre), pre.slice(0, 200));
+    t('and nothing is pushed from an export', SB.Imagine.whyNot(pM, sh, ex, 'image').short === 'export', '');
+    pM.settings.imageModelId = was;
+  }
+
   /* without a canvas — any headless caller — it degrades to one picture
      rather than uploading three and sending one */
   await SB.Imagine.run(sh, 'image').catch(() => null);

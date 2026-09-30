@@ -1452,7 +1452,7 @@ body.comment-mode .frame{cursor:crosshair}
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-09-30 15:11 · 04bc402+";</script>
+<script>window.SB_BUILD = "2026-09-30 15:25 · 7d3b7c5+";</script>
 
 <div id="app">
 
@@ -7443,7 +7443,11 @@ window.SB = window.SB || {};
 
   /* What a sheet WOULD hold, without building it — so the prompt that names
    * the panels and the canvas that draws them cannot disagree. */
+  /* The still's picker is on an EXPORT twin (vexport.js): the files are
+     uploaded one by one, so there is no sheet and every picture travels. */
+  function imageExport(p) { const m = SB.Model.imageModel(p); return !!(m && m.export); }
   function sheetPlan(p, shot, role) {
+    if ((role || 'image') === 'image' && imageExport(p)) return [];
     const list = SB.Refs.images(p, shot, role || 'image').slice(0, SHEET_MAX);
     if (list.length < 2) return [];
     const plan = SHEET_PLAN[list.length];
@@ -8211,6 +8215,10 @@ window.SB = window.SB || {};
       };
     }
 
+    if (imageExport(p)) {
+      return { role: 'image', feed: feed.length, wordsOnly: wordsOnly, carries: feed.length, sheet: null,
+        first: feed[0] || null, byKey: false, export: true };
+    }
     /* Several references travel as one sheet, so all of them are in front of
      * the model even though one picture is uploaded. */
     const plan = sheetPlan(p, shot, 'image');
@@ -10002,6 +10010,17 @@ window.SB = window.SB || {};
         'own panel, and nothing else from the sheet. Do not reproduce the grid, the panels, the grey ground ' +
         'or a collage — the picture wanted is the single shot described below, with these subjects in it ' +
         'looking exactly as they do in their panels.';
+    }
+    /* Exported: every picture is uploaded, in order, so the opening names each
+       one (the blocking has its own paragraph from clayPreamble). */
+    if (sent.export) {
+      const all = SB.Refs.images(p, shot, 'image').filter(function (e) { return e.kind !== 'pose'; });
+      if (!all.length) return '';
+      const say = all.map(function (e) {
+        return 'image ' + e.n + ' is ' + (e.kind === 'shot' ? 'the rendered frame of shot ' + e.label : e.label) + (e.role ? ' (' + e.role + ')' : '');
+      }).join('; ');
+      return say.charAt(0).toUpperCase() + say.slice(1) + '. Match each subject exactly to their own image \u2014 face, ' +
+        'hair, build and wardrobe \u2014 and take nothing else from those images: not their background, pose, framing or light.';
     }
     const first = sent.first;
     if (!first || first.kind !== 'subject') return '';
@@ -12100,13 +12119,16 @@ window.SB = window.SB || {};
   const EXPORT_SUFFIX = '~export';
   const TWINS = typeof WeakMap === 'function' ? new WeakMap() : null;
   function exportTwin(base) {
-    if (!base || base.kind !== 'video') return null;
+    if (!base || (base.kind !== 'video' && base.kind !== 'image')) return null;
     let t = TWINS && TWINS.get(base);
     if (!t) {
       t = Object.create(base);
       t.id = base.id + EXPORT_SUFFIX; t.baseId = base.id; t.export = true;
-      t.name = base.name + ' \u00b7 export'; t.videoRefs = FULL_REFERENCE;
-      if (!(SB.H3 && SB.H3.stock && SB.H3.stock(base))) t.videoTemplate = VID_EXPORT_TPL;   // H3 keeps its own format
+      t.name = base.name + ' \u00b7 export';
+      if (base.kind === 'video') {
+        t.videoRefs = FULL_REFERENCE;
+        if (!(SB.H3 && SB.H3.stock && SB.H3.stock(base))) t.videoTemplate = VID_EXPORT_TPL;   // H3 keeps its own format
+      }
       if (TWINS) TWINS.set(base, t);
     }
     return t;
@@ -15708,7 +15730,34 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
     setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
   }
 
-  SB.VExport = { isExport: isExport, assets: assets, castBlock: castBlock, zip: zip, save: save };
+  /* A still, exported: every reference picture, in the feed's order (the
+     numbers its prompt uses), full size where the board carries the original. */
+  function imageFiles(p, shot) {
+    return SB.Refs.images(p, shot, 'image').map(function (e) {
+      const u = (e.render && SB.Renders.dataUrl(p, e.render)) || SB.Blobs.src(p, e.img);
+      const ext = /^data:image\/png/i.test(u) ? 'png' : /^data:image\/webp/i.test(u) ? 'webp' : 'jpg';
+      const name = e.kind === 'pose' ? 'blocking' : String(e.label || 'ref').replace(/[^a-z0-9]+/gi, '_').replace(/^_|_$/g, '').toLowerCase();
+      return { n: e.n, cite: 'image ' + e.n, url: u, kind: e.kind, label: e.kind === 'pose' ? 'the blocking (clay render)' : e.label,
+        file: (e.n < 10 ? '0' : '') + e.n + '_' + (name || 'ref') + '.' + ext };
+    });
+  }
+  function zipImage(p, shot, model) {
+    const list = imageFiles(p, shot);
+    const pr = ((shot.prompts || {})[model.id] || {}).imagePrompt || '';
+    const f = SB.Model.findShot(p, shot.id);
+    const dir = ((f && f.code) || 'shot') + '_' + String(model.name || 'still').replace(/[^a-z0-9]+/gi, '_').replace(/^_|_$/g, '').toLowerCase();
+    return Promise.all(list.map(function (x) {
+      return fetch(x.url).then(function (r) { return r.arrayBuffer(); }).then(function (b) { return { name: dir + '/' + x.file, data: new Uint8Array(b) }; });
+    })).then(function (entries) {
+      const enc = new TextEncoder();
+      entries.push({ name: dir + '/prompt.txt', data: enc.encode(pr + '\n') });
+      entries.push({ name: dir + '/ORDER.txt', data: enc.encode(list.map(function (x) { return x.file + '  =  ' + x.cite + ': ' + x.label; }).join('\n') +
+        (list.length ? '\n' : '(no files: the prompt is the whole call)\n')) });
+      return { blob: SB.Zip.store(entries), name: dir + '.zip' };
+    });
+  }
+
+  SB.VExport = { isExport: isExport, assets: assets, castBlock: castBlock, zip: zip, save: save, imageFiles: imageFiles, zipImage: zipImage };
 })(window.SB);
 
 </script>
@@ -20809,8 +20858,7 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
        you upload the files yourself and the prompt is written for all of them
        (vexport.js). */
     const cur = role === 'image' ? p.settings.imageModelId : p.settings.videoModelId;
-    const groups = role === 'image' ? [['image', 'Image models', '']]
-      : [['video', 'Send from Storyboarder', ''], ['video', 'Export \u2014 upload the files yourself', SB.Model.EXPORT_SUFFIX]];
+    const groups = [[role, 'Send from Storyboarder', ''], [role, 'Export \u2014 upload the files yourself', SB.Model.EXPORT_SUFFIX]];
     groups.forEach(function (g) {
       const list = p.settings.models.filter(function (m) { return m.kind === g[0]; });
       if (!list.length) return;
@@ -21961,6 +22009,33 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
           (m.clip ? '' : '; record a performance in Pose Bench for the motion')));
       }
       mxmButton(wrap, sh, role);
+      return wrap;
+    }
+    /* A still, exported: every reference as its own numbered file, no sheet. */
+    const imod = role === 'image' ? SB.Model.imageModel(P()) : null;
+    if (imod && imod.export && SB.VExport) {
+      const files = SB.VExport.imageFiles(P(), sh);
+      files.forEach(function (x) {
+        const it = SB.el('div', 'pt-fe');
+        it.appendChild(SB.el('span', 'feed-n', String(x.n)));
+        const th = SB.el('span', 'feed-thumb');
+        if (x.url) { const im = document.createElement('img'); im.src = x.url; th.appendChild(im); }
+        it.appendChild(th);
+        it.appendChild(SB.el('span', 'feed-file', x.file));
+        it.appendChild(SB.el('span', 'feed-who', x.cite + ' \u00b7 ' + x.label));
+        it.title = x.cite + ' = ' + x.label + '. Uploaded by hand, in this order.';
+        wrap.appendChild(it);
+      });
+      if (!files.length) wrap.appendChild(SB.el('div', 'pt-none', 'no files \u2014 the prompt is the whole call'));
+      const b = SB.el('button', 'mini vexp-btn', '\u2913 Files');
+      b.title = 'Download ' + files.length + ' file' + (files.length === 1 ? '' : 's') + ' in upload order, with prompt.txt and ORDER.txt';
+      b.onclick = function () {
+        b.disabled = true; setStatus('packing the files for ' + code + '\u2026');
+        SB.VExport.zipImage(P(), sh, imod).then(function (z) { SB.VExport.save(z.blob, z.name); setStatus(''); })
+          .catch(function (e) { setStatus(e.message || String(e), true); })
+          .then(function () { b.disabled = false; });
+      };
+      wrap.appendChild(b);
       return wrap;
     }
     /* Exported: every file the clip is given, in upload order, as the prompt

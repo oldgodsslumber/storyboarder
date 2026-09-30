@@ -1823,13 +1823,16 @@
   const EXPORT_SUFFIX = '~export';
   const TWINS = typeof WeakMap === 'function' ? new WeakMap() : null;
   function exportTwin(base) {
-    if (!base || base.kind !== 'video') return null;
+    if (!base || (base.kind !== 'video' && base.kind !== 'image')) return null;
     let t = TWINS && TWINS.get(base);
     if (!t) {
       t = Object.create(base);
       t.id = base.id + EXPORT_SUFFIX; t.baseId = base.id; t.export = true;
-      t.name = base.name + ' \u00b7 export'; t.videoRefs = FULL_REFERENCE;
-      if (!(SB.H3 && SB.H3.stock && SB.H3.stock(base))) t.videoTemplate = VID_EXPORT_TPL;   // H3 keeps its own format
+      t.name = base.name + ' \u00b7 export';
+      if (base.kind === 'video') {
+        t.videoRefs = FULL_REFERENCE;
+        if (!(SB.H3 && SB.H3.stock && SB.H3.stock(base))) t.videoTemplate = VID_EXPORT_TPL;   // H3 keeps its own format
+      }
       if (TWINS) TWINS.set(base, t);
     }
     return t;

@@ -629,8 +629,11 @@ alongside what is already open. **Fold all** and **Unfold all** sit beside them.
 / Stale / This scene filters are gone; their counts now live on the scenes, where they say *where* the
 work is. (`create_panel_scenes_plan.md`)
 
-**The two model pickers each offer their own kind.** The first-frame picker lists image models only. The video
-picker lists every video model twice:
+**The two model pickers each offer their own kind, and list every model twice.** The first-frame picker lists
+image models, the video picker video models, each as *Send from Storyboarder* and *Export*. For a still, Send is
+the ImagineArt push, where several references travel as ONE picture, a reference sheet, and the prompt names its
+panels. Export uploads each reference as its own numbered file (no sheet), the prompt and the app's opening line
+name every image, and **⤓ Files** downloads them in order. For video:
 - **Send from Storyboarder:** the ImagineArt push. It hands the clip one picture, the card's first frame, so the
   prompt is motion only.
 - **Export — upload the files yourself:** the lane lists every file in upload order, and the prompt cites them the

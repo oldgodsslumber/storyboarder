@@ -107,5 +107,32 @@
     setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
   }
 
-  SB.VExport = { isExport: isExport, assets: assets, castBlock: castBlock, zip: zip, save: save };
+  /* A still, exported: every reference picture, in the feed's order (the
+     numbers its prompt uses), full size where the board carries the original. */
+  function imageFiles(p, shot) {
+    return SB.Refs.images(p, shot, 'image').map(function (e) {
+      const u = (e.render && SB.Renders.dataUrl(p, e.render)) || SB.Blobs.src(p, e.img);
+      const ext = /^data:image\/png/i.test(u) ? 'png' : /^data:image\/webp/i.test(u) ? 'webp' : 'jpg';
+      const name = e.kind === 'pose' ? 'blocking' : String(e.label || 'ref').replace(/[^a-z0-9]+/gi, '_').replace(/^_|_$/g, '').toLowerCase();
+      return { n: e.n, cite: 'image ' + e.n, url: u, kind: e.kind, label: e.kind === 'pose' ? 'the blocking (clay render)' : e.label,
+        file: (e.n < 10 ? '0' : '') + e.n + '_' + (name || 'ref') + '.' + ext };
+    });
+  }
+  function zipImage(p, shot, model) {
+    const list = imageFiles(p, shot);
+    const pr = ((shot.prompts || {})[model.id] || {}).imagePrompt || '';
+    const f = SB.Model.findShot(p, shot.id);
+    const dir = ((f && f.code) || 'shot') + '_' + String(model.name || 'still').replace(/[^a-z0-9]+/gi, '_').replace(/^_|_$/g, '').toLowerCase();
+    return Promise.all(list.map(function (x) {
+      return fetch(x.url).then(function (r) { return r.arrayBuffer(); }).then(function (b) { return { name: dir + '/' + x.file, data: new Uint8Array(b) }; });
+    })).then(function (entries) {
+      const enc = new TextEncoder();
+      entries.push({ name: dir + '/prompt.txt', data: enc.encode(pr + '\n') });
+      entries.push({ name: dir + '/ORDER.txt', data: enc.encode(list.map(function (x) { return x.file + '  =  ' + x.cite + ': ' + x.label; }).join('\n') +
+        (list.length ? '\n' : '(no files: the prompt is the whole call)\n')) });
+      return { blob: SB.Zip.store(entries), name: dir + '.zip' };
+    });
+  }
+
+  SB.VExport = { isExport: isExport, assets: assets, castBlock: castBlock, zip: zip, save: save, imageFiles: imageFiles, zipImage: zipImage };
 })(window.SB);

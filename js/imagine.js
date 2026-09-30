@@ -2525,7 +2525,11 @@
 
   /* What a sheet WOULD hold, without building it — so the prompt that names
    * the panels and the canvas that draws them cannot disagree. */
+  /* The still's picker is on an EXPORT twin (vexport.js): the files are
+     uploaded one by one, so there is no sheet and every picture travels. */
+  function imageExport(p) { const m = SB.Model.imageModel(p); return !!(m && m.export); }
   function sheetPlan(p, shot, role) {
+    if ((role || 'image') === 'image' && imageExport(p)) return [];
     const list = SB.Refs.images(p, shot, role || 'image').slice(0, SHEET_MAX);
     if (list.length < 2) return [];
     const plan = SHEET_PLAN[list.length];
@@ -3293,6 +3297,10 @@
       };
     }
 
+    if (imageExport(p)) {
+      return { role: 'image', feed: feed.length, wordsOnly: wordsOnly, carries: feed.length, sheet: null,
+        first: feed[0] || null, byKey: false, export: true };
+    }
     /* Several references travel as one sheet, so all of them are in front of
      * the model even though one picture is uploaded. */
     const plan = sheetPlan(p, shot, 'image');
