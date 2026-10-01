@@ -232,5 +232,21 @@ console.log('\n\u2014 the still reads its frame box, not the general description
   has(JSON.stringify(asked[0]), 'high-rise office', 'with the frame box empty, the general description stands in');
 }
 
+console.log('\n\u2014 a moved camera reads as a new setup, not an edit \u2014');
+{
+  const { p } = board();
+  const wide = SB.Model.addShot(p, p.scenes[0].id, { type: 'Wide' }), cu = SB.Model.addShot(p, p.scenes[0].id, { type: 'Close-up' });
+  const cams = { [wide.id]: { target: [0, 1, 0], theta: 0, phi: 1.3, radius: 4, mm: 35 },
+                 [cu.id]: { target: [0.4, 1.5, 0], theta: 0.6, phi: 1.5, radius: 1.2, mm: 85 } };
+  SB.Pose = { sceneOf: (pp, sh) => cams[sh.id] ? { camera: cams[sh.id] } : null };
+  const mv = SB.Personas.cameraMove(p, cu, { id: wide.id });
+  has(mv.words, 'swung about 35\u00b0 to the right', 'the orbit, in degrees and side');
+  has(mv.words, 'about 3.5 times closer', 'how much closer');
+  has(mv.words, '85mm lens (it was 35mm)', 'the lens change');
+  cams[cu.id] = Object.assign({}, cams[wide.id]);
+  eq(!!SB.Personas.cameraMove(p, cu, { id: wide.id }).same, true, 'the same camera is not a move');
+  delete SB.Pose;
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed\n');
 if (fail) process.exit(1);

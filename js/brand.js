@@ -118,6 +118,23 @@
     '- Rebuilding the scene in words is what makes an edit come back as a different shot.'
   ].join('\n');
 
+  /* The same, when the card's own blocking moves the camera: the supplied frame is then a continuity reference,
+   * not the canvas. Written as an edit, the model kept the old camera and cropped (personas.js newSetup). */
+  const NEW_SETUP_RIDER = [
+    'THIS FRAME IS A NEW CAMERA SETUP OF A SUPPLIED FRAME',
+    '- A rendered frame of an earlier shot of this scene is supplied with this job. This shot sees the same ' +
+    'people in the same place from a NEW camera position, which the blocking gives.',
+    '- Write what the new camera sees: how close it is, who is in frame and where, and what is behind them from ' +
+    'this angle. It is not an edit, a crop or a zoom of the supplied frame.',
+    '- The people, wardrobe, place, light and grade carry over from the supplied frame. Name them briefly; do not ' +
+    'restate the grade or the lighting at length.'
+  ].join('\n');
+  function movedSetup(p, shot) {
+    if (!SB.Personas || !SB.Personas.newSetup) return null;
+    const src = SB.Refs.feed(p, shot, 'image').filter(function (e) { return e.kind === 'shot' && e.images.length; })[0];
+    return src ? SB.Personas.newSetup(p, shot, src) : null;
+  }
+
   /* A reference frame is a record, not a shot — but the house style says to
    * finish everything with a grade, a grain and a lens, and the model believes
    * the house style over a clause buried in the request. Said as its own rider
@@ -640,6 +657,10 @@
       ? 'Fold these requirements into the prompt itself as concrete MOVEMENT — what happens, in ' +
         'what order, at what pace. Nothing that is already visible in the supplied frame. Do not ' +
         'quote the rules back, and do not add headings or commentary.'
+      : derived && movedSetup(p, shot)
+      ? 'Fold these requirements into the prompt itself as concrete description of what the new camera sees. ' +
+        'The people, the place, the light and the grade carry over from the supplied frame; the camera, the ' +
+        'framing and the lens come from the blocking. Do not quote the rules back, and do not add headings or commentary.'
       : derived
       ? 'Fold these requirements into the prompt itself as concrete description, but ONLY where ' +
         'they describe what this frame CHANGES. Everything inherited from the supplied source ' +
@@ -680,6 +701,10 @@
      * below already carries the only instruction that came out of it. */
     if (b.enabled && !styleInherited) {
       parts.push('HOUSE STYLE — every prompt you write must obey this.', '', b.text);
+    } else if (b.enabled && derived && movedSetup(p, shot)) {
+      parts.push('THE HOUSE STYLE IS NOT REPEATED HERE.', '',
+        'The supplied source frame was made under it and already carries the look: the grade, the grain and ' +
+        'the lighting. The camera and lens of this shot are new and come from the blocking.');
     } else if (b.enabled && derived) {
       parts.push('THE HOUSE STYLE IS NOT REPEATED HERE.', '',
         'The supplied source frame was made under it and already carries the look — the grade, ' +
@@ -701,7 +726,7 @@
     if (role === 'image' || role === 'both') {
       if (parts.length) parts.push('');
       parts.push(FIRST_FRAME_RIDER);
-      if (derived) parts.push('', DERIVED_RIDER);
+      if (derived) parts.push('', movedSetup(p, shot) ? NEW_SETUP_RIDER : DERIVED_RIDER);
     }
     if (role === 'video' || role === 'both') {
       if (parts.length) parts.push('');

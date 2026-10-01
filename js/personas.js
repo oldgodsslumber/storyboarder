@@ -750,7 +750,18 @@
       const which = shots.map(function (e) {
         return 'image ' + (e.numbers[0] || '?') + ' is the whole rendered frame of shot ' + e.label;
       }).join('; ');
+      const n0 = shots[0].numbers[0] || 1, moved = newSetup(p, shot, shots[0]);
       lines.push('THE SOURCE FRAME — READ THIS LAST, IT OVERRIDES THE ABOVE');
+      if (moved) {
+        lines.push(which + '. It is an earlier camera setup of this same scene: not a subject, and not the ' +
+          'composition of this shot.');
+        lines.push('This shot is a NEW CAMERA SETUP. ' + (moved.words ? moved.words + ' ' : '') +
+          'Write it as the new camera sees it, with the camera and framing taken from the blocking: how close it is, ' +
+          'who is in frame and where, and what is behind them from this angle. Do NOT write it as an edit, a crop or ' +
+          'a zoom of image ' + n0 + ', and do not open with "Starting from image ' + n0 + '". The people, wardrobe, ' +
+          'place, light and grade carry over from image ' + n0 + ': name them briefly, do not re-describe them at length.');
+        return lines.join('\n');
+      }
       lines.push(which + '. It is not a subject and not a face: it is the frame this one is ' +
         'derived from.');
       lines.push('The prompt you write is an EDIT of that frame, not a fresh description of a ' +
@@ -782,6 +793,8 @@
     if (!blocking) return '';
     const sent = (SB.Imagine && SB.Imagine.refsFor) ? SB.Imagine.refsFor(p, shot, 'image') : null;
     if (sent && (sent.byKey || !sent.carries)) return '';
+    // one picture travels, and it is the source frame: the blocking is not in front of the model
+    if (sent && !sent.export && !sent.sheet && sent.first && sent.first.kind === 'shot') return '';
     const plan = (SB.Imagine && SB.Imagine.sheetPlan) ? SB.Imagine.sheetPlan(p, shot, 'image') : [];
     const onSheet = plan.length > 1;
     const numbered = SB.Refs.images(p, shot, 'image');
@@ -826,6 +839,54 @@
    * '' when no picture travels (the API-key door), and for a lone picture
    * that is the blocking or a source frame: the clay paragraph and the
    * source-frame edit already say what those are. */
+
+  /* ---- a reframe from a NEW camera position ----
+   *
+   * A still with a source frame (another card's render) used to be written and introduced as an EDIT of that
+   * frame: "keep everything in it, the lens included, and change only what this prompt describes". Fine for a
+   * new moment from the same camera. But when the card has its own blocking with the camera moved (orbited round
+   * and in to a close-up), "keep the lens" plus "edit" told the model to keep the old camera, so the closest it
+   * could get was a crop of the wide. With a blocking on the card, the blocking now decides the camera. The
+   * source frame carries the people, wardrobe, place, light and grade. How far the camera moved, read from the
+   * two blockings, is put in words, because image models follow words about the camera better than a grey render. */
+  function camPos(c) {
+    const t = c.target || [0, 0, 0], r = +c.radius || 0, ph = +c.phi || 0, th = +c.theta || 0;
+    return [t[0] + r * Math.sin(ph) * Math.sin(th), t[1] + r * Math.cos(ph), t[2] + r * Math.sin(ph) * Math.cos(th)];
+  }
+  /* null: unknown (no blocking on one of them). {same:true}: the camera has not really moved. {words}: how it moved. */
+  function cameraMove(p, shot, src) {
+    if (!SB.Pose || !SB.Pose.sceneOf || !src) return null;
+    const f = SB.Model.findShot ? SB.Model.findShot(p, src.id) : null;
+    const from = f && SB.Pose.sceneOf(p, f.shot), to = SB.Pose.sceneOf(p, shot);
+    const a = from && from.camera, b = to && to.camera;
+    if (!a || !b || !a.radius || !b.radius) return null;
+    let d = ((+b.theta || 0) - (+a.theta || 0)) * 180 / Math.PI;
+    while (d > 180) d -= 360; while (d < -180) d += 360;
+    const pa = camPos(a), pb = camPos(b), dy = pb[1] - pa[1], ratio = b.radius / a.radius;
+    const shift = Math.hypot(pb[0] - pa[0], pb[2] - pa[2]);
+    const lens = a.mm && b.mm && Math.abs(a.mm - b.mm) >= 5;
+    if (Math.abs(d) < 6 && ratio > 0.85 && ratio < 1.18 && Math.abs(dy) < 0.15 && shift < 0.3 && !lens) return { same: true };
+    const bits = [];
+    if (Math.abs(d) >= 6) bits.push('swung about ' + Math.round(Math.abs(d) / 5) * 5 + '\u00b0 to the ' + (d > 0 ? 'right' : 'left'));
+    const x = function (r) { return (Math.round(r * 2) / 2).toString().replace(/\.0$/, ''); };
+    if (ratio <= 0.85) bits.push('moved in, about ' + x(1 / ratio) + ' times closer to what it frames');
+    else if (ratio >= 1.18) bits.push('pulled back, about ' + x(ratio) + ' times farther from what it frames');
+    if (Math.abs(dy) >= 0.15) bits.push((dy > 0 ? 'risen' : 'dropped') + ' about ' + Math.round(Math.abs(dy) * 10) * 10 + ' cm');
+    if (lens) bits.push('changed to a ' + Math.round(b.mm) + 'mm lens (it was ' + Math.round(a.mm) + 'mm)');
+    if (!bits.length) bits.push('moved to a new position');
+    const last = bits.length > 1 ? bits.slice(0, -1).join(', ') + ' and ' + bits[bits.length - 1] : bits[0];
+    return { words: 'Compared with that frame, the camera has ' + last + '.' };
+  }
+  /* The card's own blocking travels with the still, and its camera is not the source frame's (or can't be compared). */
+  function newSetup(p, shot, src) {
+    if (!src || !shot || !shot.pose) return null;
+    const b = SB.Refs.feed(p, shot, 'image').filter(function (e) { return e.kind === 'pose' && e.images.length; })[0];
+    if (!b) return null;
+    const mv = cameraMove(p, shot, src);
+    if (mv && mv.same) return null;
+    return mv || { words: '' };
+  }
+
   function refPreamble(p, shot) {
     if (!shot) return '';
     const sent = (SB.Imagine && SB.Imagine.refsFor) ? SB.Imagine.refsFor(p, shot, 'image') : null;
@@ -853,8 +914,13 @@
         return 'image ' + e.n + ' is ' + (e.kind === 'shot' ? 'the rendered frame of shot ' + e.label : e.label) + (e.role ? ' (' + e.role + ')' : '');
       }).join('; ');
       const src = all.filter(function (e) { return e.kind === 'shot'; })[0];
+      const moved = src && newSetup(p, shot, src);
       return say.charAt(0).toUpperCase() + say.slice(1) + '. ' +
-        (src ? 'Image ' + src.n + ' is the frame this one is edited from: keep everything in it \u2014 the place, the light, the lens ' +
+        (moved ? 'Image ' + src.n + ' is an earlier camera setup of this same scene, and this shot is a NEW camera setup. ' +
+          (moved.words ? moved.words + ' ' : '') + 'Take the camera position, angle, framing and lens from the blocking only. ' +
+          'From image ' + src.n + ' take the people, their wardrobe, the place, the light and the grade, as they look from the ' +
+          'new camera. Do not reproduce, crop or zoom into its composition. '
+        : src ? 'Image ' + src.n + ' is the frame this one is edited from: keep everything in it \u2014 the place, the light, the lens ' +
           'and the grade \u2014 and change only what this prompt describes. ' : '') +
         'Match each subject exactly to their own image \u2014 face, hair, build and wardrobe' +
         (src ? '.' : ' \u2014 and take nothing else from those images: not their background, pose, framing or light.');
@@ -862,7 +928,14 @@
     const first = sent.first;
     /* A reframe of another card's frame: the app says so itself, so the image model always gets it. */
     if (first && first.kind === 'shot') {
-      return 'Image ' + (first.n || 1) + ' is the rendered frame of shot ' + first.label + '. Keep everything in it ' +
+      const moved = newSetup(p, shot, first);
+      if (moved) {
+        return 'Image 1 is the rendered frame of shot ' + first.label + ', taken from a different camera position. ' +
+          'Keep its people, wardrobe, place, light and grade, but not its framing: this shot is a new camera setup. ' +
+          (moved.words ? moved.words + ' ' : '') + 'Re-shoot the scene from that new position, as described below. ' +
+          'Do not simply crop or zoom into image 1.';
+      }
+      return 'Image 1 is the rendered frame of shot ' + first.label + '. Keep everything in it ' +
         '\u2014 the place, the people, the light, the lens and the grade \u2014 and change only what this prompt describes.';
     }
     if (!first || first.kind !== 'subject') return '';
@@ -1006,7 +1079,7 @@
     imagesOf: imagesOf, hero: hero, hasImage: hasImage,
     setImage: setImage, clearImage: clearImage, labelImage: labelImage,
     retiredOf: retiredOf, useRetired: useRetired, dropRetired: dropRetired,
-    forShot: forShot, castByTag: castByTag, removeFromShot: removeFromShot, framing: framing, clayPreamble: clayPreamble, refPreamble: refPreamble,toggleOnShot: toggleOnShot, block: block, generate: generate,
+    forShot: forShot, castByTag: castByTag, removeFromShot: removeFromShot, framing: framing, clayPreamble: clayPreamble, refPreamble: refPreamble, newSetup: newSetup, cameraMove: cameraMove,toggleOnShot: toggleOnShot, block: block, generate: generate,
     enters: enters, setEnters: setEnters, toggleEnters: toggleEnters,
     presentAtOpen: presentAtOpen, arriving: arriving, ARRIVAL_RE: ARRIVAL_RE,
     readsAsArrival: readsAsArrival,
