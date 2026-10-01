@@ -537,3 +537,9 @@ It's sent as `framing` in `posebench:done`. Storyboarder stores it on `pose.fram
 ## Movable part popover (2026-10-01)
 
 - Drag `#jointPop` by its header (`#jpHead`, ⠿). Once dragged, it stays where you put it for every part. The spot is kept as a fraction of the stage in `localStorage` (`posebench.jointPopAt`, wrapped in try/catch), and `placeJointPop` clamps it to the stage. ⤺ (`#jpDock`) or a double-click on the header clears that, so it follows the joint again.
+
+## Camera bar (2026-10-01)
+
+- `#camPad` is now one row across the bottom of the stage: 📷 toggle | views (`#views`) | shot size (`#shots`) | Lens (`#rLens`, which takes the spare width). The ids are unchanged, so every handler is untouched. It's open by default under a new key, `posebench.camBar` (the old box's "closed" doesn't carry over), and closed by default on a stage under 600 px. Below 1320 px window width the buttons go compact; narrower still, the bar scrolls sideways rather than wrapping.
+- `guideRect` insets the capture frame by `barInset()` at the top and the bottom alike, so the frame stays centred on the lens axis (no shifted-lens captures) and clear of the bar. `placeJointPop` keeps the popover above the bar.
+- `markView` lights the view button you picked until the camera is moved by hand (checked in `applyCam`).

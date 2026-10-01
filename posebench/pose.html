@@ -159,7 +159,7 @@
   .fold>summary::-webkit-details-marker{display:none}
   .fold>summary::before{content:'▸ ';color:var(--muted-2)} .fold[open]>summary::before{content:'▾ '}
   .fold-in{padding:0 18px 14px}
-  .pop,#jointPop,#camPadBody{background:rgba(27,30,36,.97);border:1px solid var(--line);border-radius:10px;padding:12px 14px;
+  .pop,#jointPop{background:rgba(27,30,36,.97);border:1px solid var(--line);border-radius:10px;padding:12px 14px;
     box-shadow:0 12px 40px rgba(0,0,0,.45)}
   .pop{position:absolute;top:52px;right:14px;width:330px;max-height:calc(100% - 70px);overflow:auto;z-index:9;display:none}
   .pop.open{display:block}
@@ -167,11 +167,21 @@
   .capgrp #capBtn{border-top-right-radius:0;border-bottom-right-radius:0}
   .capbtn.capmore{padding:9px 9px;border-top-left-radius:0;border-bottom-left-radius:0;border-left:1px solid rgba(0,0,0,.25)}
   .fbtn.on{border-color:var(--accent);color:var(--accent-hi)}
-  #camPad{position:absolute;left:14px;bottom:12px;z-index:7}
+  /* the camera bar: one row across the bottom of the viewport (views | shot size | lens) */
+  #camPad{position:absolute;left:14px;right:14px;bottom:12px;z-index:7;display:flex;align-items:center;gap:8px;pointer-events:none}
+  #camPad>*{pointer-events:auto}
   #stage.has-tray #camPad{bottom:98px} #stage.has-tl #camPad{bottom:124px} #stage.has-tl.has-tray #camPad{bottom:200px}
   #camPadBtn{font-size:16px;padding:7px 10px}
-  #camPadBody{position:absolute;left:0;bottom:44px;width:300px;display:none}
-  #camPad.open #camPadBody{display:block}
+  #camPadBody{display:none;flex:1;min-width:0;align-items:center;gap:10px;padding:6px 10px;overflow-x:auto;white-space:nowrap;
+    background:rgba(27,30,36,.94);border:1px solid var(--line);border-radius:10px;box-shadow:0 8px 28px rgba(0,0,0,.4);scrollbar-width:thin}
+  #camPad.open #camPadBody{display:flex}
+  #camPadBody .cp-grp{display:flex;gap:4px;flex:none}
+  #camPadBody .cp-grp .btn{padding:6px 9px;font-size:12px}
+  #camPadBody .cp-sep{width:1px;align-self:stretch;margin:2px 0;background:var(--line);flex:none}
+  #camPadBody .cp-lens{display:flex;align-items:center;gap:9px;flex:1 1 160px;min-width:150px}
+  #camPadBody .cp-lens .lbl{margin:0;font-size:11.5px;color:var(--muted)}
+  #camPadBody .cp-lens input{flex:1;min-width:80px}
+  #camPadBody .cp-lens .v{font-family:var(--mono);font-size:11.5px;color:var(--text,#e6e9ee);min-width:42px;text-align:right}
   #jointPop{position:absolute;width:290px;z-index:8;display:none;max-height:calc(100% - 20px);overflow:auto}
   #jointPop.open{display:block}
   #jointPop .jp-head{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-weight:650;font-size:13px}
@@ -263,6 +273,13 @@
   #fatal{position:absolute;inset:0;display:none;align-items:center;justify-content:center;text-align:center;padding:30px;color:var(--muted);font-size:14px;line-height:1.6}
   #fatal b{color:var(--danger)}
   #railToggle{display:none}
+  @media(max-width:1320px){
+    #camPadBody{gap:7px;padding:5px 7px}
+    #camPadBody .cp-grp{gap:3px}
+    #camPadBody .cp-grp .btn{padding:5px 6px;font-size:11.5px}
+    #camPadBody .cp-lens{min-width:110px;flex-basis:110px}
+    #camPadBody .cp-lens .lbl{display:none}
+  }
   @media(max-width:820px){
     #rail{position:absolute;left:0;top:0;bottom:0;width:min(330px,92vw);transform:translateX(-102%);transition:transform .2s;box-shadow:0 0 40px rgba(0,0,0,.6)}
     #rail.open{transform:none}
@@ -492,28 +509,29 @@
     </div>
     <div id="camPad">
       <button class="fbtn" id="camPadBtn" title="Camera — views, shot size, lens (keys 1–8, Shift+1–4)">📷</button>
-      <div id="camPadBody">
-        <div class="grid g4" id="views">
-          <button class="btn" data-view="front">Front</button>
-          <button class="btn" data-view="tqL">¾ L</button>
-          <button class="btn" data-view="sideL">Side L</button>
-          <button class="btn" data-view="back">Back</button>
-          <button class="btn" data-view="tqR">¾ R</button>
-          <button class="btn" data-view="sideR">Side R</button>
-          <button class="btn" data-view="high">High</button>
-          <button class="btn" data-view="low">Low</button>
+      <div id="camPadBody" role="toolbar" aria-label="Camera">
+        <div class="cp-grp" id="views" title="Keys 1–8">
+          <button class="btn" data-view="front" title="Front (1)">Front</button>
+          <button class="btn" data-view="tqL" title="Three-quarter left (2)">¾ L</button>
+          <button class="btn" data-view="sideL" title="Side left (3)">Side L</button>
+          <button class="btn" data-view="back" title="Back (4)">Back</button>
+          <button class="btn" data-view="tqR" title="Three-quarter right (5)">¾ R</button>
+          <button class="btn" data-view="sideR" title="Side right (6)">Side R</button>
+          <button class="btn" data-view="high" title="High angle (7)">High</button>
+          <button class="btn" data-view="low" title="Low angle (8)">Low</button>
         </div>
-        <div class="gap"></div>
-        <div class="lbl">Shot size</div>
-        <div class="grid g4" id="shots">
-          <button class="btn" data-shot="wide">Wide</button>
-          <button class="btn" data-shot="full">Full</button>
-          <button class="btn" data-shot="medium">Medium</button>
-          <button class="btn" data-shot="close">Close</button>
+        <span class="cp-sep" aria-hidden="true"></span>
+        <div class="cp-grp" id="shots" title="Shot size: Shift+1–4">
+          <button class="btn" data-shot="wide" title="Wide (Shift+1)">Wide</button>
+          <button class="btn" data-shot="full" title="Full (Shift+2)">Full</button>
+          <button class="btn" data-shot="medium" title="Medium (Shift+3)">Medium</button>
+          <button class="btn" data-shot="close" title="Close (Shift+4)">Close</button>
         </div>
-        <div class="axis" style="margin-top:12px">
-          <div class="lab"><span>Lens</span><span class="v" id="vLens">35mm</span></div>
+        <span class="cp-sep" aria-hidden="true"></span>
+        <div class="cp-lens">
+          <label class="lbl" for="rLens">Lens</label>
           <input type="range" id="rLens" min="14" max="135" value="35">
+          <span class="v" id="vLens">35mm</span>
         </div>
       </div>
     </div>
@@ -1734,6 +1752,7 @@ function applyCam(){
   camera.position.set(t.x+r*Math.sin(ph)*Math.sin(th),t.y+r*Math.cos(ph),t.z+r*Math.sin(ph)*Math.cos(th));
   camera.lookAt(t);
   placeLights();
+  try{markView();}catch(e){}   // the view button stays lit only while the camera is still where it put it
 }
 function sceneCenter(){
   if(!figures.length)return new V3(0,0.9,0);
@@ -2197,10 +2216,17 @@ function hover(e){
 
 /* ================= capture ================= */
 function capAspect(){const v=$('capAspect').value;return v==='vp'?null:parseFloat(v);}
+/* The capture frame keeps clear of the camera bar. It is inset at the top as well as the bottom: the frame
+   stays centred on the lens axis, so a capture is not a shifted lens. */
+function barInset(){
+  const p=document.getElementById('camPad'), b=document.getElementById('camPadBody');
+  return p&&b&&p.classList.contains('open')&&b.offsetHeight?b.offsetHeight+18:0;
+}
 function guideRect(){
   const W=stage.clientWidth,H=stage.clientHeight,a=capAspect();
   if(!a)return {x:0,y:0,w:W,h:H};
-  if(a<W/H){const w=H*a;return {x:(W-w)/2,y:0,w,h:H};}
+  const Hs=Math.max(60,H-2*barInset());
+  if(a<W/Hs){const w=Hs*a;return {x:(W-w)/2,y:(H-Hs)/2,w,h:Hs};}
   const h=W/a; return {x:0,y:(H-h)/2,w:W,h};
 }
 function updateGuide(){
@@ -2893,6 +2919,12 @@ function refreshLookSel(){
 }
 function setBg(c){bgHex=c;renderer.setClearColor(c,1);document.querySelectorAll('#bgColors .sw').forEach(s=>s.classList.toggle('sel',s.dataset.c===c));}
 function setKey(v){keyAz=v;$('rKey').value=v;$('vKey').textContent=Math.round(v)+'°';placeLights();}
+let viewAt=null;
+function markView(v){
+  if(v)viewAt={v,th:cam.theta,ph:cam.phi};
+  const on=viewAt&&Math.abs(cam.theta-viewAt.th)<1e-3&&Math.abs(cam.phi-viewAt.ph)<1e-3?viewAt.v:null;
+  document.querySelectorAll('#views .btn').forEach(b=>b.classList.toggle('sel',b.dataset.view===on));
+}
 function markShot(){document.querySelectorAll('#shots .btn').forEach(b=>b.classList.toggle('sel',b.dataset.shot===cam.shot));}
 
 // after proportions change: re-fit the chair, re-reach the goals, re-attach held props
@@ -2936,7 +2968,7 @@ const stepJoint=d=>{const i=ORDER.indexOf(sel);selectJoint(ORDER[(i+d+ORDER.leng
 $('jPrev').onclick=()=>stepJoint(-1); $('jNext').onclick=()=>stepJoint(1);
 $('resetJoint').onclick=()=>{if(!act)return;const base=(PRESETS['Stand'][sel])||{};for(const ax of ['x','y','z'])act.setA(sel,ax,base[ax]||0);
   if(sel==='pelvis')act.joints.pelvis.pivot.position.copy(act.pelvisRest);act.ground();syncAxes();commit();};
-document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>{setView(b.dataset.view);saveView();});
+document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>{setView(b.dataset.view);markView(b.dataset.view);saveView();});
 document.querySelectorAll('[data-shot]').forEach(b=>b.onclick=()=>{fitShot(b.dataset.shot);saveView();});
 $('rLens').oninput=e=>{
   // dolly with the lens change so the subject stays the same size (feels like a real zoom-lens swap)
@@ -3026,7 +3058,7 @@ addEventListener('keydown',e=>{
   const dg=/^Digit([1-8])$/.exec(e.code||'');
   if(dg&&!tl.take){const i=+dg[1]-1;
     if(e.shiftKey){if(i<4){fitShot(SHOT_KEYS[i]);saveView();}}
-    else{setView(VIEW_KEYS[i]);saveView();}
+    else{setView(VIEW_KEYS[i]);markView(VIEW_KEYS[i]);saveView();}
     return;}
   const k=e.key.toLowerCase();
   if(k==='f'){e.shiftKey?frameAll():fitShot(cam.shot);}
@@ -3077,10 +3109,14 @@ document.querySelectorAll('#cardNone [data-go]').forEach(b=>b.onclick=()=>{
 });
 
 /* The camera pad: views, shot size, lens, on the viewport. Open or closed is remembered. */
-const CAMPAD_KEY='posebench.camPad';
-function setCamPad(on){$('camPad').classList.toggle('open',on);$('camPadBtn').classList.toggle('on',on);try{localStorage.setItem(CAMPAD_KEY,on?'1':'0');}catch(e){}}
+/* Open by default (a new key: the old box's "closed" doesn't carry over), except on a phone-width stage. */
+const CAMPAD_KEY='posebench.camBar';
+function setCamPad(on,keep){$('camPad').classList.toggle('open',on);$('camPadBtn').classList.toggle('on',on);
+  if(keep!==false)try{localStorage.setItem(CAMPAD_KEY,on?'1':'0');}catch(e){}
+  updateGuide();}
 $('camPadBtn').onclick=()=>setCamPad(!$('camPad').classList.contains('open'));
-try{setCamPad(localStorage.getItem(CAMPAD_KEY)==='1');}catch(e){}
+{let v=null;try{v=localStorage.getItem(CAMPAD_KEY);}catch(e){}
+  setCamPad(v==='1'||(v!=='0'&&stage.clientWidth>=600),false);}
 const VIEW_KEYS=['front','tqL','sideL','back','tqR','sideR','high','low'], SHOT_KEYS=['wide','full','medium','close'];
 
 /* ---- posing at the limb: the joint popover ---- */
@@ -3166,7 +3202,7 @@ function placeJointPop(){
   if(v.z>1){pop.style.visibility='hidden';return;} pop.style.visibility='';
   const x=(v.x+1)/2*W, y=(1-v.y)/2*H;
   let left=x+34; if(left+w>W-8)left=x-34-w; left=Math.max(8,Math.min(W-w-8,left));
-  const top=Math.max(8,Math.min(H-h-8,y-60));
+  const top=Math.max(8,Math.min(H-h-8-barInset(),y-60));
   pop.style.left=Math.round(left)+'px'; pop.style.top=Math.round(top)+'px';
 }
 $('jpClose').onclick=closeJointPop;
