@@ -2622,7 +2622,10 @@ function parseLoose(t){
   return JSON.parse(s.slice(a,b+1));
 }
 async function llmChat(messages,opts={}){
-  const body={messages,temperature:opts.temperature==null?0.4:opts.temperature,max_tokens:opts.max||8000,stream:false};
+  /* Room for a thinking model: qwen3-vl:30b thinks 5-8k tokens even for a bench, and Ollama can't switch that off
+   (think:false and reasoning_effort are both ignored by it), so an 8k cap ended most builds mid-thought. Its
+   context is 32k; the build prompt is ~2k. */
+const body={messages,temperature:opts.temperature==null?0.4:opts.temperature,max_tokens:opts.max||24000,stream:false};
   if(llm.model)body.model=llm.model;
   const h={'Content-Type':'application/json'}; if(llm.key)h.Authorization='Bearer '+llm.key;
   let r;
@@ -2630,7 +2633,7 @@ async function llmChat(messages,opts={}){
   catch(e){throw new Error('Could not reach the local model at '+llmBase()+' — is it running with its API on?');}
   if(!r.ok)throw new Error('The local model answered '+r.status+': '+(await r.text()).slice(0,200));
   const d=await r.json(), ch=d.choices&&d.choices[0], m=ch&&ch.message, txt=(m&&m.content)||(ch&&ch.text)||'';
-  if(!stripThink(txt).trim())throw new Error(m&&m.reasoning?'The model spent its whole reply thinking — give it more room (max tokens / context).':'The model returned nothing.');
+  if(!stripThink(txt).trim())throw new Error(m&&m.reasoning?'The model spent its whole reply thinking. A thinking model (qwen3-vl:30b) needs a big context; an instruct model (qwen3-vl:30b-a3b-instruct) skips the thinking and answers in seconds.':'The model returned nothing.');
   return txt;
 }
 /* Ask for a build (or an edit of one). One retry, with the parse error, if the JSON doesn't come back clean. */
@@ -2713,7 +2716,7 @@ async function lookAt(p){
   const content=[{type:'text',text:'These are three views (front, three-quarter, side) of a grey clay model built from simple shapes. It is meant to be: '+
     (p.request||p.name)+'.\nDoes it read as that? If it does, answer only "OK". Otherwise list at most 5 concrete fixes, each one line, naming parts and directions (e.g. "the wheels float above the floor", "the cabin is too far forward").'}]
     .concat(imgs.map(u=>({type:'image_url',image_url:{url:u}})));
-  try{return stripThink(await llmChat([{role:'user',content}],{temperature:0.2,max:3000})).trim();}
+  try{return stripThink(await llmChat([{role:'user',content}],{temperature:0.2,max:16000})).trim();}
   catch(e){throw new Error('Look & fix needs a vision model loaded (e.g. qwen3-vl): '+e.message);}
 }
 $('buildGo').onclick=()=>runBuild('new');
