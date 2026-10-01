@@ -176,6 +176,10 @@
   #jointPop.open{display:block}
   #jointPop .jp-head{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-weight:650;font-size:13px}
   #jointPop .jp-head span{flex:1}
+  #jointPop .jp-head{cursor:move;user-select:none;touch-action:none}
+  #jointPop .jp-head .grip{flex:none;color:var(--dim,#8a909a);font-size:12px;letter-spacing:-2px}
+  #jointPop .jp-head button{cursor:pointer}
+  #jointPop.dragging{opacity:.92}
   #jpPoses{margin-bottom:8px} #jpPoses:empty{display:none}
   #jpPoses .btn{font-size:11.5px;padding:6px 2px}
   #jpHands{margin-bottom:6px}
@@ -514,7 +518,7 @@
       </div>
     </div>
     <div id="jointPop" role="dialog" aria-label="Pose this part">
-      <div class="jp-head"><span id="jpTitle">—</span><button class="btn icon" id="jpClose" aria-label="Close">✕</button></div>
+      <div class="jp-head" id="jpHead" title="Drag to move it. It stays where you put it."><span class="grip" aria-hidden="true">⠿</span><span id="jpTitle">—</span><button class="btn icon" id="jpDock" aria-label="Back beside the part" title="Back beside the part" style="display:none">⤺</button><button class="btn icon" id="jpClose" aria-label="Close">✕</button></div>
       <div class="grid g4" id="jpPoses"></div>
       <div id="jpHands">
         <div class="split">
@@ -3145,9 +3149,16 @@ function refreshJointPop(){
 function openJointPop(){jpOpen=true;$('jointPop').classList.add('open');refreshJointPop();placeJointPop();}
 function closeJointPop(){jpOpen=false;$('jointPop').classList.remove('open');}
 // beside the joint on screen, flipped to stay inside the viewport; called every frame while open
+/* Dragged by its header, it stays where it was put (for every part, and across sessions) instead of following the
+   joint; ⤺ puts it back beside the part. The spot is kept as a fraction of the stage so a resize keeps it in view. */
+const JP_KEY='posebench.jointPopAt';
+let jpAt=null; try{const v=JSON.parse(localStorage.getItem(JP_KEY)||'null');if(v&&isFinite(v.x)&&isFinite(v.y))jpAt=v;}catch(e){}
 function placeJointPop(){
   if(!jpOpen||!act||!act.joints[sel])return;
   const pop=$('jointPop'), W=stage.clientWidth, H=stage.clientHeight, w=pop.offsetWidth||290, h=pop.offsetHeight||300;
+  $('jpDock').style.display=jpAt?'':'none';
+  if(jpAt){pop.style.visibility='';
+    pop.style.left=Math.round(Math.max(8,Math.min(W-w-8,jpAt.x*W)))+'px'; pop.style.top=Math.round(Math.max(8,Math.min(H-h-8,jpAt.y*H)))+'px'; return;}
   const v=act.joints[sel].pivot.getWorldPosition(new V3()).project(camera);
   if(v.z>1){pop.style.visibility='hidden';return;} pop.style.visibility='';
   const x=(v.x+1)/2*W, y=(1-v.y)/2*H;
@@ -3156,6 +3167,19 @@ function placeJointPop(){
   pop.style.left=Math.round(left)+'px'; pop.style.top=Math.round(top)+'px';
 }
 $('jpClose').onclick=closeJointPop;
+$('jpDock').onclick=()=>{jpAt=null;try{localStorage.removeItem(JP_KEY);}catch(e){}placeJointPop();};
+$('jpHead').addEventListener('pointerdown',e=>{
+  if(e.button!==0||e.target.closest('button'))return;
+  e.preventDefault(); e.stopPropagation();
+  const pop=$('jointPop'), sr=stage.getBoundingClientRect(), pr=pop.getBoundingClientRect(), dx=e.clientX-pr.left, dy=e.clientY-pr.top;
+  pop.classList.add('dragging'); $('jpHead').setPointerCapture(e.pointerId);
+  const move=ev=>{const W=stage.clientWidth,H=stage.clientHeight;
+    jpAt={x:(ev.clientX-sr.left-dx)/W,y:(ev.clientY-sr.top-dy)/H}; placeJointPop();};
+  const up=ev=>{$('jpHead').removeEventListener('pointermove',move);$('jpHead').removeEventListener('pointerup',up);$('jpHead').removeEventListener('pointercancel',up);
+    pop.classList.remove('dragging'); try{localStorage.setItem(JP_KEY,JSON.stringify(jpAt));}catch(err){}};
+  $('jpHead').addEventListener('pointermove',move); $('jpHead').addEventListener('pointerup',up); $('jpHead').addEventListener('pointercancel',up);
+});
+$('jpHead').addEventListener('dblclick',e=>{if(!e.target.closest('button'))$('jpDock').click();});
 $('jpCopy').onclick=()=>{
   if(!act||!sideOf(sel))return;
   const part=partOf(sel), names=part==='arm'?['Shoulder','Elbow','Wrist']:['Hip','Knee','Ankle'];

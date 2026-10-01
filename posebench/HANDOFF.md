@@ -533,3 +533,7 @@ It's sent as `framing` in `posebench:done`. Storyboarder stores it on `pose.fram
 - **`monitor`** ("Desktop"): one prop holding a monitor on a stand (back, +z), a keyboard and a mouse (front, -z). The user is at -z, as with the laptop. It's in `SMALL_PROPS`, so it settles onto a desk, table or Build and can be lifted. Anchors: `look` is the screen centre, and `keysL`/`keysR` are on the keyboard. Added beside a figure, it turns to face them and sits toward the far side of the surface.
 - **Work preset "Desktop":** chair + desk + monitor, hands typing on the keyboard, looking at the screen (`def.monitor` in `applyWork`).
 - Blocking text now uses "an" before a vowel ("an office chair").
+
+## Movable part popover (2026-10-01)
+
+- Drag `#jointPop` by its header (`#jpHead`, ⠿). Once dragged, it stays where you put it for every part. The spot is kept as a fraction of the stage in `localStorage` (`posebench.jointPopAt`, wrapped in try/catch), and `placeJointPop` clamps it to the stage. ⤺ (`#jpDock`) or a double-click on the header clears that, so it follows the joint again.
