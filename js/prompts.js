@@ -26,6 +26,13 @@
    * template anybody has edited has to change. The two halves are also
    * available on their own, for a template that wants to place them. */
   function describe(shot, role) {
+    /* The clip reads its motion box, and only that, once it is filled. The general description re-tells the
+       scene the first frame already shows ("a dim call-centre at night, monitors glowing"), and the writer
+       dutifully re-described it instead of the action. Its @ marks still count (Refs.boxes), so the export lane
+       uploads the same pictures. Empty, the general description stands in. */
+    if (role === 'video' && SB.Refs.plain(P(), shot.videoDescription || '').trim()) {
+      return SB.Refs.plain(P(), shot.videoDescription).trim();
+    }
     const parts = SB.Refs.boxes(shot, role)
       .map(function (t) { return SB.Refs.plain(P(), t || '').trim(); })
       .filter(Boolean);

@@ -248,5 +248,30 @@ console.log('\n\u2014 a moved camera reads as a new setup, not an edit \u2014');
   delete SB.Pose;
 }
 
+console.log('\n\u2014 the video brief is about motion, in the export lane too \u2014');
+{
+  const { p, sh } = board();
+  sh.description = 'Gus sits in a dim call-centre at night, monitors glowing, and reads a letter.';
+  sh.videoDescription = 'He lowers the letter slowly and looks up toward the door.';
+  sh.image = SB.Blobs.image(p, PNG, 1, 1);
+  const vm = p.settings.models.find(m => m.kind === 'video' && m.name === 'Seedance');
+  for (const exp of [false, true]) {
+    p.settings.videoModelId = exp ? vm.id + SB.Model.EXPORT_SUFFIX : vm.id;
+    asked = []; replies = [{ videoPrompt: 'He lowers the letter.' }];
+    await SB.Prompts.generateFor(sh, { video: true });
+    const all = JSON.stringify(asked[0]), lane = exp ? 'export: ' : 'send: ';
+    eq(/HOUSE STYLE/.test(all), false, lane + 'no house style once there is a first frame');
+    eq(/bARRIb|Alexa|skin: pores|film grain/.test(all), false, lane + 'no camera, skin or grain notes');
+    has(all, 'THE FIRST FRAME IS SUPPLIED', lane + 'told the frame is supplied');
+    eq(/call-centre at night/.test(all), false, lane + 'the general description stays out once the motion box is filled');
+    has(all, 'lowers the letter slowly', lane + 'the motion box is the description');
+  }
+  sh.image = null; sh.render = null;
+  p.settings.videoModelId = vm.id + SB.Model.EXPORT_SUFFIX;
+  asked = []; replies = [{ videoPrompt: 'He lowers the letter.' }];
+  await SB.Prompts.generateFor(sh, { video: true });
+  has(JSON.stringify(asked[0]), 'HOUSE STYLE', 'export with no frame at all still gets the look (nothing else carries it)');
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed\n');
 if (fail) process.exit(1);

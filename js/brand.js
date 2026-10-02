@@ -630,6 +630,15 @@
    * turning the brand off quietly took the craft rules with it. */
   /* The last line the writer reads: put the rules above into the prompt's own words. It closes the
      WHOLE instruction, after the cast block (it used to sit before it, mid-way). */
+  /* A video job led by its first frame: the model is handed the picture, so the look, the lens and the framing
+   * are in front of it already. A frame-only model is always that. A full-reference model (an export twin, H3)
+   * is that too once the card HAS a frame, because the frame travels with its references. Before, the export
+   * lane counted as full reference with or without a frame, so it was sent the whole house style (Alexa,
+   * aperture, skin pores, grain), the framing block and "fold this in as description": the still's brief,
+   * which came back as a video prompt re-describing the picture instead of moving it. */
+  function videoFrameLed(p, shot) {
+    return SB.Model.videoInherits(SB.Model.videoModel(p)) || !!(shot && (shot.render || shot.image));
+  }
   function closingFor(p, shot, role) {
     /* Is a frame of another shot being handed over? Then this still is an edit
      * of it, which changes both what to say and what to leave unsaid. */
@@ -649,7 +658,7 @@
      * the picture it starts from is supplied, so the look is inherited and the
      * house style is a list of things to NOT say. A full-reference model is
      * not — its format asks for appearance on purpose. */
-    const videoInherits = role === 'video' && SB.Model.videoInherits(SB.Model.videoModel(p));
+    const videoInherits = role === 'video' && videoFrameLed(p, shot);
     return videoInherits
       /* "as concrete description" is the right noun for a still and the wrong
        * one here — it is the last thing the writer reads before it starts, and
@@ -693,7 +702,7 @@
      * house style is a list of things to NOT say. A full-reference model is
      * not — its format asks for appearance on purpose. */
     const inherits = SB.Model.videoInherits(SB.Model.videoModel(p));
-    const videoInherits = role === 'video' && inherits;
+    const videoInherits = role === 'video' && videoFrameLed(p, shot);
     const styleInherited = (derived && role === 'image') || videoInherits;
     /* A video job is told nothing about the house style, not even that it is
      * missing. Announcing the absence was a paragraph explaining one of the
@@ -719,7 +728,7 @@
     /* A frame-only video job is shown the picture, so it can SEE the framing —
        telling it in words is the same mistake as repeating the house style at
        it. Every other job is told. */
-    if (role === 'image' || role === 'both' || (role === 'video' && !inherits)) {
+    if (role === 'image' || role === 'both' || (role === 'video' && !videoInherits)) {
       if (parts.length) parts.push('');
       parts.push(framingBlock(p, shot));
     }
@@ -734,7 +743,7 @@
       /* A combined job writes both prompts in one call, so the style has to be
        * sent for the still — and then scoped, or the video half inherits the
        * instruction to write the look down. */
-      if (inherits) {
+      if (inherits || videoInherits) {
         parts.push('', VIDEO_INHERIT_RIDER);
         if (b.enabled && role === 'both') parts.push('', VIDEO_STYLE_EXEMPTION);
       }
