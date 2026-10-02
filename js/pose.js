@@ -48,6 +48,14 @@
 
   function available() { return typeof window.SB_POSEBENCH_SRC === 'string' && !!window.SB_POSEBENCH_SRC; }
   function token() { return 'pb_' + Math.random().toString(36).slice(2) + Date.now().toString(36); }
+  /* The ratios a shot can be blocked at: the ones the image models are asked for (Settings → ImagineArt). A shot
+     keeps its own (pose.aspect, chosen in Pose Bench); without one it is the board's. */
+  const ASPECTS = ['16:9', '9:16', '1:1', '4:3', '3:4', '3:2'];
+  function boardAspect(p) { return SB.Imagine && SB.Imagine.aspectOf ? SB.Imagine.aspectOf(p) : '16:9'; }
+  function aspectFor(p, shot) {
+    const a = shot && shot.pose && shot.pose.aspect;
+    return a && ASPECTS.indexOf(a) >= 0 ? a : boardAspect(p);
+  }
   function has(shot) { return !!(shot && shot.pose && shot.pose.image && shot.pose.scene); }
 
   /* ---------- the scene blob ---------- */
@@ -220,7 +228,7 @@
     back.appendChild(shell);
     document.getElementById('modalRoot').appendChild(back);
     editor = { shotId: shot.id, token: token(), back: back, frame: fr, code: code,
-      aspect: SB.Imagine && SB.Imagine.aspectOf ? SB.Imagine.aspectOf(p) : '16:9' };
+      aspect: aspectFor(p, shot) };
   }
 
   /* What the editor opens with: the card's own blocking, and every
@@ -252,6 +260,15 @@
     try { fr.contentWindow.postMessage(msg, '*'); } catch (e) { /* frame gone */ }
   }
 
+  /* Build talks to whichever writer the board uses: Gemini (with this browser's key and the board's model), or the
+     local server the Local writer uses. */
+  function llmFor(p) {
+    if (!SB.Providers || !SB.Store) return null;
+    if (SB.Providers.activeId() === 'gemini') {
+      return { kind: 'gemini', model: SB.Providers.get('gemini').model(), key: SB.Store.getApiKey() || '' };
+    }
+    return { kind: 'local', url: SB.Providers.baseUrl(), model: SB.Store.getOoba().model || '', key: SB.Store.getOoba().key || '' };
+  }
   function save(shotId, d) {
     const p = P();
     const f = SB.Model.findShot(p, shotId);
@@ -285,7 +302,8 @@
         /* what the frame is (shotFraming in Pose Bench): its type, its size, the camera's angle */
         framing: d.framing && typeof d.framing === 'object' ? { type: String(d.framing.type || ''),
           size: String(d.framing.size || ''), angle: String(d.framing.angle || '') } : null,
-        aspect: editor && editor.shotId === shotId ? editor.aspect : (prev && prev.aspect) || '',
+        aspect: ASPECTS.indexOf(d.aspect) >= 0 ? d.aspect
+          : editor && editor.shotId === shotId ? editor.aspect : (prev && prev.aspect) || '',
         at: Date.now(),
         perf: cleanLink(d.link)
       };
@@ -398,11 +416,11 @@
         const o = openingFor(p, f);
         send(editor.frame, {
           type: 'posebench:open', token: editor.token, scene: o.scene,
-          cast: castFor(p, f.shot), aspect: editor.aspect, longEdge: LONG_EDGE, shot: editor.code,
+          cast: castFor(p, f.shot), aspect: editor.aspect, aspects: ASPECTS, boardAspect: boardAspect(p),
+          longEdge: LONG_EDGE, shot: editor.code,
           takes: o.takes, link: perfLink(f.shot),
           /* Build (build_plan.md) talks to the same local model as the Local writer */
-          llm: SB.Providers && SB.Store ? { url: SB.Providers.baseUrl(), model: SB.Store.getOoba().model || '',
-            key: SB.Store.getOoba().key || '' } : null
+          llm: llmFor(p)
         });
         return;
       }

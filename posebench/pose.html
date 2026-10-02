@@ -2647,7 +2647,40 @@ function parseLoose(t){
   if(a<0||b<=a)throw new Error('no JSON object in the reply');
   return JSON.parse(s.slice(a,b+1));
 }
+/* Gemini, when it is Storyboarder's writer (Settings → API): the same messages, sent to generateContent. Vision
+   works too (Look & fix): image_url data URLs become inline_data. Gemma takes no system instruction or JSON mode. */
+const GEMINI_URL='https://generativelanguage.googleapis.com/v1beta/models/';
+function geminiParts(c){
+  if(typeof c==='string')return [{text:c}];
+  return (c||[]).map(x=>{
+    if(x.type==='text')return {text:x.text};
+    const u=x.image_url&&x.image_url.url||'', m=/^data:([^;]+);base64,(.*)$/.exec(u);
+    return m?{inline_data:{mime_type:m[1],data:m[2]}}:null;
+  }).filter(Boolean);
+}
+async function geminiChat(messages,opts){
+  if(!llm.key)throw new Error('No Google API key. Add one in Storyboarder → Settings → API.');
+  const mdl=llm.model||'gemini-2.5-flash', gemma=/^gemma/i.test(mdl);
+  const sys=messages.filter(m=>m.role==='system').map(m=>m.content).join('\n\n');
+  const contents=messages.filter(m=>m.role!=='system').map(m=>({role:m.role==='assistant'?'model':'user',parts:geminiParts(m.content)}));
+  if(sys&&gemma&&contents[0])contents[0].parts.unshift({text:sys+'\n\n----\n\n'});
+  const gen={temperature:opts.temperature==null?0.4:opts.temperature,maxOutputTokens:Math.min(opts.max||24000,32000)};
+  if(opts.json&&!gemma)gen.responseMimeType='application/json';
+  const body={contents,generationConfig:gen}; if(sys&&!gemma)body.systemInstruction={parts:[{text:sys}]};
+  let r;
+  try{r=await fetch(GEMINI_URL+encodeURIComponent(mdl)+':generateContent?key='+encodeURIComponent(llm.key),
+    {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});}
+  catch(e){throw new Error('Could not reach Gemini \u2014 check the connection.');}
+  if(!r.ok){const t=(await r.text()).slice(0,240);
+    throw new Error(r.status===429?'Gemini 429: the rate or daily limit for '+mdl+' is reached. Pick another model in Storyboarder\u2019s Create panel.'
+      :r.status===404?'Gemini 404: "'+mdl+'" is not available to this key.':'Gemini answered '+r.status+': '+t);}
+  const d=await r.json(), cand=d.candidates&&d.candidates[0];
+  const txt=((cand&&cand.content&&cand.content.parts)||[]).filter(p=>!p.thought&&p.text).map(p=>p.text).join('');
+  if(!txt.trim())throw new Error('Gemini returned nothing'+(cand&&cand.finishReason?' ('+cand.finishReason+')':'')+'.');
+  return txt;
+}
 async function llmChat(messages,opts={}){
+  if(llm.kind==='gemini')return geminiChat(messages,opts);
   /* Room for a thinking model: qwen3-vl:30b thinks 5-8k tokens even for a bench, and Ollama can't switch that off
    (think:false and reasoning_effort are both ignored by it), so an 8k cap ended most builds mid-thought. Its
    context is 32k; the build prompt is ~2k. */
@@ -2669,12 +2702,12 @@ async function askBuild(request,base){
   msgs.push({role:'user',content:base
     ?'Here is the current build, as its full part list:\n'+JSON.stringify({name:base.name,parts:base.parts})+'\n\nChange it: '+request+'\nAnswer with the complete updated JSON object.'
     :'Build: '+request});
-  let txt=await llmChat(msgs), json;
+  let txt=await llmChat(msgs,{json:true}), json;
   try{json=parseLoose(txt);}
   catch(e){
     msgs.push({role:'assistant',content:stripThink(txt).slice(0,4000)});
     msgs.push({role:'user',content:'That was not valid JSON ('+e.message+'). Answer again with only the JSON object.'});
-    json=parseLoose(await llmChat(msgs));
+    json=parseLoose(await llmChat(msgs,{json:true}));
   }
   return json;
 }
@@ -2683,7 +2716,10 @@ let building=false;
 function refreshBuildUI(){
   const sel=selProp&&selProp.type==='build';
   $('buildGo').disabled=building; $('buildEdit').disabled=building||!sel; $('buildLook').disabled=building||!sel;
-  $('llmFrom').textContent=llmFromHost?'Set by Storyboarder (Settings → API → Local).':'Saved in this browser.';
+  const gem=llm.kind==='gemini';
+  $('llmFrom').textContent=gem?'Gemini ('+(llm.model||'default')+'), Storyboarder\u2019s writer. Switch in Settings \u2192 API.'
+    :llmFromHost?'Set by Storyboarder (Settings → API → Local).':'Saved in this browser.';
+  $('llmUrl').closest('.field').style.display=gem?'none':'';
   $('llmUrl').value=llm.url||''; $('llmModel').value=llm.model||'';
   $('llmUrl').disabled=$('llmModel').disabled=llmFromHost;
 }
@@ -5406,12 +5442,24 @@ function lockAspect(asp){
   if(!best){best=document.createElement('option');best.value=String(asp);best.textContent=asp.toFixed(2)+':1';s.appendChild(best);}
   s.value=best.value; s.disabled=true; s.title='Set by the storyboard'; updateGuide();
 }
+/* Embedded: this shot's aspect is chosen here, from the ratios the image models are asked for (the board's list),
+   starting at the shot's own or the board's. Use sends it back, and the card keeps it (pose.aspect). */
+function offerAspects(list,cur,board){
+  const s=$('capAspect'); s.innerHTML='';
+  list.forEach(r=>{const v=aspectValue(r); if(!v)return; const o=document.createElement('option');
+    o.value=String(Math.round(v*1e4)/1e4); o.dataset.ratio=r; o.textContent=r+(r===board?' (board)':''); s.appendChild(o);});
+  const want=[...s.options].find(o=>o.dataset.ratio===cur)||[...s.options].find(o=>o.dataset.ratio===board)||s.options[0];
+  if(want)s.value=want.value;
+  s.disabled=false; s.title='This shot\u2019s aspect. The board\u2019s is '+(board||'16:9')+'.';
+  host.aspect=capAspect()||host.aspect; updateGuide();
+}
+function aspectRatioStr(){const o=$('capAspect').selectedOptions[0];return o&&o.dataset.ratio||'';}
 function setLongEdge(n){const s=$('capSize');if(![...s.options].some(o=>o.value===String(n))){const o=document.createElement('option');o.textContent=String(n);s.appendChild(o);}s.value=String(n);updateGuide();}
 window.addEventListener('message',e=>{
   if(!EMBED||e.source!==window.parent)return;
   const d=e.data; if(!d||typeof d!=='object')return;
   if(d.type==='posebench:open'){
-    if(d.llm&&typeof d.llm==='object'){llm=Object.assign({url:'',model:'',key:''},d.llm);llmFromHost=true;refreshBuildUI();}
+    if(d.llm&&typeof d.llm==='object'){llm=Object.assign({kind:'local',url:'',model:'',key:''},d.llm);llmFromHost=true;refreshBuildUI();}
     host.token=d.token; host.cast=Array.isArray(d.cast)?d.cast.filter(c=>c&&c.id):[]; host.shot=d.shot||'';
     host.aspect=aspectValue(d.aspect)||16/9; host.longEdge=+d.longEdge||1536;
     props.forEach(p=>p.dispose()); props=[]; selProp=null; figures.forEach(f=>f.dispose()); figures=[]; act=null;
@@ -5423,7 +5471,9 @@ window.addEventListener('message',e=>{
       host.cast.filter(c=>!c.kind||c.kind==='person').forEach((c,i)=>{if(i>0)addFigure(null);linkFigure(act,c.id);});
     }
     takes=(Array.isArray(d.takes)?d.takes:[]).map(s=>{try{return takeLoad(s);}catch(err){return null;}}).filter(Boolean);
-    lockAspect(host.aspect); setLongEdge(host.longEdge);
+    if(Array.isArray(d.aspects)&&d.aspects.length)offerAspects(d.aspects,d.aspect,d.boardAspect);
+    else lockAspect(host.aspect);
+    setLongEdge(host.longEdge);
     hist.stack=[]; hist.i=-1; commit();
     refreshAll(); refreshPropUI();
     if(!ok){cam.theta=0.7;cam.phi=1.45;if(figures.length>1)frameAll();else fitShot('full');}
@@ -5467,7 +5517,7 @@ window.addEventListener('message',e=>{
   }
 });
 $('hostUse').onclick=()=>{
-  const asp=host.aspect;
+  const asp=capAspect()||host.aspect;
   tlPlay(false);
   const link=hostLink();
   /* A card cut from a performance takes its still at its IN-POINT, whatever moment the playhead was on: the still is
@@ -5480,7 +5530,7 @@ $('hostUse').onclick=()=>{
   }
   const sc=snapScene(); delete sc.takes;   // takes travel on their own: they belong to the scene, not this card
   const text=blockingText(asp);
-  hostPost({type:'posebench:done',scene:sc,lens:cam.mm,framing:shotFraming(asp),takes:takes.map(takeSnap),link,
+  hostPost({type:'posebench:done',scene:sc,lens:cam.mm,framing:shotFraming(asp),takes:takes.map(takeSnap),link,aspect:aspectRatioStr(),
     beauty:apiCapture({aspect:asp,longEdge:host.longEdge}),
     text,
     cast:figures.filter(f=>f.link).map(f=>({fig:f.id,personaId:f.link,name:figWho(f),color:f.color,colorName:COLOR_WORDS[f.color]||'grey',

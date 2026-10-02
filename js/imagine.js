@@ -1745,6 +1745,10 @@
   function aspectOf(p) {
     return (p && p.settings && p.settings.imagineAspect) || '16:9';
   }
+  /* A shot blocked at its own aspect in Pose Bench (pose.aspect) is generated at it; otherwise the board's. */
+  function aspectFor(p, shot) {
+    return (shot && shot.pose && shot.pose.aspect) || aspectOf(p);
+  }
 
   /* The name this door knows the model by, falling back to the other one —
    * a single name is better than none, and an unrecognised one is flagged
@@ -2314,7 +2318,7 @@
     /* The allow-lists and the model names live in the tool descriptions, so
      * nothing below is knowable until the tools have been read. */
     return ensureTools().then(function () {
-      const aspect = aspectOf(p);
+      const aspect = aspectFor(p, shot);
       const slugNow = slugOf(model);
       const allowed = transport() === 'key'
         ? null : allowFor(role === 'image' ? TOOL.image : TOOL.video, slugNow, 'aspect_ratio');
@@ -3809,7 +3813,7 @@
     guessRestSlug: function (name) { return GUESS_REST[name] || ''; },
     /* work */
     ready: function (model) { return !blocker(model); },
-    blocker: blocker, slugOf: slugOf, aspectOf: aspectOf,
+    blocker: blocker, slugOf: slugOf, aspectOf: aspectOf, aspectFor: aspectFor,
     image: image, video: video, run: run, fetchClip: fetchClip,
     whyNot: whyNot, promptFor: promptFor, describeMade: describeMade,
     notifyChange: notify,
