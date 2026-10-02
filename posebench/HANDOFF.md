@@ -548,3 +548,8 @@ It's sent as `framing` in `posebench:done`. Storyboarder stores it on `pose.fram
 
 - **Aspect:** embedded, the Aspect select is no longer locked to the board's ratio. `posebench:open` carries `aspects` (the board's ImagineArt list) and `boardAspect`, and `offerAspects` fills the select, starting at the shot's own `pose.aspect` or the board's. Use sends `aspect` (a "W:H" string), which `pose.js` saves to `pose.aspect`. `SB.Imagine.aspectFor(p, shot)` makes generation use it (`run()`); clip and pass renders already read `pose.aspect`. The hidden pass and clip jobs still use `lockAspect`.
 - **Build on Gemini:** `pose.js llmFor(p)` sends `{kind:'gemini', model, key}` when the board's writer is Gemini, else `{kind:'local', url, model, key}`. `llmChat` routes `kind:'gemini'` to `geminiChat`: generateContent with a systemInstruction, user/model turns, JSON mode for builds, image_url data URLs turned into inline_data for Look & fix, and thought parts skipped. Gemma folds the system text into the first turn and gets no JSON mode.
+
+## More two-person scenes (2026-10-02)
+
+- `SCENES` adds: Standing talk, Side by side, Side by side · seated, Interview, At a table (a `table4` owned by figure A, so the next scene's `clearRig` removes it), Looking at the screen (Desktop work preset plus a standing looker who watches the monitor), Showing a phone, and Coffee chat. The helpers are `standAt`, `pairStart`, `lookPair` and `ownedProp`.
+- A positive `turn` swings a figure toward its own left (+X). Side-by-side pairs turn in toward each other, because a look target more than about 90° to the side cranes the head past its limits.

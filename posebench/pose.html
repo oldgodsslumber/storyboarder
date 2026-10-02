@@ -1708,6 +1708,13 @@ function placeFacing(a,b,dist,off){
   b.group.position.copy(pa.addScaledVector(dir,dist)); b.turn=a.turn+180+(off||0);
   b.group.position.y=0; b.setPose(PRESETS['Stand']); b.ground(true);
 }
+// put b standing at a world spot, turned to `turn` degrees
+function standAt(b,pos,turn){
+  clearRig(b); b.group.position.set(pos.x,0,pos.z); b.turn=turn; b.setPose(PRESETS['Stand']); b.ground(true);
+}
+function pairStart(a){a.group.updateMatrixWorld(true);const pa=a.joints.pelvis.pivot.getWorldPosition(new V3());pa.y=0;return {pa,A:figAxes(a)};}
+const lookPair=(a,b)=>{a.look={fig:b.id};b.look={fig:a.id};};
+const ownedProp=(f,t)=>props.find(p=>p.type===t&&p.owner===f.id);
 const SCENES={
   'Conversation':()=>{
     const a=act, b=figures.find(f=>f!==a)||spawnFigureNear(a);
@@ -1733,6 +1740,77 @@ const SCENES={
       f.setHand('r','grip'); f.goals=[{side:'r',kind:'shake',fig:o.id}]; f.look={fig:o.id};
     }
     resolveFig(a); resolveFig(b); resolveFig(a); resolveFig(b);
+  },
+  /* standing, a little open to the camera: one talks with a hand, the other listens with arms crossed */
+  'Standing talk':()=>{
+    const a=act, b=figures.find(f=>f!==a)||spawnFigureNear(a);
+    clearRig(a); placeFacing(a,b,1.1,20); a.turn+=20; a.group.updateMatrixWorld(true);
+    applyWork(a,WORK['Stand']); applyWork(b,WORK['Arms crossed']);
+    // a talks with a low, open hand (Presenting reaches out like a handshake at this distance)
+    a.setPose(Object.assign({},PRESETS['Stand'],{rShoulder:{x:25,z:14,y:-10},rElbow:{x:85,y:-30}}));
+    a.setHand('r','flat'); a.goals=[{side:'r',kind:'gesture',low:true}]; a.ground();
+    lookPair(a,b); resolveFig(a); resolveFig(b);
+  },
+  /* shoulder to shoulder, both facing the same way, turned a little in to each other */
+  'Side by side':()=>{
+    const a=act, b=figures.find(f=>f!==a)||spawnFigureNear(a);
+    applyWork(a,WORK['Stand']); const {pa,A}=pairStart(a);
+    standAt(b,pa.clone().addScaledVector(A.left,0.62),a.turn);
+    a.turn+=22; b.turn-=22; a.ground(); b.ground();   // +turn swings toward the figure's left, where b is
+    lookPair(a,b); resolveFig(a); resolveFig(b);
+  },
+  /* two chairs side by side, angled in: a sofa chat, a panel */
+  'Side by side · seated':()=>{
+    const a=act, b=figures.find(f=>f!==a)||spawnFigureNear(a);
+    clearRig(a); const {pa,A}=pairStart(a);
+    standAt(b,pa.clone().addScaledVector(A.left,0.95),a.turn);
+    a.turn+=30; b.turn-=30; a.group.updateMatrixWorld(true); b.group.updateMatrixWorld(true);
+    applyWork(a,WORK['Seated talk']); applyWork(b,WORK['Seated talk']);
+    lookPair(a,b); resolveFig(a); resolveFig(b);
+  },
+  /* the classic two-chair interview: chairs angled toward each other, open to the camera between them */
+  'Interview':()=>{
+    const a=act, b=figures.find(f=>f!==a)||spawnFigureNear(a);
+    clearRig(a); placeFacing(a,b,1.6,35); a.turn+=35; b.turn+=0; a.group.updateMatrixWorld(true);
+    applyWork(a,WORK['Seated talk']); applyWork(b,WORK['Seated talk']);
+    lookPair(a,b); resolveFig(a); resolveFig(b);
+  },
+  /* across a table, seated, facing */
+  'At a table':()=>{
+    const a=act, b=figures.find(f=>f!==a)||spawnFigureNear(a);
+    clearRig(a); clearRig(b); const {pa,A}=pairStart(a);
+    const tc=pa.clone().addScaledVector(A.fwd,0.78);
+    applyWork(a,WORK['Seated talk']);
+    standAt(b,tc.clone().addScaledVector(A.fwd,0.78),a.turn+180); b.group.updateMatrixWorld(true);
+    applyWork(b,WORK['Seated talk']);
+    // made after both are seated, owned by a, so the next scene's clearRig takes it away again
+    props.push(new Prop({type:'table4',owner:a.id,pos:[tc.x,0,tc.z],turn:a.turn}));
+    lookPair(a,b); resolveFig(a); resolveFig(b);
+  },
+  /* one works at a desktop, the other leans in behind them to look at the screen */
+  'Looking at the screen':()=>{
+    const a=act, b=figures.find(f=>f!==a)||spawnFigureNear(a);
+    applyWork(a,WORK['Desktop']); const {pa,A}=pairStart(a);
+    standAt(b,pa.clone().addScaledVector(A.fwd,-0.45).addScaledVector(A.left,-0.45),a.turn-15);
+    b.setPose(Object.assign({},PRESETS['Stand'],{spine:{x:14},chest:{x:8}})); b.ground(true);
+    const m=ownedProp(a,'monitor'); b.look=m?{prop:m.id}:{fig:a.id};
+    resolveFig(a); resolveFig(b);
+  },
+  /* one shows the other something on a phone */
+  'Showing a phone':()=>{
+    const a=act, b=figures.find(f=>f!==a)||spawnFigureNear(a);
+    applyWork(a,WORK['Reading phone']); const {pa,A}=pairStart(a);
+    standAt(b,pa.clone().addScaledVector(A.left,-0.5).addScaledVector(A.fwd,0.05),a.turn+25);
+    b.setPose(Object.assign({},PRESETS['Stand'],{neck:{x:12},head:{x:10}})); b.ground(true);
+    const ph=props.find(p=>p.type==='phone'&&p.attach&&p.attach.fig===a.id); b.look=ph?{prop:ph.id}:{fig:a.id};
+    resolveFig(a); resolveFig(b);
+  },
+  /* two people with coffee, standing and talking */
+  'Coffee chat':()=>{
+    const a=act, b=figures.find(f=>f!==a)||spawnFigureNear(a);
+    clearRig(a); placeFacing(a,b,0.95,15); a.turn+=15; a.group.updateMatrixWorld(true);
+    applyWork(a,WORK['Coffee']); applyWork(b,WORK['Coffee']);
+    lookPair(a,b); resolveFig(a); resolveFig(b);
   },
 };
 function applyNamed(n){
