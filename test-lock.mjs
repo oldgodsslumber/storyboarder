@@ -261,7 +261,7 @@ console.log('\n\u2014 the video brief is about motion, in the export lane too \u
     await SB.Prompts.generateFor(sh, { video: true });
     const all = JSON.stringify(asked[0]), lane = exp ? 'export: ' : 'send: ';
     eq(/HOUSE STYLE/.test(all), false, lane + 'no house style once there is a first frame');
-    eq(/bARRIb|Alexa|skin: pores|film grain/.test(all), false, lane + 'no camera, skin or grain notes');
+    eq(/ARRI|Alexa|skin: pores|film grain/.test(all), false, lane + 'no camera, skin or grain notes');
     has(all, 'THE FIRST FRAME IS SUPPLIED', lane + 'told the frame is supplied');
     eq(/call-centre at night/.test(all), false, lane + 'the general description stays out once the motion box is filled');
     has(all, 'lowers the letter slowly', lane + 'the motion box is the description');
