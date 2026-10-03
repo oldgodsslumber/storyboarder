@@ -551,5 +551,17 @@ It's sent as `framing` in `posebench:done`. Storyboarder stores it on `pose.fram
 
 ## More two-person scenes (2026-10-02)
 
-- `SCENES` adds: Standing talk, Side by side, Side by side · seated, Interview, At a table (a `table4` owned by figure A, so the next scene's `clearRig` removes it), Looking at the screen (Desktop work preset plus a standing looker who watches the monitor), Showing a phone, and Coffee chat. The helpers are `standAt`, `pairStart`, `lookPair` and `ownedProp`.
+- `SCENES` adds: Standing talk, Side by side, Side by side · seated, Interview, At a table (a `table4` with `tag:'scene'`; `applyNamed` removes scene-tagged props before the next scene), Looking at the screen (Desktop work preset plus a standing looker who watches the monitor), Showing a phone, and Coffee chat. The helpers are `standAt`, `pairStart`, `lookPair` and `ownedProp`.
 - A positive `turn` swings a figure toward its own left (+X). Side-by-side pairs turn in toward each other, because a look target more than about 90° to the side cranes the head past its limits.
+
+## Review fixes (2026-10-03)
+
+- **Camera bar docked:** `#camPad` now sits under `#stage`, inside `#stageCol`, instead of floating over it. `guideRect` has no inset again, so the guide, `apiFrame`, `shotFraming` and `blockingText` all read one viewport. The earlier inset was in pixels: it made the guide tighter than the saved still, and re-renders at another stage size framed differently.
+- `blockingText` labels builds by name, and an unknown type no longer throws. A Build in the scene had made Use for shot fail silently.
+- `seatFigure` subtracts `f.lift` from the feet gap, so Lift is no longer eaten into the chair height.
+- `WEDGEG` is wound outward.
+- `holdProp` calls `settleProp` on release.
+- `removeProp` settles the props that were riding on the removed one.
+- `runBuild` re-resolves its target by id after the model answers.
+- Alt+↑/↓ is ignored while a `<select>` has focus.
+- Build placement steps aside onto clear floor.

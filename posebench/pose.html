@@ -129,7 +129,10 @@
     border-radius:4px;padding:1px 5px;white-space:nowrap;justify-self:start}
 
   /* ---------- stage ---------- */
-  #stage{flex:1;position:relative;min-width:0;overflow:hidden}
+  /* the viewport and, docked under it, the camera bar: the bar never covers the frame, and every frame
+     calculation (guide, capture, framing, blocking text) reads one viewport */
+  #stageCol{flex:1;min-width:0;display:flex;flex-direction:column;position:relative}
+  #stage{flex:1;position:relative;min-width:0;min-height:0;overflow:hidden}
   #view{display:block;width:100%;height:100%;touch-action:none;outline:none}
   #guide{position:absolute;pointer-events:none;box-shadow:0 0 0 9999px rgba(8,9,12,.42);outline:1px solid rgba(255,255,255,.35);display:none}
   #guide .th{position:absolute;inset:0;display:none;
@@ -168,12 +171,9 @@
   .capbtn.capmore{padding:9px 9px;border-top-left-radius:0;border-bottom-left-radius:0;border-left:1px solid rgba(0,0,0,.25)}
   .fbtn.on{border-color:var(--accent);color:var(--accent-hi)}
   /* the camera bar: one row across the bottom of the viewport (views | shot size | lens) */
-  #camPad{position:absolute;left:14px;right:14px;bottom:12px;z-index:7;display:flex;align-items:center;gap:8px;pointer-events:none}
-  #camPad>*{pointer-events:auto}
-  #stage.has-tray #camPad{bottom:98px} #stage.has-tl #camPad{bottom:124px} #stage.has-tl.has-tray #camPad{bottom:200px}
+  #camPad{flex:none;display:flex;align-items:center;gap:8px;padding:6px 14px;background:var(--panel);border-top:1px solid var(--line);min-width:0}
   #camPadBtn{font-size:16px;padding:7px 10px}
-  #camPadBody{display:none;flex:1;min-width:0;align-items:center;gap:10px;padding:6px 10px;overflow-x:auto;white-space:nowrap;
-    background:rgba(27,30,36,.94);border:1px solid var(--line);border-radius:10px;box-shadow:0 8px 28px rgba(0,0,0,.4);scrollbar-width:thin}
+  #camPadBody{display:none;flex:1;min-width:0;align-items:center;gap:10px;padding:0 2px;overflow-x:auto;white-space:nowrap;scrollbar-width:thin}
   #camPad.open #camPadBody{display:flex}
   #camPadBody .cp-grp{display:flex;gap:4px;flex:none}
   #camPadBody .cp-grp .btn{padding:6px 9px;font-size:12px}
@@ -386,6 +386,7 @@
     </div>
   </aside>
 
+  <div id="stageCol">
   <main id="stage">
     <canvas id="view" tabindex="0" aria-label="3D viewport"></canvas>
     <div id="guide"><div class="th"></div><div class="gl" id="guideLbl"></div></div>
@@ -506,34 +507,6 @@
           <kbd>F · C · M</kbd><span>frame · capture · mirror</span>
         </div>
       <div class="keys" style="margin-top:6px"><kbd>1 – 8</kbd><span>camera views</span><kbd>shift+1 – 4</kbd><span>wide · full · medium · close</span></div>
-    </div>
-    <div id="camPad">
-      <button class="fbtn" id="camPadBtn" title="Camera — views, shot size, lens (keys 1–8, Shift+1–4)">📷</button>
-      <div id="camPadBody" role="toolbar" aria-label="Camera">
-        <div class="cp-grp" id="views" title="Keys 1–8">
-          <button class="btn" data-view="front" title="Front (1)">Front</button>
-          <button class="btn" data-view="tqL" title="Three-quarter left (2)">¾ L</button>
-          <button class="btn" data-view="sideL" title="Side left (3)">Side L</button>
-          <button class="btn" data-view="back" title="Back (4)">Back</button>
-          <button class="btn" data-view="tqR" title="Three-quarter right (5)">¾ R</button>
-          <button class="btn" data-view="sideR" title="Side right (6)">Side R</button>
-          <button class="btn" data-view="high" title="High angle (7)">High</button>
-          <button class="btn" data-view="low" title="Low angle (8)">Low</button>
-        </div>
-        <span class="cp-sep" aria-hidden="true"></span>
-        <div class="cp-grp" id="shots" title="Shot size: Shift+1–4">
-          <button class="btn" data-shot="wide" title="Wide (Shift+1)">Wide</button>
-          <button class="btn" data-shot="full" title="Full (Shift+2)">Full</button>
-          <button class="btn" data-shot="medium" title="Medium (Shift+3)">Medium</button>
-          <button class="btn" data-shot="close" title="Close (Shift+4)">Close</button>
-        </div>
-        <span class="cp-sep" aria-hidden="true"></span>
-        <div class="cp-lens">
-          <label class="lbl" for="rLens">Lens</label>
-          <input type="range" id="rLens" min="14" max="135" value="35">
-          <span class="v" id="vLens">35mm</span>
-        </div>
-      </div>
     </div>
     <div id="jointPop" role="dialog" aria-label="Pose this part">
       <div class="jp-head" id="jpHead" title="Drag to move it. It stays where you put it."><span class="grip" aria-hidden="true">⠿</span><span id="jpTitle">—</span><button class="btn icon" id="jpDock" aria-label="Back beside the part" title="Back beside the part" style="display:none">⤺</button><button class="btn icon" id="jpClose" aria-label="Close">✕</button></div>
@@ -674,6 +647,35 @@
     </div>
     <div id="fatal"><div><b>three.js didn't load.</b><br>Pose Bench pulls three.js r128 from cdnjs on first open —<br>check the network connection and reload.</div></div>
   </main>
+    <div id="camPad">
+    <button class="fbtn" id="camPadBtn" title="Camera — views, shot size, lens (keys 1–8, Shift+1–4)">📷</button>
+    <div id="camPadBody" role="toolbar" aria-label="Camera">
+      <div class="cp-grp" id="views" title="Keys 1–8">
+        <button class="btn" data-view="front" title="Front (1)">Front</button>
+        <button class="btn" data-view="tqL" title="Three-quarter left (2)">¾ L</button>
+        <button class="btn" data-view="sideL" title="Side left (3)">Side L</button>
+        <button class="btn" data-view="back" title="Back (4)">Back</button>
+        <button class="btn" data-view="tqR" title="Three-quarter right (5)">¾ R</button>
+        <button class="btn" data-view="sideR" title="Side right (6)">Side R</button>
+        <button class="btn" data-view="high" title="High angle (7)">High</button>
+        <button class="btn" data-view="low" title="Low angle (8)">Low</button>
+      </div>
+      <span class="cp-sep" aria-hidden="true"></span>
+      <div class="cp-grp" id="shots" title="Shot size: Shift+1–4">
+        <button class="btn" data-shot="wide" title="Wide (Shift+1)">Wide</button>
+        <button class="btn" data-shot="full" title="Full (Shift+2)">Full</button>
+        <button class="btn" data-shot="medium" title="Medium (Shift+3)">Medium</button>
+        <button class="btn" data-shot="close" title="Close (Shift+4)">Close</button>
+      </div>
+      <span class="cp-sep" aria-hidden="true"></span>
+      <div class="cp-lens">
+        <label class="lbl" for="rLens">Lens</label>
+        <input type="range" id="rLens" min="14" max="135" value="35">
+        <span class="v" id="vLens">35mm</span>
+      </div>
+    </div>
+  </div>
+  </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="bodies.js"></script>
@@ -1221,6 +1223,7 @@ class Prop{
     this.seatH=o.seatH||0.46; this.topH=o.topH||(o.type==='table4'?0.75:0.73);
     this.parts=Array.isArray(o.parts)?o.parts:null; this.name=o.name||null; this.request=o.request||null;   // type 'build'
     this.lift=+o.lift||0;   // metres above where it sits: the floor, or (laptop, phone, cup) the surface under it
+    this.tag=o.tag||null;   // 'scene': set by a two-person scene, cleared by the next one
     this.group=new THREE.Group(); this.group.rotation.order='YXZ'; scene.add(this.group);
     this.mat=new THREE.MeshStandardMaterial({color:lin('#8e949c'),roughness:0.7,metalness:0});
     this.dark=new THREE.MeshStandardMaterial({color:lin('#2b2f35'),roughness:0.35,metalness:0});
@@ -1321,7 +1324,7 @@ class Prop{
       // held props keep their exact grip (e.g. a phone aligned ear-to-mouth)
       grip:this.attach?{p:[p.x,p.y,p.z].map(r),q:[q.x,q.y,q.z,q.w].map(r)}:undefined,
       parts:this.type==='build'?this.parts:undefined,name:this.type==='build'?this.name:undefined,
-      request:this.type==='build'?this.request:undefined,lift:this.lift?Math.round(this.lift*1e4)/1e4:undefined};
+      request:this.type==='build'?this.request:undefined,lift:this.lift?Math.round(this.lift*1e4)/1e4:undefined,tag:this.tag||undefined};
   }
   dispose(){if(this.group.parent)this.group.parent.remove(this.group);this.mat.dispose();this.dark.dispose();this.light.dispose();}
 }
@@ -1332,8 +1335,10 @@ function removeProp(p){
     f.goals=f.goals.filter(g=>g.prop!==p.id);
     if(f.look&&f.look.prop===p.id)f.look=null;
   });
+  const riders=props.filter(q=>q.on===p.id&&q!==p);
   props.forEach(q=>{if(q.on===p.id)q.on=null;});
   p.dispose(); props=props.filter(q=>q!==p); if(selProp===p)selProp=null;
+  riders.forEach(q=>{if(props.includes(q))settleProp(q);});   // a laptop on a deleted table comes down
 }
 // everything that travels with a figure when it is moved or turned
 function carriedBy(f){
@@ -1444,7 +1449,7 @@ function seatFigure(f,ch){
   /* The feet used to hang ~7 cm above the floor: the chair's height was a formula, never checked. Now the
      gap (or the sink) left after fitting the legs is taken out of the chair's height, twice for the settle. */
   if(ch.type==='chair')for(let k=0;k<2;k++){
-    const gap=Math.min(visMinY(f,['lAnkle']),visMinY(f,['rAnkle']));
+    const gap=Math.min(visMinY(f,['lAnkle']),visMinY(f,['rAnkle']))-(f.lift||0);   // the Lift is meant, not a gap
     if(Math.abs(gap)<0.004)break;
     ch.seatH=clamp(ch.seatH-gap,0.3,0.62); ch.build(); if(selProp===ch)ch.highlight(true);
     placeOnSeat(f); fitFeet(f); placeOnSeat(f);
@@ -1783,8 +1788,8 @@ const SCENES={
     applyWork(a,WORK['Seated talk']);
     standAt(b,tc.clone().addScaledVector(A.fwd,0.78),a.turn+180); b.group.updateMatrixWorld(true);
     applyWork(b,WORK['Seated talk']);
-    // made after both are seated, owned by a, so the next scene's clearRig takes it away again
-    props.push(new Prop({type:'table4',owner:a.id,pos:[tc.x,0,tc.z],turn:a.turn}));
+    // made after both are seated, tagged to the scene (not to a): the next scene takes it away
+    props.push(new Prop({type:'table4',tag:'scene',pos:[tc.x,0,tc.z],turn:a.turn}));
     lookPair(a,b); resolveFig(a); resolveFig(b);
   },
   /* one works at a desktop, the other leans in behind them to look at the screen */
@@ -1815,7 +1820,7 @@ const SCENES={
 };
 function applyNamed(n){
   if(!act)return false;
-  if(SCENES[n]){SCENES[n]();refreshAll();frameAll();}
+  if(SCENES[n]){props.filter(p=>p.tag==='scene').forEach(removeProp);SCENES[n]();refreshAll();frameAll();}
   else if(WORK[n])applyWork(act,WORK[n]);
   else if(PRESETS[n])applyAngles(act,PRESETS[n]);
   else return false;
@@ -2294,17 +2299,13 @@ function hover(e){
 
 /* ================= capture ================= */
 function capAspect(){const v=$('capAspect').value;return v==='vp'?null:parseFloat(v);}
-/* The capture frame keeps clear of the camera bar. It is inset at the top as well as the bottom: the frame
-   stays centred on the lens axis, so a capture is not a shifted lens. */
-function barInset(){
-  const p=document.getElementById('camPad'), b=document.getElementById('camPadBody');
-  return p&&b&&p.classList.contains('open')&&b.offsetHeight?b.offsetHeight+18:0;
-}
+/* The capture frame. The camera bar is docked under the viewport (not over it), so this needs no inset, and it
+   is the same rectangle apiFrame, shotFraming and blockingText use: an inset here once made the guide tighter
+   than the still the card saved. */
 function guideRect(){
   const W=stage.clientWidth,H=stage.clientHeight,a=capAspect();
   if(!a)return {x:0,y:0,w:W,h:H};
-  const Hs=Math.max(60,H-2*barInset());
-  if(a<W/Hs){const w=Hs*a;return {x:(W-w)/2,y:(H-Hs)/2,w,h:Hs};}
+  if(a<W/H){const w=H*a;return {x:(W-w)/2,y:0,w,h:H};}
   const h=W/a; return {x:0,y:(H-h)/2,w:W,h};
 }
 function updateGuide(){
@@ -2611,7 +2612,7 @@ const CONEG=new THREE.ConeGeometry(1,1,28), TORFULL=new THREE.TorusGeometry(1,0.
 // a ramp: full height at the back (-Z), down to the floor at the front (+Z); 1 x 1 x 1 around its centre
 const WEDGEG=(()=>{const g=new THREE.BufferGeometry(), a=-0.5,b=0.5;
   const P=[[a,a,a],[b,a,a],[b,a,b],[a,a,b],[a,b,a],[b,b,a]];
-  const F=[[0,2,1],[0,3,2],[0,1,5],[0,5,4],[3,4,5],[3,5,2],[0,4,3],[1,2,5]];
+  const F=[[0,1,2],[0,2,3],[0,5,1],[0,4,5],[3,5,4],[3,2,5],[0,3,4],[1,5,2]];   // wound outward
   const pos=[];F.forEach(f=>f.forEach(i=>pos.push(...P[i])));
   g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));g.computeVertexNormals();return g;})();
 const esc=v=>String(v).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -2844,7 +2845,9 @@ async function runBuild(mode){
     }
     buildNote(mode==='new'?'Building "'+text+'"\u2026':mode==='edit'?'Changing it\u2026':'Applying the fixes\u2026');
     const json=await askBuild(request,base), res=expandParts(json);
-    const notes=placeBuild(res,mode==='new'?text:(target.request||text),target);
+    // minutes may have passed: undo rebuilds every Prop object, and the target may be gone
+    const live=target?propById(target.id):null;
+    const notes=placeBuild(res,mode==='new'?text:(target.request||text),live);
     buildNote((mode==='new'?'Built':'Updated')+' "'+(res.name||'build')+'": '+res.parts.length+' parts in '+Math.round((performance.now()-t0)/1000)+' s'+
       (notes.length?' \u2014 '+notes.join('; '):'')+'.');
   }catch(e){buildNote(e.message||String(e),true);}
@@ -2985,10 +2988,10 @@ function nearestSurface(pos){
     .filter(x=>x[1]<(x[0].type==='desk'?0.75:x[0].type==='table4'?0.9:0.5)).sort((a,b)=>a[1]-b[1]).map(x=>x[0])[0]||null;
 }
 function holdProp(p,v){
-  if(p.attach){const f=figById(p.attach.fig);p.detach();layFlat(p,nearestSurface(p.group.position));if(f){f.goals=f.goals.filter(g=>!(g.prop===p.id));}}
+  if(p.attach){const f=figById(p.attach.fig);p.detach();layFlat(p,nearestSurface(p.group.position));settleProp(p);if(f){f.goals=f.goals.filter(g=>!(g.prop===p.id));}}
   if(!v)return;
   const [id,side]=v.split(':'), f=figById(id); if(!f)return;
-  props.filter(q=>q!==p&&q.attach&&q.attach.fig===id&&q.attach.side===side).forEach(q=>{q.detach();layFlat(q,nearestSurface(q.group.position));});
+  props.filter(q=>q!==p&&q.attach&&q.attach.fig===id&&q.attach.side===side).forEach(q=>{q.detach();layFlat(q,nearestSurface(q.group.position));settleProp(q);});
   p.on=null; p.attachTo(f,side); f.setHand(side,'grip'); refreshFigUI();
 }
 function addProp(type){
@@ -3170,7 +3173,7 @@ addEventListener('keydown',e=>{
   }
   if(mod&&(e.key==='z'||e.key==='Z')){if(typing)return;e.preventDefault();e.shiftKey?redo():undo();return;}
   if(mod&&(e.key==='y'||e.key==='Y')){if(typing)return;e.preventDefault();redo();return;}
-  if(!typing&&!mod&&e.altKey&&(e.key==='ArrowUp'||e.key==='ArrowDown')&&(selProp&&!selProp.attach||act)){
+  if(!typing&&!mod&&e.altKey&&t.tagName!=='SELECT'&&(e.key==='ArrowUp'||e.key==='ArrowDown')&&(selProp&&!selProp.attach||act)){
     e.preventDefault(); const st=(e.key==='ArrowUp'?1:-1)*(e.shiftKey?5:1);
     if(selProp&&!selProp.attach){setPropLift(selProp,selProp.lift*100+st);refreshPropUI();}
     else setLift(act,act.lift*100+st);
@@ -3325,7 +3328,7 @@ function placeJointPop(){
   if(v.z>1){pop.style.visibility='hidden';return;} pop.style.visibility='';
   const x=(v.x+1)/2*W, y=(1-v.y)/2*H;
   let left=x+34; if(left+w>W-8)left=x-34-w; left=Math.max(8,Math.min(W-w-8,left));
-  const top=Math.max(8,Math.min(H-h-8-barInset(),y-60));
+  const top=Math.max(8,Math.min(H-h-8,y-60));
   pop.style.left=Math.round(left)+'px'; pop.style.top=Math.round(top)+'px';
 }
 $('jpClose').onclick=closeJointPop;
@@ -5448,8 +5451,10 @@ function blockingText(asp){
     });
     const free=props.filter(p=>!p.attach);
     if(free.length){
-      const c={}; free.forEach(p=>{c[p.type]=(c[p.type]||0)+1;});
-      const word=(t,n)=>{const w=t==='chair'?'office chair':PROP_LABEL[t].toLowerCase();return n>1?n+' '+w+'s':(/^[aeiou]/.test(w)?'an ':'a ')+w;};
+      // builds count by their own name ("a park bench"); a missing label must never stop Use for shot
+      const c={}; free.forEach(p=>{const k=p.type==='build'?'build:'+(p.name||'set piece'):p.type;c[k]=(c[k]||0)+1;});
+      const word=(t,n)=>{const w=t.startsWith('build:')?t.slice(6).toLowerCase():t==='chair'?'office chair':String(PROP_LABEL[t]||t).toLowerCase();
+        return n>1?n+' '+w+'s':(/^[aeiou]/.test(w)?'an ':'a ')+w;};
       lines.push('Props: '+Object.keys(c).map(t=>word(t,c[t])).join(', ')+'.');
     }
     return lines.join('\n');
