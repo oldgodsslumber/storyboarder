@@ -1804,9 +1804,13 @@
     });
     sel.addEventListener('change', function () {
       sh.type = sel.value;
-      SB.app.changed(false);
+      /* the other copy of this dropdown (the card's, or Create's) shows it too: changed(false) does not
+         rebuild the cards, so the card kept showing the old type */
+      document.querySelectorAll('[data-shot="' + sh.id + '"] select.type').forEach(function (o) {
+        if (o !== sel) o.value = sh.type;
+      });
+      SB.app.changed(false);          // follows the Create panel as well
       refreshFraming(sh.id);          // the badge is about to agree, or to go
-      SB.PromptPanel.follow();
     });
     return sel;
   }

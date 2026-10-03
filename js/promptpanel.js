@@ -107,7 +107,11 @@
   /* Called from app.changed(): the board moved under the table. */
   function follow() { if (root) render(); }
 
+  /* The last status survives a repaint: head() builds a fresh, empty line, and a run's closing report
+     ("2 failed") was wiped by the render that followed it. */
+  let lastStatus = { txt: '', err: false };
   function setStatus(txt, isErr) {
+    lastStatus = { txt: txt || '', err: !!isErr };
     if (!statusEl) return;
     statusEl.textContent = txt || '';
     /* the line is one row and ellipsised, and errors are the longest thing it
@@ -329,6 +333,7 @@
     const acts = SB.el('div', 'pt-acts');
     statusEl = SB.el('span', 'pt-status');
     acts.appendChild(statusEl);
+    if (lastStatus.txt) setStatus(lastStatus.txt, lastStatus.err);
     r2.appendChild(acts);
   }
 
@@ -556,11 +561,22 @@
     if (!jobs.length) { setStatus('Nothing in this scene can be written — the cards missing prompts have no description yet.', true); return; }
     SCENE_RUN[sc.id] = true;
     render();
-    let i = 0, failed = 0;
+    let i = 0, failed = 0, firstErr = null, stopped = false;
+    /* A failure that every card will hit (no server, no key, the day's limit, a proxy) stops the run at the
+       first card: carrying on just spent a call per card to learn the same thing, and said nothing. */
+    const fatal = function (e) {
+      const m = String((e && e.message) || e || '');
+      return !!(SB.netKind && SB.netKind(e)) ||
+        /(429|401|403)|quota|rate|limit|no google api key|could not reach|failed to fetch|network|blocked|refused|not reachable|is it running/i.test(m);
+    };
     const next = function () {
-      if (i >= jobs.length) {
+      if (i >= jobs.length || stopped) {
         delete SCENE_RUN[sc.id];
-        setStatus('scene written' + (failed ? ' — ' + failed + ' failed; the rows say why' : ''), !!failed);
+        if (failed && firstErr) {
+          const msg = (firstErr.message || String(firstErr));
+          writeError(firstErr);   // the dialog for a blocked network, a toast otherwise
+          if (!(SB.netKind && SB.netKind(firstErr))) setStatus((stopped ? 'stopped: ' : '') + failed + ' failed — ' + msg, true);
+        } else setStatus('scene written', false);
         refreshUsage();
         SB.Focus.defer('promptpanel', render);
         return;
@@ -568,7 +584,7 @@
       const j = jobs[i++];
       setStatus('writing ' + code(j.sh) + ' (' + i + ' of ' + jobs.length + ')…');
       SB.Prompts.generateFor(j.sh, j.roles).then(function () { paintGens(); refreshUsage(); next(); })
-        .catch(function () { failed++; paintGens(); next(); });
+        .catch(function (e) { failed++; if (!firstErr) firstErr = e; if (fatal(e)) stopped = true; paintGens(); next(); });
     };
     next();
   }

@@ -175,7 +175,7 @@
       assets: assets, figures: figures, boxes: boxes, perf: perf, clip: clip,
       blocked: poseOK(shot), frame: !!(shot.render || shot.image),
       style: st.style, negatives: lane === 'image' ? st.negImage : st.negVideo,
-      aspect: (shot.pose && shot.pose.aspect) || (SB.Imagine && SB.Imagine.aspectOf ? SB.Imagine.aspectOf(p) : '16:9'),
+      aspect: SB.Imagine && SB.Imagine.aspectFor ? SB.Imagine.aspectFor(p, shot) : '16:9',
       minS: st.minS, maxS: st.maxS,
       duration: dur == null ? null : Math.min(st.maxS, Math.max(st.minS, Math.round(dur))),
       clipSeconds: dur

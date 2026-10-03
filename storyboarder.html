@@ -1457,7 +1457,7 @@ body.comment-mode .frame{cursor:crosshair}
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-10-03 14:50 · 406a5fa+";</script>
+<script>window.SB_BUILD = "2026-10-03 14:54 · 7844e32+";</script>
 
 <div id="app">
 
@@ -6790,7 +6790,7 @@ window.SB = window.SB || {};
   }
   /* A shot blocked at its own aspect in Pose Bench (pose.aspect) is generated at it; otherwise the board's. */
   function aspectFor(p, shot) {
-    return (shot && shot.pose && shot.pose.aspect) || aspectOf(p);
+    return (shot && shot.pose && shot.pose.aspectOwn && shot.pose.aspect) || aspectOf(p);   // pose.js aspectFor
   }
 
   /* The name this door knows the model by, falling back to the other one —
@@ -9643,6 +9643,14 @@ window.SB = window.SB || {};
     shot.castAuto = (shot.castAuto || []).filter(function (x) { return x !== id; });
     setEnters(shot, id, false);
     if (SB.Refs && SB.Refs.rewrite) SB.Refs.rewrite(shot, function (t) { return SB.Refs.unmark(p, t, id); });
+    /* the project's own boxes are read for marks too (Refs.marked): left marked there, the person came
+       straight back on the next render, ✕ and all */
+    if (SB.Fields && SB.Fields.all && SB.Refs && SB.Refs.unmark) {
+      SB.Fields.all(p).forEach(function (f) {
+        const v = SB.Fields.value(shot, f.id);
+        if (v && v.indexOf(id) >= 0) SB.Fields.set(shot, f.id, SB.Refs.unmark(p, v, id));
+      });
+    }
   }
 
   function toggleOnShot(p, shot, id) {
@@ -9822,6 +9830,14 @@ window.SB = window.SB || {};
   /* The one-picture lane with a source frame: imagine.js single() uploads that frame and nothing else, so to the
      image model it is image 1 and every other reference is words. The writer was numbering by feed order
      ("Starting from image 2", "image 1 = Gus", "image 1 is a 3D blocking") for pictures that never travelled. */
+  /* The blocking's cast, less anyone since taken off the card. pose.cast is the record of the blocking and is
+     kept as it was, but a person removed with ✕ was still named by it ("the red figure is Ana") in every still. */
+  function liveCast(p, shot) {
+    const on = {};
+    forShot(p, shot).forEach(function (per) { on[per.id] = 1; });
+    if (SB.Refs && SB.Refs.marked) SB.Refs.marked(p, shot).forEach(function (m) { on[m.id] = 1; });
+    return ((shot && shot.pose && shot.pose.cast) || []).filter(function (c) { return on[c.personaId]; });
+  }
   function soleFrame(p, shot, role) {
     if (role === 'video' || !SB.Imagine || !SB.Imagine.refsFor) return null;
     const s = SB.Imagine.refsFor(p, shot, 'image');
@@ -10078,7 +10094,7 @@ window.SB = window.SB || {};
         'where each person is, which way they face, their pose and what they hold — the people ' +
         'described in this block, in the place the shot description gives.');
       }
-      const who = (shot.pose.cast || []).map(function (c) {
+      const who = liveCast(p, shot).map(function (c) {
         const w = sole ? '' : whereOf(c.personaId);
         return 'the ' + (c.colorName || 'grey') + ' mannequin is ' +
           nowName(c) + (w ? ' (' + w + ')' : '');
@@ -10171,7 +10187,7 @@ window.SB = window.SB || {};
       'framing, lens and perspective, where each person stands, their pose and silhouette, and scale. ' +
       'Do not reproduce its grey untextured material, mannequin bodies, featureless faces, studio floor, ' +
       'grid or backdrop.'];
-    const who = (shot.pose.cast || []).map(function (c) {
+    const who = liveCast(p, shot).map(function (c) {
       const per = find(p, c.personaId), name = per ? (per.name || 'unnamed') : (c.name || '');
       const pic = whereOf(c.personaId);
       return 'the ' + (c.colorName || 'grey') + ' figure is ' + name + (pic ? ' (' + pic + ')' : '');
@@ -10180,7 +10196,7 @@ window.SB = window.SB || {};
       const w0 = who.join('; ');
       bits.push(w0.charAt(0).toUpperCase() + w0.slice(1) + '. Any other figure is an extra.');
     }
-    const pics = (shot.pose.cast || []).filter(function (c) { return whereOf(c.personaId); });
+    const pics = liveCast(p, shot).filter(function (c) { return whereOf(c.personaId); });
     if (pics.length) bits.push('Take each person\u2019s face, hair, skin tone and build ONLY from their ' +
       (onSheet ? 'panel' : 'image') + '.');
     return bits.join(' ');
@@ -14721,8 +14737,10 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
      keeps its own (pose.aspect, chosen in Pose Bench); without one it is the board's. */
   const ASPECTS = ['16:9', '9:16', '1:1', '4:3', '3:4', '3:2'];
   function boardAspect(p) { return SB.Imagine && SB.Imagine.aspectOf ? SB.Imagine.aspectOf(p) : '16:9'; }
+  /* Only a ratio CHOSEN for the shot (pose.aspectOwn) pins it. Every blocking saved before per-shot aspects
+     recorded the board's ratio of the day in pose.aspect, and those cards must keep following the board. */
   function aspectFor(p, shot) {
-    const a = shot && shot.pose && shot.pose.aspect;
+    const a = shot && shot.pose && shot.pose.aspectOwn && shot.pose.aspect;
     return a && ASPECTS.indexOf(a) >= 0 ? a : boardAspect(p);
   }
   function has(shot) { return !!(shot && shot.pose && shot.pose.image && shot.pose.scene); }
@@ -14973,6 +14991,8 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
           size: String(d.framing.size || ''), angle: String(d.framing.angle || '') } : null,
         aspect: ASPECTS.indexOf(d.aspect) >= 0 ? d.aspect
           : editor && editor.shotId === shotId ? editor.aspect : (prev && prev.aspect) || '',
+        /* picking the board's own ratio means "follow the board" */
+        aspectOwn: ASPECTS.indexOf(d.aspect) >= 0 ? d.aspect !== boardAspect(p) : !!(prev && prev.aspectOwn),
         at: Date.now(),
         perf: cleanLink(d.link)
       };
@@ -15025,7 +15045,7 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
     return new Promise(function (resolve, reject) {
       const id = token();
       const msg = { type: 'posebench:passes', token: id, id: id, scene: scene,
-        aspect: shot.pose.aspect || SB.Imagine.aspectOf(p), longEdge: longEdge || LONG_EDGE,
+        aspect: aspectFor(p, shot), longEdge: longEdge || LONG_EDGE,
         passes: which || PASSES };
       const timer = setTimeout(function () {
         delete w.pending[id]; reject(new Error('Pose Bench did not answer (is three.js reachable?)'));
@@ -15056,7 +15076,7 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
     return new Promise(function (resolve, reject) {
       const id = token();
       const msg = { type: 'posebench:clip', token: id, id: id, scene: scene, take: take, link: L,
-        aspect: shot.pose.aspect || SB.Imagine.aspectOf(p), longEdge: opts.longEdge || CLIP_EDGE,
+        aspect: aspectFor(p, shot), longEdge: opts.longEdge || CLIP_EDGE,
         pass: opts.pass || 'beauty', fps: opts.fps || L.fps || 24 };
       /* a clip is rendered frame by frame; a slow machine takes minutes */
       const timer = setTimeout(function () {
@@ -15398,7 +15418,7 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
       assets: assets, figures: figures, boxes: boxes, perf: perf, clip: clip,
       blocked: poseOK(shot), frame: !!(shot.render || shot.image),
       style: st.style, negatives: lane === 'image' ? st.negImage : st.negVideo,
-      aspect: (shot.pose && shot.pose.aspect) || (SB.Imagine && SB.Imagine.aspectOf ? SB.Imagine.aspectOf(p) : '16:9'),
+      aspect: SB.Imagine && SB.Imagine.aspectFor ? SB.Imagine.aspectFor(p, shot) : '16:9',
       minS: st.minS, maxS: st.maxS,
       duration: dur == null ? null : Math.min(st.maxS, Math.max(st.minS, Math.round(dur))),
       clipSeconds: dur
@@ -16066,7 +16086,12 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
     const f = SB.Model.findShot(p, shot.id);
     const dir = ((f && f.code) || 'shot') + '_' + String(model.name || 'still').replace(/[^a-z0-9]+/gi, '_').replace(/^_|_$/g, '').toLowerCase();
     return Promise.all(list.map(function (x) {
-      return fetch(x.url).then(function (r) { return r.arrayBuffer(); }).then(function (b) { return { name: dir + '/' + x.file, data: new Uint8Array(b) }; });
+      /* no url: fetch('') fetched the app's own page, which landed in the zip as a photo */
+      if (!x.url) return Promise.reject(new Error('the file for ' + x.cite + ' (' + x.label + ') is missing'));
+      return fetch(x.url).then(function (r) {
+        if (!r.ok) throw new Error('the file for ' + x.cite + ' (' + x.label + ') could not be read');
+        return r.arrayBuffer();
+      }).then(function (b) { return { name: dir + '/' + x.file, data: new Uint8Array(b) }; });
     })).then(function (entries) {
       const enc = new TextEncoder();
       entries.push({ name: dir + '/prompt.txt', data: enc.encode(pr + '\n') });
@@ -16147,7 +16172,7 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
       } },
       { label: 'Close', primary: true }
     ] });
-    say('Model ' + slug + ', ' + secs + ' s each, aspect ' + (shot.pose && shot.pose.aspect || SB.Imagine.aspectOf(p)) +
+    say('Model ' + slug + ', ' + secs + ' s each, aspect ' + SB.Imagine.aspectFor(p, shot) +
       '. Card ' + code + '. ' + new Date().toISOString());
     if (!L) { say('✕ This card has no performance clip — cut it from a take in Pose Bench first.'); return; }
     say('Rendering the clay clip…');
@@ -16170,7 +16195,7 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
           const t0 = Date.now();
           return blobOf(t.frame).then(function (frame) {
             return SB.Imagine.video({
-              prompt: t.prompt, slug: slug, aspect: (shot.pose && shot.pose.aspect) || SB.Imagine.aspectOf(p),
+              prompt: t.prompt, slug: slug, aspect: SB.Imagine.aspectFor(p, shot),
               duration: secs, frame: frame || undefined, frameName: 'ref.png', videos: [clay],
               onArgs: function (a) {
                 say('  sent: image_url ×' + ((a.image_url || []).length) + ', video_url ×' + ((a.video_url || []).length) +
@@ -18008,9 +18033,13 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
     });
     sel.addEventListener('change', function () {
       sh.type = sel.value;
-      SB.app.changed(false);
+      /* the other copy of this dropdown (the card's, or Create's) shows it too: changed(false) does not
+         rebuild the cards, so the card kept showing the old type */
+      document.querySelectorAll('[data-shot="' + sh.id + '"] select.type').forEach(function (o) {
+        if (o !== sel) o.value = sh.type;
+      });
+      SB.app.changed(false);          // follows the Create panel as well
       refreshFraming(sh.id);          // the badge is about to agree, or to go
-      SB.PromptPanel.follow();
     });
     return sel;
   }
@@ -21161,7 +21190,11 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
   /* Called from app.changed(): the board moved under the table. */
   function follow() { if (root) render(); }
 
+  /* The last status survives a repaint: head() builds a fresh, empty line, and a run's closing report
+     ("2 failed") was wiped by the render that followed it. */
+  let lastStatus = { txt: '', err: false };
   function setStatus(txt, isErr) {
+    lastStatus = { txt: txt || '', err: !!isErr };
     if (!statusEl) return;
     statusEl.textContent = txt || '';
     /* the line is one row and ellipsised, and errors are the longest thing it
@@ -21383,6 +21416,7 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
     const acts = SB.el('div', 'pt-acts');
     statusEl = SB.el('span', 'pt-status');
     acts.appendChild(statusEl);
+    if (lastStatus.txt) setStatus(lastStatus.txt, lastStatus.err);
     r2.appendChild(acts);
   }
 
@@ -21610,11 +21644,22 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
     if (!jobs.length) { setStatus('Nothing in this scene can be written — the cards missing prompts have no description yet.', true); return; }
     SCENE_RUN[sc.id] = true;
     render();
-    let i = 0, failed = 0;
+    let i = 0, failed = 0, firstErr = null, stopped = false;
+    /* A failure that every card will hit (no server, no key, the day's limit, a proxy) stops the run at the
+       first card: carrying on just spent a call per card to learn the same thing, and said nothing. */
+    const fatal = function (e) {
+      const m = String((e && e.message) || e || '');
+      return !!(SB.netKind && SB.netKind(e)) ||
+        /(429|401|403)|quota|rate|limit|no google api key|could not reach|failed to fetch|network|blocked|refused|not reachable|is it running/i.test(m);
+    };
     const next = function () {
-      if (i >= jobs.length) {
+      if (i >= jobs.length || stopped) {
         delete SCENE_RUN[sc.id];
-        setStatus('scene written' + (failed ? ' — ' + failed + ' failed; the rows say why' : ''), !!failed);
+        if (failed && firstErr) {
+          const msg = (firstErr.message || String(firstErr));
+          writeError(firstErr);   // the dialog for a blocked network, a toast otherwise
+          if (!(SB.netKind && SB.netKind(firstErr))) setStatus((stopped ? 'stopped: ' : '') + failed + ' failed — ' + msg, true);
+        } else setStatus('scene written', false);
         refreshUsage();
         SB.Focus.defer('promptpanel', render);
         return;
@@ -21622,7 +21667,7 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
       const j = jobs[i++];
       setStatus('writing ' + code(j.sh) + ' (' + i + ' of ' + jobs.length + ')…');
       SB.Prompts.generateFor(j.sh, j.roles).then(function () { paintGens(); refreshUsage(); next(); })
-        .catch(function () { failed++; paintGens(); next(); });
+        .catch(function (e) { failed++; if (!firstErr) firstErr = e; if (fatal(e)) stopped = true; paintGens(); next(); });
     };
     next();
   }

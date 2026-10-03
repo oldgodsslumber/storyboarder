@@ -63,7 +63,7 @@
       } },
       { label: 'Close', primary: true }
     ] });
-    say('Model ' + slug + ', ' + secs + ' s each, aspect ' + (shot.pose && shot.pose.aspect || SB.Imagine.aspectOf(p)) +
+    say('Model ' + slug + ', ' + secs + ' s each, aspect ' + SB.Imagine.aspectFor(p, shot) +
       '. Card ' + code + '. ' + new Date().toISOString());
     if (!L) { say('✕ This card has no performance clip — cut it from a take in Pose Bench first.'); return; }
     say('Rendering the clay clip…');
@@ -86,7 +86,7 @@
           const t0 = Date.now();
           return blobOf(t.frame).then(function (frame) {
             return SB.Imagine.video({
-              prompt: t.prompt, slug: slug, aspect: (shot.pose && shot.pose.aspect) || SB.Imagine.aspectOf(p),
+              prompt: t.prompt, slug: slug, aspect: SB.Imagine.aspectFor(p, shot),
               duration: secs, frame: frame || undefined, frameName: 'ref.png', videos: [clay],
               onArgs: function (a) {
                 say('  sent: image_url ×' + ((a.image_url || []).length) + ', video_url ×' + ((a.video_url || []).length) +

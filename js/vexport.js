@@ -124,7 +124,12 @@
     const f = SB.Model.findShot(p, shot.id);
     const dir = ((f && f.code) || 'shot') + '_' + String(model.name || 'still').replace(/[^a-z0-9]+/gi, '_').replace(/^_|_$/g, '').toLowerCase();
     return Promise.all(list.map(function (x) {
-      return fetch(x.url).then(function (r) { return r.arrayBuffer(); }).then(function (b) { return { name: dir + '/' + x.file, data: new Uint8Array(b) }; });
+      /* no url: fetch('') fetched the app's own page, which landed in the zip as a photo */
+      if (!x.url) return Promise.reject(new Error('the file for ' + x.cite + ' (' + x.label + ') is missing'));
+      return fetch(x.url).then(function (r) {
+        if (!r.ok) throw new Error('the file for ' + x.cite + ' (' + x.label + ') could not be read');
+        return r.arrayBuffer();
+      }).then(function (b) { return { name: dir + '/' + x.file, data: new Uint8Array(b) }; });
     })).then(function (entries) {
       const enc = new TextEncoder();
       entries.push({ name: dir + '/prompt.txt', data: enc.encode(pr + '\n') });

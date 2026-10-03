@@ -295,5 +295,32 @@ console.log('\n\u2014 a person a shot names but the cast list forgot is still ca
   eq(shots.map(s => (s.personaIds || []).map(nm).sort().join('+')).join(' | '), 'Maya | Maya | Dev+Maya', 'each card carries the people it names, and Dev is not on hers');
 }
 
+console.log('\n\u2014 removing a person: custom fields and the blocking let go of them too \u2014');
+{
+  // these last two blocks need the real image door and Pose Bench bridge (refsFor, Pose.has): loaded here, at the end
+  sandbox.addEventListener = sandbox.addEventListener || (() => { }); sandbox.removeEventListener = sandbox.removeEventListener || (() => { });
+  sandbox.document.addEventListener = sandbox.document.addEventListener || (() => { });
+  for (const f of ['js/imagine.js', 'js/pose.js']) vm.runInContext(readFileSync(join(root, f), 'utf8'), sandbox, { filename: f });
+  const { p, sh, gus } = board();
+  const f = SB.Fields.add(p, 'Notes');
+  SB.Fields.set(sh, f.id, 'Watch ' + SB.Refs.mark(gus.id, 'Gus') + ' here.');
+  sh.pose = { cast: [{ fig: 'f1', personaId: gus.id, name: 'Gus', color: '#f00', colorName: 'red' }], image: SB.Blobs.image(p, PNG, 1, 1), scene: SB.Blobs.put(p, 'data:application/json,%7B%7D') };
+  has(SB.Personas.clayPreamble(p, sh), 'Gus', 'before: the blocking names Gus');
+  SB.Personas.removeFromShot(p, sh, gus.id);
+  eq(SB.Fields.value(sh, f.id).indexOf(gus.id) < 0, true, 'the field mark is gone');
+  eq(SB.Refs.feed(p, sh, 'image').some(e => e.id === gus.id), false, 'so he does not come back in the feed');
+  eq(/Gus/.test(SB.Personas.clayPreamble(p, sh)), false, 'and the blocking no longer names him');
+}
+
+console.log('\n\u2014 an old blocking follows the board aspect; a chosen one keeps its own \u2014');
+{
+  const { p, sh } = board();
+  p.settings.imagineAspect = '9:16';
+  sh.pose = { aspect: '16:9' };
+  eq(SB.Imagine.aspectFor(p, sh), '9:16', 'a blocking saved before per-shot aspects follows the board');
+  sh.pose.aspectOwn = true;
+  eq(SB.Imagine.aspectFor(p, sh), '16:9', 'one chosen in Pose Bench keeps it');
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed\n');
 if (fail) process.exit(1);

@@ -305,6 +305,14 @@
     shot.castAuto = (shot.castAuto || []).filter(function (x) { return x !== id; });
     setEnters(shot, id, false);
     if (SB.Refs && SB.Refs.rewrite) SB.Refs.rewrite(shot, function (t) { return SB.Refs.unmark(p, t, id); });
+    /* the project's own boxes are read for marks too (Refs.marked): left marked there, the person came
+       straight back on the next render, ✕ and all */
+    if (SB.Fields && SB.Fields.all && SB.Refs && SB.Refs.unmark) {
+      SB.Fields.all(p).forEach(function (f) {
+        const v = SB.Fields.value(shot, f.id);
+        if (v && v.indexOf(id) >= 0) SB.Fields.set(shot, f.id, SB.Refs.unmark(p, v, id));
+      });
+    }
   }
 
   function toggleOnShot(p, shot, id) {
@@ -484,6 +492,14 @@
   /* The one-picture lane with a source frame: imagine.js single() uploads that frame and nothing else, so to the
      image model it is image 1 and every other reference is words. The writer was numbering by feed order
      ("Starting from image 2", "image 1 = Gus", "image 1 is a 3D blocking") for pictures that never travelled. */
+  /* The blocking's cast, less anyone since taken off the card. pose.cast is the record of the blocking and is
+     kept as it was, but a person removed with ✕ was still named by it ("the red figure is Ana") in every still. */
+  function liveCast(p, shot) {
+    const on = {};
+    forShot(p, shot).forEach(function (per) { on[per.id] = 1; });
+    if (SB.Refs && SB.Refs.marked) SB.Refs.marked(p, shot).forEach(function (m) { on[m.id] = 1; });
+    return ((shot && shot.pose && shot.pose.cast) || []).filter(function (c) { return on[c.personaId]; });
+  }
   function soleFrame(p, shot, role) {
     if (role === 'video' || !SB.Imagine || !SB.Imagine.refsFor) return null;
     const s = SB.Imagine.refsFor(p, shot, 'image');
@@ -740,7 +756,7 @@
         'where each person is, which way they face, their pose and what they hold — the people ' +
         'described in this block, in the place the shot description gives.');
       }
-      const who = (shot.pose.cast || []).map(function (c) {
+      const who = liveCast(p, shot).map(function (c) {
         const w = sole ? '' : whereOf(c.personaId);
         return 'the ' + (c.colorName || 'grey') + ' mannequin is ' +
           nowName(c) + (w ? ' (' + w + ')' : '');
@@ -833,7 +849,7 @@
       'framing, lens and perspective, where each person stands, their pose and silhouette, and scale. ' +
       'Do not reproduce its grey untextured material, mannequin bodies, featureless faces, studio floor, ' +
       'grid or backdrop.'];
-    const who = (shot.pose.cast || []).map(function (c) {
+    const who = liveCast(p, shot).map(function (c) {
       const per = find(p, c.personaId), name = per ? (per.name || 'unnamed') : (c.name || '');
       const pic = whereOf(c.personaId);
       return 'the ' + (c.colorName || 'grey') + ' figure is ' + name + (pic ? ' (' + pic + ')' : '');
@@ -842,7 +858,7 @@
       const w0 = who.join('; ');
       bits.push(w0.charAt(0).toUpperCase() + w0.slice(1) + '. Any other figure is an extra.');
     }
-    const pics = (shot.pose.cast || []).filter(function (c) { return whereOf(c.personaId); });
+    const pics = liveCast(p, shot).filter(function (c) { return whereOf(c.personaId); });
     if (pics.length) bits.push('Take each person\u2019s face, hair, skin tone and build ONLY from their ' +
       (onSheet ? 'panel' : 'image') + '.');
     return bits.join(' ');

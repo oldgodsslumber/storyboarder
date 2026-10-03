@@ -1747,7 +1747,7 @@
   }
   /* A shot blocked at its own aspect in Pose Bench (pose.aspect) is generated at it; otherwise the board's. */
   function aspectFor(p, shot) {
-    return (shot && shot.pose && shot.pose.aspect) || aspectOf(p);
+    return (shot && shot.pose && shot.pose.aspectOwn && shot.pose.aspect) || aspectOf(p);   // pose.js aspectFor
   }
 
   /* The name this door knows the model by, falling back to the other one —

@@ -52,8 +52,10 @@
      keeps its own (pose.aspect, chosen in Pose Bench); without one it is the board's. */
   const ASPECTS = ['16:9', '9:16', '1:1', '4:3', '3:4', '3:2'];
   function boardAspect(p) { return SB.Imagine && SB.Imagine.aspectOf ? SB.Imagine.aspectOf(p) : '16:9'; }
+  /* Only a ratio CHOSEN for the shot (pose.aspectOwn) pins it. Every blocking saved before per-shot aspects
+     recorded the board's ratio of the day in pose.aspect, and those cards must keep following the board. */
   function aspectFor(p, shot) {
-    const a = shot && shot.pose && shot.pose.aspect;
+    const a = shot && shot.pose && shot.pose.aspectOwn && shot.pose.aspect;
     return a && ASPECTS.indexOf(a) >= 0 ? a : boardAspect(p);
   }
   function has(shot) { return !!(shot && shot.pose && shot.pose.image && shot.pose.scene); }
@@ -304,6 +306,8 @@
           size: String(d.framing.size || ''), angle: String(d.framing.angle || '') } : null,
         aspect: ASPECTS.indexOf(d.aspect) >= 0 ? d.aspect
           : editor && editor.shotId === shotId ? editor.aspect : (prev && prev.aspect) || '',
+        /* picking the board's own ratio means "follow the board" */
+        aspectOwn: ASPECTS.indexOf(d.aspect) >= 0 ? d.aspect !== boardAspect(p) : !!(prev && prev.aspectOwn),
         at: Date.now(),
         perf: cleanLink(d.link)
       };
@@ -356,7 +360,7 @@
     return new Promise(function (resolve, reject) {
       const id = token();
       const msg = { type: 'posebench:passes', token: id, id: id, scene: scene,
-        aspect: shot.pose.aspect || SB.Imagine.aspectOf(p), longEdge: longEdge || LONG_EDGE,
+        aspect: aspectFor(p, shot), longEdge: longEdge || LONG_EDGE,
         passes: which || PASSES };
       const timer = setTimeout(function () {
         delete w.pending[id]; reject(new Error('Pose Bench did not answer (is three.js reachable?)'));
@@ -387,7 +391,7 @@
     return new Promise(function (resolve, reject) {
       const id = token();
       const msg = { type: 'posebench:clip', token: id, id: id, scene: scene, take: take, link: L,
-        aspect: shot.pose.aspect || SB.Imagine.aspectOf(p), longEdge: opts.longEdge || CLIP_EDGE,
+        aspect: aspectFor(p, shot), longEdge: opts.longEdge || CLIP_EDGE,
         pass: opts.pass || 'beauty', fps: opts.fps || L.fps || 24 };
       /* a clip is rendered frame by frame; a slow machine takes minutes */
       const timer = setTimeout(function () {
