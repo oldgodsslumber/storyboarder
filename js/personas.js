@@ -481,7 +481,16 @@
     return lines.join('\n');
   }
 
+  /* The one-picture lane with a source frame: imagine.js single() uploads that frame and nothing else, so to the
+     image model it is image 1 and every other reference is words. The writer was numbering by feed order
+     ("Starting from image 2", "image 1 = Gus", "image 1 is a 3D blocking") for pictures that never travelled. */
+  function soleFrame(p, shot, role) {
+    if (role === 'video' || !SB.Imagine || !SB.Imagine.refsFor) return null;
+    const s = SB.Imagine.refsFor(p, shot, 'image');
+    return s && !s.export && !s.sheet && !s.byKey && s.carries && s.first && s.first.kind === 'shot' ? s.first : null;
+  }
   function block(p, shot, model, role) {
+    const sole = soleFrame(p, shot, role);
     /* image N -> which subject, assigned before anything is written so the
      * per-kind sections can cite numbers the mapping will agree with.
      * Numbered for THIS lane: the two lanes feed different pictures now, and
@@ -564,7 +573,10 @@
       /* On a sheet there is no "image N" to refer to — one picture, in panels
          — and the numbered wording sent the writer looking for images that do
          not exist, right above a mapping that names panels. */
-      if (onSheet0 && /image \{\{N\}\}/.test(tpl)) {
+      if (sole && tpl) {
+        lines.push('Refer to each recurring subject by name. The only picture uploaded is the source frame (image 1): ' +
+          'whoever is in it keeps exactly how they look there; anyone else is written from the words above.');
+      } else if (onSheet0 && /image \{\{N\}\}/.test(tpl)) {
         lines.push('Refer to each recurring subject by name. Where this frame shows their face, hair or ' +
           'wardrobe, keep it exactly as in their panel of the sheet; where it does not, say nothing about it.');
       } else {
@@ -583,7 +595,10 @@
          do not exist. */
       const sheet = (SB.Imagine && SB.Imagine.sheetPlan && role !== 'video')
         ? SB.Imagine.sheetPlan(p, shot, role) : [];
-      if (sheet.length > 1) {
+      if (sole) {
+        lines.push('  image 1 = the rendered frame of shot ' + sole.label + ' \u2014 the ONLY picture uploaded with ' +
+          'this call. Nothing else listed here is in front of the model: write it from the words.');
+      } else if (sheet.length > 1) {
         lines.push('  ONE picture is supplied and it is a REFERENCE SHEET: ' + sheet.length +
           ' panels on a grey ground, not a scene.');
         sheet.forEach(function (c) {
@@ -612,7 +627,7 @@
       const sent = (SB.Imagine && SB.Imagine.refsFor)
         ? SB.Imagine.refsFor(p, shot, role)
         : { carries: mapped.length, first: mapped[0] || null };
-      if (sheet.length > 1) { /* the sheet lines above already said it */ }
+      if (sole || sheet.length > 1) { /* said above */ }
       else if (mapped.length > 1) {
         const first = sent.first;
         lines.push(sent.carries >= mapped.length
@@ -710,6 +725,11 @@
         const e = numbered.filter(function (x) { return x.id === id; })[0];
         return e ? 'image ' + e.n : '';
       };
+      if (sole) {
+        lines.push('THE BLOCKING \u2014 this shot has a 3D blocking, but it is NOT uploaded with this call (only the ' +
+          'source frame is). Its layout is given in words below. Do not mention a blocking, a render, mannequins ' +
+          'or grey shapes; describe the real scene so it matches that layout.');
+      } else {
       lines.push('THE BLOCKING — ' + (whereOf(blocking.id) || 'image 1') + ' is a 3D blocking of this ' +
         'exact shot: plain mannequins stand in for the people and simple grey shapes for the furniture.');
       /* The instructions about the clay render itself are written by the app, at the head of the
@@ -719,8 +739,9 @@
         'grey shapes, a grid or a studio floor. Describe the real scene so it MATCHES the blocking: ' +
         'where each person is, which way they face, their pose and what they hold — the people ' +
         'described in this block, in the place the shot description gives.');
+      }
       const who = (shot.pose.cast || []).map(function (c) {
-        const w = whereOf(c.personaId);
+        const w = sole ? '' : whereOf(c.personaId);
         return 'the ' + (c.colorName || 'grey') + ' mannequin is ' +
           nowName(c) + (w ? ' (' + w + ')' : '');
       });
@@ -747,10 +768,10 @@
       return e.kind === 'shot' && e.images.length;
     });
     if (shots.length && (role === 'image' || role === 'both')) {
-      const which = shots.map(function (e) {
-        return 'image ' + (e.numbers[0] || '?') + ' is the whole rendered frame of shot ' + e.label;
+      const which = shots.map(function (e, i) {
+        return 'image ' + (sole ? (i ? '?' : 1) : (e.numbers[0] || '?')) + ' is the whole rendered frame of shot ' + e.label;
       }).join('; ');
-      const n0 = shots[0].numbers[0] || 1, moved = newSetup(p, shot, shots[0]);
+      const n0 = sole ? 1 : (shots[0].numbers[0] || 1), moved = newSetup(p, shot, shots[0]);
       lines.push('THE SOURCE FRAME — READ THIS LAST, IT OVERRIDES THE ABOVE');
       if (moved) {
         lines.push(which + '. It is an earlier camera setup of this same scene: not a subject, and not the ' +
@@ -766,7 +787,7 @@
         'derived from.');
       lines.push('The prompt you write is an EDIT of that frame, not a fresh description of a ' +
         'scene. Open it by naming the image — "Starting from image ' +
-        (shots[0].numbers[0] || 1) + ', …" — then state ONLY what changes: the camera, the ' +
+        n0 + ', …" — then state ONLY what changes: the camera, the ' +
         'framing, the moment. Do NOT re-describe the place, the light, the lens, the grade or ' +
         'the wardrobe, and do not re-establish the setting: all of it is inherited from that ' +
         'frame unchanged, and describing it again is what makes the edit come back as a ' +

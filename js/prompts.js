@@ -29,8 +29,10 @@
     /* The clip reads its motion box, and only that, once it is filled. The general description re-tells the
        scene the first frame already shows ("a dim call-centre at night, monitors glowing"), and the writer
        dutifully re-described it instead of the action. Its @ marks still count (Refs.boxes), so the export lane
-       uploads the same pictures. Empty, the general description stands in. */
-    if (role === 'video' && SB.Refs.plain(P(), shot.videoDescription || '').trim()) {
+       uploads the same pictures. Empty, the general description stands in. Only once there IS a frame: with
+       none, the setting has to come from words, and "He lowers the letter" alone gave the writer no place and
+       not even a name. */
+    if (role === 'video' && (shot.render || shot.image) && SB.Refs.plain(P(), shot.videoDescription || '').trim()) {
       return SB.Refs.plain(P(), shot.videoDescription).trim();
     }
     const parts = SB.Refs.boxes(shot, role)
@@ -155,7 +157,11 @@
   }
   function imageBlock(shot, m) {
     const ctx = contextFor(shot, 'image'); ctx.MODEL = m.name;
-    const bc = blockingCamera(shot);
+    /* An edit of another card's frame from the same camera inherits its lens; only a new setup takes the
+       blocking's (DERIVED_RIDER and the closing line both say not to restate the lens). */
+    const srcFrame = SB.Refs.feed(P(), shot, 'image').filter(function (e) { return e.kind === 'shot' && e.images.length; })[0];
+    const sameCamEdit = !!srcFrame && !(SB.Personas.newSetup && SB.Personas.newSetup(P(), shot, srcFrame));
+    const bc = sameCamEdit ? null : blockingCamera(shot);
     ctx.LOOK = [SB.Brand.lookLineFor(P(), shot),
       bc ? 'The blocking is framed on a ' + bc.lens + 'mm lens at ' + bc.angle + ': use that focal length and that camera height.' : '']
       .filter(Boolean).join('\n');
@@ -482,9 +488,13 @@
     if (!job.check) return Promise.resolve(res);
     const bad = job.check(res);
     if (!bad.length) return Promise.resolve(res);
+    /* The draft goes back with the problems: told only "keep everything else the same", the writer had never
+       seen what it wrote, so a rewrite asked to fix one word came back as a different prompt. */
+    let draft = '';
+    try { draft = JSON.stringify(res); } catch (e) { draft = ''; }
     return callWriter(
-      job.text + '\n\nYour previous answer did not follow the format: ' + bad.join(' ') +
-      ' Write it again, correctly. Keep everything else the same.',
+      job.text + '\n\nYOUR PREVIOUS ANSWER:\n' + draft + '\n\nIt has these problems: ' + bad.join(' ') +
+      ' Fix them in that answer and keep the rest of it as it is. Return the whole answer again, in the same shape.',
       job.keys, job.system
     ).catch(function () { return res; });   // the draft is better than nothing
   }

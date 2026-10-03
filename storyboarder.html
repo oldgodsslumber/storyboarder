@@ -1457,7 +1457,7 @@ body.comment-mode .frame{cursor:crosshair}
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-10-03 14:41 · d8ce552+";</script>
+<script>window.SB_BUILD = "2026-10-03 14:44 · 47e83f1+";</script>
 
 <div id="app">
 
@@ -3643,7 +3643,7 @@ window.SB = window.SB || {};
    * format, binding a label to a picture, not a repetition. */
   const VIDEO_INHERIT_RIDER = [
     'THE FIRST FRAME IS SUPPLIED TO THE MODEL AS A PICTURE',
-    '- The block headed THE FIRST FRAME THIS CLIP ANIMATES says what is in that picture. ' +
+    '- Where a block headed THE FIRST FRAME THIS CLIP ANIMATES is given, it says what is in that picture. ' +
     'It is settled fact. Whoever is standing is standing, whoever is holding something is ' +
     'holding it, and the shot opens exactly there \u2014 never write an action that starts ' +
     'from a different arrangement. If the description reads as though someone is elsewhere, ' +
@@ -4084,7 +4084,12 @@ window.SB = window.SB || {};
    * aperture, skin pores, grain), the framing block and "fold this in as description": the still's brief,
    * which came back as a video prompt re-describing the picture instead of moving it. */
   function videoFrameLed(p, shot) {
-    return SB.Model.videoInherits(SB.Model.videoModel(p)) || !!(shot && (shot.render || shot.image));
+    const vm = SB.Model.videoModel(p);
+    if (SB.Model.videoInherits(vm)) return true;
+    /* Stock MiniMax H3 writes its own six sections, and those DESCRIBE the opening picture by design; told
+       "write nothing already visible" as well, it was handed two opposite briefs in one request. */
+    if (SB.H3 && SB.H3.stock && SB.H3.stock(vm)) return false;
+    return !!(shot && (shot.render || shot.image));
   }
   function closingFor(p, shot, role) {
     /* Is a frame of another shot being handed over? Then this still is an edit
@@ -4229,9 +4234,10 @@ window.SB = window.SB || {};
     'focal length, aperture and camera height named; real focus \u2014 one sharp plane and a shallow depth of ' +
     'field, the background falling soft; a muted, filmic grade with fine grain; the light source and its ' +
     'quality; and the texture of skin and materials.';
-  const LOOK_LINE_CUSTOM = 'Make it look shot for real, as the house style sets it: name the camera and lens ' +
-    '(focal length, aperture, camera height), the focus and depth of field, the grade, the light source and its ' +
-    'quality, and the texture of skin and materials.';
+  /* A board's own house style may not be photographic at all (a hand-drawn, cel-shaded board was told to "look
+     shot for real" and name an Alexa). So it is asked for in kind, and not checked. */
+  const LOOK_LINE_CUSTOM = 'Carry the house style\u2019s look into the prompt as concrete description: its medium ' +
+    'and rendering, the light, the colour and grade, and the texture of surfaces \u2014 whatever the house style sets.';
   function lookLineFor(p, shot) {
     if (!looksApply(p, shot)) return '';
     return brandOf(p).custom ? LOOK_LINE_CUSTOM : LOOK_LINE;
@@ -4252,7 +4258,7 @@ window.SB = window.SB || {};
     return LOOK_CHECKS.filter(function (c) { return !c.re.test(t); });
   }
   function lookProblems(p, shot, text) {
-    if (!looksApply(p, shot) || !String(text || '').trim()) return [];
+    if (!looksApply(p, shot) || brandOf(p).custom || !String(text || '').trim()) return [];
     const miss = lookMissing(text);
     const core = miss.filter(function (c) { return c.core; });
     if (!core.length && miss.length < 2) return [];
@@ -9123,11 +9129,15 @@ window.SB = window.SB || {};
      * its prompt, shipped into the shot's refs/ folder — for a frame the
      * description says is an empty corridor. Marking somebody for the clip
      * must not put their face in the picture. */
+    /* "The other lane" is that lane's OWN box. Since a filled first-frame box became all the still reads, the
+       general description is no longer in the image lane's boxes, and counting its @ marks as "elsewhere"
+       dropped a hand-cast person from the still entirely: no picture, no cast block. */
     const elsewhere = {};
-    if (role) {
+    if (role === 'image' || role === 'video') {
       const here = {};
       marked(p, shot, role).forEach(function (m) { here[m.id] = 1; });
-      marked(p, shot).forEach(function (m) { if (!here[m.id]) elsewhere[m.id] = 1; });
+      parse(p, role === 'image' ? shot.videoDescription : shot.imageDescription)
+        .forEach(function (m) { if (!here[m.id]) elsewhere[m.id] = 1; });
     }
     SB.Personas.forShot(p, shot).forEach(function (per) {
       if (seen[per.id]) return;
@@ -9809,7 +9819,16 @@ window.SB = window.SB || {};
     return lines.join('\n');
   }
 
+  /* The one-picture lane with a source frame: imagine.js single() uploads that frame and nothing else, so to the
+     image model it is image 1 and every other reference is words. The writer was numbering by feed order
+     ("Starting from image 2", "image 1 = Gus", "image 1 is a 3D blocking") for pictures that never travelled. */
+  function soleFrame(p, shot, role) {
+    if (role === 'video' || !SB.Imagine || !SB.Imagine.refsFor) return null;
+    const s = SB.Imagine.refsFor(p, shot, 'image');
+    return s && !s.export && !s.sheet && !s.byKey && s.carries && s.first && s.first.kind === 'shot' ? s.first : null;
+  }
   function block(p, shot, model, role) {
+    const sole = soleFrame(p, shot, role);
     /* image N -> which subject, assigned before anything is written so the
      * per-kind sections can cite numbers the mapping will agree with.
      * Numbered for THIS lane: the two lanes feed different pictures now, and
@@ -9892,7 +9911,10 @@ window.SB = window.SB || {};
       /* On a sheet there is no "image N" to refer to — one picture, in panels
          — and the numbered wording sent the writer looking for images that do
          not exist, right above a mapping that names panels. */
-      if (onSheet0 && /image \{\{N\}\}/.test(tpl)) {
+      if (sole && tpl) {
+        lines.push('Refer to each recurring subject by name. The only picture uploaded is the source frame (image 1): ' +
+          'whoever is in it keeps exactly how they look there; anyone else is written from the words above.');
+      } else if (onSheet0 && /image \{\{N\}\}/.test(tpl)) {
         lines.push('Refer to each recurring subject by name. Where this frame shows their face, hair or ' +
           'wardrobe, keep it exactly as in their panel of the sheet; where it does not, say nothing about it.');
       } else {
@@ -9911,7 +9933,10 @@ window.SB = window.SB || {};
          do not exist. */
       const sheet = (SB.Imagine && SB.Imagine.sheetPlan && role !== 'video')
         ? SB.Imagine.sheetPlan(p, shot, role) : [];
-      if (sheet.length > 1) {
+      if (sole) {
+        lines.push('  image 1 = the rendered frame of shot ' + sole.label + ' \u2014 the ONLY picture uploaded with ' +
+          'this call. Nothing else listed here is in front of the model: write it from the words.');
+      } else if (sheet.length > 1) {
         lines.push('  ONE picture is supplied and it is a REFERENCE SHEET: ' + sheet.length +
           ' panels on a grey ground, not a scene.');
         sheet.forEach(function (c) {
@@ -9940,7 +9965,7 @@ window.SB = window.SB || {};
       const sent = (SB.Imagine && SB.Imagine.refsFor)
         ? SB.Imagine.refsFor(p, shot, role)
         : { carries: mapped.length, first: mapped[0] || null };
-      if (sheet.length > 1) { /* the sheet lines above already said it */ }
+      if (sole || sheet.length > 1) { /* said above */ }
       else if (mapped.length > 1) {
         const first = sent.first;
         lines.push(sent.carries >= mapped.length
@@ -10038,6 +10063,11 @@ window.SB = window.SB || {};
         const e = numbered.filter(function (x) { return x.id === id; })[0];
         return e ? 'image ' + e.n : '';
       };
+      if (sole) {
+        lines.push('THE BLOCKING \u2014 this shot has a 3D blocking, but it is NOT uploaded with this call (only the ' +
+          'source frame is). Its layout is given in words below. Do not mention a blocking, a render, mannequins ' +
+          'or grey shapes; describe the real scene so it matches that layout.');
+      } else {
       lines.push('THE BLOCKING — ' + (whereOf(blocking.id) || 'image 1') + ' is a 3D blocking of this ' +
         'exact shot: plain mannequins stand in for the people and simple grey shapes for the furniture.');
       /* The instructions about the clay render itself are written by the app, at the head of the
@@ -10047,8 +10077,9 @@ window.SB = window.SB || {};
         'grey shapes, a grid or a studio floor. Describe the real scene so it MATCHES the blocking: ' +
         'where each person is, which way they face, their pose and what they hold — the people ' +
         'described in this block, in the place the shot description gives.');
+      }
       const who = (shot.pose.cast || []).map(function (c) {
-        const w = whereOf(c.personaId);
+        const w = sole ? '' : whereOf(c.personaId);
         return 'the ' + (c.colorName || 'grey') + ' mannequin is ' +
           nowName(c) + (w ? ' (' + w + ')' : '');
       });
@@ -10075,10 +10106,10 @@ window.SB = window.SB || {};
       return e.kind === 'shot' && e.images.length;
     });
     if (shots.length && (role === 'image' || role === 'both')) {
-      const which = shots.map(function (e) {
-        return 'image ' + (e.numbers[0] || '?') + ' is the whole rendered frame of shot ' + e.label;
+      const which = shots.map(function (e, i) {
+        return 'image ' + (sole ? (i ? '?' : 1) : (e.numbers[0] || '?')) + ' is the whole rendered frame of shot ' + e.label;
       }).join('; ');
-      const n0 = shots[0].numbers[0] || 1, moved = newSetup(p, shot, shots[0]);
+      const n0 = sole ? 1 : (shots[0].numbers[0] || 1), moved = newSetup(p, shot, shots[0]);
       lines.push('THE SOURCE FRAME — READ THIS LAST, IT OVERRIDES THE ABOVE');
       if (moved) {
         lines.push(which + '. It is an earlier camera setup of this same scene: not a subject, and not the ' +
@@ -10094,7 +10125,7 @@ window.SB = window.SB || {};
         'derived from.');
       lines.push('The prompt you write is an EDIT of that frame, not a fresh description of a ' +
         'scene. Open it by naming the image — "Starting from image ' +
-        (shots[0].numbers[0] || 1) + ', …" — then state ONLY what changes: the camera, the ' +
+        n0 + ', …" — then state ONLY what changes: the camera, the ' +
         'framing, the moment. Do NOT re-describe the place, the light, the lens, the grade or ' +
         'the wardrobe, and do not re-establish the setting: all of it is inherited from that ' +
         'frame unchanged, and describing it again is what makes the edit come back as a ' +
@@ -19279,8 +19310,10 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
     /* The clip reads its motion box, and only that, once it is filled. The general description re-tells the
        scene the first frame already shows ("a dim call-centre at night, monitors glowing"), and the writer
        dutifully re-described it instead of the action. Its @ marks still count (Refs.boxes), so the export lane
-       uploads the same pictures. Empty, the general description stands in. */
-    if (role === 'video' && SB.Refs.plain(P(), shot.videoDescription || '').trim()) {
+       uploads the same pictures. Empty, the general description stands in. Only once there IS a frame: with
+       none, the setting has to come from words, and "He lowers the letter" alone gave the writer no place and
+       not even a name. */
+    if (role === 'video' && (shot.render || shot.image) && SB.Refs.plain(P(), shot.videoDescription || '').trim()) {
       return SB.Refs.plain(P(), shot.videoDescription).trim();
     }
     const parts = SB.Refs.boxes(shot, role)
@@ -19405,7 +19438,11 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
   }
   function imageBlock(shot, m) {
     const ctx = contextFor(shot, 'image'); ctx.MODEL = m.name;
-    const bc = blockingCamera(shot);
+    /* An edit of another card's frame from the same camera inherits its lens; only a new setup takes the
+       blocking's (DERIVED_RIDER and the closing line both say not to restate the lens). */
+    const srcFrame = SB.Refs.feed(P(), shot, 'image').filter(function (e) { return e.kind === 'shot' && e.images.length; })[0];
+    const sameCamEdit = !!srcFrame && !(SB.Personas.newSetup && SB.Personas.newSetup(P(), shot, srcFrame));
+    const bc = sameCamEdit ? null : blockingCamera(shot);
     ctx.LOOK = [SB.Brand.lookLineFor(P(), shot),
       bc ? 'The blocking is framed on a ' + bc.lens + 'mm lens at ' + bc.angle + ': use that focal length and that camera height.' : '']
       .filter(Boolean).join('\n');
@@ -19732,9 +19769,13 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
     if (!job.check) return Promise.resolve(res);
     const bad = job.check(res);
     if (!bad.length) return Promise.resolve(res);
+    /* The draft goes back with the problems: told only "keep everything else the same", the writer had never
+       seen what it wrote, so a rewrite asked to fix one word came back as a different prompt. */
+    let draft = '';
+    try { draft = JSON.stringify(res); } catch (e) { draft = ''; }
     return callWriter(
-      job.text + '\n\nYour previous answer did not follow the format: ' + bad.join(' ') +
-      ' Write it again, correctly. Keep everything else the same.',
+      job.text + '\n\nYOUR PREVIOUS ANSWER:\n' + draft + '\n\nIt has these problems: ' + bad.join(' ') +
+      ' Fix them in that answer and keep the rest of it as it is. Return the whole answer again, in the same shape.',
       job.keys, job.system
     ).catch(function () { return res; });   // the draft is better than nothing
   }

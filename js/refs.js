@@ -251,11 +251,15 @@
      * its prompt, shipped into the shot's refs/ folder — for a frame the
      * description says is an empty corridor. Marking somebody for the clip
      * must not put their face in the picture. */
+    /* "The other lane" is that lane's OWN box. Since a filled first-frame box became all the still reads, the
+       general description is no longer in the image lane's boxes, and counting its @ marks as "elsewhere"
+       dropped a hand-cast person from the still entirely: no picture, no cast block. */
     const elsewhere = {};
-    if (role) {
+    if (role === 'image' || role === 'video') {
       const here = {};
       marked(p, shot, role).forEach(function (m) { here[m.id] = 1; });
-      marked(p, shot).forEach(function (m) { if (!here[m.id]) elsewhere[m.id] = 1; });
+      parse(p, role === 'image' ? shot.videoDescription : shot.imageDescription)
+        .forEach(function (m) { if (!here[m.id]) elsewhere[m.id] = 1; });
     }
     SB.Personas.forShot(p, shot).forEach(function (per) {
       if (seen[per.id]) return;

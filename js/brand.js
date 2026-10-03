@@ -196,7 +196,7 @@
    * format, binding a label to a picture, not a repetition. */
   const VIDEO_INHERIT_RIDER = [
     'THE FIRST FRAME IS SUPPLIED TO THE MODEL AS A PICTURE',
-    '- The block headed THE FIRST FRAME THIS CLIP ANIMATES says what is in that picture. ' +
+    '- Where a block headed THE FIRST FRAME THIS CLIP ANIMATES is given, it says what is in that picture. ' +
     'It is settled fact. Whoever is standing is standing, whoever is holding something is ' +
     'holding it, and the shot opens exactly there \u2014 never write an action that starts ' +
     'from a different arrangement. If the description reads as though someone is elsewhere, ' +
@@ -637,7 +637,12 @@
    * aperture, skin pores, grain), the framing block and "fold this in as description": the still's brief,
    * which came back as a video prompt re-describing the picture instead of moving it. */
   function videoFrameLed(p, shot) {
-    return SB.Model.videoInherits(SB.Model.videoModel(p)) || !!(shot && (shot.render || shot.image));
+    const vm = SB.Model.videoModel(p);
+    if (SB.Model.videoInherits(vm)) return true;
+    /* Stock MiniMax H3 writes its own six sections, and those DESCRIBE the opening picture by design; told
+       "write nothing already visible" as well, it was handed two opposite briefs in one request. */
+    if (SB.H3 && SB.H3.stock && SB.H3.stock(vm)) return false;
+    return !!(shot && (shot.render || shot.image));
   }
   function closingFor(p, shot, role) {
     /* Is a frame of another shot being handed over? Then this still is an edit
@@ -782,9 +787,10 @@
     'focal length, aperture and camera height named; real focus \u2014 one sharp plane and a shallow depth of ' +
     'field, the background falling soft; a muted, filmic grade with fine grain; the light source and its ' +
     'quality; and the texture of skin and materials.';
-  const LOOK_LINE_CUSTOM = 'Make it look shot for real, as the house style sets it: name the camera and lens ' +
-    '(focal length, aperture, camera height), the focus and depth of field, the grade, the light source and its ' +
-    'quality, and the texture of skin and materials.';
+  /* A board's own house style may not be photographic at all (a hand-drawn, cel-shaded board was told to "look
+     shot for real" and name an Alexa). So it is asked for in kind, and not checked. */
+  const LOOK_LINE_CUSTOM = 'Carry the house style\u2019s look into the prompt as concrete description: its medium ' +
+    'and rendering, the light, the colour and grade, and the texture of surfaces \u2014 whatever the house style sets.';
   function lookLineFor(p, shot) {
     if (!looksApply(p, shot)) return '';
     return brandOf(p).custom ? LOOK_LINE_CUSTOM : LOOK_LINE;
@@ -805,7 +811,7 @@
     return LOOK_CHECKS.filter(function (c) { return !c.re.test(t); });
   }
   function lookProblems(p, shot, text) {
-    if (!looksApply(p, shot) || !String(text || '').trim()) return [];
+    if (!looksApply(p, shot) || brandOf(p).custom || !String(text || '').trim()) return [];
     const miss = lookMissing(text);
     const core = miss.filter(function (c) { return c.core; });
     if (!core.length && miss.length < 2) return [];
