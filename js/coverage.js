@@ -275,8 +275,10 @@
       'somebody similar in another scene. Never reuse a name from NAMES ALREADY TAKEN.',
       '- Return every person the scene needs in the "cast" array. For someone listed under IN ' +
       'THIS SCENE, return their name alone — leave description and imagePrompt out, they are ' +
-      'already written. For a new person, add them with a short handle for a name ("Ops lead", ' +
-      'not a character name), a description covering age range, build, hair, skin tone and a ' +
+      'already written. For a new person, add them under the name the scene description gives them ' +
+      '("Dev", "Maya") and use that same name in every shot; only someone the scene leaves unnamed gets a ' +
+      'short handle instead ("Courier", "Night guard"), never an invented character name. Give each a ' +
+      'description covering age range, build, hair, skin tone and a ' +
       'specific outfit down to fabric and colour, and an imagePrompt that would produce a clean ' +
       'front-facing reference frame of them — plain background, natural light, full wardrobe ' +
       'visible, neutral expression.',
