@@ -129,8 +129,8 @@
           /the picture wins/.test(vText), '');
         t('and the standing order not to describe it again',
           /Do NOT write it out again/.test(vText), '');
-        t('with the shared description reaching it too',
-          /the lamp on/.test(vText), '');
+        t('and not the general description: a filled motion box is all the clip reads',
+          !/the lamp on/.test(vText), '');
 
         {
           const bare = SB.Model.addShot(P(), P().scenes[0].id, {});

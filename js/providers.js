@@ -101,6 +101,16 @@
 
   /* ---------------- ooba / OpenAI-compatible ---------------- */
 
+  /* A local model now and then emits a broken multi-byte token, which arrives as U+FFFD: a stored prompt read
+   * "focus[?]fingers" where it meant an em dash. Mended rather than kept: between a letter and s/t/d/re/ll/ve
+   * it was an apostrophe ("Maya's"), between two words a dash, and anywhere else it goes. */
+  function mend(t) {
+    if (t.indexOf('\uFFFD') < 0) return t;
+    return t.replace(/([A-Za-z])\uFFFD(s|t|d|re|ll|ve|m)\b/g, '$1\u2019$2')
+      .replace(/(\S)\uFFFD+(\S)/g, '$1\u2014$2')
+      .replace(/\uFFFD+/g, '');
+  }
+
   /* Trailing slashes and a pasted-in /v1 are both things people will type. */
   function baseUrl(raw) {
     let u = String(raw == null ? SB.Store.getOoba().url : raw).trim();
@@ -203,7 +213,7 @@
         throw new Error('The local model returned no text' +
           (ch && ch.finish_reason ? ' (' + ch.finish_reason + ')' : ''));
       }
-      return raw;
+      return mend(raw);
     },
 
     /* `path` is the endpoint the request actually went to. It defaults to the
