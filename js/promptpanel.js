@@ -55,7 +55,7 @@
     document.getElementById('modalRoot').appendChild(root);
     document.getElementById('btnPrompts').classList.add('on');
     watchJobs();
-    startFolds();
+    startFolds(); foldsFor = P() && P().id;
     render();
   }
 
@@ -443,9 +443,12 @@
      was rather than to <body>. */
   function render() { SB.Focus.keep(renderNow); }
 
+  let foldsFor = null;   // the board the fold map belongs to
   function renderNow() {
     if (!root || !P()) return;
     const p = P();
+    /* a board opened while the panel is up gets its own folds, not the last board's (written under its key) */
+    if (foldsFor !== p.id) { foldsFor = p.id; startFolds(); }
     const im = SB.Model.imageModel(p), vm = SB.Model.videoModel(p);
     const rows = allRows();
     head(im, vm, rows);
@@ -1371,11 +1374,35 @@
     b.title = 'Take ' + label + ' off this card \u2014 uncast, and any @' + label + ' left as plain text';
     b.onclick = function (ev) {
       ev.stopPropagation();
+      /* one click rewrites up to three boxes and the custom fields, and the board's undo only covers the
+         script, so the toast carries its own way back */
+      const keys = ['personaIds', 'castAuto', 'castEnters', 'description', 'imageDescription', 'videoDescription', 'fields'];
+      const before = {};
+      keys.forEach(function (k) { if (sh[k] !== undefined) before[k] = SB.clone ? SB.clone(sh[k]) : JSON.parse(JSON.stringify(sh[k])); });
       SB.Personas.removeFromShot(P(), sh, id);
       SB.app.changed(true);
-      SB.toast(label + ' is off ' + code(sh));
+      SB.toast(label + ' is off ' + code(sh), false, { action: { label: 'Undo', onClick: function () {
+        keys.forEach(function (k) { if (k in before) sh[k] = before[k]; });
+        SB.app.changed(true);
+      } } });
     };
     return b;
+  }
+
+  /* The export lists number only the files that go up, so a person with no picture (written in words, under
+     NO PICTURE) had no row and no \u2715 there: they could not be taken off from this screen. */
+  function noPictureRows(wrap, sh, role) {
+    SB.Refs.feed(P(), sh, role).forEach(function (e) {
+      if (e.kind !== 'subject' || e.images.length) return;
+      const it = SB.el('div', 'pt-fe empty');
+      it.appendChild(SB.el('span', 'feed-n', '\u2013'));
+      it.appendChild(SB.el('span', 'feed-thumb none', '?'));
+      it.appendChild(SB.el('span', 'feed-file none', 'no picture'));
+      it.appendChild(SB.el('span', 'feed-who', e.label + ' \u00b7 described in words'));
+      it.appendChild(offBtn(sh, e.id, e.label));
+      it.title = e.label + ' has no reference picture: the prompt describes them in words.';
+      wrap.appendChild(it);
+    });
   }
 
   function feedList(sh, code, role) {
@@ -1413,6 +1440,7 @@
         it.classList.add('mxm-fe');
         wrap.appendChild(it);
       });
+      noPictureRows(wrap, sh, role);
       if (!m.frame) {
         wrap.appendChild(SB.el('div', 'pt-none', 'no still needed — the blocking is the reference' +
           (m.clip ? '' : '; record a performance in Pose Bench for the motion')));
@@ -1436,6 +1464,7 @@
         if (x.kind === 'subject' && x.id) it.appendChild(offBtn(sh, x.id, x.label));
         wrap.appendChild(it);
       });
+      noPictureRows(wrap, sh, role);
       if (!files.length) wrap.appendChild(SB.el('div', 'pt-none', 'no files \u2014 the prompt is the whole call'));
       const b = SB.el('button', 'mini vexp-btn', '\u2913 Files');
       b.title = 'Download ' + files.length + ' file' + (files.length === 1 ? '' : 's') + ' in upload order, with prompt.txt and ORDER.txt';
@@ -1470,6 +1499,7 @@
         if (a.kind === 'subject' && a.subjectId) it.appendChild(offBtn(sh, a.subjectId, a.role));
         wrap.appendChild(it);
       });
+      noPictureRows(wrap, sh, role);
       if (!list.length) wrap.appendChild(SB.el('div', 'pt-none', 'no files \u2014 the prompt is the whole call'));
       const b = SB.el('button', 'mini vexp-btn', '\u2913 Files');
       b.title = 'Download ' + list.length + ' file' + (list.length === 1 ? '' : 's') + ' in upload order, with prompt.txt and ORDER.txt';
