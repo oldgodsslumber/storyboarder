@@ -3620,7 +3620,7 @@
           }),
           JSON.stringify(sc.shots.map(function (s) { return s.personaIds; })));
         t('the row reports what it did, and who it cast',
-          /3 shots added · cast Courier/.test(document.querySelector(sel + '.sc-ai-status').textContent),
+          /3 shots added · new: Courier/.test(document.querySelector(sel + '.sc-ai-status').textContent),
           document.querySelector(sel + '.sc-ai-status').textContent);
 
         const bUndo = Array.prototype.filter.call(document.querySelectorAll(sel + '.sc-ai .mini'),

@@ -493,7 +493,20 @@
       const mentioned = {};
       cast.forEach(function (per) { mentioned[nameKey(per.name)] = per; });
       const byName = {}, created = [], renamed = [], used = [];
-      (out.cast || []).forEach(function (c) {
+      /* A shot can name somebody the cast array forgot (a local model dropped Maya from it and kept her in
+         every shot's own list). Unresolved, she fell through to the one-person rule below and her cards were
+         pinned to Dev, whose wardrobe then turned up on her. So every name a shot uses is a cast entry too:
+         a new person with no description yet, said out loud like any other newcomer. */
+      const castList = (out.cast || []).slice();
+      const listed = {};
+      castList.forEach(function (c) { if (c && c.name) listed[nameKey(String(c.name).trim())] = true; });
+      list.forEach(function (x) {
+        ((x && x.cast) || []).forEach(function (nm) {
+          const k = nameKey(String(nm || '').trim());
+          if (k && !listed[k]) { listed[k] = true; castList.push({ name: String(nm).trim() }); }
+        });
+      });
+      castList.forEach(function (c) {
         const nm = String((c && c.name) || '').trim();
         if (!nm || byName[nameKey(nm)]) return;
         let per = mentioned[nameKey(nm)];
@@ -544,8 +557,9 @@
       }
 
       function idsFor(x) {
-        const named = ((x && x.cast) || []).map(lookup).filter(Boolean);
-        if (named.length) {
+        const asked = (x && x.cast) || [];
+        const named = asked.map(lookup).filter(Boolean);
+        if (named.length || asked.length) {
           return named.filter(function (per, i) { return named.indexOf(per) === i; })
             .map(function (per) { return per.id; });
         }

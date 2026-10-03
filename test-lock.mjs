@@ -273,5 +273,27 @@ console.log('\n\u2014 the video brief is about motion, in the export lane too \u
   has(JSON.stringify(asked[0]), 'HOUSE STYLE', 'export with no frame at all still gets the look (nothing else carries it)');
 }
 
+console.log('\n\u2014 a person a shot names but the cast list forgot is still cast (not pinned to someone else) \u2014');
+{
+  if (!SB.Coverage) vm.runInContext(readFileSync(join(root, 'js/coverage.js'), 'utf8'), sandbox, { filename: 'js/coverage.js' });
+  const { p } = board();
+  SB.Personas.all(p).slice().forEach(x => SB.Personas.remove(p, x.id));
+  const sc = p.scenes[0]; sc.shots = []; SB.Model.addShot(p, sc.id, {});
+  sc.description = 'Maya finds a note under her keyboard and pockets it as her supervisor Dev walks over.';
+  asked = []; replies = [{
+    cast: [{ name: 'Dev', description: 'A man in his forties in a grey crew-neck sweater.', imagePrompt: 'x' }],
+    shots: [
+      { beat: 'hands find it', type: 'Insert', description: 'Maya lifts the keyboard and finds the note.', cast: ['Maya'] },
+      { beat: 'she reads', type: 'Close-up', description: 'Maya reads the note.', cast: ['Maya'] },
+      { beat: 'he arrives', type: 'Medium', description: 'Dev walks over to Maya.', cast: ['Dev', 'Maya'] }
+    ]
+  }];
+  const g = await SB.Coverage.generate(p, sc.id, { count: 3 });
+  const nm = id => (SB.Personas.all(p).find(x => x.id === id) || {}).name;
+  eq(g.created.map(x => x.name).sort().join(','), 'Dev,Maya', 'Maya is created too');
+  const shots = g.ids.map(id => SB.Model.findShot(p, id).shot);
+  eq(shots.map(s => (s.personaIds || []).map(nm).sort().join('+')).join(' | '), 'Maya | Maya | Dev+Maya', 'each card carries the people it names, and Dev is not on hers');
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed\n');
 if (fail) process.exit(1);
