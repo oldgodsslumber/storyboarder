@@ -2815,6 +2815,15 @@ function placeBuild(res,request,into){
     const pos=f&&!big?f.joints.pelvis.pivot.getWorldPosition(new V3()).setY(0).addScaledVector(A.fwd,depth/2+0.8)
       :new V3(cam.target.x,0,cam.target.z);
     p=new Prop({type:'build',parts:cl.parts,name:res.name,request,pos:pos.toArray(),turn:f&&!big?f.turn+180:0}); props.push(p);
+    /* Every new build used to land on the same spot in front of the figure, so a second one was built inside
+       the first. Step sideways (alternating, further each time) until its footprint is clear of the other props. */
+    if(!big){
+      const foot=q=>{q.group.updateMatrixWorld(true);const b=new THREE.Box3().setFromObject(q.group);b.min.y=-1;b.max.y=99;return b;};
+      const others=props.filter(q=>q!==p&&!q.attach), side=f?A.left.clone():new V3(1,0,0), w=all.max.x-all.min.x+0.35;
+      const base=p.group.position.clone();
+      for(let i=1;i<=8&&others.some(q=>foot(q).intersectsBox(foot(p)));i++)
+        p.group.position.copy(base).addScaledVector(side,(i%2?1:-1)*Math.ceil(i/2)*w);
+    }
   }
   selectProp(p); commit(); refreshBuildUI();
   return notes;
