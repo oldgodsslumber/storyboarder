@@ -2629,6 +2629,17 @@ function buildGeo(q){
     default:return {geo:BOXG,scale:[x,y,z]};
   }
 }
+/* A mirror copy's rotation. Every shape is symmetric left to right, so the x mirror is the rotation reflected.
+   A wedge is not symmetric front to back: its z mirror is the x mirror turned half round, or the back half of a
+   pitched roof slopes the same way as the front half (a sawtooth). */
+function mirrorRot(q,m){
+  if(m==='x')return [q.rot[0],-q.rot[1],-q.rot[2]];
+  if(q.shape!=='wedge')return [-q.rot[0],-q.rot[1],q.rot[2]];
+  const r=new THREE.Quaternion().setFromAxisAngle(new V3(0,1,0),Math.PI)
+    .multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(q.rot[0]*DEG,-q.rot[1]*DEG,-q.rot[2]*DEG)));
+  const e=new THREE.Euler().setFromQuaternion(r);
+  return [e.x,e.y,e.z].map(v=>Math.round(v*RAD*1000)/1000);
+}
 /* The model's answer -> plain parts. Helpers first (repeat, mirror, on), then limits. Anything malformed is
    dropped and counted rather than failing the whole build. */
 function expandParts(json){
@@ -2651,8 +2662,7 @@ function expandParts(json){
       if(along&&n>1)for(let k=1;k<n;k++)copies.push(Object.assign({},base,{id:base.id+'_'+(k+1),at:base.at.map((v,j)=>v+along[j]*k)}));
       const m=String(r.mirror||'').toLowerCase();
       if(m==='x'||m==='z'){const ax=m==='x'?0:2;
-        copies=copies.concat(copies.map(c=>Object.assign({},c,{id:c.id+'_m',at:c.at.map((v,j)=>j===ax?-v:v),
-          rot:m==='x'?[c.rot[0],-c.rot[1],-c.rot[2]]:[-c.rot[0],-c.rot[1],c.rot[2]]})));}
+        copies=copies.concat(copies.map(c=>Object.assign({},c,{id:c.id+'_m',at:c.at.map((v,j)=>j===ax?-v:v),rot:mirrorRot(c,m)})));}
     }
     out.push(...copies);
   });
@@ -2696,7 +2706,10 @@ const LLM_KEY='posebench.llm';
 let llm=(()=>{try{return Object.assign({url:'',model:'',key:''},JSON.parse(localStorage.getItem(LLM_KEY)||'{}'));}catch(e){return {url:'',model:'',key:''};}})();
 let llmFromHost=false;
 function llmBase(){let u=String(llm.url||'').trim()||'http://127.0.0.1:5000';u=u.replace(/\/+$/,'').replace(/\/v1(\/[^?#]*)?$/i,'');if(!/^https?:\/\//i.test(u))u='http://'+u;return u;}
-const BUILD_SYSTEM=`You build simple 3D set pieces for film blocking out of primitive shapes. Answer with ONE JSON object and nothing else.
+const BUILD_SYSTEM=`You build grey clay BLOCKING MODELS for film storyboards out of primitive shapes. Answer with ONE JSON object and nothing else.
+
+WHAT IT IS FOR
+The build is rendered as an untextured grey clay model and handed to an image generator as the layout of a shot. The image model has to recognise the object from its overall shape alone, and it paints in every real detail itself. So build the MASSING: the few big volumes, the silhouette and the proportions, like a sculptor's maquette or a video-game greybox. Do not model details. In grey clay they read as lumps and noise, and they make the shape look broken.
 
 FORMAT
 {"name": "<short name>", "parts": [ {"id": "...", "shape": "...", "size": [x, y, z], "at": [x, y, z], "rot": [x, y, z], "shade": "...", "repeat": {...}, "on": "..."} ]}
@@ -2705,21 +2718,45 @@ FORMAT
 - size: the part's bounding box [width x, height y, depth z]. A cylinder stands upright (y is its length); lay it on its side with rot. A wedge is a ramp: full height at the back (-z), down to the floor at the front (+z).
 - at: the CENTRE of the part. A box of height 0.7 resting on the floor has at y = 0.35.
 - rot: degrees about x, y, z (optional). A wheel is a cylinder with rot [0, 0, 90].
-- shade: light | mid | dark (optional; windows, tyres, screens and seats are dark).
+- shade: light | mid | dark (optional). Dark only for big surfaces that are glass, tyres or screens, so the picture reads them as that. A whole object in dark loses its shape.
 - repeat (optional): {"count": n, "along": [dx, dy, dz]} makes n copies stepping by that offset; {"mirror": "x"} adds a copy on the other side of x = 0 (or "z"). They combine.
 - on (optional): the id of a part to rest on top of (sets this part's y).
 
+HOW TO BUILD IT
+1. Start from the real overall size and the 1 to 3 big volumes that make the outline. A car is a long low body with a shorter cabin on top. A pickup is a tall cab at the front and a lower open bed behind it, both riding on the wheels. A motorcycle is two upright wheels in a line, front and back, with a narrow body between them, a seat on top and handlebars at the front. A sofa is a seat block, a back block and two arm blocks. A house is a box with a roof. A lamp post is a tall thin cylinder with a head.
+2. Add only the features that change the silhouette or name the object at a glance: wheels on a vehicle, legs under a table, the back of a chair, the slope of a windscreen, a doorway.
+3. Then stop. Leave out anything shorter than about a tenth of the object's longest side, and anything that lies flat on a surface: handles, mirrors, lights, badges, buttons, knobs, vents, grilles, trim, wipers, seams, text. The image model adds those.
+4. Make it one solid object. Parts touch or overlap by a few centimetres, so nothing floats and nothing has gaps. Build solid blocks, never hollow shells of thin panels. Never stack thin slices to fake a curve; use one wedge or cylinder.
+5. Check it before answering. Seen from the side, the front and above, is the outline the real object's outline, at its real proportions? Does every part touch another, and does it stand on the floor?
+
 RULES
-- Real-world sizes. Car 4.5 long x 1.8 wide x 1.45 high, wheels 0.65 diameter. Van 5.2 x 2.0 x 2.3. Bus 12 x 2.5 x 3.2. Door 0.9 x 2.1. Desk 1.4 x 0.75 high x 0.7. Chair seat 0.45 high. Table 0.75 high. Counter 0.9 high. Sofa 2.0 x 0.85 x 0.9. Bed 2.0 x 0.55 x 1.6. Ceiling 2.7. Bus shelter 4 x 2.5 x 1.5. Lectern 1.1 high.
+- Real-world sizes, written as size is: [x across, y up, z front to back], seen from the object's front. A vehicle's front is its nose, so its length runs along z. Furniture faces you, so a sofa, bench, desk or counter is long along x; a bed runs along z from its headboard (back) to its foot (front). Car [1.8, 1.45, 4.5], wheels 0.65 across. SUV [1.9, 1.75, 4.8], wheels 0.75. Pickup [1.9, 1.85, 5.3], its bed floor about 0.9 up. Van [2.0, 2.3, 5.2]. Bus [2.5, 3.2, 12]. Motorcycle [0.8, 1.1, 2.1], wheels 0.65. Bicycle [0.6, 1.0, 1.7]. Door [0.9, 2.1, 0.05]. Desk [1.4, 0.75, 0.7]. Chair seat 0.45 up. Table 0.75 high. Counter 0.9 high. Sofa [2.0, 0.85, 0.9]. Bench [1.8, 0.85, 0.65]. Bed [1.6, 0.55, 2.0]. Ceiling 2.7. Bus shelter [4, 2.5, 1.5]. Lectern 1.1 high.
 - Build on the floor (nothing below y = 0).
+- What holds it up is part of its shape. A vehicle rides ON its wheels: the bottom of the body is at about wheel-centre height and the wheels show below it. A car, van or truck has one wheel at each corner: write ONE wheel part with repeat {"count": 2, "along": [0, 0, -wheelbase], "mirror": "x"} to get all four. A motorcycle or bicycle has two wheels in a line at x = 0, with no mirror. Keep the body up there: the floor is under the wheels, not under the body. Tables, chairs and beds stand on legs that reach the floor. Something hanging or floating says so in the request.
 - Rooms: floor, back wall and side walls only. Leave the front (+z) wall and the ceiling off so the camera can see in, unless asked.
-- 5 to 60 parts. Nothing smaller than 5 cm. Use repeat for rows and pairs instead of writing them out.
-- Recognisable silhouette first, detail second.`;
+- As few parts as will read: a small object 2 to 8, furniture 3 to 12, a vehicle 6 to 16, a room with its furniture up to 40. More parts do not make it better. Use repeat for rows and pairs instead of writing them out.
+- Boxes for almost everything. A wedge for any slope (windscreen, ramp, roof pitch, stair run), a cylinder for round things (wheels, posts, round tables, bins), a sphere only for something that is a ball. Cone and torus rarely.`;
+/* Worked examples, each checked by eye in a render. A 30B model copies an example's massing far better than it
+   follows a rule, so a request gets the three general ones (base) and up to three that match its words, the
+   matches last, nearest the question. A correct generic sofa copied for "a sofa" is the point, not a failure. */
 const BUILD_EXAMPLES=[
-  ['an office chair',`{"name":"office chair","parts":[{"id":"seat","shape":"box","size":[0.48,0.08,0.46],"at":[0,0.46,0],"shade":"dark"},{"id":"back","shape":"box","size":[0.44,0.5,0.06],"at":[0,0.78,-0.22],"rot":[-8,0,0],"shade":"dark"},{"id":"post","shape":"cylinder","size":[0.06,0.36,0.06],"at":[0,0.24,0]},{"id":"foot","shape":"box","size":[0.06,0.04,0.3],"at":[0,0.04,0.15],"repeat":{"count":1,"mirror":"z"}},{"id":"footx","shape":"box","size":[0.3,0.04,0.06],"at":[0.15,0.04,0],"repeat":{"mirror":"x"}}]}`],
-  ['a sedan',`{"name":"sedan","parts":[{"id":"body","shape":"box","size":[1.8,0.65,4.5],"at":[0,0.6,0]},{"id":"cabin","shape":"box","size":[1.6,0.55,2.3],"at":[0,1.2,-0.25]},{"id":"windscreen","shape":"wedge","size":[1.56,0.5,0.7],"at":[0,1.18,1.2],"shade":"dark"},{"id":"rear_window","shape":"wedge","size":[1.56,0.45,0.5],"at":[0,1.17,-1.6],"rot":[0,180,0],"shade":"dark"},{"id":"side_window","shape":"box","size":[0.02,0.35,1.9],"at":[0.81,1.25,-0.25],"shade":"dark","repeat":{"mirror":"x"}},{"id":"wheel","shape":"cylinder","size":[0.65,0.24,0.65],"at":[0.84,0.33,1.4],"rot":[0,0,90],"shade":"dark","repeat":{"count":2,"along":[0,0,-2.8],"mirror":"x"}},{"id":"headlight","shape":"box","size":[0.3,0.12,0.04],"at":[0.6,0.7,2.25],"shade":"light","repeat":{"mirror":"x"}}]}`],
-  ['a small office with two desks facing each other',`{"name":"small office","parts":[{"id":"floor","shape":"box","size":[5,0.05,4],"at":[0,0.025,0]},{"id":"back_wall","shape":"box","size":[5,2.7,0.12],"at":[0,1.35,-2]},{"id":"side_wall","shape":"box","size":[0.12,2.7,4],"at":[2.5,1.35,0],"repeat":{"mirror":"x"}},{"id":"window","shape":"box","size":[1.6,1.2,0.04],"at":[0,1.5,-1.93],"shade":"light"},{"id":"desk_top","shape":"box","size":[1.4,0.04,0.7],"at":[0,0.73,-0.5],"repeat":{"count":2,"along":[0,0,1.0]}},{"id":"desk_leg","shape":"box","size":[0.05,0.71,0.05],"at":[0.65,0.355,-0.8],"repeat":{"count":2,"along":[0,0,0.6],"mirror":"x"}},{"id":"desk_leg2","shape":"box","size":[0.05,0.71,0.05],"at":[0.65,0.355,0.2],"repeat":{"count":2,"along":[0,0,0.6],"mirror":"x"}},{"id":"monitor","shape":"box","size":[0.55,0.35,0.04],"at":[0,0.95,-0.7],"shade":"dark","repeat":{"count":2,"along":[0,0,1.4]}}]}`]
+  {q:'an office chair',k:/\b(chairs?|seats?|stools?)\b/,base:true,a:`{"name":"office chair","parts":[{"id":"seat","shape":"box","size":[0.48,0.08,0.46],"at":[0,0.46,0],"shade":"dark"},{"id":"back","shape":"box","size":[0.44,0.5,0.06],"at":[0,0.78,-0.22],"rot":[-8,0,0],"shade":"dark"},{"id":"post","shape":"cylinder","size":[0.06,0.36,0.06],"at":[0,0.24,0]},{"id":"foot","shape":"box","size":[0.06,0.04,0.3],"at":[0,0.04,0.15],"repeat":{"count":1,"mirror":"z"}},{"id":"footx","shape":"box","size":[0.3,0.04,0.06],"at":[0.15,0.04,0],"repeat":{"mirror":"x"}}]}`},
+  {q:'a sedan',k:/\b(cars?|sedans?|saloons?|hatchbacks?|coupes?|taxis?)\b/,base:true,a:`{"name":"sedan","parts":[{"id":"body","shape":"box","size":[1.8,0.65,4.5],"at":[0,0.6,0]},{"id":"cabin","shape":"box","size":[1.6,0.55,2.3],"at":[0,1.2,-0.25]},{"id":"windscreen","shape":"wedge","size":[1.56,0.5,0.7],"at":[0,1.18,1.2],"shade":"dark"},{"id":"rear_window","shape":"wedge","size":[1.56,0.45,0.5],"at":[0,1.17,-1.6],"rot":[0,180,0],"shade":"dark"},{"id":"side_window","shape":"box","size":[0.02,0.35,1.9],"at":[0.81,1.25,-0.25],"shade":"dark","repeat":{"mirror":"x"}},{"id":"wheel","shape":"cylinder","size":[0.65,0.24,0.65],"at":[0.84,0.33,1.4],"rot":[0,0,90],"shade":"dark","repeat":{"count":2,"along":[0,0,-2.8],"mirror":"x"}}]}`},
+  {q:'a small office with two desks facing each other',k:/\b(offices?|rooms?|interiors?|stud(y|ies)|classrooms?|cubicles?|desks?)\b/,base:true,a:`{"name":"small office","parts":[{"id":"floor","shape":"box","size":[5,0.05,4],"at":[0,0.025,0]},{"id":"back_wall","shape":"box","size":[5,2.7,0.12],"at":[0,1.35,-2]},{"id":"side_wall","shape":"box","size":[0.12,2.7,4],"at":[2.5,1.35,0],"repeat":{"mirror":"x"}},{"id":"window","shape":"box","size":[1.6,1.2,0.04],"at":[0,1.5,-1.93],"shade":"light"},{"id":"desk_top","shape":"box","size":[1.4,0.04,0.7],"at":[0,0.73,-0.5],"repeat":{"count":2,"along":[0,0,1.0]}},{"id":"desk_leg","shape":"box","size":[0.05,0.71,0.05],"at":[0.65,0.355,-0.8],"repeat":{"count":2,"along":[0,0,0.6],"mirror":"x"}},{"id":"desk_leg2","shape":"box","size":[0.05,0.71,0.05],"at":[0.65,0.355,0.2],"repeat":{"count":2,"along":[0,0,0.6],"mirror":"x"}},{"id":"monitor","shape":"box","size":[0.55,0.35,0.04],"at":[0,0.95,-0.7],"shade":"dark","repeat":{"count":2,"along":[0,0,1.4]}}]}`},
+  {q:'a pickup truck',k:/\b(pick-?ups?|trucks?|utes?|lorr(y|ies))\b/,a:`{"name":"pickup truck","parts":[{"id":"lower_body","shape":"box","size":[1.9,0.6,5.3],"at":[0,0.7,0]},{"id":"cab","shape":"box","size":[1.85,0.8,1.6],"at":[0,1.4,0.65]},{"id":"windscreen","shape":"wedge","size":[1.8,0.7,0.5],"at":[0,1.35,1.7],"shade":"dark"},{"id":"side_window","shape":"box","size":[0.02,0.4,1.1],"at":[0.935,1.55,0.6],"shade":"dark","repeat":{"mirror":"x"}},{"id":"bed_side","shape":"box","size":[0.12,0.45,2.5],"at":[0.89,1.22,-1.4],"repeat":{"mirror":"x"}},{"id":"tailgate","shape":"box","size":[1.9,0.45,0.12],"at":[0,1.22,-2.59]},{"id":"wheel","shape":"cylinder","size":[0.8,0.3,0.8],"at":[0.85,0.4,1.85],"rot":[0,0,90],"shade":"dark","repeat":{"count":2,"along":[0,0,-3.4],"mirror":"x"}}]}`},
+  {q:'an SUV',k:/\b(suvs?|jeeps?|4x4s?|crossovers?|vans?|minivans?|estates?|wagons?|ambulances?)\b/,a:`{"name":"SUV","parts":[{"id":"lower_body","shape":"box","size":[1.9,0.8,4.8],"at":[0,0.775,0]},{"id":"cabin","shape":"box","size":[1.8,0.55,3.3],"at":[0,1.45,-0.65]},{"id":"windscreen","shape":"wedge","size":[1.75,0.5,0.6],"at":[0,1.425,1.3],"shade":"dark"},{"id":"side_window","shape":"box","size":[0.02,0.35,2.9],"at":[0.905,1.47,-0.6],"shade":"dark","repeat":{"mirror":"x"}},{"id":"wheel","shape":"cylinder","size":[0.75,0.28,0.75],"at":[0.86,0.375,1.45],"rot":[0,0,90],"shade":"dark","repeat":{"count":2,"along":[0,0,-2.9],"mirror":"x"}}]}`},
+  {q:'a motorcycle',k:/\b(motorcycles?|motorbikes?|bikes?|bicycles?|scooters?|mopeds?)\b/,a:`{"name":"motorcycle","parts":[{"id":"wheel","shape":"cylinder","size":[0.65,0.15,0.65],"at":[0,0.325,0.7],"rot":[0,0,90],"shade":"dark","repeat":{"count":2,"along":[0,0,-1.4]}},{"id":"engine","shape":"box","size":[0.35,0.4,0.9],"at":[0,0.55,0]},{"id":"tank","shape":"box","size":[0.35,0.25,0.5],"at":[0,0.85,0.2]},{"id":"seat","shape":"box","size":[0.3,0.12,0.75],"at":[0,0.82,-0.42],"shade":"dark"},{"id":"fork","shape":"box","size":[0.08,0.72,0.08],"at":[0,0.66,0.6],"rot":[-16,0,0]},{"id":"handlebars","shape":"box","size":[0.75,0.05,0.05],"at":[0,1.03,0.5]}]}`},
+  {q:'a sofa',k:/\b(sofas?|couch(es)?|settees?|loveseats?|armchairs?)\b/,a:`{"name":"sofa","parts":[{"id":"base","shape":"box","size":[2.0,0.42,0.9],"at":[0,0.21,0]},{"id":"back","shape":"box","size":[2.0,0.43,0.22],"at":[0,0.635,-0.34]},{"id":"arm","shape":"box","size":[0.2,0.2,0.9],"at":[0.9,0.52,0],"repeat":{"mirror":"x"}}]}`},
+  {q:'a park bench',k:/\b(bench(es)?|pews?)\b/,a:`{"name":"park bench","parts":[{"id":"end_frame","shape":"box","size":[0.06,0.42,0.5],"at":[0.8,0.21,0.02],"repeat":{"mirror":"x"}},{"id":"seat","shape":"box","size":[1.8,0.06,0.45],"at":[0,0.45,0.05]},{"id":"backrest","shape":"box","size":[1.8,0.4,0.05],"at":[0,0.73,-0.2],"rot":[-10,0,0]}]}`},
+  {q:'a double bed',k:/\b(beds?|bedrooms?|cots?|bunks?)\b/,a:`{"name":"double bed","parts":[{"id":"base","shape":"box","size":[1.6,0.3,2.05],"at":[0,0.15,0]},{"id":"mattress","shape":"box","size":[1.55,0.25,1.95],"at":[0,0.425,0.03],"shade":"light"},{"id":"headboard","shape":"box","size":[1.65,1.0,0.08],"at":[0,0.5,-1.04]},{"id":"pillow","shape":"box","size":[1.3,0.12,0.45],"at":[0,0.6,-0.72],"shade":"light"}]}`},
+  {q:'a dining table with four chairs',k:/\b(dining|tables?|dinner)\b/,a:`{"name":"dining table and four chairs","parts":[{"id":"table_top","shape":"box","size":[1.6,0.05,0.9],"at":[0,0.735,0]},{"id":"table_leg","shape":"box","size":[0.07,0.71,0.07],"at":[0.72,0.355,0.38],"repeat":{"mirror":"x"}},{"id":"table_leg_back","shape":"box","size":[0.07,0.71,0.07],"at":[0.72,0.355,-0.38],"repeat":{"mirror":"x"}},{"id":"chair_seat","shape":"box","size":[0.45,0.06,0.45],"at":[-0.4,0.45,0.75],"repeat":{"count":2,"along":[0.8,0,0],"mirror":"z"}},{"id":"chair_side","shape":"box","size":[0.04,0.42,0.42],"at":[-0.6,0.21,0.75],"repeat":{"count":4,"along":[0.4,0,0],"mirror":"z"}},{"id":"chair_back","shape":"box","size":[0.45,0.45,0.05],"at":[-0.4,0.7,0.95],"repeat":{"count":2,"along":[0.8,0,0],"mirror":"z"}}]}`},
+  {q:'a kitchen island with two bar stools',k:/\b(kitchens?|islands?|counters?|bars?|stools?)\b/,a:`{"name":"kitchen island with stools","parts":[{"id":"island","shape":"box","size":[2.2,0.9,1.0],"at":[0,0.45,0]},{"id":"counter_top","shape":"box","size":[2.3,0.05,1.3],"at":[0,0.925,0.15],"shade":"light"},{"id":"stool_seat","shape":"cylinder","size":[0.38,0.06,0.38],"at":[-0.5,0.65,0.95],"shade":"dark","repeat":{"count":2,"along":[1.0,0,0]}},{"id":"stool_post","shape":"cylinder","size":[0.06,0.62,0.06],"at":[-0.5,0.31,0.95],"repeat":{"count":2,"along":[1.0,0,0]}},{"id":"stool_base","shape":"cylinder","size":[0.4,0.03,0.4],"at":[-0.5,0.015,0.95],"repeat":{"count":2,"along":[1.0,0,0]}}]}`},
+  {q:'a two-storey house',k:/\b(houses?|homes?|cottages?|buildings?|sheds?|garages?|barns?|cabins?|roofs?)\b/,a:`{"name":"two-storey house","parts":[{"id":"walls","shape":"box","size":[8,5.5,7],"at":[0,2.75,0]},{"id":"roof","shape":"wedge","size":[8.4,1.8,3.7],"at":[0,6.4,1.85],"repeat":{"mirror":"z"}},{"id":"door","shape":"box","size":[1.0,2.1,0.1],"at":[0,1.05,3.52],"shade":"dark"},{"id":"window_low","shape":"box","size":[1.2,1.2,0.1],"at":[2.4,1.5,3.52],"shade":"dark","repeat":{"mirror":"x"}},{"id":"window_up","shape":"box","size":[1.2,1.2,0.1],"at":[-2.4,4.1,3.52],"shade":"dark","repeat":{"count":3,"along":[2.4,0,0]}}]}`}
 ];
+function buildExamples(request){
+  const r=String(request||'').toLowerCase(), hit=BUILD_EXAMPLES.filter(e=>e.k.test(r)).slice(0,3);
+  return BUILD_EXAMPLES.filter(e=>e.base&&!hit.includes(e)).concat(hit);
+}
 function stripThink(t){return String(t||'').replace(/<think>[\s\S]*?<\/think>/gi,'').replace(/^[\s\S]*<\/think>/i,'');}
 function parseLoose(t){
   const s=stripThink(t), a=s.indexOf('{'), b=s.lastIndexOf('}');
@@ -2777,9 +2814,9 @@ const body={messages,temperature:opts.temperature==null?0.4:opts.temperature,max
 /* Ask for a build (or an edit of one). One retry, with the parse error, if the JSON doesn't come back clean. */
 async function askBuild(request,base){
   const msgs=[{role:'system',content:BUILD_SYSTEM}];
-  BUILD_EXAMPLES.forEach(([q,a])=>{msgs.push({role:'user',content:'Build: '+q});msgs.push({role:'assistant',content:a});});
+  buildExamples(base?(base.name+' '+request):request).forEach(e=>{msgs.push({role:'user',content:'Build: '+e.q});msgs.push({role:'assistant',content:e.a});});
   msgs.push({role:'user',content:base
-    ?'Here is the current build, as its full part list:\n'+JSON.stringify({name:base.name,parts:base.parts})+'\n\nChange it: '+request+'\nAnswer with the complete updated JSON object.'
+    ?'Here is the current build, as its full part list:\n'+JSON.stringify({name:base.name,parts:base.parts})+'\n\nChange it: '+request+'\nKeep it a blocking model: big shapes and true proportions, no small details. Answer with the complete updated JSON object.'
     :'Build: '+request});
   let txt=await llmChat(msgs,{json:true}), json;
   try{json=parseLoose(txt);}
@@ -2866,7 +2903,11 @@ async function lookAt(p){
     }
   }finally{Object.assign(cam,{theta:saved.th,phi:saved.ph,radius:saved.r});cam.target.copy(saved.t);applyCam();}
   const content=[{type:'text',text:'These are three views (front, three-quarter, side) of a grey clay model built from simple shapes. It is meant to be: '+
-    (p.request||p.name)+'.\nDoes it read as that? If it does, answer only "OK". Otherwise list at most 5 concrete fixes, each one line, naming parts and directions (e.g. "the wheels float above the floor", "the cabin is too far forward").'}]
+    (p.request||p.name)+'.\nIt is a blocking model: it only has to read as that object from its overall shape and proportions, '+
+    'so an image generator recognises it. Small details (handles, lights, mirrors, trim, buttons) are left out on purpose; never ask for them.\n'+
+    'Does its overall shape read as that? If it does, answer only "OK". Otherwise list at most 5 concrete fixes to the big shapes, each one line, '+
+    'naming parts and directions (e.g. "the wheels float above the floor", "the cabin is too far forward", "the body is too tall for its length", '+
+    '"remove the small part sticking out of the roof").'}]
     .concat(imgs.map(u=>({type:'image_url',image_url:{url:u}})));
   try{return stripThink(await llmChat([{role:'user',content}],{temperature:0.2,max:16000})).trim();}
   catch(e){throw new Error('Look & fix needs a vision model loaded (e.g. qwen3-vl): '+e.message);}
