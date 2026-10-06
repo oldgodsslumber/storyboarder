@@ -130,12 +130,17 @@
     const assets = [];
     const add = function (a) { a.n = assets.length + 1; assets.push(a); return a; };
 
+    /* A clip opens on the card's approved frame, which already has the blocking in it — so the clay STILL
+       goes up with a clip only while there is no frame to stand in for it (refs.js keeps it off the video
+       feed for the same reason). Sent alongside a frame it is a second, grey version of the same picture,
+       and its clay leaks into the clip. The clay CLIP is motion, which no frame carries, so it stays. */
+    const framed = lane === 'video' && !!(shot.render || shot.image);
     if (lane === 'video' && clip) {
       add({ kind: 'clay-clip', ext: 'mp4', name: 'clay', role: 'the grey clay render of this shot, animated' });
-    } else if (poseOK(shot)) {
+    } else if (poseOK(shot) && !framed) {
       add({ kind: 'clay-still', ext: 'png', name: 'clay', role: 'the grey clay render of this shot' });
     }
-    if (lane === 'video' && (shot.render || shot.image)) {
+    if (framed) {
       add({ kind: 'first-frame', ext: 'png', name: 'first_frame', role: 'the approved first frame' });
     }
     const subs = subjectsFor(p, shot, lane);

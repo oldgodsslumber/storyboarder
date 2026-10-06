@@ -248,6 +248,20 @@ console.log('\n— Write: the H3 prose from the writer, against a stubbed local 
   delete SB.Pose;
 }
 
+console.log('\n— the video lane: a blocked card with a still and no performance —');
+{
+  const { p, sh, gus, nat } = board();
+  block(p, sh, gus, nat);
+  SB.Pose = { PASSES: [], perfLink: s => (s.pose && s.pose.perf) || null, perfOf: () => null, perfStale: () => false, stale: () => false };
+  eq(SB.Mxm.manifest(p, sh, 'video').assets[0].kind, 'clay-still', 'with no frame yet, the clay still is the clip\'s layout');
+  sh.image = SB.Blobs.image(p, PNG, 1, 1);
+  const m = SB.Mxm.manifest(p, sh, 'video');
+  eq(m.assets.map(a => a.kind), ['first-frame', 'subject', 'subject'], 'once there is a frame, the clay still leaves the video files');
+  eq(m.assets[0].h3, '<Picture 1>', 'and the frame is the first picture');
+  eq(SB.Mxm.manifest(p, sh, 'image').assets[0].kind, 'clay-still', 'the still lane keeps it');
+  delete SB.Pose;
+}
+
 console.log('\n— Create on a stock H3 board: a blocked card with no still —');
 {
   const { p, sh, gus, nat } = board();

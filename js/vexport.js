@@ -5,7 +5,7 @@
  * card's first frame, so its prompt is motion only) and "Export" (you upload
  * the files to the tool yourself). An exported clip isn't limited to one
  * picture: it gets the blocking (the clay clip if a performance is linked,
- * else the clay still), the first frame if the card has one, and each
+ * else the clay still while the card has no frame), the first frame if the card has one, and each
  * subject's photo, all uploaded in order. So its prompt is written against
  * that numbered list, and nothing about it assumes a single frame.
  *

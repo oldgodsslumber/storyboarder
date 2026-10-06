@@ -1457,7 +1457,7 @@ body.comment-mode .frame{cursor:crosshair}
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-10-03 14:57 · 252caf5+";</script>
+<script>window.SB_BUILD = "2026-10-06 13:07 · e5dc10c+";</script>
 
 <div id="app">
 
@@ -15373,12 +15373,17 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
     const assets = [];
     const add = function (a) { a.n = assets.length + 1; assets.push(a); return a; };
 
+    /* A clip opens on the card's approved frame, which already has the blocking in it — so the clay STILL
+       goes up with a clip only while there is no frame to stand in for it (refs.js keeps it off the video
+       feed for the same reason). Sent alongside a frame it is a second, grey version of the same picture,
+       and its clay leaks into the clip. The clay CLIP is motion, which no frame carries, so it stays. */
+    const framed = lane === 'video' && !!(shot.render || shot.image);
     if (lane === 'video' && clip) {
       add({ kind: 'clay-clip', ext: 'mp4', name: 'clay', role: 'the grey clay render of this shot, animated' });
-    } else if (poseOK(shot)) {
+    } else if (poseOK(shot) && !framed) {
       add({ kind: 'clay-still', ext: 'png', name: 'clay', role: 'the grey clay render of this shot' });
     }
-    if (lane === 'video' && (shot.render || shot.image)) {
+    if (framed) {
       add({ kind: 'first-frame', ext: 'png', name: 'first_frame', role: 'the approved first frame' });
     }
     const subs = subjectsFor(p, shot, lane);
@@ -15967,7 +15972,7 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta ch
  * card's first frame, so its prompt is motion only) and "Export" (you upload
  * the files to the tool yourself). An exported clip isn't limited to one
  * picture: it gets the blocking (the clay clip if a performance is linked,
- * else the clay still), the first frame if the card has one, and each
+ * else the clay still while the card has no frame), the first frame if the card has one, and each
  * subject's photo, all uploaded in order. So its prompt is written against
  * that numbered list, and nothing about it assumes a single frame.
  *

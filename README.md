@@ -637,8 +637,8 @@ name every image, and **⤓ Files** downloads them in order. For video:
 - **Send from Storyboarder:** the ImagineArt push. It hands the clip one picture, the card's first frame, so the
   prompt is motion only.
 - **Export — upload the files yourself:** the lane lists every file in upload order, and the prompt cites them the
-  same way. The files are the blocking (the clay clip if a performance is linked, else the clay still), the first
-  frame if the card has one, and each subject's photo, as "image N" / "video N". **⤓ Files** downloads them with
+  same way. The files are the blocking (the clay clip if a performance is linked, else the clay still, but only
+  while the card has no frame: a frame already holds the blocking), the first frame if the card has one, and each subject's photo, as "image N" / "video N". **⤓ Files** downloads them with
   prompt.txt and ORDER.txt. The prompt never assumes a single supplied frame, and nothing is pushed.
 
 Export prompts are kept apart from Send prompts, so switching between them loses nothing. (`js/vexport.js`)
@@ -1008,7 +1008,8 @@ files, `prompt.txt` and `ORDER.txt`, and copies the prompt to the clipboard.
 - **Video → MiniMax H3, full reference.**
   - **Files:** `01_clay.mp4` is the card's performance clip, rendered now through its camera over its
     range. Then `02_first_frame` (the card's approved still), then each person's picture. With no
-    performance, the clay still takes slot 1.
+    performance and no still yet, the clay still takes slot 1; once the card has a still, the clay
+    still is left out (the frame already holds the blocking).
   - **Prompt:** H3's six-section rewrite, in the labels H3 uses. The clip is `<Video 1>`, which
     defines layout, staging, camera and animation. Pictures are `<Picture N>`, and each person is a
     `<Subject N>` bound to their clay figure (*"In `<Video 1>`, Gus is the tan figure on the left of
@@ -1033,8 +1034,8 @@ files, `prompt.txt` and `ORDER.txt`, and copies the prompt to the clipboard.
 - **Export → MiniMax packages, per shot** writes the same folders for every card in scope.
 - **Create on a MiniMax H3 board.** A card with 3D blocking is written as the full-reference call,
   whether or not it has a still:
-  - **The files:** the video lane lists what the call carries — the clay clip or clay still, the
-    first frame if there is one, and each person's picture.
+  - **The files:** the video lane lists what the call carries — the clay clip, or the clay still
+    while there is no first frame, the first frame if there is one, and each person's picture.
   - **The prompt:** **Write** defines the blocking and ties each person to their clay figure. The
     MiniMax package carries the same prompt, including any edit made on the card.
   - **No push:** the ImagineArt push holds back for these cards (*MiniMax package*), because it can
