@@ -670,13 +670,18 @@ that reason.
 
 Google retires model ids on its own schedule, so:
 
-- The dropdown ships with the models documented as current (Gemini 3.6 / 3.5 / 3.1 Flash
-  family, 3.1 Pro, the 2.5 family, and **Gemma 4 31B**). Default is **gemini-3.6-flash**.
+- The dropdown ships with the models documented as current (Gemini 3.8 / 3.6 Flash,
+  **Gemini 4 Argon**, the 3.5 / 3.1 Flash-Lites, 3.1 Pro, the legacy 2.5 family, and
+  **Gemma 4 31B**). Default is **gemini-3.8-flash**.
+- Gemini models are sent no temperature: Google deprecated it in July 2026 and warns that
+  values under 1.0 can make Gemini 3+ loop. Gemma still gets one. The API key travels in
+  the `x-goog-api-key` header, not the URL.
 - Gemma runs on the same endpoint but is not a Gemini model — it has no JSON mode, so the
   app asks it for JSON in words rather than sending a response schema, and parses what
   comes back. Any other model that rejects a schema gets the same treatment on retry.
 - Opening an older project silently moves it off a dead id (`gemini-2.0-flash`,
-  `gemini-flash-latest`, …) onto the default.
+  `gemini-flash-latest`, the re-routed `gemini-3.5-flash` / `gemini-3.7-flash`, …) onto
+  the default.
 - **Settings → API → Refresh list from my key** calls Google's ListModels with your key and
   replaces the dropdown with what that key can actually reach today (cached locally,
   *Back to curated list* undoes it). A 404 from a prompt run says to do exactly this.

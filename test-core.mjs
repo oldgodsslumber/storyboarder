@@ -184,6 +184,9 @@ console.log('\n— gemini model list —');
   eq(G.normalize('gemini-pro-latest'), G.DEFAULT, 'every -latest alias does');
   eq(G.isAlias('gemini-flash-latest'), true, 'and is recognised as an alias, not a retirement');
   eq(G.normalize('gemini-2.5-pro'), 'gemini-2.5-pro', 'a live id is left alone');
+  eq(G.normalize('gemini-3.7-flash'), G.DEFAULT, 'a deprecated, re-routed id moves to the default');
+  eq(G.normalize('gemini-3.5-flash'), G.DEFAULT, 'both of them');
+  eq(G.normalize('gemini-3.5-flash-lite'), 'gemini-3.5-flash-lite', 'but its Flash-Lite sibling is live');
   eq(G.normalize('some-custom-id'), 'some-custom-id', 'a custom id is left alone');
   eq(G.LIST.some(m => m.id === 'gemma-4-31b-it'), true, 'Gemma 4 31B is offered');
   eq(G.isGemma('gemma-4-31b-it'), true, 'gemma is recognised (it has no JSON mode)');
@@ -212,7 +215,7 @@ console.log('\n— free-call counting —');
   G.markExhausted(id);
   eq(G.remaining(id), 0, 'a 429 burns the rest of the day');
   eq(G.limit('gemini-2.5-flash'), 20, 'known free-tier default limit');
-  eq(G.limit('gemini-3.5-flash'), 0, 'unknown limits stay unset rather than guessed');
+  eq(G.limit('gemini-3.8-flash'), 0, 'unknown limits stay unset rather than guessed');
 }
 
 console.log('\n— the camera holds —');
@@ -3191,12 +3194,12 @@ console.log('\n— the writer runs where the project says it does —');
   eq(old.settings.aiProvider, 'gemini', 'an unknown provider falls back rather than failing');
 
   /* switching is lossless: each side keeps its own model */
-  p.settings.geminiModel = 'gemini-3.5-flash';
+  p.settings.geminiModel = 'gemini-3.6-flash';
   SB.Store.setOoba({ url: 'http://127.0.0.1:5000', model: 'mistral-7b' });
   SB.Providers.setActive('ooba');
   eq(SB.Providers.active().model(), 'mistral-7b', 'the local side has its own model');
   SB.Providers.setActive('gemini');
-  eq(SB.Providers.active().model(), 'gemini-3.5-flash', 'and the cloud side kept its own');
+  eq(SB.Providers.active().model(), 'gemini-3.6-flash', 'and the cloud side kept its own');
   eq(SB.Providers.usageKey('ooba', 'mistral-7b'), 'ooba:mistral-7b',
     'the two are counted separately');
 }
@@ -3209,15 +3212,19 @@ console.log('\n— each backend gets the body it understands —');
   const schema = { type: 'OBJECT', properties: { a: { type: 'STRING' } }, required: ['a'] };
 
   const g = SB.Providers.get('gemini');
-  const gb = g.body('gemini-3.7-flash', 'WRITE THIS', { schema, system: 'BE BRIEF', hint: HINT });
+  const gb = g.body('gemini-3.8-flash', 'WRITE THIS', { schema, system: 'BE BRIEF', hint: HINT });
   eq(gb.contents[0].parts[0].text, 'WRITE THIS', 'Gemini takes the prompt as a user turn');
   eq(gb.systemInstruction.parts[0].text, 'BE BRIEF', 'with the system prompt beside it');
   eq(gb.generationConfig.responseSchema, schema, 'and a response schema');
+  eq(gb.generationConfig.temperature, undefined, 'and no temperature (deprecated for Gemini)');
+  eq(g.text({ candidates: [{ content: { parts: [{ text: 'mulling', thought: true }, { text: '{"a":' }, { text: '"b"}' }] } }] }),
+    '{"a":"b"}', 'thought parts are skipped and a split answer is joined');
 
   /* Gemma has no JSON mode and no system turn — both fold into the one turn */
   const gm = g.body('gemma-4-31b-it', 'WRITE THIS', { schema, system: 'BE BRIEF', hint: HINT });
   eq(gm.systemInstruction, undefined, 'Gemma is sent no systemInstruction');
   eq(gm.generationConfig.responseSchema, undefined, 'and no schema');
+  eq(gm.generationConfig.temperature, 0.8, 'Gemma still gets a temperature');
   eq(gm.contents[0].parts[0].text, 'BE BRIEF\n\n----\n\nWRITE THIS [hint]',
     'the system prompt and the JSON wording ride in the user turn');
 

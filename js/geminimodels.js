@@ -1,6 +1,7 @@
 /* geminimodels.js — which Gemini model writes the prompts.
  *
- * Curated list of the text models documented at ai.google.dev (verified against ListModels + a per-id generateContent ping, 2026-08-21),
+ * Curated list of the text models documented at ai.google.dev (verified against ListModels + a per-id generateContent ping, 2026-08-21;
+ * re-checked against the models and deprecations pages 2026-10-15),
  * filtered to ones that take text in and return text/JSON out — no image, TTS,
  * live-audio, embedding or video models, none of which can write a prompt.
  *
@@ -11,20 +12,20 @@
 (function (SB) {
   'use strict';
 
-  const DEFAULT = 'gemini-3.7-flash';
+  const DEFAULT = 'gemini-3.8-flash';
   const CACHE_KEY = 'sb.geminiModelList';
 
   const LIST = [
-    { id: 'gemini-3.7-flash', label: 'Gemini 3.7 Flash — latest, best coding/agents (default)' },
-    { id: 'gemini-3.6-flash', label: 'Gemini 3.6 Flash — previous default, balanced' },
-    { id: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash — most intelligent' },
-    { id: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash-Lite — fastest / cheapest 3.5' },
-    { id: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash-Lite — frontier-class, low cost' },
-    { id: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro — deepest reasoning (preview)' },
+    { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash — newest Flash (default)' },
+    { id: 'gemini-4-argon', label: 'Gemini 4 Argon — flagship reasoning, slower / pricier' },
+    { id: 'gemini-3.6-flash', label: 'Gemini 3.6 Flash — previous Flash, balanced' },
+    { id: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash-Lite — fastest / cheapest' },
+    { id: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash-Lite — low cost (shuts down May 2027)' },
+    { id: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro — deep reasoning (preview)' },
     { id: 'gemini-3-flash-preview', label: 'Gemini 3 Flash (preview)' },
-    { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash — older price/performance' },
-    { id: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash-Lite — older, budget' },
-    { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro — older, deep reasoning' },
+    { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash — legacy, existing users only' },
+    { id: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash-Lite — legacy, existing users only' },
+    { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro — legacy, existing users only' },
     { id: 'gemma-4-31b-it', label: 'Gemma 4 31B — open model, large free quota' }
   ];
 
@@ -38,6 +39,10 @@
     'gemini-2.0-flash', 'gemini-2.0-flash-lite',
     'gemini-3-pro-preview',
     'gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro',
+    /* Deprecated 2026-10-08 and silently re-routed by Google (3.5 → 3.6, 3.7 → 3.8).
+     * They still answer, but as a different model than the board names — the
+     * same reason a -latest alias is moved — so they go to the pinned default. */
+    'gemini-3.5-flash', 'gemini-3.7-flash',
     /* Gemma ids Google has dropped from the API (verified 2026-08-21) */
     'gemma-3-27b-it', 'gemma-3-12b-it', 'gemma-4-e4b-it', 'gemma-4-e2b-it'
   ];
@@ -149,8 +154,8 @@
   function fetchAvailable() {
     const key = SB.Store.getApiKey();
     if (!key) return Promise.reject(new Error('Add your API key first, then refresh the list.'));
-    return fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200&key=' +
-      encodeURIComponent(key))
+    return fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200',
+      { headers: { 'x-goog-api-key': key } })
       .catch(function (e) {
         const kind = SB.netKind(e);
         if (kind) throw SB.netError(kind);
@@ -198,7 +203,7 @@
     const sel = document.createElement('select');
     const custom = document.createElement('input');
     custom.type = 'text';
-    custom.placeholder = 'model id, e.g. gemini-3.6-flash';
+    custom.placeholder = 'model id, e.g. gemini-3.8-flash';
     custom.className = 'gm-custom';
 
     function build() {

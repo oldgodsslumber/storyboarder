@@ -50,7 +50,11 @@
       const call = window.__calls[0];
       t('it went to the chosen writer model',
         call.url.indexOf(P().settings.geminiModel) > 0, call.url.split('/').pop());
-      t('the key is on the request', /key=AIza-test-key/.test(call.url), '');
+      t('the key is on the request, in its header', call.headers['x-goog-api-key'] === 'AIza-test-key',
+        JSON.stringify(call.headers));
+      t('and not in the URL', !/key=/.test(call.url), call.url);
+      t('a Gemini model is sent no temperature',
+        call.body.generationConfig.temperature === undefined, JSON.stringify(call.body.generationConfig));
       const userText = call.body.contents[0].parts[0].text;
       t('the shot description is in the request',
         userText.indexOf('the subject mid-stride') > 0, userText.slice(0, 120));

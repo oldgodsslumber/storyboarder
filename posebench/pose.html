@@ -2776,16 +2776,18 @@ function geminiParts(c){
 }
 async function geminiChat(messages,opts){
   if(!llm.key)throw new Error('No Google API key. Add one in Storyboarder → Settings → API.');
-  const mdl=llm.model||'gemini-2.5-flash', gemma=/^gemma/i.test(mdl);
+  const mdl=llm.model||'gemini-3.8-flash', gemma=/^gemma/i.test(mdl);
   const sys=messages.filter(m=>m.role==='system').map(m=>m.content).join('\n\n');
   const contents=messages.filter(m=>m.role!=='system').map(m=>({role:m.role==='assistant'?'model':'user',parts:geminiParts(m.content)}));
   if(sys&&gemma&&contents[0])contents[0].parts.unshift({text:sys+'\n\n----\n\n'});
-  const gen={temperature:opts.temperature==null?0.4:opts.temperature,maxOutputTokens:Math.min(opts.max||24000,32000)};
+  /* Temperature is deprecated for Gemini (and under 1.0 can make Gemini 3+ loop), so only Gemma still gets one. */
+  const gen={maxOutputTokens:Math.min(opts.max||24000,32000)};
+  if(gemma)gen.temperature=opts.temperature==null?0.4:opts.temperature;
   if(opts.json&&!gemma)gen.responseMimeType='application/json';
   const body={contents,generationConfig:gen}; if(sys&&!gemma)body.systemInstruction={parts:[{text:sys}]};
   let r;
-  try{r=await fetch(GEMINI_URL+encodeURIComponent(mdl)+':generateContent?key='+encodeURIComponent(llm.key),
-    {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});}
+  try{r=await fetch(GEMINI_URL+encodeURIComponent(mdl)+':generateContent',
+    {method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':llm.key},body:JSON.stringify(body)});}
   catch(e){throw new Error('Could not reach Gemini \u2014 check the connection.');}
   if(!r.ok){const t=(await r.text()).slice(0,240);
     throw new Error(r.status===429?'Gemini 429: the rate or daily limit for '+mdl+' is reached. Pick another model in Storyboarder\u2019s Create panel.'

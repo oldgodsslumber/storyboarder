@@ -45,17 +45,23 @@
     },
 
     url: function (mdl) {
-      return GEMINI_ENDPOINT + encodeURIComponent(mdl) +
-        ':generateContent?key=' + encodeURIComponent(SB.Store.getApiKey());
+      return GEMINI_ENDPOINT + encodeURIComponent(mdl) + ':generateContent';
     },
-    headers: function () { return { 'Content-Type': 'application/json' }; },
+    /* The key goes in a header rather than the query string, which kept it in
+     * proxy logs, the network panel's copied URLs and browser history. */
+    headers: function () {
+      return { 'Content-Type': 'application/json', 'x-goog-api-key': SB.Store.getApiKey() };
+    },
 
     /* opts = { schema, system, hint } — hint is the wording that replaces a
      * response schema when the model has no JSON mode. */
     body: function (mdl, text, opts) {
       const plain = !this.schemaFor(mdl);
       const withSchema = !plain && !!opts.schema;
-      const gen = { temperature: 0.8 };
+      /* Google deprecated temperature for Gemini in July 2026 and warns that
+       * anything under 1.0 can make Gemini 3+ loop, so only Gemma is sent one. */
+      const gen = {};
+      if (plain) gen.temperature = 0.8;
       if (withSchema) {
         gen.responseMimeType = 'application/json';
         gen.responseSchema = opts.schema;
@@ -73,8 +79,11 @@
 
     text: function (data) {
       const cand = data.candidates && data.candidates[0];
-      const part = cand && cand.content && cand.content.parts && cand.content.parts[0];
-      const raw = part && part.text;
+      /* A thinking model can return its reasoning as a leading thought part and
+       * split the answer over several parts, so parts[0] alone is not the answer. */
+      const parts = (cand && cand.content && cand.content.parts) || [];
+      const raw = parts.filter(function (p) { return !p.thought && p.text; })
+        .map(function (p) { return p.text; }).join('');
       if (!raw) {
         throw new Error('Gemini returned no text' +
           (cand && cand.finishReason ? ' (' + cand.finishReason + ')' : ''));

@@ -25,7 +25,7 @@ window.__reply = null;      // set per test
 window.fetch = function (url, opts) {
   var body = {};
   try { body = JSON.parse(opts.body); } catch (e) {}
-  window.__calls.push({ url: String(url), body: body });
+  window.__calls.push({ url: String(url), body: body, headers: (opts && opts.headers) || {} });
   var r = window.__reply ? window.__reply(window.__calls.length, body) : null;
   if (!r) {
     r = { ok: true, status: 200, text: JSON.stringify({
