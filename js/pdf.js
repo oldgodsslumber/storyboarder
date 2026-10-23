@@ -156,6 +156,10 @@
       sc.shots.forEach(function (sh, sj) {
         if (sh.noShot) return;
         const w = SB.Model.windowFor(p, sh);
+        /* No still yet, but a 3D blocking: print the blocking, as the board
+           shows it. A board blocked and not yet rendered printed a sheet of
+           "no frame" boxes. Tagged, so nobody reads clay as a final frame. */
+        const blocked = !sh.image && !!(sh.pose && sh.pose.image && sh.pose.scene);
         out.push({
           code: SB.Model.code(si, sj),
           scene: sc.heading || '',
@@ -166,7 +170,9 @@
           sceneFirst: first,
           type: sh.type || '',
           color: sh.color || SB.Model.CARD_COLORS[0],
-          img: sh.image ? SB.Blobs.src(p, sh.image) : null,
+          img: sh.image ? SB.Blobs.src(p, sh.image)
+            : blocked ? SB.Blobs.src(p, sh.pose.image) : null,
+          blocked: blocked,
           script: SB.Doc.renderHTML(w.doc, w.from, w.to, null),
           /* every box: a card written only in a lane box printed as
              "(no description yet)" on the deliverable */
@@ -537,6 +543,7 @@
     return '<figure class="' + cls + '"' + style + '>' + stripe +
       '<div class="frame">' +
       (c.img ? '<img src="' + c.img + '">' : '<div class="empty">no frame</div>') +
+      (c.img && c.blocked ? '<span class="blk">blocking</span>' : '') +
       '</div>' +
       '<div class="side">' + meta + text + '</div>' +
       '</figure>';
@@ -583,7 +590,9 @@
        * ends up sized by whatever space the text leaves, so the pictures moved
        * around as descriptions changed length. Any shape letterboxes inside. */
       '.frame{background:#f2f3f5;border-bottom:1px solid ' + INK.soft + ';' +
-      'display:flex;align-items:center;justify-content:center;overflow:hidden}',
+      'display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative}',
+      '.blk{position:absolute;left:3px;bottom:3px;padding:1px 4px;border-radius:2px;' +
+      'background:rgba(255,255,255,.85);color:#555;font-size:7px;letter-spacing:.4px;text-transform:uppercase}',
       pr.frame === 'fill'
         ? '.cell .frame{flex:1 1 auto;min-height:0}'
         : '.cell .frame{flex:0 0 ' + pr.frame + ';height:' + pr.frame + '}',

@@ -3715,6 +3715,26 @@ console.log('\n— the reference sheets —');
   eq(/<div class="rf">/.test(board), false, 'printing the board prints only the board');
   eq(/rcell/.test(board), false, 'with no reference cells in it');
   eq(SB.Pdf.layout({ doc: 'board' }).refs, 0, 'and it does not count references');
+
+  /* A board blocked in 3D and not rendered yet printed every card as "no frame" */
+  const bk = SB.Model.newProject();
+  SB.app = { project: bk, changed: function () { } };
+  const bs = bk.scenes[0].shots[0];
+  bs.pose = {
+    serial: 1,
+    scene: SB.Blobs.put(bk, 'data:application/json,' + encodeURIComponent('{"v":2,"figures":[]}')),
+    image: SB.Blobs.image(bk, 'data:image/jpeg;base64,QkxPQ0s=', 8, 5),
+    cast: [], text: '', lens: 35, aspect: '16:9', at: 1
+  };
+  const bc = SB.Pdf.cells()[0];
+  eq(bc.img, 'data:image/jpeg;base64,QkxPQ0s=', 'a card with only a blocking prints the blocking');
+  eq(bc.blocked, true, 'and knows it is a blocking');
+  const bh = SB.Pdf.html({ doc: 'board', silent: true });
+  eq(/QkxPQ0s=/.test(bh) && /class="blk">blocking</.test(bh), true, 'the sheet shows it, tagged');
+  eq(/no frame</.test(bh), false, 'not an empty frame');
+  bs.image = SB.Blobs.image(bk, 'data:image/png;base64,U1RJTEw=', 8, 5);
+  eq(SB.Pdf.cells()[0].blocked, false, 'once a still lands, the still prints');
+  eq(SB.Pdf.cells()[0].img, 'data:image/png;base64,U1RJTEw=', 'and the still is what prints');
 }
 
 console.log('\n— a framing is how a description opens —');
