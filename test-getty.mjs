@@ -90,19 +90,45 @@ const waits = [];
 SB.Getty.deps.sleep = function (ms) { waits.push(ms); return Promise.resolve(); };
 SB.Getty.setKey('test-key');
 
+/* ---- the fixture ----
+ *
+ * Built from Getty's live OpenAPI schema for `/v3/search/videos/creative`, NOT
+ * from what this client expects. That distinction is the entire reason this
+ * file exists in its current form: the first version of it answered with
+ * `{images: […]}` because the code read `images`, so every check passed over a
+ * client that could not read a single real result. A fixture that agrees with
+ * the implementation tests nothing.
+ *
+ * Off the spec, verbatim: the footage endpoints answer `{result_count, videos,
+ * facets, related_searches, auto_corrections}`, and a video's `display_sizes`
+ * entries carry only `{name, uri, aspect_ratio, is_watermarked}` — there is no
+ * media type to read, and Getty's URLs put the format in the query string as
+ * often as in the path.
+ */
 function clip(id, extra) {
   return Object.assign({
     id: id, title: 'Some footage ' + id, caption: '', artist: 'Someone',
-    collection_name: 'Moment', asset_family: 'creative', license_model: 'royaltyfree',
+    collection_name: 'Moment', collection_code: 'MMT', asset_family: 'creative',
+    asset_type: 'video', license_model: 'royaltyfree',
     clip_length: '0:12', aspect_ratio: '16:9', shot_speed: 'realtime', mastered_to: 'hd',
     display_sizes: [
-      { name: 'thumb', uri: 'https://media.gettyimages.com/t/' + id + '.jpg', media_type: 'image/jpeg' },
-      { name: 'comp', uri: 'https://media.gettyimages.com/c/' + id + '.mp4', media_type: 'video/mp4', bytes: 2400000 },
-      { name: 'preview', uri: 'https://media.gettyimages.com/p/' + id + '.mp4', media_type: 'video/mp4' }
+      { name: 'thumb', is_watermarked: false, aspect_ratio: 1.77,
+        uri: 'https://media.gettyimages.com/id/' + id + '/video/' + id + '.jpg?s=640x640&k=20' },
+      { name: 'comp', is_watermarked: true, aspect_ratio: 1.77,
+        uri: 'https://media.gettyimages.com/id/' + id + '/video/' + id + '.mp4?s=mp4-640x640&k=20' }
     ],
-    referral_destinations: [{ uri: 'https://www.gettyimages.com/detail/' + id }]
+    referral_destinations: [{ site_name: 'gettyimages.com', uri: 'https://www.gettyimages.com/detail/' + id }]
   }, extra || {});
 }
+
+/* A whole reply, in the shape the endpoint actually sends. */
+function videosReply(list, total) {
+  return {
+    result_count: total === undefined ? list.length : total,
+    videos: list, facets: {}, related_searches: [], auto_corrections: {}
+  };
+}
+
 /* the old name, so the licence cases below read unchanged — they are about a
    comp on a card and do not care what kind of asset it is */
 const img = clip;
@@ -111,7 +137,7 @@ const img = clip;
 
 section('the request');
 {
-  const f = fakeGetty([{ body: { result_count: 2, images: [clip('1'), clip('2')] } }]);
+  const f = fakeGetty([{ body: videosReply([clip('1'), clip('2')]) }]);
   SB.Getty.deps.fetch = f;
   const r = await SB.Getty.searchVideos('creative', { phrase: 'a call centre at night' }, 1, 60);
   const c = f.calls[0];
@@ -131,31 +157,54 @@ section('the request');
   eq(r.images.length, 2, 'two results back');
   eq(r.total, 2, 'the total comes from result_count');
   eq(r.images[0].kind, 'video', 'every result is footage');
-  eq(r.images[0].poster, 'https://media.gettyimages.com/t/1.jpg',
+  eq(r.images[0].poster,
+    'https://media.gettyimages.com/id/1/video/1.jpg?s=640x640&k=20',
     'the poster is the still out of the display set');
-  eq(r.images[0].comp, 'https://media.gettyimages.com/c/1.mp4',
-    'and the comp is the mp4, picked by what it IS and not by its name');
+  eq(r.images[0].comp,
+    'https://media.gettyimages.com/id/1/video/1.mp4?s=mp4-640x640&k=20',
+    'and the comp is the clip — told apart with no media type to read, which is ' +
+    'all the spec gives');
   eq(r.images[0].seconds, 12, '"0:12" is read as twelve seconds');
   eq(r.images[0].aspect, '16:9', 'the aspect comes through');
   eq(r.images[0].link, 'https://www.gettyimages.com/detail/1', 'the gettyimages.com link');
 }
 
 {
-  /* A clip is picked by its media type, not by being called "comp" — a
-     display set that calls its POSTER "comp" is the trap this avoids. */
-  const odd = clip('5', {
+  /* Telling a clip from a poster with nothing but a name and a URL. A still
+     misread as a clip fails loudly at the first decode; a clip misread as a
+     still leaves the drawer with nothing to play and nothing to place, which
+     is the failure that hides — so anything that does not look like a picture
+     is treated as the clip. */
+  const named = SB.Getty.asset(clip('5', {
     display_sizes: [
-      { name: 'comp', uri: 'https://media.gettyimages.com/x/5.jpg', media_type: 'image/jpeg' },
-      { name: 'preview', uri: 'https://media.gettyimages.com/x/5.mp4', media_type: 'video/mp4' }
+      { name: 'comp', uri: 'https://media.gettyimages.com/x/5.jpg' },
+      { name: 'preview', uri: 'https://media.gettyimages.com/x/5.mp4' }
     ]
-  });
-  const a = SB.Getty.asset(odd);
-  eq(a.comp, 'https://media.gettyimages.com/x/5.mp4', 'the mp4 is the comp even when a jpeg is named "comp"');
-  eq(a.poster, 'https://media.gettyimages.com/x/5.jpg', 'and the jpeg is the poster');
+  }));
+  eq(named.comp, 'https://media.gettyimages.com/x/5.mp4',
+    'a .jpg called "comp" is still a poster, and the .mp4 is still the clip');
+  eq(named.poster, 'https://media.gettyimages.com/x/5.jpg', 'and the jpeg is the poster');
+
+  const inQuery = SB.Getty.asset(clip('6', {
+    display_sizes: [
+      { name: 'thumb', uri: 'https://media.gettyimages.com/id/6/v/6?s=640x640&f=jpeg' },
+      { name: 'comp', uri: 'https://media.gettyimages.com/id/6/v/6?s=mp4-640x640' }
+    ]
+  }));
+  eq(inQuery.comp, 'https://media.gettyimages.com/id/6/v/6?s=mp4-640x640',
+    'a format that lives in the query string rather than the path is read too');
+  eq(inQuery.poster, 'https://media.gettyimages.com/id/6/v/6?s=640x640&f=jpeg',
+    'and so is the poster beside it');
+
+  const noClip = SB.Getty.asset(clip('8', {
+    display_sizes: [{ name: 'thumb', uri: 'https://media.gettyimages.com/x/8.jpg' }]
+  }));
+  eq(noClip.comp, '', 'an asset with no playable comp says so rather than guessing one');
+  eq(noClip.poster, 'https://media.gettyimages.com/x/8.jpg', 'while still having a poster');
 }
 
 {
-  const f = fakeGetty([{ body: { images: [] } }]);
+  const f = fakeGetty([{ body: videosReply([]) }]);
   SB.Getty.deps.fetch = f;
   await SB.Getty.searchVideos('editorial', { phrase: 'x', excludeEditorialOnly: false, safe: false }, 2, 30);
   const c = f.calls[0];
@@ -169,7 +218,7 @@ section('the request');
   /* Every hand-set filter, under its wire name. This is the list the drawer
      offers, and a filter that goes out under the wrong name is a filter that
      silently does nothing — which is exactly the bug `delete q.people` was. */
-  const f = fakeGetty([{ body: { images: [] } }]);
+  const f = fakeGetty([{ body: videosReply([]) }]);
   SB.Getty.deps.fetch = f;
   await SB.Getty.searchVideos('creative', {
     phrase: 'x', orientations: ['horizontal'], aspects: ['16:9'], formats: ['4k'],
@@ -191,11 +240,38 @@ section('the request');
 
 {
   /* An empty or absent filter is not a filter. */
-  const f = fakeGetty([{ body: { images: [] } }]);
+  const f = fakeGetty([{ body: videosReply([]) }]);
   SB.Getty.deps.fetch = f;
   await SB.Getty.searchVideos('creative', { phrase: 'x', viewpoints: [], minLength: '' }, 1, 10);
   ok(!('viewpoints' in f.calls[0].q), 'an empty array is left out of the query');
   ok(!('min_clip_length' in f.calls[0].q), 'an empty string is left out of the query');
+}
+
+section('the reply shape, which is where tonight went');
+{
+  /* THE regression. Getty's footage endpoints answer `videos`; the image ones
+     answer `images`. This client was ported from the image search and kept
+     reading `images`, so a real search with a real key came back with an
+     empty strip: request fine, key fine, every result dropped by the parser.
+     Asserted against both names, with the real one first. */
+  const f = fakeGetty([{ body: { result_count: 3, videos: [clip('1'), clip('2'), clip('3')] } }]);
+  SB.Getty.deps.fetch = f;
+  const r = await SB.Getty.searchVideos('creative', { phrase: 'man at computer' }, 1, 60);
+  eq(r.images.length, 3, 'a `videos` array is read — the shape the footage endpoints send');
+  eq(r.total, 3, 'and so is its result_count');
+
+  const g = fakeGetty([{ body: { result_count: 1, images: [clip('9')] } }]);
+  SB.Getty.deps.fetch = g;
+  const r2 = await SB.Getty.searchVideos('creative', { phrase: 'x' }, 1, 60);
+  eq(r2.images.length, 1, 'an `images` array is still read, so a mixed endpoint cannot regress');
+
+  /* And the diagnostic that turns this class of bug into a line of text. */
+  const d = SB.Getty.describeRaw({ result_count: 7, videos: [clip('4')] });
+  ok(/videos/.test(d), 'the key check names the arrays Getty sent');
+  ok(/result_count: 7/.test(d), 'and the count');
+  ok(/display sizes: thumb, comp/.test(d), 'and the display sizes it found on the first asset');
+  ok(/no assets in the reply/.test(SB.Getty.describeRaw({ result_count: 0, videos: [] })),
+    'and says plainly when there were none');
 }
 
 /* ---------------- 2. when Getty says no ---------------- */
@@ -215,7 +291,7 @@ section('when Getty says no');
 }
 {
   waits.length = 0;
-  const f = fakeGetty([{ status: 429, body: {} }, { body: { images: [] } }]);
+  const f = fakeGetty([{ status: 429, body: {} }, { body: videosReply([]) }]);
   SB.Getty.deps.fetch = f;
   await SB.Getty.searchVideos('creative', { phrase: 'x' }, 1, 10);
   eq(waits, [1000], 'with no Retry-After it falls back to the backoff');
@@ -262,7 +338,7 @@ section('by picture');
 {
   const f = fakeGetty(function (call) {
     if (call.method === 'PUT') return { body: { uri: 'https://uploads.getty/abc.jpg' } };
-    return { body: { result_count: 1, images: [clip('7')] } };
+    return { body: videosReply([clip('7')]) };
   });
   SB.Getty.deps.fetch = f;
   const url = await SB.Getty.uploadSearchImage('3b frame.jpg', { size: 10, type: 'image/jpeg' });
@@ -321,7 +397,7 @@ section('nothing is derived from the card');
   const sh = p.scenes[0].shots[0];
   sh.type = 'Close-up';
   sh.description = 'a tight frame on the laptop';
-  const f = fakeGetty([{ body: { images: [] } }]);
+  const f = fakeGetty([{ body: videosReply([]) }]);
   SB.Getty.deps.fetch = f;
   await SB.Getty.searchVideos('creative', SB.Getty.defaultFilters(), 1, 60);
   const sent = JSON.stringify(f.calls[0].q);
@@ -606,6 +682,9 @@ section('what a comp carries about itself');
   eq(SB.Getty.seconds(12), 12, 'a numeric clip_length is read as seconds');
   eq(SB.Getty.seconds('0:09'), 9, 'and a clock string is too');
   eq(SB.Getty.seconds(null), 0, 'and nothing is zero rather than NaN');
+  eq(SB.Getty.seconds('PT12S'), 12, 'an ISO duration is read too');
+  eq(SB.Getty.seconds('PT1M5S'), 65, 'minutes and seconds');
+  eq(SB.Getty.seconds('18'), 18, 'and a bare number in a string');
   /* a URL-only record still says what it is */
   eq(SB.Getty.recordFromUrl('https://media.gettyimages.com/id/904321/video/x.mp4').kind, 'video',
     'a record made from a URL alone still carries a kind');

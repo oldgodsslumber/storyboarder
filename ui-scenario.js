@@ -4485,11 +4485,18 @@
             link: 'https://www.gettyimages.com/detail/100' + n, editorialOnly: n === 3
           };
         });
+        /* This stub stands in for the CLIENT, not for Getty: it hands back
+           shaped assets, which is what the drawer consumes. The reply-shape
+           question — `videos` vs `images` — belongs to the client and is
+           asserted in test-getty.mjs against the live schema. */
         SB.Getty.searchVideos = function () {
           return Promise.resolve({ total: 3, images: fakeAssets, related: [] });
         };
         SB.Board.select(filler[0].id);
         SB.Stock.sync();
+        const phraseBox = drawer.querySelector('.stock-phrase');
+        phraseBox.value = 'man at a desk';
+        phraseBox.dispatchEvent(new Event('input', { bubbles: true }));
         const searchBtn = Array.prototype.filter.call(drawer.querySelectorAll('.stock-head button'),
           function (b) { return b.textContent === 'Search'; })[0];
         t('the drawer has a search button', !!searchBtn, '');
@@ -4541,6 +4548,28 @@
         t('hovering a tile moves the judging pane to it',
           /Footage 2/.test(drawer.querySelector('.stock-judge').textContent),
           drawer.querySelector('.stock-judge').textContent.slice(0, 60));
+        /* A search that returns nothing used to show the same sentence as a
+           drawer nobody had searched in yet — which is how a real search with
+           a real key looked like a drawer waiting to be used. */
+        await (async function () {
+          const door = SB.Getty.searchVideos;
+          SB.Getty.searchVideos = function () {
+            return Promise.resolve({ total: 0, images: [], related: [] });
+          };
+          searchBtn.click();
+          /* the search is async — asserting on the strip before it lands reads
+             the PREVIOUS results, which is a test that cannot fail */
+          await new Promise(function (r) { setTimeout(r, 150); });
+          SB.Getty.searchVideos = door;
+          const txt = drawer.querySelector('.stock-strip').textContent;
+          t('an empty result says Getty returned nothing', /returned nothing/.test(txt), txt.slice(0, 90));
+          t('and repeats the phrase it searched for', /man at a desk/.test(txt), txt.slice(0, 120));
+          t('and points at the key check for a shape problem', /Check this key/.test(txt),
+            txt.slice(0, 160));
+          searchBtn.click();                       // back to the stubbed results
+          await new Promise(function (r) { setTimeout(r, 150); });
+        })();
+
         const useBtn = Array.prototype.filter.call(drawer.querySelectorAll('.stock-judge button'),
           function (b) { return /^Use on /.test(b.textContent); })[0];
         t('and the pane offers it to the selected card', !!useBtn,

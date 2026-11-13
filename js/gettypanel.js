@@ -48,7 +48,7 @@
     /* the search as it stands. `filters` is only ever what a person set. */
     filters: null, phrase: '', family: 'creative',
     page: 1, total: 0, images: [], more: false,
-    busy: false, error: '',
+    busy: false, error: '', searched: false,
     /* what the judging pane is playing, and what Use-on would place */
     chosen: null,
     /* by-image: the uploaded frame's URL, so paging stays by-image */
@@ -350,7 +350,7 @@
       return;
     }
     const f = Object.assign({}, S.filters || {}, { phrase: S.phrase });
-    S.busy = true; S.error = '';
+    S.busy = true; S.error = ''; S.searched = true;
     if (page === 1) { S.images = []; S.chosen = null; }
     paintStatus();
     const want = ++S.seq;
@@ -468,8 +468,24 @@
       return;
     }
     if (!S.images.length) {
-      strip.appendChild(note(S.busy ? 'Searching Getty…'
-        : 'Type what the shot shows and press Search. The filters above come from the card.'));
+      /* "Nothing came back" and "you have not searched yet" used to be the
+         same sentence, which is how a search that worked and returned nothing
+         looked exactly like a drawer waiting to be used. Two different facts,
+         two different sentences. */
+      if (S.busy) { strip.appendChild(note('Searching Getty…')); return; }
+      if (!S.searched) {
+        strip.appendChild(note('Type what the shot shows and press Search.'));
+        return;
+      }
+      const set = (SB.Getty.chips(S.filters || {}) || [])
+        .map(function (c) { return c.label; }).join(' · ');
+      strip.appendChild(note('Getty returned nothing for “' + (S.phrase || '') + '”' +
+        (set ? ', filtered to ' + set : '') + '. ' +
+        (set ? 'Drop a filter above and search again — a filter can exclude everything. ' : '') +
+        'If a search you expect to work keeps coming back empty, Settings → Getty → ' +
+        'Check this key says what Getty actually sent.', 'Open Settings', function () {
+          SB.Settings.open('getty');
+        }));
       return;
     }
 
@@ -510,6 +526,18 @@
        and a glyph say what this is, and the judging pane plays it. */
     if (a.seconds) {
       t.appendChild(SB.el('span', 'stock-len', '\u25b7 ' + SB.Getty.clock(a.seconds)));
+    }
+
+    /* No playable comp in the display set. The tile still shows — the asset
+       is real and its id is what the edit licenses — but it says what it
+       cannot do, rather than being a tile that quietly fails when dropped. */
+    if (!a.comp) {
+      const nc = SB.el('span', 'stock-flag', 'no preview');
+      nc.title = 'Getty sent no playable comp for this clip, so it cannot be placed on a ' +
+        'card. Open it on gettyimages.com instead.';
+      t.appendChild(nc);
+      t.draggable = false;
+      t.classList.add('nocomp');
     }
 
     if (a.editorialOnly) {

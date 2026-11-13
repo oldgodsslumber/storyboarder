@@ -1152,10 +1152,19 @@
         check.disabled = true;
         checkNote.classList.remove('err');
         checkNote.textContent = 'asking Getty…';
-        SB.Getty.searchVideos('creative', { phrase: 'test' }, 1, 1).then(function (r) {
+        /* The RAW reply, described. A check that only says "working" is no use
+           against the failure this feature actually had: a valid key, a
+           successful request, and a client reading the wrong field out of the
+           reply. One line of what Getty sent beats an evening of guessing. */
+        SB.Getty.searchVideosRaw('creative', { phrase: 'man at computer' }, 1, 1).then(function (raw) {
           check.disabled = false;
-          checkNote.textContent = 'Working — Getty answered with ' +
-            (r.total ? r.total.toLocaleString() + ' results for “test”.' : 'a result set.');
+          const list = (raw && (raw.videos || raw.images || raw.result)) || [];
+          const got = Array.isArray(list) ? list.length : 0;
+          checkNote.textContent = (got
+            ? 'Working — Getty answered with footage for “man at computer”. '
+            : 'The key works, but no footage came back. ') +
+            '[' + SB.Getty.describeRaw(raw) + ']';
+          checkNote.classList.toggle('err', !got);
         }).catch(function (e) {
           check.disabled = false;
           checkNote.textContent = e.message || String(e);

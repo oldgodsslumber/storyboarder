@@ -1573,7 +1573,7 @@ body.stock-dragging .frame{outline:1px dashed color-mix(in srgb, var(--accent) 5
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-11-13 22:18 · f745dd2+";</script>
+<script>window.SB_BUILD = "2026-11-13 22:39 · b8aba03+";</script>
 
 <div id="app">
 
@@ -9790,8 +9790,14 @@ window.SB = window.SB || {};
   }
 
   function searchVideos(family, f, page, pageSize) {
+    return searchVideosRaw(family, f, page, pageSize).then(shapeResults);
+  }
+
+  /* The same call without the shaping, so the key check in Settings can say
+   * what Getty actually sent rather than what we made of it. */
+  function searchVideosRaw(family, f, page, pageSize) {
     const path = '/v3/search/videos/' + (family === 'editorial' ? 'editorial' : 'creative');
-    return request('GET', path, { query: searchParams(f, page, pageSize) }).then(shapeResults);
+    return request('GET', path, { query: searchParams(f, page, pageSize) });
   }
 
   function similar(id, page, pageSize) {
@@ -9847,12 +9853,21 @@ window.SB = window.SB || {};
   function blobType(b) { return (b && b.type) || ''; }
 
   /* One shape for every search: the drawer never learns which call it came
-   * from. */
+   * from.
+   *
+   * `videos` FIRST, and this line is the whole reason a real search came back
+   * empty with a working key. Getty's footage endpoints answer
+   * {result_count, videos:[…]} — the image endpoints answer {images:[…]} —
+   * and this was ported from the image search and kept reading `images`. The
+   * request was fine, the key was fine, and the parser dropped every result
+   * on the floor. The test fake had the same wrong shape in it, so 146 green
+   * checks proved only that the code agreed with my mistake: a fixture has to
+   * come off the spec, not off the implementation. */
   function shapeResults(r) {
-    /* Anything that is not a list of assets is no assets. An `images` that
-     * came back as an object or a string used to reach .map and throw, and
-     * the drawer showed the TypeError where "nothing found" belonged. */
-    const raw = r && (r.images || r.result);
+    /* Anything that is not a list of assets is no assets. A list that came
+     * back as an object or a string used to reach .map and throw, and the
+     * drawer showed the TypeError where "nothing found" belonged. */
+    const raw = r && (r.videos || r.images || r.result);
     const list = Array.isArray(raw) ? raw : [];
     return {
       total: (r && (r.result_count || 0)) | 0,
@@ -9877,18 +9892,29 @@ window.SB = window.SB || {};
     return '';
   }
 
-  /* A video's display set is a poster still plus one or more watermarked mp4s.
-   * Which names Getty uses for the mp4s is the one thing the spec does not
-   * pin down, so both halves are picked by what they ARE — a size with a
-   * video media type or a video-ish name is a clip, anything else is a still
-   * — and the name lists only order the candidates. Picking by name alone is
-   * how a poster jpeg ends up being treated as the comp. */
+  /* A video's display set is a poster still plus one or more watermarked
+   * clips. Telling them apart is guesswork by design: the spec says a
+   * display size carries only {name, uri, aspect_ratio, is_watermarked} —
+   * there is NO media type to read, which is what the first cut leaned on.
+   *
+   * So: anything that looks like a picture is a picture, and everything else
+   * with a URI is a candidate clip. That way round on purpose. A still
+   * misread as a clip fails loudly at the first decode; a clip misread as a
+   * still means the drawer silently has nothing to play and nothing to put on
+   * a card, which is the failure that is hard to see. Getty's URLs carry the
+   * format in the query as often as in the path (`?s=mp4-640x640`), so both
+   * are matched. */
+  function looksLikeStill(z) {
+    const u = String((z && z.uri) || '');
+    const n = String((z && z.name) || '');
+    if (/\.(jpe?g|png|gif|webp|bmp)(\?|#|$)/i.test(u)) return true;
+    if (/[?&=](jpe?g|png|webp)\b/i.test(u)) return true;
+    return /thumb|poster|still|image/i.test(n) && !/\bmp4\b/i.test(u);
+  }
+
   function isClipSize(z) {
-    const t = String((z && (z.media_type || z.content_type || z.type)) || '');
-    if (/^video\//i.test(t)) return true;
-    if (/image\//i.test(t)) return false;
-    return /comp|preview|clip|video|mp4/i.test(String((z && z.name) || '')) &&
-      /\.(mp4|mov|m4v)(\?|$)/i.test(String((z && z.uri) || ''));
+    if (!z || !z.uri) return false;
+    return !looksLikeStill(z);
   }
 
   function clipSize(a) {
@@ -9926,6 +9952,26 @@ window.SB = window.SB || {};
 
   /* The normalised asset. `raw` is kept so a later field is one line away and
    * nothing has to re-derive what a display set meant. */
+  /* What a search actually came back with, in one line, for the key check in
+   * Settings. This exists because of how the `videos`/`images` bug presented:
+   * a working key, a successful request, and an empty strip with nothing
+   * anywhere saying why. A shape mismatch should be a line of text, not an
+   * afternoon. */
+  function describeRaw(r) {
+    if (!r || typeof r !== 'object') return 'the reply was not an object';
+    const keys = Object.keys(r);
+    const arr = keys.filter(function (k) { return Array.isArray(r[k]); });
+    const list = (r.videos || r.images || r.result || []);
+    const first = Array.isArray(list) ? list[0] : null;
+    const names = first ? (first.display_sizes || first.display_set || [])
+      .map(function (z) { return z && z.name; }).filter(Boolean) : [];
+    return 'reply keys: ' + keys.join(', ') +
+      ' | arrays: ' + (arr.join(', ') || 'none') +
+      ' | result_count: ' + (r.result_count === undefined ? '(absent)' : r.result_count) +
+      (first ? ' | first asset: ' + first.id +
+        ' | display sizes: ' + (names.join(', ') || '(none)') : ' | no assets in the reply');
+  }
+
   function asset(a) {
     if (!a || !a.id) return null;
     const dest = (a.referral_destinations || [])[0] || null;
@@ -9955,11 +10001,17 @@ window.SB = window.SB || {};
     };
   }
 
+  /* `clip_length` is typed as a string in the spec and has been seen as a
+   * number, as "0:12" and as an ISO duration. All three, one answer. */
   function seconds(v) {
     if (typeof v === 'number' && isFinite(v)) return Math.round(v);
     const str = String(v == null ? '' : v).trim();
     const mm = /^(\d+):(\d{1,2})(?:\.\d+)?$/.exec(str);
     if (mm) return Number(mm[1]) * 60 + Number(mm[2]);
+    const iso = /^P(?:T)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?$/i.exec(str);
+    if (iso && (iso[1] || iso[2])) {
+      return Math.round(Number(iso[1] || 0) * 60 + Number(iso[2] || 0));
+    }
     const n = parseFloat(str);
     return isFinite(n) ? Math.round(n) : 0;
   }
@@ -10209,7 +10261,8 @@ window.SB = window.SB || {};
     key: key, setKey: setKey, configured: configured, onChange: onChange,
     keepCompOff: keepCompOff, setKeepComp: setKeepComp,
     /* calls — footage only */
-    searchVideos: searchVideos, similar: similar, byImage: byImage,
+    searchVideos: searchVideos, searchVideosRaw: searchVideosRaw,
+    similar: similar, byImage: byImage, describeRaw: describeRaw,
     uploadSearchImage: uploadSearchImage, fetchComp: fetchComp,
     /* shaping */
     asset: asset, record: record, posterUrl: posterUrl, compUrl: compUrl,
@@ -25021,7 +25074,7 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
     /* the search as it stands. `filters` is only ever what a person set. */
     filters: null, phrase: '', family: 'creative',
     page: 1, total: 0, images: [], more: false,
-    busy: false, error: '',
+    busy: false, error: '', searched: false,
     /* what the judging pane is playing, and what Use-on would place */
     chosen: null,
     /* by-image: the uploaded frame's URL, so paging stays by-image */
@@ -25323,7 +25376,7 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
       return;
     }
     const f = Object.assign({}, S.filters || {}, { phrase: S.phrase });
-    S.busy = true; S.error = '';
+    S.busy = true; S.error = ''; S.searched = true;
     if (page === 1) { S.images = []; S.chosen = null; }
     paintStatus();
     const want = ++S.seq;
@@ -25441,8 +25494,24 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
       return;
     }
     if (!S.images.length) {
-      strip.appendChild(note(S.busy ? 'Searching Getty…'
-        : 'Type what the shot shows and press Search. The filters above come from the card.'));
+      /* "Nothing came back" and "you have not searched yet" used to be the
+         same sentence, which is how a search that worked and returned nothing
+         looked exactly like a drawer waiting to be used. Two different facts,
+         two different sentences. */
+      if (S.busy) { strip.appendChild(note('Searching Getty…')); return; }
+      if (!S.searched) {
+        strip.appendChild(note('Type what the shot shows and press Search.'));
+        return;
+      }
+      const set = (SB.Getty.chips(S.filters || {}) || [])
+        .map(function (c) { return c.label; }).join(' · ');
+      strip.appendChild(note('Getty returned nothing for “' + (S.phrase || '') + '”' +
+        (set ? ', filtered to ' + set : '') + '. ' +
+        (set ? 'Drop a filter above and search again — a filter can exclude everything. ' : '') +
+        'If a search you expect to work keeps coming back empty, Settings → Getty → ' +
+        'Check this key says what Getty actually sent.', 'Open Settings', function () {
+          SB.Settings.open('getty');
+        }));
       return;
     }
 
@@ -25483,6 +25552,18 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
        and a glyph say what this is, and the judging pane plays it. */
     if (a.seconds) {
       t.appendChild(SB.el('span', 'stock-len', '\u25b7 ' + SB.Getty.clock(a.seconds)));
+    }
+
+    /* No playable comp in the display set. The tile still shows — the asset
+       is real and its id is what the edit licenses — but it says what it
+       cannot do, rather than being a tile that quietly fails when dropped. */
+    if (!a.comp) {
+      const nc = SB.el('span', 'stock-flag', 'no preview');
+      nc.title = 'Getty sent no playable comp for this clip, so it cannot be placed on a ' +
+        'card. Open it on gettyimages.com instead.';
+      t.appendChild(nc);
+      t.draggable = false;
+      t.classList.add('nocomp');
     }
 
     if (a.editorialOnly) {
@@ -27182,10 +27263,19 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
         check.disabled = true;
         checkNote.classList.remove('err');
         checkNote.textContent = 'asking Getty…';
-        SB.Getty.searchVideos('creative', { phrase: 'test' }, 1, 1).then(function (r) {
+        /* The RAW reply, described. A check that only says "working" is no use
+           against the failure this feature actually had: a valid key, a
+           successful request, and a client reading the wrong field out of the
+           reply. One line of what Getty sent beats an evening of guessing. */
+        SB.Getty.searchVideosRaw('creative', { phrase: 'man at computer' }, 1, 1).then(function (raw) {
           check.disabled = false;
-          checkNote.textContent = 'Working — Getty answered with ' +
-            (r.total ? r.total.toLocaleString() + ' results for “test”.' : 'a result set.');
+          const list = (raw && (raw.videos || raw.images || raw.result)) || [];
+          const got = Array.isArray(list) ? list.length : 0;
+          checkNote.textContent = (got
+            ? 'Working — Getty answered with footage for “man at computer”. '
+            : 'The key works, but no footage came back. ') +
+            '[' + SB.Getty.describeRaw(raw) + ']';
+          checkNote.classList.toggle('err', !got);
         }).catch(function (e) {
           check.disabled = false;
           checkNote.textContent = e.message || String(e);

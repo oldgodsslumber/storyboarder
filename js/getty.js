@@ -242,8 +242,14 @@
   }
 
   function searchVideos(family, f, page, pageSize) {
+    return searchVideosRaw(family, f, page, pageSize).then(shapeResults);
+  }
+
+  /* The same call without the shaping, so the key check in Settings can say
+   * what Getty actually sent rather than what we made of it. */
+  function searchVideosRaw(family, f, page, pageSize) {
     const path = '/v3/search/videos/' + (family === 'editorial' ? 'editorial' : 'creative');
-    return request('GET', path, { query: searchParams(f, page, pageSize) }).then(shapeResults);
+    return request('GET', path, { query: searchParams(f, page, pageSize) });
   }
 
   function similar(id, page, pageSize) {
@@ -299,12 +305,21 @@
   function blobType(b) { return (b && b.type) || ''; }
 
   /* One shape for every search: the drawer never learns which call it came
-   * from. */
+   * from.
+   *
+   * `videos` FIRST, and this line is the whole reason a real search came back
+   * empty with a working key. Getty's footage endpoints answer
+   * {result_count, videos:[…]} — the image endpoints answer {images:[…]} —
+   * and this was ported from the image search and kept reading `images`. The
+   * request was fine, the key was fine, and the parser dropped every result
+   * on the floor. The test fake had the same wrong shape in it, so 146 green
+   * checks proved only that the code agreed with my mistake: a fixture has to
+   * come off the spec, not off the implementation. */
   function shapeResults(r) {
-    /* Anything that is not a list of assets is no assets. An `images` that
-     * came back as an object or a string used to reach .map and throw, and
-     * the drawer showed the TypeError where "nothing found" belonged. */
-    const raw = r && (r.images || r.result);
+    /* Anything that is not a list of assets is no assets. A list that came
+     * back as an object or a string used to reach .map and throw, and the
+     * drawer showed the TypeError where "nothing found" belonged. */
+    const raw = r && (r.videos || r.images || r.result);
     const list = Array.isArray(raw) ? raw : [];
     return {
       total: (r && (r.result_count || 0)) | 0,
@@ -329,18 +344,29 @@
     return '';
   }
 
-  /* A video's display set is a poster still plus one or more watermarked mp4s.
-   * Which names Getty uses for the mp4s is the one thing the spec does not
-   * pin down, so both halves are picked by what they ARE — a size with a
-   * video media type or a video-ish name is a clip, anything else is a still
-   * — and the name lists only order the candidates. Picking by name alone is
-   * how a poster jpeg ends up being treated as the comp. */
+  /* A video's display set is a poster still plus one or more watermarked
+   * clips. Telling them apart is guesswork by design: the spec says a
+   * display size carries only {name, uri, aspect_ratio, is_watermarked} —
+   * there is NO media type to read, which is what the first cut leaned on.
+   *
+   * So: anything that looks like a picture is a picture, and everything else
+   * with a URI is a candidate clip. That way round on purpose. A still
+   * misread as a clip fails loudly at the first decode; a clip misread as a
+   * still means the drawer silently has nothing to play and nothing to put on
+   * a card, which is the failure that is hard to see. Getty's URLs carry the
+   * format in the query as often as in the path (`?s=mp4-640x640`), so both
+   * are matched. */
+  function looksLikeStill(z) {
+    const u = String((z && z.uri) || '');
+    const n = String((z && z.name) || '');
+    if (/\.(jpe?g|png|gif|webp|bmp)(\?|#|$)/i.test(u)) return true;
+    if (/[?&=](jpe?g|png|webp)\b/i.test(u)) return true;
+    return /thumb|poster|still|image/i.test(n) && !/\bmp4\b/i.test(u);
+  }
+
   function isClipSize(z) {
-    const t = String((z && (z.media_type || z.content_type || z.type)) || '');
-    if (/^video\//i.test(t)) return true;
-    if (/image\//i.test(t)) return false;
-    return /comp|preview|clip|video|mp4/i.test(String((z && z.name) || '')) &&
-      /\.(mp4|mov|m4v)(\?|$)/i.test(String((z && z.uri) || ''));
+    if (!z || !z.uri) return false;
+    return !looksLikeStill(z);
   }
 
   function clipSize(a) {
@@ -378,6 +404,26 @@
 
   /* The normalised asset. `raw` is kept so a later field is one line away and
    * nothing has to re-derive what a display set meant. */
+  /* What a search actually came back with, in one line, for the key check in
+   * Settings. This exists because of how the `videos`/`images` bug presented:
+   * a working key, a successful request, and an empty strip with nothing
+   * anywhere saying why. A shape mismatch should be a line of text, not an
+   * afternoon. */
+  function describeRaw(r) {
+    if (!r || typeof r !== 'object') return 'the reply was not an object';
+    const keys = Object.keys(r);
+    const arr = keys.filter(function (k) { return Array.isArray(r[k]); });
+    const list = (r.videos || r.images || r.result || []);
+    const first = Array.isArray(list) ? list[0] : null;
+    const names = first ? (first.display_sizes || first.display_set || [])
+      .map(function (z) { return z && z.name; }).filter(Boolean) : [];
+    return 'reply keys: ' + keys.join(', ') +
+      ' | arrays: ' + (arr.join(', ') || 'none') +
+      ' | result_count: ' + (r.result_count === undefined ? '(absent)' : r.result_count) +
+      (first ? ' | first asset: ' + first.id +
+        ' | display sizes: ' + (names.join(', ') || '(none)') : ' | no assets in the reply');
+  }
+
   function asset(a) {
     if (!a || !a.id) return null;
     const dest = (a.referral_destinations || [])[0] || null;
@@ -407,11 +453,17 @@
     };
   }
 
+  /* `clip_length` is typed as a string in the spec and has been seen as a
+   * number, as "0:12" and as an ISO duration. All three, one answer. */
   function seconds(v) {
     if (typeof v === 'number' && isFinite(v)) return Math.round(v);
     const str = String(v == null ? '' : v).trim();
     const mm = /^(\d+):(\d{1,2})(?:\.\d+)?$/.exec(str);
     if (mm) return Number(mm[1]) * 60 + Number(mm[2]);
+    const iso = /^P(?:T)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?$/i.exec(str);
+    if (iso && (iso[1] || iso[2])) {
+      return Math.round(Number(iso[1] || 0) * 60 + Number(iso[2] || 0));
+    }
     const n = parseFloat(str);
     return isFinite(n) ? Math.round(n) : 0;
   }
@@ -661,7 +713,8 @@
     key: key, setKey: setKey, configured: configured, onChange: onChange,
     keepCompOff: keepCompOff, setKeepComp: setKeepComp,
     /* calls — footage only */
-    searchVideos: searchVideos, similar: similar, byImage: byImage,
+    searchVideos: searchVideos, searchVideosRaw: searchVideosRaw,
+    similar: similar, byImage: byImage, describeRaw: describeRaw,
     uploadSearchImage: uploadSearchImage, fetchComp: fetchComp,
     /* shaping */
     asset: asset, record: record, posterUrl: posterUrl, compUrl: compUrl,
