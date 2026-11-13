@@ -1057,8 +1057,10 @@
       ev.stopPropagation();
       el.classList.remove('drag-over');
       /* Dropped on the scene rather than on a card: the same thing a dropped
-         file does here — a new card at the end, with the comp on it. */
-      const stock = stockFromTransfer(ev.dataTransfer);
+         file does here — a new card at the end, with the footage on it. */
+      const stock = stockFromTransfer(ev.dataTransfer) ||
+        ((stockUrlFromTransfer(ev.dataTransfer) || {}).video
+          ? stockUrlFromTransfer(ev.dataTransfer).asset : null);
       if (stock) {
         const sh = SB.Model.addShot(P(), sc.id, {});
         if (sh) {
@@ -2133,14 +2135,17 @@
       if (st && shown) {
         const days = SB.Model.compAgeDays(st);
         const lapsed = SB.Model.compLapsed(st);
-        const sb = SB.el('button', 'stock-badge' + (lapsed ? ' stale' : ''), '◧ Getty');
-        sb.title = 'Getty ' + st.id + (st.artist ? ' · ' + st.artist : '') +
+        const sb = SB.el('button', 'stock-badge' + (lapsed ? ' stale' : ''),
+          '◧ Getty' + (st.seconds && SB.Getty ? ' ' + SB.Getty.clock(st.seconds) : ''));
+        sb.title = 'Getty ' + (st.kind === 'image' ? 'still ' : 'footage ') + st.id +
+          (st.artist ? ' · ' + st.artist : '') +
           (st.collection ? ' · ' + st.collection : '') +
           '\nPlaced ' + (days ? days + ' day' + (days === 1 ? '' : 's') + ' ago' : 'today') + '. ' +
           (lapsed
             ? 'A comp is licensed for ' + SB.Model.COMP_DAYS + ' days — this one has run out. ' +
-              'Replace it, or license the asset.'
-            : 'Comp use only: never in final or public material, and the watermark stays on.') +
+              'Replace it, or license the asset in the edit.'
+            : 'Comp use only: never in the cut, never in public material, and the watermark ' +
+              'stays on. The picture is the clip’s own first frame.') +
           '\nClick to open it on gettyimages.com.';
         sb.onclick = function (ev) {
           ev.stopPropagation();
@@ -2252,11 +2257,19 @@
       if (ev.dataTransfer.types.indexOf(DND_SHOT) >= 0) return;
       ev.preventDefault();
       f.classList.remove('drag-over');
-      /* A comp out of the drawer, checked first and exactly like DND_SHOT
+      /* Footage out of the drawer, checked first and exactly like DND_SHOT
          above: it carries the asset, so it can be placed WITH its licence
-         rather than as an anonymous picture off a URL. */
+         rather than as an anonymous file off a URL. */
       const stock = stockFromTransfer(ev.dataTransfer);
       if (stock) { ev.stopPropagation(); placeStock(sh, stock); return; }
+      /* The same thing with nothing but a URL — a clip, which the ordinary
+         dropped-picture path below would try to decode as an image. */
+      const stockUrl = stockUrlFromTransfer(ev.dataTransfer);
+      if (stockUrl && stockUrl.video) {
+        ev.stopPropagation();
+        placeStock(sh, stockUrl.asset);
+        return;
+      }
       /* A video dropped on a card is a clip for that card, not a picture that
          failed to decode — which is what it used to be reported as. A drop
          carrying both is two things for the same card, and taking only the
@@ -2406,11 +2419,16 @@
     } catch (e) { return null; }
   }
 
-  /* A Getty picture dropped as a bare URL — dragged straight out of a
-     gettyimages.com tab, or out of our own drawer after a payload we could
-     not read. The id is in the URL, so the picture does NOT land as an
-     anonymous frame that a model may be handed. What we cannot know (artist,
-     collection, title) stays empty rather than invented. */
+  /* Getty, dropped as a bare URL — dragged straight out of a gettyimages.com
+     tab, or out of our own drawer after a payload we could not read. The id is
+     in the URL, so what lands is NOT an anonymous frame a model may be handed.
+     What cannot be known from a URL (artist, collection, title) stays empty
+     rather than invented.
+
+     A Getty URL is usually a clip now, and a clip is not a picture: the
+     ordinary dropped-image path would fetch an mp4 and fail to decode it. So
+     this says which of the two it is, and hands back something placeStock can
+     take either way. */
   function stockUrlFromTransfer(dt) {
     if (!dt || !dt.getData || !SB.Getty) return null;
     let u = '';
@@ -2424,7 +2442,19 @@
     }
     u = String(u).trim().split(/\s+/)[0];
     const rec = u ? SB.Getty.recordFromUrl(u) : null;
-    return rec ? { url: u, rec: rec } : null;
+    if (!rec) return null;
+    const video = /\.(mp4|mov|m4v)(\?|#|$)/i.test(u);
+    rec.kind = video ? 'video' : 'image';
+    return {
+      url: u, rec: rec, video: video,
+      /* enough of an asset for placeStock: an id, the comp, and no poster to
+         fall back on — which is itself the honest state here */
+      asset: {
+        id: rec.id, kind: rec.kind, title: '', caption: '', artist: '', collection: '',
+        family: '', license: '', seconds: 0, aspect: '', comp: u, poster: video ? '' : u,
+        link: rec.link
+      }
+    };
   }
 
   /* Place a dropped picture, recording the licence when the drop was a Getty
@@ -2442,18 +2472,76 @@
   /* Put a comp on a card. The bytes come from Getty's media host, go into the
      file like any other picture, and the licence record goes in beside them —
      one call, so a comp can never land without its asset id. */
+  /* Put a piece of Getty footage on a card.
+   *
+   * One drag leaves two things on the card and one licence record covering
+   * both:
+   *
+   *   the FRAME   the comp's own first frame — 720p or better, which is the
+   *               whole reason it is not the poster thumbnail (about 170px,
+   *               and it prints like it)
+   *   the CLIP    the watermarked comp itself, in the file, so the board can
+   *               be handed to somebody and watched
+   *
+   * The order matters. The frame goes on first, because that is what makes
+   * the card stop looking empty; the clip follows, because it is the heavy
+   * part and a failure there must not cost the frame. Each step says what it
+   * could not do rather than leaving a card that looks finished.
+   */
   function placeStock(sh, a) {
     if (!SB.Getty) return Promise.resolve();
+    const rec = SB.Getty.record(a);
     const made = {
-      by: 'getty', id: a.id, artist: a.artist || '', collection: a.collection || '',
-      title: a.title || a.caption || '', license: a.license || '', at: Date.now(),
-      stock: SB.Getty.record(a)
+      by: 'getty', id: a.id, kind: 'video',
+      artist: a.artist || '', collection: a.collection || '',
+      title: a.title || a.caption || '', license: a.license || '',
+      seconds: a.seconds || 0, at: Date.now(), stock: rec
     };
-    return SB.Getty.fetchComp(a.comp || a.preview || a.thumb).then(function (blob) {
-      return setImage(sh, blob, made);
+    const keepClip = !SB.Getty.keepCompOff || !SB.Getty.keepCompOff();
+
+    return SB.Getty.fetchComp(a.comp).then(function (clip) {
+      /* The first frame, off the clip we already have in hand. On a build
+         that cannot decode it — or a drawer handing over a poster-only
+         asset — the thumbnail stands in, and the toast says so: boarding a
+         170px picture is a thing somebody has to know happened. */
+      return SB.Getty.firstFrame(clip).then(function (data) {
+        return { clip: clip, frame: data, fell: false };
+      }).catch(function (e) {
+        return { clip: clip, frame: a.poster || '', fell: true, why: e && e.message };
+      });
+    }).then(function (got) {
+      if (!got.frame) throw new Error('Nothing came back that could be put on the card.');
+      return setImage(sh, got.frame, made).then(function () {
+        if (got.fell) {
+          SB.toast('Placed the poster thumbnail — the clip\u2019s own first frame could not be ' +
+            'read here' + (got.why ? ' (' + got.why + ')' : '') + ', so this picture is small.', true);
+        }
+        if (!keepClip || !got.clip) return null;
+        /* The comp, as the card's clip. A video/* type is what Clip.attach
+           insists on and Getty's media host does not always send one. */
+        const file = named(got.clip, 'getty-' + a.id + '.mp4');
+        return SB.Clip.attach(P(), sh, file, made).catch(function (e) {
+          SB.toast('The frame is on the card, but the comp clip could not be kept: ' +
+            (e.message || e), true);
+          return null;
+        });
+      });
     }).catch(function (e) {
       SB.toast(e.message || String(e), true);
     });
+  }
+
+  /* A Blob with a name and a video type, which is what the clip path takes.
+     Rebuilt rather than mutated: `type` is read-only on a Blob. */
+  function named(blob, name) {
+    const type = /^video\//.test(blob.type || '') ? blob.type : 'video/mp4';
+    try {
+      return new File([blob], name, { type: type });
+    } catch (e) {
+      const b = blob.slice(0, blob.size, type);
+      try { b.name = name; } catch (x) { }
+      return b;
+    }
   }
 
   function setImage(sh, src, made) {

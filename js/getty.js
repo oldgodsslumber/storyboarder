@@ -36,13 +36,20 @@
    * rule the Gemini key follows, and the reason a board can be handed to
    * anyone. */
   const K_KEY = 'sb.getty.key';
+  /* Set only when somebody turns it OFF, so the default is "keep the clip"
+   * without writing anything into a fresh browser. */
+  const K_NOCLIP = 'sb.getty.noclip';
 
   /* Everything the drawer draws and the manifest records, and not one field
    * that would need a token. `display_set` is the whole picture set in one
    * ask: thumb to judge from, comp to place. */
-  const FIELDS = ['id', 'title', 'caption', 'artist', 'collection_name', 'collection_code',
-    'asset_family', 'license_model', 'allowed_use', 'graphical_style', 'orientation',
-    'max_dimensions', 'display_set', 'referral_destinations'];
+  /* Everything a footage tile, the judging pane and the manifest need, and
+   * not one field that would need a token. `display_set` is the whole picture
+   * set in one ask: the poster to scan, the comp mp4 to judge from and to
+   * take a first frame off. */
+  const FIELDS = ['id', 'title', 'caption', 'artist', 'clip_length', 'aspect_ratio',
+    'asset_family', 'collection_name', 'collection_code', 'license_model', 'allowed_use',
+    'shot_speed', 'mastered_to', 'display_set', 'referral_destinations'];
 
   /* Swappable so the whole client can be driven against a fake Getty in node
    * (test-getty.mjs). Nothing else in here touches the network. */
@@ -69,6 +76,12 @@
   function key() { return ls(K_KEY).trim(); }
   function setKey(v) { lsSet(K_KEY, String(v || '').trim()); notify(); }
   function configured() { return !!key(); }
+
+  /* Whether the comp clip is kept in the file alongside its first frame.
+   * A comp preview is a few megabytes; a board of thirty is a file nobody can
+   * email. On by default — a board you can watch is the point of footage. */
+  function keepCompOff() { return ls(K_NOCLIP) === '1'; }
+  function setKeepComp(on) { lsSet(K_NOCLIP, on ? '' : '1'); notify(); }
 
   /* ---------------- errors ---------------- */
 
@@ -182,23 +195,38 @@
     return res.text().catch(function () { return ''; });
   }
 
-  /* ---------------- searching ---------------- */
+  /* ---------------- searching ----------------
+   *
+   * Footage, and only footage. This app boards videos, the thing that gets cut
+   * into one is a clip, and the Premiere panel that does the licensing sorts
+   * stills into a bucket it reports as skipped — so an image search here could
+   * only ever have produced a list of ids the edit throws away. See
+   * getty_footage_plan.md §1.
+   *
+   * Nothing in here is derived from a card. The person searching is looking
+   * for footage and then dragging the shot up onto the board; the card is
+   * where the result lands, not an input to finding it.
+   */
 
-  /* f: { phrase, orientations, compositions, people, styles, moods, minSize,
-   *      color, sort, safe, excludeEditorialOnly, collections, ages }
+  /* f, all of it set by hand in the drawer:
+   *   phrase, orientations, aspects, formats, frameRates, techniques,
+   *   viewpoints, licenses, minLength, maxLength, collections, sort,
+   *   safe, excludeEditorialOnly
    * family: 'creative' (the default) | 'editorial'. */
   function searchParams(f, page, pageSize) {
     f = f || {};
     return {
       phrase: f.phrase,
+      /* video has exactly two orientations, not five */
       orientations: f.orientations,
-      compositions: f.compositions,
-      number_of_people: f.people,
-      graphical_styles: f.styles,
-      moods: f.moods,
-      minimum_size: f.minSize,
-      color: f.color,
-      age_of_people: f.ages,
+      aspect_ratios: f.aspects,
+      format_available: f.formats,
+      frame_rates: f.frameRates,
+      image_techniques: f.techniques,
+      viewpoints: f.viewpoints,
+      license_models: f.licenses,
+      min_clip_length: f.minLength,
+      max_clip_length: f.maxLength,
       collection_codes: f.collections,
       sort_order: f.sort,
       safe_search: f.safe === false ? '' : 'true',
@@ -213,20 +241,20 @@
     };
   }
 
-  function searchImages(family, f, page, pageSize) {
-    const path = '/v3/search/images/' + (family === 'editorial' ? 'editorial' : 'creative');
+  function searchVideos(family, f, page, pageSize) {
+    const path = '/v3/search/videos/' + (family === 'editorial' ? 'editorial' : 'creative');
     return request('GET', path, { query: searchParams(f, page, pageSize) }).then(shapeResults);
   }
 
   function similar(id, page, pageSize) {
-    return request('GET', '/v3/images/' + encodeURIComponent(id) + '/similar', {
+    return request('GET', '/v3/videos/' + encodeURIComponent(id) + '/similar', {
       query: { page: page || 1, page_size: pageSize || 60, fields: FIELDS }
     }).then(shapeResults);
   }
 
-  /* By picture rather than by words: either an asset already on Getty, or a
-   * URL Getty can reach — which for a frame out of this app means uploading it
-   * first (uploadSearchImage below).
+  /* By picture rather than by words: a frame off the board, uploaded, then
+   * searched against the FOOTAGE index — board a shot with a model, then find
+   * the clip that looks like it.
    *
    * Getty documents neither the upload's response nor this pair anywhere but
    * the OpenAPI spec, and the spec gives the upload no response schema at all,
@@ -236,13 +264,15 @@
     const q = searchParams(f, page, pageSize);
     if (src && src.assetId) q.asset_id = src.assetId;
     if (src && src.imageUrl) q.image_url = src.imageUrl;
-    /* The picture IS the composition, and it is the cast too — both filters
-     * come off. The names here are the WIRE names, which is the whole reason
-     * this needs saying: `people` is called number_of_people by the time it
-     * reaches this object, and deleting the friendly name deleted nothing. */
-    delete q.compositions;
-    delete q.number_of_people;
-    return request('GET', '/v3/search/images/creative/by-image', { query: q }).then(shapeResults);
+    /* The picture answers these, so asking them again only narrows the one
+     * thing it is already describing. Deleted under their WIRE names — the
+     * friendly name is gone by the time the object exists, and deleting that
+     * deleted nothing. */
+    delete q.aspect_ratios;
+    delete q.orientations;
+    delete q.viewpoints;
+    delete q.image_techniques;
+    return request('GET', '/v3/search/videos/creative/by-image', { query: q }).then(shapeResults);
   }
 
   /* PUT the bytes, get back something that names where they landed. The reply
@@ -299,19 +329,62 @@
     return '';
   }
 
-  /* Thumbs are what you scan, the comp is what you decide on. Both come out of
-   * the same display set, so asking for one costs nothing extra. */
-  function thumbUrl(a) { return sizeNamed(a, ['thumb', 'preview', 'comp']); }
-  function previewUrl(a) { return sizeNamed(a, ['preview', 'comp', 'high_res_comp', 'thumb']); }
-  function compUrl(a) { return sizeNamed(a, ['high_res_comp', 'comp', 'preview', 'thumb']); }
+  /* A video's display set is a poster still plus one or more watermarked mp4s.
+   * Which names Getty uses for the mp4s is the one thing the spec does not
+   * pin down, so both halves are picked by what they ARE — a size with a
+   * video media type or a video-ish name is a clip, anything else is a still
+   * — and the name lists only order the candidates. Picking by name alone is
+   * how a poster jpeg ends up being treated as the comp. */
+  function isClipSize(z) {
+    const t = String((z && (z.media_type || z.content_type || z.type)) || '');
+    if (/^video\//i.test(t)) return true;
+    if (/image\//i.test(t)) return false;
+    return /comp|preview|clip|video|mp4/i.test(String((z && z.name) || '')) &&
+      /\.(mp4|mov|m4v)(\?|$)/i.test(String((z && z.uri) || ''));
+  }
+
+  function clipSize(a) {
+    const all = sizes(a).filter(isClipSize);
+    if (!all.length) return null;
+    const order = ['high_res_comp', 'comp', 'preview', 'mid_res_comp'];
+    for (let i = 0; i < order.length; i++) {
+      const hit = all.filter(function (z) { return z.name === order[i]; })[0];
+      if (hit) return hit;
+    }
+    return all[0];
+  }
+
+  /* The poster: what a tile shows while nothing is playing. Deliberately NOT
+   * what lands on a card — see firstFrame(). */
+  function posterUrl(a) {
+    const still = sizes(a).filter(function (z) { return !isClipSize(z) && z.uri; });
+    const order = ['thumb', 'preview_image', 'comp_image', 'preview', 'comp'];
+    for (let i = 0; i < order.length; i++) {
+      const hit = still.filter(function (z) { return z.name === order[i]; })[0];
+      if (hit) return hit.uri;
+    }
+    return still.length ? still[0].uri : '';
+  }
+
+  /* The watermarked comp clip — what the judging pane plays, what the card
+   * keeps, and what the first frame is taken off. */
+  function compUrl(a) {
+    const z = clipSize(a);
+    return (z && z.uri) || '';
+  }
+
+  function thumbUrl(a) { return posterUrl(a); }
+  function previewUrl(a) { return posterUrl(a); }
 
   /* The normalised asset. `raw` is kept so a later field is one line away and
    * nothing has to re-derive what a display set meant. */
   function asset(a) {
     if (!a || !a.id) return null;
     const dest = (a.referral_destinations || [])[0] || null;
+    const z = clipSize(a);
     return {
       id: String(a.id),
+      kind: 'video',
       title: a.title || '',
       caption: a.caption || '',
       artist: a.artist || '',
@@ -319,17 +392,34 @@
       collectionCode: a.collection_code || '',
       family: a.asset_family || '',
       license: a.license_model || '',
-      allowedUse: (a.allowed_use && (a.allowed_use.usage_restrictions || a.allowed_use.release_info)) || '',
       editorialOnly: editorialOnly(a),
-      style: a.graphical_style || '',
-      orientation: a.orientation || '',
-      max: a.max_dimensions || null,
-      thumb: thumbUrl(a),
-      preview: previewUrl(a),
+      /* seconds. Getty sends it as a number on some collections and as
+       * "0:12" on others, so both are read and one shape comes out. */
+      seconds: seconds(a.clip_length),
+      aspect: a.aspect_ratio || '',
+      speed: a.shot_speed || '',
+      mastered: a.mastered_to || '',
+      poster: posterUrl(a),
       comp: compUrl(a),
+      compBytes: (z && (z.bytes || z.file_size)) || 0,
       link: (dest && (dest.uri || dest.site_name)) || '',
       raw: a
     };
+  }
+
+  function seconds(v) {
+    if (typeof v === 'number' && isFinite(v)) return Math.round(v);
+    const str = String(v == null ? '' : v).trim();
+    const mm = /^(\d+):(\d{1,2})(?:\.\d+)?$/.exec(str);
+    if (mm) return Number(mm[1]) * 60 + Number(mm[2]);
+    const n = parseFloat(str);
+    return isFinite(n) ? Math.round(n) : 0;
+  }
+
+  /* 0:12. A clip length is the first thing anyone reads off a footage tile. */
+  function clock(sec) {
+    const n = Math.max(0, Math.round(sec || 0));
+    return Math.floor(n / 60) + ':' + String(n % 60).padStart(2, '0');
   }
 
   /* "Editorial use only" is carried as a usage restriction rather than a flag,
@@ -366,6 +456,7 @@
     if (!id) return null;
     return {
       id: id, title: '', artist: '', collection: '', family: '', license: '',
+      kind: 'video', seconds: 0,
       link: 'https://www.gettyimages.com/detail/' + id, at: deps.now(), fromUrl: true
     };
   }
@@ -376,141 +467,211 @@
     return {
       id: a.id, title: a.title || a.caption || '', artist: a.artist || '',
       collection: a.collection || '', family: a.family || '', license: a.license || '',
+      /* what the edit will be licensing, and how long it runs — the two
+         things the Premiere panel needs that a still never had */
+      kind: a.kind || 'video', seconds: a.seconds || 0,
       link: a.link || '', at: deps.now()
     };
   }
 
   /* ---------------- the comp, as bytes ---------------- */
 
-  /* The media host allows cross-origin reads, so the comp can be fetched and
-   * stored in the .storyboard like any other picture. If that ever stops being
-   * true the board can still SHOW a comp from its URL, but it could not carry
-   * one — so this failure is reported as itself rather than as a broken
-   * picture. */
+  /* The watermarked comp clip. The media host allows cross-origin reads, so it
+   * can be fetched and kept in the .storyboard like any other file the board
+   * carries. If that ever stops being true the drawer can still PLAY a comp
+   * from its URL but the board could not carry one, so this failure is
+   * reported as itself rather than as a broken picture. */
   function fetchComp(a) {
     const url = (typeof a === 'string') ? a : compUrl(a);
-    if (!url) return Promise.reject(new Error('That asset came back with no comp to place.'));
+    if (!url) return Promise.reject(new Error('That clip came back with no comp to place.'));
     return deps.fetch(url, { mode: 'cors' }).then(function (res) {
       if (!res.ok) throw new Error('The comp could not be downloaded (' + res.status + ').');
       return res.blob();
     }).catch(function (e) {
       if (e && e.message && /could not be downloaded/.test(e.message)) throw e;
-      throw new Error('The comp could not be read from Getty\u2019s media host — the picture ' +
-        'can be shown but not placed on a card. (' + (e && e.message || e) + ')');
+      throw new Error('The comp could not be read from Getty\u2019s media host \u2014 the clip ' +
+        'can be played but not placed on a card. (' + (e && e.message || e) + ')');
     });
   }
 
-  /* ---------------- a card, as a search ---------------- */
-
-  /* The expertise this replaces: knowing that a "Close-up" is Getty's
-   * `close_up`, that a "Talking head" is a headshot looking at the camera with
-   * one person in it, and that an "Insert" has no people in it at all.
+  /* ---------------- the first frame ----------------
    *
-   * Keyed on the DEFAULT shot types, because the list is user-editable
-   * (p.settings.shotTypes): a renamed or invented type contributes no filter
-   * rather than a guessed one, and the drawer says which filters it applied so
-   * a silent guess is impossible anyway.
+   * The board draws a frame, and the frame a footage card should draw is the
+   * first frame of the clip itself — NOT the poster thumbnail, which is about
+   * 170px wide and prints like it. The comp is 720p or better, so its own
+   * first frame is the best picture of this shot anyone has before it is
+   * licensed.
+   *
+   * The bytes are already in hand, so they go in as an object URL: the
+   * <video> reading it is same-origin, which means the canvas can never be
+   * tainted and CORS cannot break the extraction. That was the one way this
+   * could have been fragile and it is designed out rather than handled.
+   *
+   * Seeking is the fiddly part. `currentTime = 0` on a freshly loaded video
+   * does not always have a decoded frame behind it, so this waits for a seek
+   * to land and then checks the canvas is not uniformly blank before
+   * believing it; a blank first frame (a clip that fades up from black is a
+   * real thing) gets one nudge forward rather than a black card.
    */
-  const BY_TYPE = {
-    'wide': { compositions: ['wide_shot'] },
-    'medium': { compositions: ['medium_shot', 'waist_up'] },
-    'close-up': { compositions: ['close_up'] },
-    'extreme close-up': { compositions: ['macro', 'close_up'] },
-    'two shot': { people: ['two'] },
-    'insert': { compositions: ['still_life', 'cut_out', 'macro'], people: ['none'] },
-    'cutaway': { people: ['none'] },
-    'talking head': { compositions: ['headshot', 'looking_at_camera'], people: ['one'] }
-  };
-
-  /* Over the shoulder, POV and Screen capture are deliberately absent: Getty
-   * has no composition that means any of them, and a wrong filter is worse
-   * than none because it silently hides the right picture. */
-
-  function typeFilters(type) {
-    const t = String(type || '').trim().toLowerCase();
-    return BY_TYPE[t] || null;
+  function firstFrame(blob) {
+    if (deps.firstFrame) return deps.firstFrame(blob);       // test seam
+    return new Promise(function (resolve, reject) {
+      let url = '', done = false, tries = 0;
+      const v = document.createElement('video');
+      const finish = function (data, err) {
+        if (done) return;
+        done = true;
+        clearTimeout(cap);
+        try { v.removeAttribute('src'); v.load(); } catch (e) { }
+        if (url) URL.revokeObjectURL(url);
+        if (data) resolve(data); else reject(err || new Error('no frame'));
+      };
+      const grab = function () {
+        try {
+          const w = v.videoWidth, h = v.videoHeight;
+          if (!w || !h) { finish(null, new Error('the clip reported no size')); return; }
+          const c = document.createElement('canvas');
+          c.width = w; c.height = h;
+          const ctx = c.getContext('2d');
+          ctx.drawImage(v, 0, 0, w, h);
+          /* A clip that opens on black would board as a black card. One
+             nudge forward, once — this is not a hunt for a good frame, it is
+             a guard against the degenerate one. */
+          if (tries === 0 && blank(ctx, w, h) && isFinite(v.duration) && v.duration > 0.2) {
+            tries++;
+            v.currentTime = Math.min(0.25, v.duration / 10);
+            return;
+          }
+          finish(c.toDataURL('image/png'));
+        } catch (e) { finish(null, e); }
+      };
+      const cap = setTimeout(function () {
+        finish(null, new Error('the clip did not decode in time'));
+      }, 15000);
+      v.muted = true;
+      v.preload = 'auto';
+      v.playsInline = true;
+      v.onerror = function () { finish(null, new Error('the clip could not be decoded here')); };
+      v.onseeked = grab;
+      v.onloadeddata = function () {
+        /* already at zero on most builds, in which case no seeked fires */
+        if (v.currentTime === 0 && v.readyState >= 2) grab();
+        else v.currentTime = 0;
+      };
+      try {
+        url = URL.createObjectURL(blob);
+        v.src = url;
+        v.load();
+      } catch (e) { finish(null, e); }
+    });
   }
 
-  function orientationFor(p, shot) {
-    const a = (SB.Imagine && SB.Imagine.aspectFor) ? SB.Imagine.aspectFor(p, shot) : '16:9';
-    const m = /^(\d+(?:\.\d+)?)\s*:\s*(\d+(?:\.\d+)?)$/.exec(String(a || ''));
-    if (!m) return 'horizontal';
-    const r = Number(m[1]) / Number(m[2]);
-    if (r > 1.05) return r >= 2 ? 'panoramic_horizontal' : 'horizontal';
-    if (r < 0.95) return 'vertical';
-    return 'square';
+  /* Uniform to the eye: every sampled pixel within a few levels of the first.
+   * Sampled rather than scanned — this runs on a 1080p frame. */
+  function blank(ctx, w, h) {
+    try {
+      const step = Math.max(1, Math.floor(Math.min(w, h) / 16));
+      const d = ctx.getImageData(0, 0, w, h).data;
+      const at = function (x, y) { return (y * w + x) * 4; };
+      const i0 = at(0, 0);
+      for (let y = 0; y < h; y += step) {
+        for (let x = 0; x < w; x += step) {
+          const i = at(x, y);
+          if (Math.abs(d[i] - d[i0]) > 6 || Math.abs(d[i + 1] - d[i0 + 1]) > 6 ||
+            Math.abs(d[i + 2] - d[i0 + 2]) > 6) return false;
+        }
+      }
+      return true;
+    } catch (e) { return false; }     // a read that throws is not a blank frame
   }
 
-  /* The filters a card asks for, and the words for them. Both come from here
-   * so the chips in the drawer cannot drift from what was sent. */
-  function shotFilters(p, shot) {
-    const f = {
-      orientations: [orientationFor(p, shot)],
-      styles: ['photography'],
-      safe: true,
-      excludeEditorialOnly: true,
-      sort: 'best_match'
-    };
-    const t = shot ? typeFilters(shot.type) : null;
-    if (t) {
-      if (t.compositions) f.compositions = t.compositions.slice();
-      if (t.people) f.people = t.people.slice();
-    }
-    /* Cast is a fact about the card and the type does not always imply it: two
-     * subjects on a Wide is a two-shot whatever the dropdown says. Only when
-     * the type has not already spoken. */
-    if (!f.people && shot && (shot.personaIds || []).length) {
-      const n = shot.personaIds.length;
-      f.people = [n === 1 ? 'one' : (n === 2 ? 'two' : 'group')];
-    }
-    return f;
-  }
-
-  /* The phrase a card starts from. `SB.Refs.plain` is the boundary for "a
-   * description, read by a machine" — it resolves @{id|Name} marks to the
-   * names they now have. Never read a description raw. */
-  function phraseFor(p, shot) {
-    if (!shot) return '';
-    const src = shot.imageDescription || shot.description || '';
-    const txt = (SB.Refs && SB.Refs.plain) ? SB.Refs.plain(p, src) : String(src);
-    return String(txt || '').replace(/\s+/g, ' ').trim().slice(0, 180);
-  }
-
-  /* The chips: what was filtered, in the words a person would use. */
+  /* ---------------- the words for a filter ----------------
+   *
+   * Nothing here is derived from a card. The first cut mapped a card's shot
+   * type onto Getty's `compositions` enum, which was the wrong shape twice
+   * over: it made the drawer a function of the selected card when the
+   * workflow is to find footage and then drag the shot up onto the board, and
+   * it was an image filter chosen because it was the prettiest thing in the
+   * API. These are the filters a person sets, and the words for them.
+   */
   const WORDS = {
-    close_up: 'close-up', medium_shot: 'medium shot', wide_shot: 'wide shot',
-    headshot: 'headshot', waist_up: 'waist up', macro: 'macro', still_life: 'still life',
-    cut_out: 'cut out', looking_at_camera: 'looking at camera',
-    horizontal: 'horizontal', vertical: 'vertical', square: 'square',
-    panoramic_horizontal: 'panoramic', none: 'no people', one: 'one person',
-    two: 'two people', group: 'a group', photography: 'photographs'
+    horizontal: 'horizontal', vertical: 'vertical',
+    sd: 'SD', hd: 'HD', '4k': '4K', hd_web: 'HD web',
+    realtime: 'real time', time_lapse: 'time lapse', slow_motion: 'slow motion',
+    color: 'colour', black_and_white: 'black and white', animation: 'animation',
+    selective_focus: 'selective focus',
+    lockdown: 'locked off', panning: 'pan', tracking_shot: 'tracking', aerial_view: 'aerial',
+    high_angle_view: 'high angle', low_angle_view: 'low angle', tilt: 'tilt',
+    point_of_view: 'POV',
+    royaltyfree: 'royalty-free', rightsready: 'rights-ready'
   };
   function word(v) { return WORDS[v] || String(v).replace(/_/g, ' '); }
 
+  /* What is filtering this search, in the words a person would use, each one
+   * removable. Built from the filters that are SET — so an empty filter set
+   * says so, instead of a row of chips nobody chose. */
   function chips(f) {
     const out = [];
-    (f.compositions || []).forEach(function (c) { out.push({ k: 'compositions', v: c, label: word(c) }); });
-    (f.orientations || []).forEach(function (c) { out.push({ k: 'orientations', v: c, label: word(c) }); });
-    (f.people || []).forEach(function (c) { out.push({ k: 'people', v: c, label: word(c) }); });
-    (f.styles || []).forEach(function (c) { out.push({ k: 'styles', v: c, label: word(c) }); });
+    const add = function (k, vals) {
+      (vals || []).forEach(function (v) { out.push({ k: k, v: v, label: word(v) }); });
+    };
+    add('orientations', f.orientations);
+    add('aspects', f.aspects);
+    add('formats', f.formats);
+    add('frameRates', (f.frameRates || []).map(String));
+    add('techniques', f.techniques);
+    add('viewpoints', f.viewpoints);
+    add('licenses', f.licenses);
+    if (f.minLength) out.push({ k: 'minLength', v: f.minLength, label: '\u2265 ' + f.minLength + 's' });
+    if (f.maxLength) out.push({ k: 'maxLength', v: f.maxLength, label: '\u2264 ' + f.maxLength + 's' });
     if (f.excludeEditorialOnly !== false) {
       out.push({ k: 'excludeEditorialOnly', v: true, label: 'commercial use' });
     }
     return out;
   }
 
+  /* The filters a search starts with. Two, both about the job rather than
+   * about taste: a client video is commercial use, and nobody is boarding
+   * from unsafe results. Everything else is empty until somebody picks it. */
+  function defaultFilters() {
+    return { safe: true, excludeEditorialOnly: true, sort: 'best_match' };
+  }
+
+  /* The enums the drawer offers, in the order it offers them. Here rather
+   * than in the panel so the values and the words they are drawn with cannot
+   * drift apart from the ones that go out on the wire. */
+  const PICKERS = [
+    { k: 'formats', label: 'format', values: ['hd', '4k', 'hd_web', 'sd'] },
+    { k: 'orientations', label: 'orientation', values: ['horizontal', 'vertical'] },
+    { k: 'frameRates', label: 'fps', values: ['23.98', '24', '25', '29.97', '30', '50', '59.94', '60'] },
+    {
+      k: 'techniques', label: 'technique',
+      values: ['realtime', 'slow_motion', 'time_lapse', 'black_and_white', 'selective_focus', 'animation']
+    },
+    {
+      k: 'viewpoints', label: 'camera',
+      values: ['lockdown', 'panning', 'tracking_shot', 'aerial_view', 'high_angle_view',
+        'low_angle_view', 'tilt', 'point_of_view']
+    },
+    { k: 'licenses', label: 'licence', values: ['royaltyfree', 'rightsready'] }
+  ];
+
   SB.Getty = {
     /* the key */
     key: key, setKey: setKey, configured: configured, onChange: onChange,
-    /* calls */
-    searchImages: searchImages, similar: similar, byImage: byImage,
+    keepCompOff: keepCompOff, setKeepComp: setKeepComp,
+    /* calls — footage only */
+    searchVideos: searchVideos, similar: similar, byImage: byImage,
     uploadSearchImage: uploadSearchImage, fetchComp: fetchComp,
     /* shaping */
-    asset: asset, record: record, thumbUrl: thumbUrl, previewUrl: previewUrl, compUrl: compUrl,
+    asset: asset, record: record, posterUrl: posterUrl, compUrl: compUrl,
+    thumbUrl: thumbUrl, previewUrl: previewUrl, clipSize: clipSize,
+    seconds: seconds, clock: clock,
     assetIdFromUrl: assetIdFromUrl, recordFromUrl: recordFromUrl,
-    /* a card as a search */
-    shotFilters: shotFilters, typeFilters: typeFilters, phraseFor: phraseFor,
-    chips: chips, word: word, orientationFor: orientationFor,
+    /* the picture a card draws */
+    firstFrame: firstFrame,
+    /* filters, all of them set by hand */
+    defaultFilters: defaultFilters, chips: chips, word: word, PICKERS: PICKERS,
     /* seams */
     deps: deps, FIELDS: FIELDS, BASE: BASE,
     calls: function () { return calls; }

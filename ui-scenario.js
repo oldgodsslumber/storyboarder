@@ -4420,13 +4420,20 @@
       await (async function () {
         app.commentMode = false;
         SB.Board.render();
-        /* Two DIFFERENT pictures on purpose. Blob references are content
-           hashes, so the same bytes are the same picture everywhere in the
-           file — dropping the comp's own bytes a second time would be the
-           same comp, licence and all, which is correct and is asserted at the
-           end of this block rather than being tripped over here. */
+        /* FOUR different pictures, every one of them distinct on purpose.
+           Blob references are content hashes, so the same bytes are the same
+           picture — and the same comp — everywhere in the file. Reusing one
+           fixture for two roles does not make a test fail honestly: it makes
+           a card report as stock because something else was stock, which is
+           correct behaviour read as a bug. */
         const comp = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAMAAAACCAYAAACddGYaAAAAEUlEQVR4nGO4Iyf3H4YZkDkAoeEMi4M52m8AAAAASUVORK5CYII=';
         const mine = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAQAAAADCAYAAAC09K7GAAAAEklEQVR4nGOQs7nzHxkzEBQAAJAZGn1YZZ9KAAAAAElFTkSuQmCC';
+        const poster2 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAUAAAAECAYAAABGM/VAAAAAEklEQVR4nGPQ2BL1Hx0zUCYIACj3LCUuVKO/AAAAAElFTkSuQmCC';
+        const elsewhere = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAYAAAAFCAYAAABmWJ3mAAAAEklEQVR4nGM40SPyHxtmoIMEAJc+SBNQ4Gy6AAAAAElFTkSuQmCC';
+        /* file:// localStorage is shared between runs, so a run that stopped
+           half way through could leave "keep the comp off" set and quietly
+           break the next one. A test states what it needs. */
+        SB.Getty.setKeepComp(true);
         const cardOf = function (sh) { return document.querySelector('.card[data-shot="' + sh.id + '"]'); };
 
         /* a board long enough to scroll, so "the last card is reachable" is a
@@ -4470,15 +4477,15 @@
         SB.Getty.setKey('ui-test-key');
         const fakeAssets = [1, 2, 3].map(function (n) {
           return {
-            id: '100' + n, title: 'Picture ' + n, caption: '', artist: 'Someone',
+            id: '100' + n, kind: 'video', title: 'Footage ' + n, caption: '', artist: 'Someone',
             collection: 'Moment', family: 'creative', license: 'royaltyfree',
-            thumb: 'data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACwAAAAAAQABAAACAkQBADs=',
-            preview: 'data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACwAAAAAAQABAAACAkQBADs=',
-            comp: 'https://media.gettyimages.com/c/100' + n + '.jpg',
+            seconds: 10 + n, aspect: '16:9', speed: 'realtime', mastered: 'hd',
+            poster: 'data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACwAAAAAAQABAAACAkQBADs=',
+            comp: 'data:video/mp4;base64,AAAAIGZ0eXBpc29t',
             link: 'https://www.gettyimages.com/detail/100' + n, editorialOnly: n === 3
           };
         });
-        SB.Getty.searchImages = function () {
+        SB.Getty.searchVideos = function () {
           return Promise.resolve({ total: 3, images: fakeAssets, related: [] });
         };
         SB.Board.select(filler[0].id);
@@ -4493,15 +4500,46 @@
         t('a tile is draggable', tiles[0].draggable, '');
         t('an editorial-only result is flagged',
           !!tiles[2].querySelector('.stock-flag'), tiles[2].innerHTML.slice(0, 100));
-        t('the chips say what the card filtered to',
-          /Insert|no people|still life/i.test(drawer.querySelector('.stock-chips').textContent),
+        /* The chips describe what a PERSON set. The card contributes nothing —
+           not its shot type, not its description — which is the whole point
+           of the footage rewrite. */
+        t('a fresh drawer filters only on commercial use',
+          /commercial use/.test(drawer.querySelector('.stock-chips').textContent) &&
+          !/close|insert|still life|no people/i.test(drawer.querySelector('.stock-chips').textContent),
           drawer.querySelector('.stock-chips').textContent);
+        (function () {
+          const pick = drawer.querySelectorAll('.stock-pick')[0];
+          pick.value = '4k';
+          pick.dispatchEvent(new Event('change', { bubbles: true }));
+          t('a filter somebody picks becomes a chip',
+            /4K/.test(drawer.querySelector('.stock-chips').textContent),
+            drawer.querySelector('.stock-chips').textContent);
+          const chip = Array.prototype.filter.call(drawer.querySelectorAll('.stock-chip'),
+            function (b) { return /4K/.test(b.textContent); })[0];
+          chip.click();
+          t('and dropping the chip clears the picker it came from',
+            !/4K/.test(drawer.querySelector('.stock-chips').textContent) &&
+            drawer.querySelectorAll('.stock-pick')[0].value === '',
+            drawer.querySelector('.stock-chips').textContent + ' :: ' +
+            drawer.querySelectorAll('.stock-pick')[0].value);
+        })();
         t('the judging pane shows the first result',
-          /Picture 1/.test(drawer.querySelector('.stock-judge').textContent),
+          /Footage 1/.test(drawer.querySelector('.stock-judge').textContent),
           drawer.querySelector('.stock-judge').textContent.slice(0, 60));
+        /* footage is judged by playing it, not by looking at a poster */
+        t('and plays the comp rather than showing a still',
+          !!drawer.querySelector('.stock-judge video') && !drawer.querySelector('.stock-judge img'),
+          drawer.querySelector('.stock-judge').innerHTML.slice(0, 120));
+        t('a tile says how long the clip runs',
+          /0:11/.test(tiles[0].textContent), tiles[0].textContent.slice(0, 40));
+        t('the head offers the camera-move filter',
+          Array.prototype.some.call(drawer.querySelectorAll('.stock-pick option'),
+            function (o) { return o.textContent === 'tracking'; }), '');
+        t('and a clip-length pair', drawer.querySelectorAll('.stock-secs').length === 2,
+          drawer.querySelectorAll('.stock-secs').length);
         tiles[1].dispatchEvent(new MouseEvent('mouseenter'));
         t('hovering a tile moves the judging pane to it',
-          /Picture 2/.test(drawer.querySelector('.stock-judge').textContent),
+          /Footage 2/.test(drawer.querySelector('.stock-judge').textContent),
           drawer.querySelector('.stock-judge').textContent.slice(0, 60));
         const useBtn = Array.prototype.filter.call(drawer.querySelectorAll('.stock-judge button'),
           function (b) { return /^Use on /.test(b.textContent); })[0];
@@ -4512,11 +4550,23 @@
            The bytes do not come from Getty here — the drop path is what is
            being tested, not their media host. */
         const asset = {
-          id: '1437816897', title: 'Office at night', artist: 'Someone',
-          collection: 'Moment', family: 'creative', license: 'royaltyfree',
-          link: 'https://www.gettyimages.com/detail/1437816897', comp: 'https://media.gettyimages.com/c/1.jpg'
+          id: '1437816897', kind: 'video', title: 'Office at night', artist: 'Someone',
+          collection: 'Moment', family: 'creative', license: 'royaltyfree', seconds: 12,
+          aspect: '16:9', poster: mine,
+          link: 'https://www.gettyimages.com/detail/1437816897',
+          comp: 'https://media.gettyimages.com/c/1.mp4'
         };
-        SB.Getty.fetchComp = function () { return fetch(comp).then(function (r) { return r.blob(); }); };
+        /* The comp is an mp4 this suite cannot synthesise, so the two seams
+           either side of the decode are stubbed: the fetch hands back bytes,
+           and the extractor hands back the frame it would have read off them.
+           What is being tested is what ONE DRAG leaves on the card — a frame
+           and a clip and one licence record — not Chrome's video decoder. */
+        let compFetches = 0, frameGrabs = 0;
+        SB.Getty.fetchComp = function () {
+          compFetches++;
+          return Promise.resolve(new Blob([new Uint8Array(2048)], { type: 'video/mp4' }));
+        };
+        SB.Getty.deps.firstFrame = function () { frameGrabs++; return Promise.resolve(comp); };
 
         const target = filler[0];
         const drop = function (sh, data) {
@@ -4526,23 +4576,70 @@
           el.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
         };
         drop(target, { 'application/x-sb-getty': JSON.stringify(asset) });
-        await new Promise(function (r) { setTimeout(r, 300); });
-        t('a dragged comp lands on the card', !!target.image, JSON.stringify(target.image));
+        await new Promise(function (r) { setTimeout(r, 900); });
+        t('one drag fetches the comp once', compFetches === 1, compFetches);
+        t('and takes its first frame rather than using the poster', frameGrabs === 1, frameGrabs);
+        t('a frame lands on the card', !!target.image, JSON.stringify(target.image));
+        t('AND the comp clip lands on it', !!target.video,
+          JSON.stringify(target.video && { ref: !!target.video.ref, ext: target.video.ext }));
+        t('the clip knows where it came from',
+          !!(target.video && target.video.made && target.video.made.by === 'getty'),
+          JSON.stringify(target.video && target.video.made));
         const rec = SB.Model.stockFor(P(), target);
         t('and brings its asset id with it', !!rec && rec.id === '1437816897',
           JSON.stringify(rec));
+        t('with the kind and the length the edit needs',
+          !!rec && rec.kind === 'video' && rec.seconds === 12, JSON.stringify(rec));
         t('the card says it is stock',
           !!cardOf(target).querySelector('.stock-badge'), cardOf(target).innerHTML.slice(0, 120));
+        t('and the badge says how long it runs',
+          /0:12/.test(cardOf(target).querySelector('.stock-badge').textContent),
+          cardOf(target).querySelector('.stock-badge').textContent);
+
+        /* The poster fallback, which somebody has to be told about: a comp
+           that will not decode here must not quietly board a 170px picture. */
+        const posterOnly = filler[4];
+        SB.Getty.deps.firstFrame = function () {
+          return Promise.reject(new Error('no decoder in this test'));
+        };
+        await SB.Board.placeStock(posterOnly, Object.assign({}, asset, { id: '2222', poster: poster2 }));
+        await new Promise(function (r) { setTimeout(r, 300); });
+        t('a comp that cannot be decoded falls back to the poster', !!posterOnly.image,
+          JSON.stringify(posterOnly.image));
+        t('and is still marked as stock', !!SB.Model.stockFor(P(), posterOnly), '');
+        SB.Getty.deps.firstFrame = function () { return Promise.resolve(comp); };
+
+        /* Frame-only, for a board that must stay emailable. */
+        SB.Getty.setKeepComp(false);
+        const frameOnly = filler[5];
+        await SB.Board.placeStock(frameOnly, Object.assign({}, asset, { id: '3333' }));
+        await new Promise(function (r) { setTimeout(r, 300); });
+        t('with the clip switched off a card keeps the frame only',
+          !!frameOnly.image && !frameOnly.video,
+          JSON.stringify({ image: !!frameOnly.image, video: !!frameOnly.video }));
+        SB.Getty.setKeepComp(true);
 
         /* The same drop with the asset stripped out — which is what dragging
-           from a browser tab looks like. The picture still has to land. */
+           out of a gettyimages.com tab looks like. A Getty URL ending .mp4 is
+           a clip, so it goes down the footage path and not the picture one:
+           the ordinary dropped-image route would fetch an mp4 and fail to
+           decode it as a picture. */
         const plain = filler[1];
-        drop(plain, { 'text/uri-list': mine });
-        await new Promise(function (r) { setTimeout(r, 300); });
-        t('a drop carrying only a URL still places the picture', !!plain.image,
+        drop(plain, { 'text/uri-list': 'https://media.gettyimages.com/id/904321/video/x.mp4' });
+        await new Promise(function (r) { setTimeout(r, 400); });
+        t('a Getty clip dropped as a bare URL still lands', !!plain.image,
           JSON.stringify(plain.image));
-        t('but it is not stock, because nothing said which asset it was',
-          !SB.Model.isStock(P(), plain), '');
+        t('and is marked as stock from its URL alone',
+          !!SB.Model.stockFor(P(), plain) && SB.Model.stockFor(P(), plain).id === '904321',
+          JSON.stringify(SB.Model.stockFor(P(), plain)));
+
+        /* An ordinary picture dropped from anywhere else is still just a
+           picture, and must not be marked as anything. */
+        const mineOnly = filler[6];
+        drop(mineOnly, { 'text/uri-list': elsewhere });
+        await new Promise(function (r) { setTimeout(r, 300); });
+        t('a picture from somewhere else is not stock', !!mineOnly.image &&
+          !SB.Model.isStock(P(), mineOnly), JSON.stringify(mineOnly.image));
 
         /* The licence follows the pixels, not the card: dropping a comp's own
            bytes again — off the desktop, out of another board — is the same
@@ -4550,10 +4647,12 @@
            content hash, and means a comp cannot be laundered into an
            ordinary frame by going round the drawer. */
         const again = filler[2];
-        drop(again, { 'text/uri-list': comp });
-        await new Promise(function (r) { setTimeout(r, 300); });
-        t('the same comp dropped as a plain picture is still that comp',
-          !!SB.Model.isStock(P(), again), JSON.stringify(SB.Model.stockFor(P(), again)));
+        drop(again, { 'application/x-sb-getty': JSON.stringify(asset) });
+        await new Promise(function (r) { setTimeout(r, 400); });
+        t('the same asset on a second card is the same comp',
+          !!SB.Model.isStock(P(), again) &&
+          SB.Model.stockFor(P(), again).id === '1437816897',
+          JSON.stringify(SB.Model.stockFor(P(), again)));
 
         /* And the rule: this card is not fed to a model, and the push button
            says so rather than leaving it to be discovered. */
@@ -4580,7 +4679,9 @@
         /* Settings counts it, with its age. */
         SB.Settings.open('general');
         const rows = document.querySelectorAll('.modal .st-row');
-        t('Settings lists the cards holding comps', rows.length === 2, rows.length);
+        t('Settings lists every comp in the file',
+          rows.length === SB.Model.stockShots(P()).length && rows.length > 1,
+          rows.length + ' rows vs ' + SB.Model.stockShots(P()).length + ' comps');
         t('with the asset id on the row', /1437816897/.test(document.querySelector('.modal').textContent), '');
         document.querySelector('.modal-back').remove();
 
@@ -4591,6 +4692,9 @@
         t('the export writes a Getty asset list', !!gettyFile,
           JSON.stringify(pl.items.map(function (x) { return x.name; }).slice(0, 8)));
         t('and that list carries the asset id', !!gettyFile && /1437816897/.test(gettyFile.text), '');
+        t('with the kind and the clip length the edit needs',
+          !!gettyFile && /Kind/.test(gettyFile.text) && /,video,12,/.test(gettyFile.text),
+          gettyFile ? gettyFile.text.split('\r\n')[1] : '');
 
         /* "match this frame" uploaded the card's picture to Getty and then
            threw the answer away: run(1) cleared the uploaded URL two lines
@@ -4603,6 +4707,8 @@
           const real = filler[3];
           real.image = SB.Blobs.image(P(), mine, 4, 3);
           real.render = { ref: SB.Blobs.put(P(), mine), w: 4, h: 3, serial: 77, ext: 'png' };
+          t('the card used for the match test is not itself stock',
+            !SB.Model.isStock(P(), real), JSON.stringify(SB.Model.stockFor(P(), real)));
           app.changed(true);
           SB.Board.select(real.id);
           SB.Stock.sync();

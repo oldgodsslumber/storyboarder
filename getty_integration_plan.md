@@ -1,8 +1,18 @@
 # Getty Images in Storyboarder — integration plan
 
-Status: **built** (branch `V3-getty`, 2026-11-13) — phases 1–5. §1 is read off the wire and
-is still the reference; §2 is the decision everything else follows from; §3–§9 are the design
-the code was written from. Three things came out differently in the building and this file
+Status: **superseded in part** — see `getty_footage_plan.md`, which is what was built.
+
+**This file searched photographs, and that was wrong.** The app boards videos; the thing cut
+into one is footage; and the Premiere panel this plan hands assets to sorts stills into a
+bucket it reports as *skipped*. §3's shot-type → `compositions` mapping, §5's search and §10's
+"should the drawer have a Footage tab?" are all gone with it. What stands: §1 (the API, read
+off the wire), §2 (this app selects, Premiere licenses — the decision that turned out to be
+right for a reason this file got wrong), and §6's licence rules, which do not care what kind
+of asset is being licensed.
+
+Status of the rest: **built** (branch `V3-getty`, 2026-11-13) — phases 1–5. §1 is read off the
+wire and is still the reference; §2 is the decision everything else follows from; §3–§9 are
+the design the code was written from. Three things came out differently in the building and this file
 says so where they are:
 
 - the drawer is a **flex sibling of `#main`**, not a fixed strip with `body` padding (§5) —

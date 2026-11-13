@@ -1112,6 +1112,7 @@
     }
 
     let gettyKeyEl = null;
+    let gettyKeepEl = null;
 
     /* ---------------- Getty ----------------
      *
@@ -1126,9 +1127,11 @@
     {
       const g = panels.getty;
       g.appendChild(SB.el('div', 'pp-note',
-        'Search Getty from the Stock drawer and drag a comp onto a card. Comps are free, ' +
-        'watermarked stand-ins — this app never licenses or downloads a final asset, which ' +
-        'happens in the edit, against the Premiere panel’s ledger.'));
+        'Search Getty footage from the Footage drawer and drag a clip onto a card. What lands ' +
+        'is the watermarked comp: its first frame becomes the card’s picture, and the clip ' +
+        'itself goes in the file so the board can be watched. This app never licenses or ' +
+        'downloads a final asset — that happens in the edit, against the Premiere panel’s ' +
+        'ledger.'));
 
       const gk = document.createElement('input');
       gk.type = 'password';
@@ -1149,7 +1152,7 @@
         check.disabled = true;
         checkNote.classList.remove('err');
         checkNote.textContent = 'asking Getty…';
-        SB.Getty.searchImages('creative', { phrase: 'test' }, 1, 1).then(function (r) {
+        SB.Getty.searchVideos('creative', { phrase: 'test' }, 1, 1).then(function (r) {
           check.disabled = false;
           checkNote.textContent = 'Working — Getty answered with ' +
             (r.total ? r.total.toLocaleString() + ' results for “test”.' : 'a result set.');
@@ -1163,14 +1166,31 @@
       g.appendChild(checkRow);
       g.appendChild(checkNote);
 
+      /* The one switch: a comp clip is a few MB and a board of thirty is a
+         file you cannot email. On by default, because a board you can watch is
+         the point; off keeps the first frame, which is still the comp. */
+      const keep = document.createElement('input');
+      keep.type = 'checkbox';
+      keep.checked = !(SB.Getty && SB.Getty.keepCompOff && SB.Getty.keepCompOff());
+      const keepLbl = SB.el('label', 'pp-check');
+      keepLbl.appendChild(keep);
+      keepLbl.appendChild(SB.el('span', null,
+        ' Keep the comp clip in the file (off: the first frame only)'));
+      g.appendChild(keepLbl);
+      g.appendChild(SB.el('div', 'pp-note',
+        'A comp preview runs a few megabytes. Settings → General counts what the board ' +
+        'weighs, and a card keeps its first frame either way.'));
+      gettyKeepEl = keep;
+
       g.appendChild(SB.el('div', 'pp-label', 'What a comp is'));
       g.appendChild(SB.el('div', 'pp-note',
         'Getty licenses a comp for test and layout use for ' + SB.Model.COMP_DAYS + ' days, ' +
-        'and never in final or public material. So a comp on this board is a stand-in for a ' +
-        'shot, its watermark is never cropped or painted over, and it is never handed to an ' +
-        'image model — a card holding one is kept out of every model feed, and the Create ' +
-        'panel says so on the button. Cards holding comps are listed on the General tab with ' +
-        'the age of each one.'));
+        'and never in final or public material — so a comp on this board is a stand-in for a ' +
+        'shot and never the shot itself. Its watermark is never cropped or painted over, and ' +
+        'it is never handed to a model: a card holding one is kept out of every model feed, ' +
+        'and the Create panel says so on the button. The asset ids leave in the export, and ' +
+        'the edit licenses the ones that survived the cut. Cards holding comps are listed on ' +
+        'the General tab with the age of each one.'));
 
       gettyKeyEl = gk;
     }
@@ -1547,6 +1567,7 @@
             if (pendingOriginals) p.settings.originals = pendingOriginals;
             SB.Store.setApiKey(key.value.trim());
             if (SB.Getty && gettyKeyEl) SB.Getty.setKey(gettyKeyEl.value.trim());
+            if (SB.Getty && gettyKeepEl) SB.Getty.setKeepComp(gettyKeepEl.checked);
             SB.Store.setOoba({ url: oUrl.value, model: oobaModel, key: oKey.value });
             p.settings.imagineAspect = imAspect.value || '16:9';
             p.settings.imagineResolution = imRes.value || 'best';

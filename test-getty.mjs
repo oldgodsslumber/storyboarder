@@ -90,63 +90,112 @@ const waits = [];
 SB.Getty.deps.sleep = function (ms) { waits.push(ms); return Promise.resolve(); };
 SB.Getty.setKey('test-key');
 
-function img(id, extra) {
+function clip(id, extra) {
   return Object.assign({
-    id: id, title: 'A picture ' + id, artist: 'Someone', collection_name: 'Moment',
-    asset_family: 'creative', license_model: 'royaltyfree',
+    id: id, title: 'Some footage ' + id, caption: '', artist: 'Someone',
+    collection_name: 'Moment', asset_family: 'creative', license_model: 'royaltyfree',
+    clip_length: '0:12', aspect_ratio: '16:9', shot_speed: 'realtime', mastered_to: 'hd',
     display_sizes: [
-      { name: 'thumb', uri: 'https://media.gettyimages.com/t/' + id + '.jpg' },
-      { name: 'preview', uri: 'https://media.gettyimages.com/p/' + id + '.jpg' },
-      { name: 'comp', uri: 'https://media.gettyimages.com/c/' + id + '.jpg' }
+      { name: 'thumb', uri: 'https://media.gettyimages.com/t/' + id + '.jpg', media_type: 'image/jpeg' },
+      { name: 'comp', uri: 'https://media.gettyimages.com/c/' + id + '.mp4', media_type: 'video/mp4', bytes: 2400000 },
+      { name: 'preview', uri: 'https://media.gettyimages.com/p/' + id + '.mp4', media_type: 'video/mp4' }
     ],
     referral_destinations: [{ uri: 'https://www.gettyimages.com/detail/' + id }]
   }, extra || {});
 }
+/* the old name, so the licence cases below read unchanged — they are about a
+   comp on a card and do not care what kind of asset it is */
+const img = clip;
 
 /* ---------------- 1. the request ---------------- */
 
 section('the request');
 {
-  const f = fakeGetty([{ body: { result_count: 2, images: [img('1'), img('2')] } }]);
+  const f = fakeGetty([{ body: { result_count: 2, images: [clip('1'), clip('2')] } }]);
   SB.Getty.deps.fetch = f;
-  const r = await SB.Getty.searchImages('creative', { phrase: 'a call centre at night' }, 1, 60);
+  const r = await SB.Getty.searchVideos('creative', { phrase: 'a call centre at night' }, 1, 60);
   const c = f.calls[0];
-  eq(c.path, '/v3/search/images/creative', 'creative search path');
+  eq(c.path, '/v3/search/videos/creative', 'creative FOOTAGE search path');
   eq(c.headers['Api-Key'], 'test-key', 'the key goes in the Api-Key header');
   ok(!c.headers.Authorization, 'no token is sent — search does not need one');
   eq(c.q.phrase, 'a call centre at night', 'the phrase goes out as typed');
   eq(c.q.page_size, '60', 'page size');
   eq(c.q.safe_search, 'true', 'safe search defaults on');
   eq(c.q.exclude_editorial_use_only, 'true', 'editorial-only assets are excluded by default');
-  ok(/display_set/.test(c.q.fields), 'display_set is asked for — the pictures');
+  ok(/display_set/.test(c.q.fields), 'display_set is asked for — the poster and the comp');
+  ok(/clip_length/.test(c.q.fields), 'and the clip length, which is the first thing a tile says');
   ok(!/download_sizes|largest_downloads/.test(c.q.fields),
     'no field that would need a token is ever asked for');
+  ok(!/compositions|graphical_styles|minimum_size/.test(JSON.stringify(c.q)),
+    'and no image filter goes out at all');
   eq(r.images.length, 2, 'two results back');
   eq(r.total, 2, 'the total comes from result_count');
-  eq(r.images[0].thumb, 'https://media.gettyimages.com/t/1.jpg', 'thumb picked out of the display set');
-  eq(r.images[0].comp, 'https://media.gettyimages.com/c/1.jpg', 'comp picked out of the display set');
+  eq(r.images[0].kind, 'video', 'every result is footage');
+  eq(r.images[0].poster, 'https://media.gettyimages.com/t/1.jpg',
+    'the poster is the still out of the display set');
+  eq(r.images[0].comp, 'https://media.gettyimages.com/c/1.mp4',
+    'and the comp is the mp4, picked by what it IS and not by its name');
+  eq(r.images[0].seconds, 12, '"0:12" is read as twelve seconds');
+  eq(r.images[0].aspect, '16:9', 'the aspect comes through');
   eq(r.images[0].link, 'https://www.gettyimages.com/detail/1', 'the gettyimages.com link');
+}
+
+{
+  /* A clip is picked by its media type, not by being called "comp" — a
+     display set that calls its POSTER "comp" is the trap this avoids. */
+  const odd = clip('5', {
+    display_sizes: [
+      { name: 'comp', uri: 'https://media.gettyimages.com/x/5.jpg', media_type: 'image/jpeg' },
+      { name: 'preview', uri: 'https://media.gettyimages.com/x/5.mp4', media_type: 'video/mp4' }
+    ]
+  });
+  const a = SB.Getty.asset(odd);
+  eq(a.comp, 'https://media.gettyimages.com/x/5.mp4', 'the mp4 is the comp even when a jpeg is named "comp"');
+  eq(a.poster, 'https://media.gettyimages.com/x/5.jpg', 'and the jpeg is the poster');
 }
 
 {
   const f = fakeGetty([{ body: { images: [] } }]);
   SB.Getty.deps.fetch = f;
-  await SB.Getty.searchImages('editorial', { phrase: 'x', excludeEditorialOnly: false, safe: false }, 2, 30);
+  await SB.Getty.searchVideos('editorial', { phrase: 'x', excludeEditorialOnly: false, safe: false }, 2, 30);
   const c = f.calls[0];
-  eq(c.path, '/v3/search/images/editorial', 'editorial search path');
+  eq(c.path, '/v3/search/videos/editorial', 'editorial footage search path');
   eq(c.q.page, '2', 'the page goes out');
   ok(!('exclude_editorial_use_only' in c.q), 'the editorial filter can be switched off');
   ok(!('safe_search' in c.q), 'safe search can be switched off');
 }
 
 {
-  /* An empty or absent filter is not a filter: sending compositions= would
-     narrow the search to nothing. */
+  /* Every hand-set filter, under its wire name. This is the list the drawer
+     offers, and a filter that goes out under the wrong name is a filter that
+     silently does nothing — which is exactly the bug `delete q.people` was. */
   const f = fakeGetty([{ body: { images: [] } }]);
   SB.Getty.deps.fetch = f;
-  await SB.Getty.searchImages('creative', { phrase: 'x', compositions: [], color: '' }, 1, 10);
-  ok(!('compositions' in f.calls[0].q), 'an empty array is left out of the query');
-  ok(!('color' in f.calls[0].q), 'an empty string is left out of the query');
+  await SB.Getty.searchVideos('creative', {
+    phrase: 'x', orientations: ['horizontal'], aspects: ['16:9'], formats: ['4k'],
+    frameRates: ['23.98'], techniques: ['slow_motion'], viewpoints: ['tracking_shot'],
+    licenses: ['royaltyfree'], minLength: 5, maxLength: 20, sort: 'newest'
+  }, 1, 60);
+  const q = f.calls[0].q;
+  eq(q.orientations, 'horizontal', 'orientations');
+  eq(q.aspect_ratios, '16:9', 'aspect_ratios');
+  eq(q.format_available, '4k', 'format_available');
+  eq(q.frame_rates, '23.98', 'frame_rates');
+  eq(q.image_techniques, 'slow_motion', 'image_techniques');
+  eq(q.viewpoints, 'tracking_shot', 'viewpoints');
+  eq(q.license_models, 'royaltyfree', 'license_models');
+  eq(q.min_clip_length, '5', 'min_clip_length');
+  eq(q.max_clip_length, '20', 'max_clip_length');
+  eq(q.sort_order, 'newest', 'sort_order');
+}
+
+{
+  /* An empty or absent filter is not a filter. */
+  const f = fakeGetty([{ body: { images: [] } }]);
+  SB.Getty.deps.fetch = f;
+  await SB.Getty.searchVideos('creative', { phrase: 'x', viewpoints: [], minLength: '' }, 1, 10);
+  ok(!('viewpoints' in f.calls[0].q), 'an empty array is left out of the query');
+  ok(!('min_clip_length' in f.calls[0].q), 'an empty string is left out of the query');
 }
 
 /* ---------------- 2. when Getty says no ---------------- */
@@ -159,7 +208,7 @@ section('when Getty says no');
     { body: { images: [img('9')] } }
   ]);
   SB.Getty.deps.fetch = f;
-  const r = await SB.Getty.searchImages('creative', { phrase: 'x' }, 1, 10);
+  const r = await SB.Getty.searchVideos('creative', { phrase: 'x' }, 1, 10);
   eq(waits, [3000], 'a 429 waits exactly as long as Retry-After says');
   eq(f.calls.length, 2, 'and then tries again');
   eq(r.images.length, 1, 'the retry is the answer');
@@ -168,14 +217,14 @@ section('when Getty says no');
   waits.length = 0;
   const f = fakeGetty([{ status: 429, body: {} }, { body: { images: [] } }]);
   SB.Getty.deps.fetch = f;
-  await SB.Getty.searchImages('creative', { phrase: 'x' }, 1, 10);
+  await SB.Getty.searchVideos('creative', { phrase: 'x' }, 1, 10);
   eq(waits, [1000], 'with no Retry-After it falls back to the backoff');
 }
 {
   const f = fakeGetty([{ status: 401, body: { message: 'Unauthorized' } }]);
   SB.Getty.deps.fetch = f;
   let msg = '';
-  try { await SB.Getty.searchImages('creative', { phrase: 'x' }, 1, 10); }
+  try { await SB.Getty.searchVideos('creative', { phrase: 'x' }, 1, 10); }
   catch (e) { msg = e.message; }
   ok(/Unauthorized/.test(msg), 'a 401 reports what Getty said');
   ok(/Settings/.test(msg), 'and says where the key is set, which is the actual fix');
@@ -189,7 +238,7 @@ section('when Getty says no');
     new Error('Failed to fetch')]);
   SB.Getty.deps.fetch = f;
   let err = null;
-  try { await SB.Getty.searchImages('creative', { phrase: 'x' }, 1, 10); }
+  try { await SB.Getty.searchVideos('creative', { phrase: 'x' }, 1, 10); }
   catch (e) { err = e; }
   eq(f.calls.length, 3, 'a network failure is retried twice before it is believed');
   ok(err && err.network, 'and is marked as a network failure, not a refusal');
@@ -200,7 +249,7 @@ section('when Getty says no');
   const f = fakeGetty([{ body: {} }]);
   SB.Getty.deps.fetch = f;
   let err = null;
-  try { await SB.Getty.searchImages('creative', { phrase: 'x' }, 1, 10); }
+  try { await SB.Getty.searchVideos('creative', { phrase: 'x' }, 1, 10); }
   catch (e) { err = e; }
   ok(err && err.unconfigured, 'with no key it never asks Getty at all');
   eq(f.calls.length, 0, 'and nothing goes out');
@@ -213,7 +262,7 @@ section('by picture');
 {
   const f = fakeGetty(function (call) {
     if (call.method === 'PUT') return { body: { uri: 'https://uploads.getty/abc.jpg' } };
-    return { body: { result_count: 1, images: [img('7')] } };
+    return { body: { result_count: 1, images: [clip('7')] } };
   });
   SB.Getty.deps.fetch = f;
   const url = await SB.Getty.uploadSearchImage('3b frame.jpg', { size: 10, type: 'image/jpeg' });
@@ -223,11 +272,14 @@ section('by picture');
     'the file name is sanitised — a space in a card code is not a URL');
   eq(f.calls[0].headers['Content-Type'], 'image/jpeg', 'the bytes go up as what they are');
 
-  const r = await SB.Getty.byImage({ imageUrl: url }, { phrase: '', compositions: ['close_up'] }, 1, 60);
-  eq(f.calls[1].path, '/v3/search/images/creative/by-image', 'then the by-image search');
+  const r = await SB.Getty.byImage({ imageUrl: url },
+    { phrase: '', aspects: ['16:9'], viewpoints: ['panning'], formats: ['hd'] }, 1, 60);
+  eq(f.calls[1].path, '/v3/search/videos/creative/by-image', 'then the by-image FOOTAGE search');
   eq(f.calls[1].q.image_url, url, 'pointing at the uploaded picture');
-  ok(!('compositions' in f.calls[1].q),
-    'and without a composition filter — the picture IS the composition');
+  ok(!('aspect_ratios' in f.calls[1].q) && !('viewpoints' in f.calls[1].q),
+    'without the filters the picture itself answers');
+  eq(f.calls[1].q.format_available, 'hd',
+    'but format is about the deliverable, not the picture, so it stays');
   eq(r.images.length, 1, 'results come back in the same shape as any search');
 }
 {
@@ -242,85 +294,58 @@ section('by picture');
   ok(/search-by-image/.test(err.message), 'and names the thing the account may not have');
 }
 
-/* ---------------- 4. a card, as a search ---------------- */
+/* ---------------- 4. the card is not an input ---------------- */
 
-section('a card, as a search');
+section('nothing is derived from the card');
 {
+  /* The first cut read the selected card: its shot type became a Getty
+     `compositions` filter and its description became the phrase. That was the
+     wrong shape — people find the footage here and then drag the shot up onto
+     the board — so the whole mapping is gone, and its absence is the test. */
+  ok(!SB.Getty.shotFilters, 'there is no shotFilters');
+  ok(!SB.Getty.typeFilters, 'there is no shot-type mapping');
+  ok(!SB.Getty.phraseFor, 'a card\'s description is not a query');
+  ok(!SB.Getty.orientationFor, 'and the board\'s aspect is not a filter');
+  ok(!SB.Getty.searchImages, 'and there is no image search at all');
+
+  const f = SB.Getty.defaultFilters();
+  eq(Object.keys(f).sort(), ['excludeEditorialOnly', 'safe', 'sort'],
+    'a fresh search filters on two things, both about the job rather than taste');
+  ok(f.excludeEditorialOnly && f.safe, 'commercial use and safe search, on');
+}
+
+{
+  /* And proof on the wire: a card with a shot type and a description cannot
+     reach the query, because nothing passes it in. */
   const p = SB.Model.newProject();
   const sh = p.scenes[0].shots[0];
-
-  const types = {
-    'Wide': { compositions: ['wide_shot'] },
-    'Medium': { compositions: ['medium_shot', 'waist_up'] },
-    'Close-up': { compositions: ['close_up'] },
-    'Extreme close-up': { compositions: ['macro', 'close_up'] },
-    'Two shot': { people: ['two'] },
-    'Insert': { compositions: ['still_life', 'cut_out', 'macro'], people: ['none'] },
-    'Cutaway': { people: ['none'] },
-    'Talking head': { compositions: ['headshot', 'looking_at_camera'], people: ['one'] }
-  };
-  Object.keys(types).forEach(function (t) {
-    sh.type = t;
-    sh.personaIds = [];
-    const f = SB.Getty.shotFilters(p, sh);
-    eq(f.compositions || null, types[t].compositions || null, t + ' → compositions');
-    eq(f.people || null, types[t].people || null, t + ' → number of people');
-  });
-
-  /* The three Getty has no word for. A wrong filter hides the right picture,
-     so these contribute nothing and the drawer says so. */
-  ['Over the shoulder', 'POV', 'Screen capture'].forEach(function (t) {
-    sh.type = t;
-    ok(!SB.Getty.typeFilters(t), t + ' has no Getty composition — and does not get a guessed one');
-    ok(!SB.Getty.shotFilters(p, sh).compositions, t + ' sends no composition filter');
-  });
-
-  /* A type somebody invented is not a type this knows. */
-  sh.type = 'Drone orbit';
-  ok(!SB.Getty.shotFilters(p, sh).compositions, 'an invented shot type contributes no filter');
-
-  /* Cast is a fact about the card, and only speaks where the type has not. */
-  sh.type = 'Wide';
-  sh.personaIds = ['per_a', 'per_b'];
-  eq(SB.Getty.shotFilters(p, sh).people, ['two'], 'two subjects on a Wide is a two-shot');
-  sh.type = 'Insert';
-  eq(SB.Getty.shotFilters(p, sh).people, ['none'],
-    'but an Insert stays empty of people whatever the cast says');
-  sh.type = 'Wide';
-  sh.personaIds = ['a', 'b', 'c'];
-  eq(SB.Getty.shotFilters(p, sh).people, ['group'], 'three or more is a group');
-
-  /* Always, whatever the card: photographs, commercially usable, widescreen. */
-  const f = SB.Getty.shotFilters(p, sh);
-  eq(f.styles, ['photography'], 'photographs, not illustration');
-  eq(f.orientations, ['horizontal'], '16:9 is a horizontal search');
-  ok(f.excludeEditorialOnly, 'editorial-only is excluded for client work');
-
-  /* The phrase comes through the @-mark boundary, not raw off the card. */
-  const per = SB.Personas.add(p, { name: 'Dana' });
-  sh.imageDescription = 'a tight frame on ' + SB.Refs.mark(per.id, 'Dana') + ' at the window';
-  eq(SB.Getty.phraseFor(p, sh), 'a tight frame on Dana at the window',
-    'the phrase resolves @ marks to names');
-}
-{
-  const p = SB.Model.newProject();
-  p.settings.imagineAspect = '9:16';
-  eq(SB.Getty.orientationFor(p, null), 'horizontal',
-    'with no Imagine module loaded the orientation falls back rather than throwing');
+  sh.type = 'Close-up';
+  sh.description = 'a tight frame on the laptop';
+  const f = fakeGetty([{ body: { images: [] } }]);
+  SB.Getty.deps.fetch = f;
+  await SB.Getty.searchVideos('creative', SB.Getty.defaultFilters(), 1, 60);
+  const sent = JSON.stringify(f.calls[0].q);
+  ok(!/close_up|Close-up/i.test(sent), 'the shot type is not in the query');
+  ok(!/laptop/i.test(sent), 'and neither is the description');
 }
 
-/* ---------------- 5. the chips say what was sent ---------------- */
+/* ---------------- 5. the chips say what a person set ---------------- */
 
 section('the chips');
 {
   const chips = SB.Getty.chips({
-    compositions: ['close_up'], orientations: ['horizontal'], people: ['one'],
-    styles: ['photography'], excludeEditorialOnly: true
+    formats: ['4k'], viewpoints: ['tracking_shot'], techniques: ['slow_motion'],
+    minLength: 5, excludeEditorialOnly: true
   });
-  eq(chips.map(c => c.label),
-    ['close-up', 'horizontal', 'one person', 'photographs', 'commercial use'],
+  eq(chips.map(c => c.label), ['4K', 'slow motion', 'tracking', '\u2265 5s', 'commercial use'],
     'every applied filter is a chip, in words a person would use');
   ok(chips.every(c => c.k && 'v' in c), 'and each one knows how to remove itself');
+  eq(SB.Getty.chips({ excludeEditorialOnly: false }), [],
+    'a search with nothing set has no chips');
+  ok(SB.Getty.PICKERS.some(p => p.k === 'viewpoints'),
+    'the camera-move vocabulary is offered as a filter');
+  ok(SB.Getty.PICKERS.every(p => p.values.length && p.label),
+    'and every picker has values and a word for itself');
 }
 
 /* ---------------- 6. the rule that costs money ---------------- */
@@ -564,6 +589,26 @@ section('what the Create panel says a clip will be sent');
   sh.image = { ref: 'blob-real' };
   sh.render = { ref: 'blob-real-full', serial: 6, ext: 'webp' };
   ok(!!SB.Model.modelFrame(p, sh), 'and a real frame still offers one');
+}
+
+section('what a comp carries about itself');
+{
+  /* The record is the licence trail AND the row the edit licenses from, so it
+     has to say what kind of asset it is and how long it runs — a still never
+     needed either. */
+  const a = SB.Getty.asset(clip('1437816897'));
+  const rec = SB.Getty.record(a);
+  eq(rec.kind, 'video', 'the record says it is footage');
+  eq(rec.seconds, 12, 'and how long the clip runs');
+  eq(SB.Getty.clock(12), '0:12', 'which reads as a clock on the tile');
+  eq(SB.Getty.clock(75), '1:15', 'past a minute too');
+  eq(SB.Getty.clock(0), '0:00', 'and zero is not blank');
+  eq(SB.Getty.seconds(12), 12, 'a numeric clip_length is read as seconds');
+  eq(SB.Getty.seconds('0:09'), 9, 'and a clock string is too');
+  eq(SB.Getty.seconds(null), 0, 'and nothing is zero rather than NaN');
+  /* a URL-only record still says what it is */
+  eq(SB.Getty.recordFromUrl('https://media.gettyimages.com/id/904321/video/x.mp4').kind, 'video',
+    'a record made from a URL alone still carries a kind');
 }
 
 section('the printed board');

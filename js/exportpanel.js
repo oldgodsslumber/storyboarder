@@ -519,14 +519,16 @@
    * ones that survived into the cut. Dates are what the licence runs on, so
    * the day it was placed and its age in days both go in. */
   function gettyCsv(p, stock) {
-    const head = ['Code', 'Scene', 'Shot type', 'Getty asset id', 'Title', 'Artist',
-      'Collection', 'Licence model', 'Comp placed', 'Days old', 'Lapsed', 'Link'];
+    const head = ['Code', 'Scene', 'Shot type', 'Getty asset id', 'Kind', 'Clip length (s)',
+      'Title', 'Artist', 'Collection', 'Licence model', 'Comp placed', 'Days old', 'Lapsed',
+      'Link'];
     const lines = [head.map(cell).join(',')];
     stock.forEach(function (st) {
       const days = SB.Model.compAgeDays(st.rec);
       lines.push([
         st.code, (st.scene && st.scene.heading) || '', st.shot.type || '',
-        st.rec.id, st.rec.title || '', st.rec.artist || '', st.rec.collection || '',
+        st.rec.id, st.rec.kind || 'video', st.rec.seconds || '',
+        st.rec.title || '', st.rec.artist || '', st.rec.collection || '',
         st.rec.license || '',
         st.rec.at ? new Date(st.rec.at).toISOString().slice(0, 10) : '',
         String(days), SB.Model.compLapsed(st.rec) ? 'yes' : '',
@@ -552,7 +554,8 @@
          not exported would not appear at all. */
       stock: (stock || SB.Model.stockShots(p)).map(function (st) {
         return {
-          shot: st.code, id: st.rec.id, title: st.rec.title || '', artist: st.rec.artist || '',
+          shot: st.code, id: st.rec.id, kind: st.rec.kind || 'video',
+          seconds: st.rec.seconds || 0, title: st.rec.title || '', artist: st.rec.artist || '',
           collection: st.rec.collection || '', license: st.rec.license || '',
           /* false means it is a banked take: in the file, not on the board */
           onTheBoard: !!st.chosen,

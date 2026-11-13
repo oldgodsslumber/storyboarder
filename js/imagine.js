@@ -3467,7 +3467,10 @@
    * handed over by somebody — put on a card. Nothing generated it here, so
    * it carries no `made` and the export's "only what was made in here"
    * filter correctly passes it by. */
-  function attachClip(p, shot, file) {
+  /* `made` is optional and is how a clip that came from somewhere knowable
+   * says so: a Getty comp carries its asset and its licence exactly like a
+   * generated clip carries its model and its prompt. */
+  function attachClip(p, shot, file, made) {
     if (!file) return Promise.resolve(null);
     if (!/^video\//.test(file.type || '')) {
       return Promise.reject(new Error('That is not a video file.'));
@@ -3476,7 +3479,7 @@
       /* Same rule as a generated one: a card holds its takes -- and nothing
          moves until there is a record to move to, or a file that turns out to
          be unreadable takes every take on the card out of reach. */
-      return SB.Renders.keepVideo(p, file, null).then(function (saved) {
+      return SB.Renders.keepVideo(p, file, null, made || null).then(function (saved) {
         if (!saved) throw new Error('the clip could not be stored');
         if (meta.dur) saved.dur = meta.dur;
         if (meta.w) { saved.w = meta.w; saved.h = meta.h; }

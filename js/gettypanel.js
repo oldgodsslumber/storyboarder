@@ -1,4 +1,4 @@
-/* gettypanel.js — the stock drawer.
+/* gettypanel.js — the footage drawer.
  *
  * Every other panel in this app is a backdrop over a centred box, because
  * every other panel is somewhere you GO. This one is open while you work, and
@@ -23,12 +23,17 @@
  * it before falling through. Dropping on a card replaces its frame (the old
  * one banks as a take); dropping on empty scene space makes a new card.
  *
- * ---- and what it refuses to do ----
+ * ---- the card is not an input ----
  *
- * Nothing in here searches on its own. A drawer that re-queried on every
- * selection change would spend somebody's QPS on scrolling and overwrite a
- * phrase mid-typing, so the phrase box re-seeds from the selected card only
- * while it has not been typed in, and the search runs when asked.
+ * Nothing in here is derived from the selected card. The first cut read the
+ * card's shot type into a Getty `compositions` filter and its description
+ * into the phrase, which was the wrong shape: the workflow is to find the
+ * footage HERE and then drag the shot up onto the board. The card is where a
+ * result lands, not a term in finding it. The only thing a selection buys is
+ * `Use on 3b` for somebody who would rather not drag.
+ *
+ * Nothing searches on its own either — a drawer that re-queried as the board
+ * selection moved would spend somebody's QPS on scrolling.
  */
 (function (SB) {
   'use strict';
@@ -40,13 +45,13 @@
   const S = {
     el: null, headEl: null, chipEl: null, stripEl: null, judgeEl: null, phraseEl: null,
     statusEl: null, matchEl: null,
-    /* the search as it stands */
+    /* the search as it stands. `filters` is only ever what a person set. */
     filters: null, phrase: '', family: 'creative',
     page: 1, total: 0, images: [], more: false,
-    busy: false, error: '', typed: false, seededFor: '',
-    /* what the judging pane is showing, and what a click would place */
+    busy: false, error: '',
+    /* what the judging pane is playing, and what Use-on would place */
     chosen: null,
-    /* by-image: the uploaded frame's URL, so "more like this" can page */
+    /* by-image: the uploaded frame's URL, so paging stays by-image */
     byImage: null,
     askedUpload: false
   };
@@ -98,7 +103,7 @@
     if (btn) btn.classList.add('on');
     lsSet(K_OPEN, '1');
 
-    if (!S.filters) seed(true);
+    if (!S.filters) seed();
     drawHead();
     drawStrip();
     drawJudge();
@@ -166,30 +171,18 @@
     return f || null;
   }
 
-  /* Re-seed the phrase and the filters from the selected card. `force` is the
-   * first open and the explicit "from this card" button; otherwise a phrase
-   * somebody has typed is theirs and is never overwritten — the same rule the
-   * Create panel follows about the caret. */
-  function seed(force) {
-    const f = shot();
-    const p = P();
-    S.filters = SB.Getty ? SB.Getty.shotFilters(p, f && f.shot) : {};
-    if (force || !S.typed) {
-      S.phrase = SB.Getty ? SB.Getty.phraseFor(p, f && f.shot) : '';
-      S.typed = false;
-      if (S.phraseEl) S.phraseEl.value = S.phrase;
-    }
-    S.seededFor = f ? f.shot.id : '';
+  /* The filters a fresh drawer starts with: commercial use and safe search,
+   * and nothing else until somebody picks it. */
+  function seed() {
+    S.filters = SB.Getty ? SB.Getty.defaultFilters() : {};
   }
 
-  /* The board's selection moved, or a card was retyped. Cheap, and never a
-     search. */
+  /* The board's selection moved. The search does not change — only which card
+   * `Use on` would place onto. Cheap, and never a query. */
   function sync() {
     if (!S.el) return;
-    const f = shot();
-    if (f && f.shot.id !== S.seededFor) seed(false);
-    drawHead();
-    drawJudge();
+    paintUse();
+    paintMatch();
   }
 
   /* ---------------- the head ---------------- */
@@ -199,21 +192,17 @@
     const h = S.headEl;
     h.textContent = '';
 
-    const title = SB.el('div', 'stock-title', '◧ Stock');
-    title.title = 'Getty Images — comps, for boarding. Licensing happens in the edit, not here.';
+    const title = SB.el('div', 'stock-title', '\u25b7 Footage');
+    title.title = 'Getty Images footage — watermarked comps, for boarding. ' +
+      'Licensing happens in the edit, not here.';
     h.appendChild(title);
-
-    const f = shot();
-    const forCard = SB.el('span', 'stock-for',
-      f ? f.code + (f.shot.type ? ' · ' + f.shot.type : '') : 'no card selected');
-    h.appendChild(forCard);
 
     const box = SB.el('input', 'stock-phrase');
     box.type = 'text';
-    box.placeholder = 'what the shot shows…';
+    box.placeholder = 'what the shot shows\u2026';
     box.spellcheck = false;
     box.value = S.phrase;
-    box.addEventListener('input', function () { S.phrase = box.value; S.typed = true; });
+    box.addEventListener('input', function () { S.phrase = box.value; });
     box.addEventListener('keydown', function (ev) {
       if (ev.key === 'Enter') { ev.preventDefault(); search(); }
       ev.stopPropagation();        // the board's own shortcuts are not for this box
@@ -225,31 +214,55 @@
     go.onclick = search;
     h.appendChild(go);
 
-    const re = SB.el('button', 'mini', '↺ from this card');
-    re.title = 'Rewrite the phrase and the filters from the selected card';
-    re.onclick = function () { seed(true); drawHead(); };
-    h.appendChild(re);
+    /* Length, in seconds. The one filter nobody wants to find in a menu: a
+       board of 3-second cutaways and a board of 20-second interview beds are
+       different searches. */
+    const lo = SB.el('input', 'stock-secs');
+    lo.type = 'number'; lo.min = '0'; lo.placeholder = 'min s';
+    lo.value = S.filters.minLength || '';
+    lo.oninput = function () { S.filters.minLength = Number(lo.value) || ''; drawChips(); };
+    const hi = SB.el('input', 'stock-secs');
+    hi.type = 'number'; hi.min = '0'; hi.placeholder = 'max s';
+    hi.value = S.filters.maxLength || '';
+    hi.oninput = function () { S.filters.maxLength = Number(hi.value) || ''; drawChips(); };
+    h.appendChild(lo);
+    h.appendChild(hi);
 
-    /* Find a match for this frame — the reason this drawer is worth having on
-       a board that was generated rather than shot. */
-    const mf = SB.el('button', 'mini', '◎ match this frame');
-    const canMatch = !!(f && SB.Model.modelFrame(P(), f.shot));
-    mf.title = canMatch
-      ? 'Upload this card’s frame to Getty and find real photographs that look like it'
-      : (f && SB.Model.isStock(P(), f.shot)
-        ? 'This card already holds a comp — use “more like this” on the tile instead'
-        : 'Select a card that has a frame first');
-    mf.disabled = !canMatch;
-    mf.onclick = function () { matchFrame(f); };
+    /* The enums, from the client so the words and the wire cannot drift. */
+    (SB.Getty.PICKERS || []).forEach(function (pk) {
+      const sel = document.createElement('select');
+      sel.className = 'stock-pick';
+      const none = document.createElement('option');
+      none.value = ''; none.textContent = pk.label;
+      sel.appendChild(none);
+      pk.values.forEach(function (v) {
+        const o = document.createElement('option');
+        o.value = v; o.textContent = SB.Getty.word(v);
+        sel.appendChild(o);
+      });
+      sel.value = ((S.filters[pk.k] || [])[0]) || '';
+      sel.onchange = function () {
+        if (sel.value) S.filters[pk.k] = [sel.value];
+        else delete S.filters[pk.k];
+        drawChips();
+      };
+      h.appendChild(sel);
+    });
+
+    /* Find a match for this frame — board a shot with a model, then find the
+       footage that looks like it. */
+    const mf = SB.el('button', 'mini', '\u25ce match this frame');
     S.matchEl = mf;
+    mf.onclick = function () { matchFrame(shot()); };
     h.appendChild(mf);
+    paintMatch();
 
     h.appendChild(SB.el('span', 'spacer'));
 
     S.statusEl = SB.el('span', 'stock-status', statusWords());
     h.appendChild(S.statusEl);
 
-    const shut = SB.el('button', 'mini', '✕');
+    const shut = SB.el('button', 'mini', '\u2715');
     shut.title = 'Close the drawer';
     shut.onclick = close;
     h.appendChild(shut);
@@ -258,6 +271,21 @@
     S.chipEl = SB.el('div', 'stock-chips');
     drawChips();
     h.appendChild(S.chipEl);
+  }
+
+  /* The match button is about the SELECTED card, which is the one thing in
+   * here that is: it searches by that card's frame. */
+  function paintMatch() {
+    const mf = S.matchEl;
+    if (!mf) return;
+    const f = shot();
+    const can = !!(f && SB.Model.modelFrame(P(), f.shot));
+    mf.title = can
+      ? 'Upload ' + f.code + '\u2019s frame to Getty and find footage that looks like it'
+      : (f && SB.Model.isStock(P(), f.shot)
+        ? 'That card already holds a comp \u2014 use \u201cmore like this\u201d on the tile instead'
+        : 'Select a card that has a frame first');
+    mf.disabled = !can;
   }
 
   function statusWords() {
@@ -274,7 +302,7 @@
     if (!SB.Getty) return;
     const chips = SB.Getty.chips(S.filters || {});
     if (!chips.length) {
-      c.appendChild(SB.el('span', 'stock-chip-none', 'no filters — everything Getty has'));
+      c.appendChild(SB.el('span', 'stock-chip-none', 'no filters — all footage'));
       return;
     }
     c.appendChild(SB.el('span', 'stock-chip-lbl', 'filtered to'));
@@ -284,20 +312,21 @@
       b.onclick = function () { dropChip(ch); };
       c.appendChild(b);
     });
-    /* The types Getty has no word for. Said once, here, rather than leaving
-       somebody to wonder why a POV search looks like any other search. */
-    const f = shot();
-    if (f && f.shot.type && SB.Getty.typeFilters && !SB.Getty.typeFilters(f.shot.type)) {
-      c.appendChild(SB.el('span', 'stock-chip-none',
-        '· Getty has no filter for “' + f.shot.type + '” — words only'));
-    }
   }
 
   function dropChip(ch) {
     const f = S.filters || {};
     if (ch.k === 'excludeEditorialOnly') f.excludeEditorialOnly = false;
-    else if (Array.isArray(f[ch.k])) f[ch.k] = f[ch.k].filter(function (v) { return v !== ch.v; });
-    drawChips();
+    else if (ch.k === 'minLength' || ch.k === 'maxLength') f[ch.k] = '';
+    else if (Array.isArray(f[ch.k])) {
+      f[ch.k] = f[ch.k].filter(function (v) { return String(v) !== String(ch.v); });
+      if (!f[ch.k].length) delete f[ch.k];
+    }
+    /* the whole head, because a dropped chip has to clear the picker it came
+       from as well — a select still showing "slow motion" over a search that
+       is no longer filtered by it is the kind of lie this panel is careful
+       about elsewhere */
+    drawHead();
   }
 
   /* ---------------- searching ---------------- */
@@ -327,7 +356,7 @@
     const want = ++S.seq;
     const call = S.byImage
       ? SB.Getty.byImage({ imageUrl: S.byImage }, f, page, 60)
-      : SB.Getty.searchImages(S.family, f, page, 60);
+      : SB.Getty.searchVideos(S.family, f, page, 60);
     call.then(function (r) {
       if (want !== S.seq) return;                 // a later search won
       S.busy = false;
@@ -361,7 +390,7 @@
       S.images = r.images; S.total = r.total || r.images.length; S.more = false;
       S.page = 1;
       S.chosen = S.images[0] || null;
-      S.phrase = 'like ' + a.id; S.typed = true;
+      S.phrase = 'like ' + a.id;
       if (S.phraseEl) S.phraseEl.value = S.phrase;
       drawStrip(); drawJudge(); paintStatus();
     }).catch(function (e) {
@@ -400,7 +429,7 @@
     }).then(function (url) {
       if (want !== S.seq) return;                  // a later search took over
       S.byImage = url;
-      S.phrase = ''; S.typed = true;
+      S.phrase = '';
       if (S.phraseEl) S.phraseEl.value = '';
       run(1);
     }).catch(function (e) {
@@ -471,19 +500,27 @@
     t.dataset.id = a.id;
 
     const img = document.createElement('img');
-    img.src = a.thumb || a.preview || a.comp;
+    img.src = a.poster;
     img.alt = a.title || a.id;
     img.draggable = false;                 // the TILE is the drag, not the <img>
     t.appendChild(img);
 
+    /* Nothing plays in the strip. Forty tiles autoplaying is forty streams
+       off Getty's media host and a drawer that cannot be scrolled; the length
+       and a glyph say what this is, and the judging pane plays it. */
+    if (a.seconds) {
+      t.appendChild(SB.el('span', 'stock-len', '\u25b7 ' + SB.Getty.clock(a.seconds)));
+    }
+
     if (a.editorialOnly) {
-      const e = SB.el('span', 'stock-flag', '✎ editorial only');
+      const e = SB.el('span', 'stock-flag', '\u270e editorial only');
       e.title = 'Licensed for editorial use only — not for a commercial client video.';
       t.appendChild(e);
     }
 
     const cap = SB.el('div', 'stock-cap');
-    cap.appendChild(SB.el('span', 'stock-artist', a.artist || a.collection || a.id));
+    cap.appendChild(SB.el('span', 'stock-artist',
+      [a.aspect, a.artist || a.collection || a.id].filter(Boolean).join(' \u00b7 ')));
     t.appendChild(cap);
 
     t.addEventListener('mouseenter', function () { choose(a); });
@@ -496,12 +533,15 @@
       dt.effectAllowed = 'copy';
       /* The asset, for the licence trail… */
       dt.setData(SB.Board.DND_STOCK, JSON.stringify({
-        id: a.id, title: a.title, caption: a.caption, artist: a.artist,
+        id: a.id, kind: 'video', title: a.title, caption: a.caption, artist: a.artist,
         collection: a.collection, family: a.family, license: a.license,
-        link: a.link, comp: a.comp, preview: a.preview, thumb: a.thumb
+        seconds: a.seconds, aspect: a.aspect, link: a.link,
+        comp: a.comp, poster: a.poster
       }));
-      /* …and the plain URL, which every drop path in the app already reads, so
-         the picture lands even where nothing knows about Getty. */
+      /* …and the plain comp URL, which every drop path in the app already
+         reads. On a card that is a clip rather than a picture, so this
+         fallback alone would land the footage and not a frame — which is why
+         the payload above is what the drop handler checks first. */
       if (a.comp) {
         dt.setData('text/uri-list', a.comp);
         dt.setData('text/plain', a.comp);
@@ -542,49 +582,74 @@
     if (!a) { j.classList.add('empty'); return; }
     j.classList.remove('empty');
 
-    const im = document.createElement('img');
-    im.src = a.preview || a.comp || a.thumb;
-    im.alt = a.title || a.id;
-    j.appendChild(im);
+    /* THE COMP, PLAYING. Judging footage from a still is judging the wrong
+       thing — a locked-off shot and a slow push look identical as posters,
+       and the difference is the entire reason you are looking at footage.
+       Muted and looping, poster up until the first frame decodes, and one
+       stream at a time because only the chosen tile has a pane. */
+    const v = document.createElement('video');
+    v.muted = true;
+    v.loop = true;
+    v.autoplay = true;
+    v.playsInline = true;
+    v.controls = true;
+    v.preload = 'auto';
+    if (a.poster) v.poster = a.poster;
+    if (a.comp) v.src = a.comp;
+    j.appendChild(v);
+    const playing = v.play();
+    if (playing && playing.catch) playing.catch(function () { });   // autoplay refusals are fine
 
     const meta = SB.el('div', 'stock-meta');
     meta.appendChild(SB.el('div', 'stock-meta-title', a.title || a.caption || a.id));
-    const line = [a.artist, a.collection, a.family].filter(Boolean).join(' · ');
-    meta.appendChild(SB.el('div', 'stock-meta-sub', line));
-    meta.appendChild(SB.el('div', 'stock-meta-sub', a.id + (a.license ? ' · ' + a.license : '')));
+    const line = [a.seconds ? SB.Getty.clock(a.seconds) : '', a.aspect, a.speed && SB.Getty.word(a.speed),
+      a.mastered].filter(Boolean).join(' \u00b7 ');
+    if (line) meta.appendChild(SB.el('div', 'stock-meta-sub', line));
+    meta.appendChild(SB.el('div', 'stock-meta-sub',
+      [a.artist, a.collection].filter(Boolean).join(' \u00b7 ')));
+    meta.appendChild(SB.el('div', 'stock-meta-sub', a.id + (a.license ? ' \u00b7 ' + a.license : '')));
     j.appendChild(meta);
 
     const row = SB.el('div', 'stock-acts');
-    const f = shot();
-    const use = SB.el('button', 'mini primary', f ? 'Use on ' + f.code : 'Use as frame');
-    use.disabled = !f;
-    use.title = f ? 'Put this comp on ' + f.code + ' (its current frame banks as a take)'
-      : 'Select a card first — or just drag the picture onto one';
-    use.onclick = function () {
+    S.useEl = SB.el('button', 'mini primary', 'Use as frame');
+    S.useEl.onclick = function () {
+      const f = shot();
       if (!f) return;
-      use.disabled = true;
-      use.textContent = 'placing…';
-      SB.Board.placeStock(f.shot, a).then(function () {
-        use.textContent = 'Use on ' + f.code;
-        use.disabled = false;
-      });
+      S.useEl.disabled = true;
+      S.useEl.textContent = 'placing\u2026';
+      SB.Board.placeStock(f.shot, a).then(function () { paintUse(); });
     };
-    row.appendChild(use);
+    row.appendChild(S.useEl);
+    paintUse();
 
     const like = SB.el('button', 'mini', 'more like this');
     like.onclick = function () { moreLikeThis(a); };
     row.appendChild(like);
 
     if (a.link) {
-      const go = SB.el('button', 'mini', 'on gettyimages ↗');
+      const go = SB.el('button', 'mini', 'on gettyimages \u2197');
       go.onclick = function () { window.open(a.link, '_blank', 'noopener'); };
       row.appendChild(go);
     }
     j.appendChild(row);
 
     j.appendChild(SB.el('div', 'stock-legal',
-      'Comp — layout and proofing only, for ' + SB.Model.COMP_DAYS + ' days. ' +
-      'The watermark stays on, and it is never handed to a model.'));
+      'Comp \u2014 layout and proofing only, for ' + SB.Model.COMP_DAYS + ' days. ' +
+      'The watermark stays on, it never goes in the cut, and it is never handed to a model.'));
+  }
+
+  /* Which card Use-on would place onto. Repainted on its own when the board
+   * selection moves, so moving the selection costs nothing but this line. */
+  function paintUse() {
+    const b = S.useEl;
+    if (!b) return;
+    const f = shot();
+    b.disabled = !f || !S.chosen;
+    b.textContent = f ? 'Use on ' + f.code : 'Use as frame';
+    b.title = f
+      ? 'Put this comp on ' + f.code + ': its first frame becomes the card\u2019s picture and ' +
+        'the clip goes in the file. Anything already there is kept as a take.'
+      : 'Select a card first \u2014 or just drag the tile onto one';
   }
 
   /* ---------------- dragging onto a board that has scrolled away ----------

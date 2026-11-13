@@ -216,56 +216,63 @@ prints; the clip is the motion made from it.
 - A clip put there by hand carries no provenance, so the Export panel's **only what was made
   in here** filter passes it by. That is the point of the filter.
 
-### Real pictures instead: the Stock drawer
+### Real footage instead: the Footage drawer
 
-Not every shot should be invented. **Stock** in the toolbar opens a drawer along the bottom
-of the window, searches Getty Images, and you drag a comp straight onto a card — or onto
-empty board space, which makes a new card for it.
+Not every shot has to be invented. **Footage** in the toolbar opens a drawer along the bottom
+of the window, searches Getty Images footage, and you drag a clip straight onto a card — or
+onto empty board space, which makes a new card for it.
 
 It is a drawer and not a dialog on purpose: the board *shrinks* above it rather than being
 covered, so every card stays visible and droppable while you are dragging out of it. Drag
 the top edge to resize; the height and whether it was open come back next time.
 
-- **It knows what the card is.** A Close-up card searches Getty's `close_up`; a Talking head
-  searches a headshot looking at the camera with one person in it; an Insert searches still
-  life with nobody in the frame. The phrase is seeded from the card's description — with `@`
-  marks resolved to names — and the filters it applied are shown as chips you can drop.
-  Over the shoulder, POV and Screen capture say so: Getty has no filter for them, and a
-  wrong filter hides the right picture.
-- **Thumbs to scan, the comp to decide on.** Hover or arrow onto a tile and it shows big on
-  the right, with the artist, the collection and the asset id. Deciding from a 170px thumb is
-  how the wrong picture gets onto a board.
-- **◎ match this frame.** Boarded it with a model already? This uploads that card's frame to
-  Getty and finds photographs that look like it. It asks first, once a session — that is a
+**What lands on a card is the comp and its own first frame.** Not the thumbnail — that is
+about 170px and prints like it. The watermarked comp is 720p or better, so the card draws
+frame one of the actual clip, and the clip itself goes into the `.storyboard` and gets the
+`▷` badge with its length. A board you can hand to somebody and *watch*.
+
+- **The search is yours.** The drawer does not read the selected card: not its shot type, not
+  its description. You find the footage and then drag the shot up onto the board. The only
+  thing a selected card buys you is **Use on 3b** if you would rather not drag.
+- **The filters are the ones footage has**: clip length in seconds, format (HD / 4K / HD web),
+  frame rate, technique (slow motion, time lapse, black and white…) and **camera** — locked
+  off, pan, tracking, aerial, high and low angle, tilt, POV. Each one you pick becomes a chip
+  you can drop again.
+- **The pane plays it.** Hover or arrow onto a tile and the comp plays, muted and looping, on
+  the right. A locked-off shot and a slow push are the same poster frame, and the difference
+  is the whole reason you are looking at footage.
+- **◎ match this frame.** Boarded a shot with a model already? This uploads that card's frame
+  to Getty and finds *footage* that looks like it. It asks first, once a session — that is a
   client frame leaving the machine.
 - **Settings → Getty** takes the API key, and that is all it takes: Getty's API answers a
   browser directly, so there is no sign-in, no server and no proxy. The key lives in this
-  browser and never in the `.storyboard`, like the Gemini one.
+  browser and never in the `.storyboard`, like the Gemini one. One switch there — *keep the
+  comp clip in the file* — is on by default; off keeps the first frame only, for a board that
+  has to stay emailable.
 
 A comp is a free, watermarked stand-in that Getty licenses for layout for **30 days**, and
 never for final or public material. The app is built around that rather than around it:
 
-- A card holding one wears a **◧ Getty** badge with the asset id and how old the comp is; past
-  30 days the badge goes red, and Settings → General lists every one of them with its age.
+- A card holding one wears a **◧ Getty 0:12** badge with the asset id and how old the comp is;
+  past 30 days the badge goes red, and Settings → General lists every one of them with its age.
 - **A comp is never handed to a model.** Not as a first frame for a clip, not as a `@`-marked
-  reference on another card, not in a MiniMax package. The clip push goes dark and says
-  *"this card's frame is a Getty comp"*. The still lane is deliberately left open — rendering
-  a real frame over a stand-in is exactly how a comp leaves the board.
-- **A comp is never fed as a *subject's* reference either.** A Getty picture in a subject's
-  reference box is shown on screen and on paper, and held back from every model — the feed
-  strip says which picture it held back and why, and the subject is described in words
-  instead.
-- The licence follows the *pixels*, not the card: the same comp dropped in again from
-  anywhere is still that comp, so it cannot be laundered into an ordinary frame. A comp
-  dragged straight out of a gettyimages.com tab is recognised from its URL and marked, even
-  though nothing came with it but the picture.
+  reference on another card, not as a subject's reference picture, not in a MiniMax package.
+  The clip push goes dark and says *"this card's frame is a Getty comp"*. The still lane is
+  deliberately left open — rendering a real frame over a stand-in is exactly how a comp leaves
+  the board.
+- The licence follows the *pixels*, not the card: the same comp dropped in again from anywhere
+  is still that comp, so it cannot be laundered into an ordinary frame. A clip dragged straight
+  out of a gettyimages.com tab is recognised from its URL and marked, even though nothing came
+  with it but the link.
 - Replacing a comp with a real render keeps the comp as a *take*, so it is still in the file.
-  Settings says so, and the Getty shot list deliberately does not — that list is what the
-  edit licenses, and it is only what is on the board.
-- Nothing here licenses anything or spends money. The export writes a
-  `<board>-getty.csv` of every asset id with the card it sits on, and the buying happens in
+  Settings says so, and the Getty shot list deliberately does not — that list is what the edit
+  licenses, and it is only what is on the board.
+- Nothing here licenses anything or spends money. The export writes a `<board>-getty.csv` of
+  every asset id with its kind, its length and the card it sits on, and the buying happens in
   the edit — the Premiere panel at `d:\claudecode\gettyforpremiere` owns that, and owns the
-  ledger that stops an asset being bought twice.
+  ledger that stops an asset being bought twice. Video ids are what that panel imports; it
+  sorts stills into a list it reports as skipped, which is why this drawer searches footage and
+  not photographs.
 
 ### Getting things back out: the Export panel
 

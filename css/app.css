@@ -1519,13 +1519,26 @@ body.resizing{user-select:none;cursor:ns-resize}
 }
 .stock-more:hover{border-color:var(--accent);color:var(--fg)}
 
-/* the comp, big enough to decide from */
+/* the hand-set filters in the head */
+.stock-secs{width:68px;padding:4px 6px;border-radius:5px;background:var(--bg);border:1px solid var(--line2)}
+.stock-secs:focus{outline:none;border-color:var(--accent)}
+.stock-pick{padding:3px 5px;border-radius:5px;background:var(--bg);border:1px solid var(--line2);
+  color:var(--fg);font-size:11.5px;max-width:120px}
+.stock-pick:focus{outline:none;border-color:var(--accent)}
+/* a tile's clip length */
+.stock-len{
+  position:absolute;right:4px;top:4px;font-size:9.5px;font-weight:700;line-height:15px;
+  padding:0 5px;border-radius:8px;color:#fff;background:rgba(0,0,0,.62);pointer-events:none;
+}
+
+/* the comp, playing, big enough to decide from */
 .stock-judge{
   flex:0 0 300px;min-width:0;border-left:1px solid var(--line);padding:8px 10px;
   display:flex;flex-direction:column;gap:6px;overflow:auto;
 }
 .stock-judge.empty{opacity:.4}
-.stock-judge img{width:100%;max-height:55%;object-fit:contain;background:var(--bg3);border-radius:4px}
+.stock-judge img,.stock-judge video{width:100%;max-height:60%;object-fit:contain;
+  background:#000;border-radius:4px}
 .stock-meta-title{font-size:12px;line-height:1.35;max-height:34px;overflow:hidden}
 .stock-meta-sub{font-size:11px;color:var(--fg-dim)}
 .stock-acts{display:flex;gap:5px;flex-wrap:wrap}
