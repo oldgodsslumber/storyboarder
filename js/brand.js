@@ -642,7 +642,9 @@
     /* Stock MiniMax H3 writes its own six sections, and those DESCRIBE the opening picture by design; told
        "write nothing already visible" as well, it was handed two opposite briefs in one request. */
     if (SB.H3 && SB.H3.stock && SB.H3.stock(vm)) return false;
-    return !!(shot && (shot.render || shot.image));
+    /* modelFrame, not (render || image): a Getty comp is a frame on the board
+       and never one a model is led by. */
+    return !!(shot && SB.Model.modelFrame(p, shot));
   }
   function closingFor(p, shot, role) {
     /* Is a frame of another shot being handed over? Then this still is an edit

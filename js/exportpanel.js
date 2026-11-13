@@ -51,6 +51,16 @@
 
   /* ---------------------------------------------------------------- model */
 
+  /* "Only what was made in here" means GENERATED in here. A Getty comp also
+   * carries a `made` record — it has to, so the manifest can say where the
+   * picture came from — but nobody asking for what this board produced means
+   * the stock somebody dragged onto it. Stock is the third category, and this
+   * is the line that keeps it out of the other two. */
+  function madeHere(rec) {
+    const m = rec && rec.made;
+    return !!(m && m.by !== 'getty');
+  }
+
   function rows(p, scope) {
     const out = [];
     const sel = (SB.Board.selection && SB.Board.selection()) || [];
@@ -166,7 +176,7 @@
       if (o.originals) {
         const rec = sh.render;
         if (rec && SB.Renders.has(p, rec)) {
-          if (!o.madeOnly || rec.made) {
+          if (!o.madeOnly || madeHere(rec)) {
             const data = SB.Renders.dataUrl(p, rec);
             items.push({
               name: nameFor(r.code, rec, o.naming, null, w), kind: 'original', data: data,
@@ -196,12 +206,12 @@
                so a card holding two dead takes reported nothing missing while
                Settings could see them perfectly well. */
             if (!v.ref || !SB.Renders.has(p, v)) {
-              if (o.madeOnly && !v.made) return;
+              if (o.madeOnly && !madeHere(v)) return;
               if (v.url) linkOnly++;
               else missing++;
               return;
             }
-            if (o.madeOnly && !v.made) return;
+            if (o.madeOnly && !madeHere(v)) return;
             const data = SB.Renders.dataUrl(p, v);
             items.push({
               name: nameFor(r.code, v, o.naming, 'mp4', w, many ? tk.n : 0),
@@ -214,7 +224,7 @@
       }
 
       if (o.proxies && sh.image) {
-        if (!o.madeOnly || (sh.render && sh.render.made)) {
+        if (!o.madeOnly || madeHere(sh.render)) {
           const data = SB.Blobs.src(p, sh.image);
           if (data) {
             items.push({
@@ -282,6 +292,22 @@
       items.push({
         name: (SB.Renders.slug(p.name) || 'board') + '-shots.csv', kind: 'list',
         text: csv(p, list, namesByShot(items)), bytes: 0
+      });
+    }
+    /* The stock on this board, as a list an editor can work from with no
+       panel and no plugin: a Getty asset id per card, which is the one thing
+       a comp on a storyboard has to carry into the edit. Written whenever the
+       board holds any — it is two columns of text and it is the difference
+       between "find the one that looks like this" and "license 1437816897".
+       Licensing itself happens in Premiere, against its ledger. */
+    const stock = SB.Model.stockShots(p).filter(function (st) {
+      return list.some(function (r) { return r.shot.id === st.shot.id; });
+    });
+    if (stock.length) {
+      const text = gettyCsv(p, stock);
+      items.push({
+        name: (SB.Renders.slug(p.name) || 'board') + '-getty.csv', kind: 'list',
+        text: text, bytes: textBytes(text)
       });
     }
     /* A manifest of nothing is not an export. With no files to describe, the
@@ -484,6 +510,27 @@
     return lines.join('\r\n');
   }
 
+  /* Every comp on the board, with the asset id, so the edit can license the
+   * ones that survived into the cut. Dates are what the licence runs on, so
+   * the day it was placed and its age in days both go in. */
+  function gettyCsv(p, stock) {
+    const head = ['Code', 'Scene', 'Shot type', 'Getty asset id', 'Title', 'Artist',
+      'Collection', 'Licence model', 'Comp placed', 'Days old', 'Lapsed', 'Link'];
+    const lines = [head.map(cell).join(',')];
+    stock.forEach(function (st) {
+      const days = SB.Model.compAgeDays(st.rec);
+      lines.push([
+        st.code, (st.scene && st.scene.heading) || '', st.shot.type || '',
+        st.rec.id, st.rec.title || '', st.rec.artist || '', st.rec.collection || '',
+        st.rec.license || '',
+        st.rec.at ? new Date(st.rec.at).toISOString().slice(0, 10) : '',
+        String(days), SB.Model.compLapsed(st.rec) ? 'yes' : '',
+        st.rec.link || ('https://www.gettyimages.com/detail/' + st.rec.id)
+      ].map(cell).join(','));
+    });
+    return lines.join('\r\n');
+  }
+
   /* What made each file. This is the half of a generated export that cannot be
    * rebuilt afterwards — the pictures do not say which model produced them,
    * and the prompt on the card moves on. */
@@ -491,6 +538,18 @@
     const out = {
       board: p.name || 'Untitled project',
       version: p.versionName || '',
+      /* The licence trail, once, at the top — rather than only scattered
+         through the file rows, where a comp placed on a card whose picture was
+         not exported would not appear at all. */
+      stock: SB.Model.stockShots(p).map(function (st) {
+        return {
+          shot: st.code, id: st.rec.id, title: st.rec.title || '', artist: st.rec.artist || '',
+          collection: st.rec.collection || '', license: st.rec.license || '',
+          placed: st.rec.at ? new Date(st.rec.at).toISOString() : null,
+          daysOld: SB.Model.compAgeDays(st.rec),
+          compLapsed: SB.Model.compLapsed(st.rec)
+        };
+      }),
       files: items.filter(function (it) { return it.kind !== 'list'; }).map(function (it) {
         const m = it.made;
         return {
@@ -504,8 +563,9 @@
           bytes: it.bytes || 0,
           pixels: it.rec && it.rec.w ? it.rec.w + '×' + it.rec.h : null,
           boardCopy: !!it.isProxy,
-          madeHere: !!m,
-          model: m ? m.model : null,
+          madeHere: !!(m && m.by !== 'getty'),
+          stock: m && m.by === 'getty' ? { id: m.id, artist: m.artist, collection: m.collection } : null,
+          model: m && m.by !== 'getty' ? m.model : null,
           imagineModel: m ? m.slug : null,
           promptOnTheCardNow: m ? promptFor(p, it.shot, m) : null
         };
@@ -935,7 +995,7 @@
   SB.ExportPanel = {
     open: open, close: close, toggle: toggle, isOpen: function () { return !!root; },
     /* the pure half, which is what the tests hold on to */
-    plan: plan, csv: csv, manifest: manifest, opts: opts, nameFor: nameFor
+    plan: plan, csv: csv, gettyCsv: gettyCsv, manifest: manifest, opts: opts, nameFor: nameFor
   };
 
 })(window.SB);

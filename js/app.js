@@ -201,6 +201,9 @@
     SB.ScriptMode.init();
     SB.PromptPanel.init();
     SB.PersonaPanel.init();
+    /* The drawer comes back open if that is how it was left — it is a place to
+       work from, not a dialog, and reopening it every session is friction. */
+    if (SB.Stock) SB.Stock.restore();
     SB.Store.S.getProject = function () { return app.project; };
     SB.Store.S.onState = function (txt, cls) {
       const el = document.getElementById('saveState');
@@ -394,6 +397,8 @@
     $('btnPersonas').addEventListener('click', function () { SB.PersonaPanel.toggle(); });
 
     $('btnPrompts').addEventListener('click', function () { SB.PromptPanel.toggle(); });
+
+    $('btnStock').addEventListener('click', function () { SB.Stock.toggle(); });
 
     $('btnTheme').addEventListener('click', function () { SB.Theme.toggle(); });
 

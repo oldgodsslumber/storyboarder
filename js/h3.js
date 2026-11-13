@@ -89,7 +89,7 @@
      * imagine.js uploads that original as image 1 regardless. The frame went
      * up with no <Picture 1> naming it, and any arrival riding with it went
      * up unnamed too. */
-    if (shot.render || shot.image) {
+    if (SB.Model.modelFrame(p, shot)) {
       out.push({ n: 1, kind: 'frame', label: 'the first frame of this shot', feedN: null });
     }
     if (!out.length) return out;        // nothing to anchor the rest to
@@ -251,7 +251,7 @@
     const types = [];
     /* the same test pictures() makes, and the same one the upload makes: a
        board can hold an original with no proxy */
-    if (shot.render || shot.image) types.push('keyframe completion');
+    if (SB.Model.modelFrame(p, shot)) types.push('keyframe completion');
     /* "reference generation" is true only when a reference photograph is
        actually in the call — which is now possible again, for somebody who
        arrives partway through and would otherwise be in no picture at all. */

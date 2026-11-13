@@ -4,6 +4,11 @@
 
   const DND_SHOT = 'application/x-sb-shot';
   const DND_SCENE = 'application/x-sb-scene';
+  /* A comp dragged out of the stock drawer. The drawer also sets
+   * text/uri-list, which the existing drop paths already handle on their own —
+   * this type exists so the drop knows WHICH asset it was, which a bare URL
+   * cannot say and the licence trail needs. */
+  const DND_STOCK = 'application/x-sb-getty';
 
   const B = {
     openBox: {},              // shotId:role -> the lane box is open on this card
@@ -118,6 +123,10 @@
       bar.appendChild(selectionBar());
       bar.classList.toggle('hidden', sel.length < 2);
     }
+    /* The stock drawer is about the selected card — which card it says it is
+       searching for, and which card "Use on 3b" would put a comp on. It never
+       searches on its own; this only repaints. */
+    if (SB.Stock && SB.Stock.isOpen()) SB.Stock.sync();
   }
 
   /* ---------------- marquee selection ----------------
@@ -1047,6 +1056,18 @@
       ev.preventDefault();
       ev.stopPropagation();
       el.classList.remove('drag-over');
+      /* Dropped on the scene rather than on a card: the same thing a dropped
+         file does here — a new card at the end, with the comp on it. */
+      const stock = stockFromTransfer(ev.dataTransfer);
+      if (stock) {
+        const sh = SB.Model.addShot(P(), sc.id, {});
+        if (sh) {
+          SB.app.selectedShotId = sh.id;
+          SB.app.changed(true);
+          placeStock(sh, stock);
+        }
+        return;
+      }
       SB.imagesFromTransfer(ev.dataTransfer).then(function (imgs) {
         if (!imgs.length) { SB.toast('No image found in that drop', true); return; }
         /* One at a time: the cards then land in the order they were picked,
@@ -2101,6 +2122,34 @@
       }
     }
 
+    /* This frame is licensed stock. Said on the card because everything else
+       about the card stops being true for it: it is not generated, it is not
+       fed to a model, and the licence on it runs out. The watermark in the
+       picture says the same thing — this says WHICH picture, and how old the
+       comp is. */
+    {
+      const st = SB.Model.stockFor(P(), sh);
+      if (st && shown) {
+        const days = SB.Model.compAgeDays(st);
+        const lapsed = SB.Model.compLapsed(st);
+        const sb = SB.el('button', 'stock-badge' + (lapsed ? ' stale' : ''), '◧ Getty');
+        sb.title = 'Getty ' + st.id + (st.artist ? ' · ' + st.artist : '') +
+          (st.collection ? ' · ' + st.collection : '') +
+          '\nPlaced ' + (days ? days + ' day' + (days === 1 ? '' : 's') + ' ago' : 'today') + '. ' +
+          (lapsed
+            ? 'A comp is licensed for ' + SB.Model.COMP_DAYS + ' days — this one has run out. ' +
+              'Replace it, or license the asset.'
+            : 'Comp use only: never in final or public material, and the watermark stays on.') +
+          '\nClick to open it on gettyimages.com.';
+        sb.onclick = function (ev) {
+          ev.stopPropagation();
+          const u = st.link || ('https://www.gettyimages.com/detail/' + encodeURIComponent(st.id));
+          window.open(u, '_blank', 'noopener');
+        };
+        f.appendChild(sb);
+      }
+    }
+
     const tools = SB.el('div', 'frame-tools');
     if (SB.app.commentMode && sh.image) {
       const dr = SB.el('button', 'mini', 'draw');
@@ -2195,6 +2244,11 @@
       if (ev.dataTransfer.types.indexOf(DND_SHOT) >= 0) return;
       ev.preventDefault();
       f.classList.remove('drag-over');
+      /* A comp out of the drawer, checked first and exactly like DND_SHOT
+         above: it carries the asset, so it can be placed WITH its licence
+         rather than as an anonymous picture off a URL. */
+      const stock = stockFromTransfer(ev.dataTransfer);
+      if (stock) { ev.stopPropagation(); placeStock(sh, stock); return; }
       /* A video dropped on a card is a clip for that card, not a picture that
          failed to decode — which is what it used to be reported as. A drop
          carrying both is two things for the same card, and taking only the
@@ -2331,9 +2385,43 @@
     });
   }
 
+  /* The asset out of a drop, or null. Anything unreadable is null rather than
+     a half-asset: the plain-URL path behind it still places the picture, so a
+     malformed payload loses the licence trail and not the drop. */
+  function stockFromTransfer(dt) {
+    if (!dt || !dt.types || dt.types.indexOf(DND_STOCK) < 0) return null;
+    try {
+      const a = JSON.parse(dt.getData(DND_STOCK) || 'null');
+      return (a && a.id && (a.comp || a.preview || a.thumb)) ? a : null;
+    } catch (e) { return null; }
+  }
+
+  /* Put a comp on a card. The bytes come from Getty's media host, go into the
+     file like any other picture, and the licence record goes in beside them —
+     one call, so a comp can never land without its asset id. */
+  function placeStock(sh, a) {
+    if (!SB.Getty) return Promise.resolve();
+    const made = {
+      by: 'getty', id: a.id, artist: a.artist || '', collection: a.collection || '',
+      title: a.title || a.caption || '', license: a.license || '', at: Date.now(),
+      stock: SB.Getty.record(a)
+    };
+    return SB.Getty.fetchComp(a.comp || a.preview || a.thumb).then(function (blob) {
+      return setImage(sh, blob, made);
+    }).catch(function (e) {
+      SB.toast(e.message || String(e), true);
+    });
+  }
+
   function setImage(sh, src, made) {
     return SB.downscaleImage(src).then(function (img) {
       const proxy = SB.Blobs.image(P(), img.data, img.w, img.h);
+      /* The licence, filed against the picture itself (model.js: stockFor).
+         Before the slot changes hands, because by the next line this ref may
+         be the chosen frame or a banked take and both are the same comp. */
+      if (made && made.by === 'getty' && made.stock) {
+        SB.Model.markStock(P(), proxy, made.stock);
+      }
       /* The picture that was here joins the card's takes rather than being
          overwritten — rendering a shot again is the ordinary case, and until
          now the second landing silently deleted the first. Banked BEFORE the
@@ -2428,11 +2516,12 @@
     refreshFeed: refreshFeed,
     saveFeed: saveFeed,
     setImage: setImage, clipDrop: clipDrop,
+    placeStock: placeStock,
     swap: doSwap,
     select: selectShot,
     selection: selection,
     clearSelection: clearSelection,
-    DND_SHOT: DND_SHOT
+    DND_SHOT: DND_SHOT, DND_STOCK: DND_STOCK
   };
 
 })(window.SB);

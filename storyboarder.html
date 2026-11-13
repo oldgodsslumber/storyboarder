@@ -1454,10 +1454,113 @@ body.comment-mode .frame{cursor:crosshair}
 .pt-fe .feed-off{margin-left:auto;padding:0 5px;line-height:16px;opacity:.55}
 .pt-fe .feed-off:hover{opacity:1;color:var(--danger,#e06c5a)}
 
+/* ---------- the stock drawer (gettypanel.js) ----------
+ *
+ * A flex child of #app, after #main — so opening it SHRINKS the board rather
+ * than covering it. Laid over the board, it would hide the cards you are
+ * trying to drop a comp onto, which is the whole reason this is not a modal.
+ */
+.stock{
+  flex:0 0 auto;min-height:150px;
+  display:flex;flex-direction:column;min-width:0;
+  background:var(--bg2);border-top:1px solid var(--line2);
+  box-shadow:0 -6px 20px var(--shadow);
+}
+.stock-grip{
+  height:7px;flex:0 0 auto;cursor:ns-resize;background:var(--bg3);
+  border-bottom:1px solid var(--line);
+}
+.stock-grip:hover{background:var(--accent)}
+body.resizing{user-select:none;cursor:ns-resize}
+
+.stock-head{
+  flex:0 0 auto;display:flex;align-items:center;gap:6px;flex-wrap:wrap;
+  padding:6px 10px;border-bottom:1px solid var(--line);
+}
+.stock-title{font-weight:700;color:var(--accent);letter-spacing:.3px}
+.stock-for{color:var(--fg-dim);font-size:11.5px;text-transform:uppercase;letter-spacing:.5px}
+.stock-phrase{
+  flex:1 1 220px;min-width:140px;padding:4px 7px;border-radius:5px;
+  background:var(--bg);border:1px solid var(--line2);
+}
+.stock-phrase:focus{outline:none;border-color:var(--accent)}
+.stock-status{color:var(--fg-dim);font-size:11.5px;white-space:nowrap}
+.stock-chips{flex:1 0 100%;display:flex;align-items:center;gap:5px;flex-wrap:wrap;padding-top:2px}
+.stock-chip-lbl{color:var(--fg-dim);font-size:11px;text-transform:uppercase;letter-spacing:.5px}
+.stock-chip{
+  font-size:11px;line-height:17px;padding:0 7px;border-radius:9px;cursor:pointer;
+  color:var(--fg);background:color-mix(in srgb, var(--accent) 16%, transparent);
+  border:1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.stock-chip:hover{background:color-mix(in srgb, var(--accent) 28%, transparent)}
+.stock-chip-none{color:var(--fg-dim);font-size:11px;font-style:italic}
+
+.stock-body{flex:1;display:flex;min-height:0;min-width:0}
+.stock-strip{
+  flex:1;min-width:0;display:flex;gap:8px;align-items:flex-start;
+  overflow-x:auto;overflow-y:auto;flex-wrap:wrap;align-content:flex-start;padding:8px 10px;
+}
+.stock-note{
+  color:var(--fg-dim);font-size:12.5px;max-width:460px;padding:10px 2px;
+  display:flex;flex-direction:column;gap:8px;align-items:flex-start;
+}
+.stock-tile{
+  position:relative;flex:0 0 auto;width:168px;cursor:grab;
+  border:1px solid var(--line2);border-radius:6px;overflow:hidden;background:var(--bg);
+}
+.stock-tile:hover{border-color:var(--accent)}
+.stock-tile.on{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.stock-tile:focus{outline:none;border-color:var(--accent)}
+.stock-tile:active{cursor:grabbing}
+.stock-tile img{display:block;width:100%;height:112px;object-fit:cover;background:var(--bg3)}
+.stock-cap{padding:3px 6px;font-size:10.5px;color:var(--fg-dim);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.stock-flag{
+  position:absolute;left:4px;top:4px;font-size:9px;font-weight:700;padding:0 5px;border-radius:7px;
+  color:#fff;background:color-mix(in srgb, var(--danger) 85%, transparent);
+}
+.stock-more{
+  flex:0 0 auto;align-self:stretch;min-height:112px;width:64px;white-space:pre-line;
+  border:1px dashed var(--line2);border-radius:6px;background:transparent;color:var(--fg-dim);cursor:pointer;
+}
+.stock-more:hover{border-color:var(--accent);color:var(--fg)}
+
+/* the comp, big enough to decide from */
+.stock-judge{
+  flex:0 0 300px;min-width:0;border-left:1px solid var(--line);padding:8px 10px;
+  display:flex;flex-direction:column;gap:6px;overflow:auto;
+}
+.stock-judge.empty{opacity:.4}
+.stock-judge img{width:100%;max-height:55%;object-fit:contain;background:var(--bg3);border-radius:4px}
+.stock-meta-title{font-size:12px;line-height:1.35;max-height:34px;overflow:hidden}
+.stock-meta-sub{font-size:11px;color:var(--fg-dim)}
+.stock-acts{display:flex;gap:5px;flex-wrap:wrap}
+.stock-legal{font-size:10.5px;color:var(--fg-dim);line-height:1.4;border-top:1px solid var(--line);padding-top:5px}
+
+/* the badge on a card whose frame is a comp */
+.stock-badge{
+  position:absolute;left:4px;top:4px;z-index:3;
+  font-size:10px;font-weight:700;line-height:17px;padding:0 6px;border-radius:9px;cursor:pointer;
+  color:var(--fg);border:1px solid var(--line2);
+  background:color-mix(in srgb, var(--bg) 78%, transparent);
+}
+.stock-badge:hover{border-color:var(--accent)}
+.stock-badge.stale{color:#fff;background:color-mix(in srgb, var(--danger) 80%, transparent);border-color:var(--danger)}
+
+/* a frame being dragged over from the drawer */
+body.stock-dragging .frame{outline:1px dashed color-mix(in srgb, var(--accent) 55%, transparent)}
+
+/* stock on the Originals tab */
+.st-row{display:flex;gap:8px;align-items:center;padding:4px 0;border-bottom:1px solid var(--line);font-size:12px}
+.st-row:last-child{border-bottom:0}
+.st-row img{width:52px;height:32px;object-fit:cover;border-radius:3px;background:var(--bg3)}
+.st-row .st-id{color:var(--fg-dim);font-size:11px}
+.st-row.lapsed .st-age{color:var(--danger);font-weight:600}
+
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-10-23 15:23 · fd0a344+";</script>
+<script>window.SB_BUILD = "2026-11-13 20:03 · 3b1fbec+";</script>
 
 <div id="app">
 
@@ -1481,6 +1584,7 @@ body.comment-mode .frame{cursor:crosshair}
       <button id="btnComment" class="tb toggle">Review</button>
       <button id="btnPersonas" class="tb toggle" title="The cast, the locations, the objects">References</button>
       <button id="btnPrompts" class="tb toggle">Create</button>
+      <button id="btnStock" class="tb toggle" title="Getty Images — search stock and drag a comp onto a card">Stock</button>
     </div>
 
     <div class="tb-sep"></div>
@@ -2684,6 +2788,16 @@ window.SB = window.SB || {};
       freed += (b[k] || '').length;
       delete b[k];
     });
+    /* The stock register is keyed by the same references (model.js: stockFor),
+       so a comp replaced by a real render leaves a row behind. Swept on
+       exactly the same terms as the bytes — anything else drifts, and a stale
+       row means Settings counts a comp the board no longer has. */
+    if (p.stock) {
+      Object.keys(p.stock).forEach(function (k) {
+        if (keep[k] || fresh.has(k)) return;
+        delete p.stock[k];
+      });
+    }
     return freed;
   }
 
@@ -4103,7 +4217,9 @@ window.SB = window.SB || {};
     /* Stock MiniMax H3 writes its own six sections, and those DESCRIBE the opening picture by design; told
        "write nothing already visible" as well, it was handed two opposite briefs in one request. */
     if (SB.H3 && SB.H3.stock && SB.H3.stock(vm)) return false;
-    return !!(shot && (shot.render || shot.image));
+    /* modelFrame, not (render || image): a Getty comp is a frame on the board
+       and never one a model is led by. */
+    return !!(shot && SB.Model.modelFrame(p, shot));
   }
   function closingFor(p, shot, role) {
     /* Is a frame of another shot being handed over? Then this still is an edit
@@ -7360,7 +7476,7 @@ window.SB = window.SB || {};
      * transport and would be nonsense on the other. */
     if (role === 'video' && transport() === 'key') {
       const info = modelInfo(slugOf(model));
-      const has = !!(shot.render || shot.image);
+      const has = !!SB.Model.modelFrame(p, shot);
       if (info && info.mode === 't2v' && has) {
         return Promise.reject(new Error('“' + slugOf(model) + '” is a text-to-video model, and ' +
           'this shot has a frame to animate. Point this model at the matching ' +
@@ -7786,7 +7902,11 @@ window.SB = window.SB || {};
     }).catch(function () { return null; });
   }
 
+  /* The card's own frame, as bytes, for the model to animate. The last gate
+   * before a picture leaves the browser: a Getty comp stops here even if some
+   * caller above forgot to ask (model.js: modelFrame). */
   function startFrame(p, shot) {
+    if (!SB.Model.modelFrame(p, shot)) return Promise.resolve(null);
     return SB.Renders.file(p, shot.render).then(function (f) {
       if (f) return { blob: f, name: f.name };
       const src = shot.image ? SB.Blobs.src(p, shot.image) : '';
@@ -8357,10 +8477,10 @@ window.SB = window.SB || {};
     if (role === 'video') {
       return {
         role: 'video',
-        frame: !!(shot.render || shot.image),
+        frame: !!SB.Model.modelFrame(p, shot),
         feed: feed.length,
         wordsOnly: wordsOnly,
-        carries: (shot.render || shot.image) ? 1 : 0,
+        carries: SB.Model.modelFrame(p, shot) ? 1 : 0,
         first: null,
         byKey: transport() === 'key'
       };
@@ -8399,6 +8519,21 @@ window.SB = window.SB || {};
     }
     if (shot.noShot) {
       return { short: 'no shot', long: 'A \u201cno shot\u201d card is never generated.' };
+    }
+    /* A clip animates THIS CARD'S FRAME, and this card's frame is a licensed
+     * comp \u2014 which may be looked at and not derived from. Said on the button
+     * rather than discovered as a clip that quietly became text-to-video, or
+     * worse, as a comp uploaded to a model. The still lane is deliberately
+     * NOT blocked: generating a real frame over a stand-in is exactly how a
+     * comp stops being on the board. */
+    if (role === 'video' && SB.Model.isStock(p, shot)) {
+      const st = SB.Model.stockFor(p, shot);
+      return {
+        short: 'Getty comp',
+        long: 'This card\u2019s frame is a Getty comp (' + st.id + ') \u2014 a stand-in licensed for ' +
+          'layout, never to be handed to a model. Render a first frame for this card and the ' +
+          'clip can animate that.'
+      };
     }
     /* A clip with no frame to animate quietly becomes text-to-video - the
      * shot invented over again rather than moved. Worth SAYING, and the badge
@@ -9114,6 +9249,22 @@ window.SB = window.SB || {};
        * derive a frame from that same frame is nonsense. */
       if (m.id === shot.id) return;
       if (m.kind === 'shot') {
+        /* A card whose frame is a Getty comp feeds NOTHING, and says so where
+         * the strip can be read. The mark is a deliberate instruction to show
+         * a model that picture, and a comp is the one picture that may not be
+         * shown to one — so this is the case where silently obeying would be
+         * the bug. The words are on the card, in the strip, before any push.
+         * (model.js: modelFrame, getty_integration_plan.md §6.) */
+        const comp = SB.Model.stockFor(p, m.target.shot);
+        if (comp) {
+          out.push({
+            kind: 'shot', id: m.id, label: m.target.label, mentioned: true,
+            images: [], renders: [], stock: comp,
+            why: m.target.label + ' is a Getty comp (' + comp.id + ') — it is shown on the board ' +
+              'and never handed to a model. Describe it in words, or render that card first.'
+          });
+          return;
+        }
         const img = m.target.shot.image;
         out.push({
           kind: 'shot', id: m.id, label: m.target.label, mentioned: true,
@@ -9343,6 +9494,493 @@ window.SB = window.SB || {};
     KEYS: KEYS, text: text, rewrite: rewrite,
     unlinked: unlinked, linkAll: linkAll, proseHits: proseHits,
     relink: relink, lostIn: lostIn
+  };
+
+})(window.SB);
+
+</script>
+<script>
+/* ===== js/getty.js ===== */
+/* getty.js — Getty Images, read from the browser.
+ *
+ * Getty's API answers a page directly: api.gettyimages.com sends
+ * `Access-Control-Allow-Origin: *` and allows the `Api-Key` and `Authorization`
+ * headers, and so does the media host the comps come off. So there is no proxy
+ * here and no server — the app stays the one file the README promises.
+ *
+ * Search needs the API key and NOTHING else. A token would only be needed for
+ * download sizes, licensing, boards and products, none of which this app does:
+ * the Premiere panel at d:\claudecode\gettyforpremiere is where money gets
+ * spent, and it already carries the ledger that makes that safe. This file
+ * selects; it cannot buy. See getty_integration_plan.md §2.
+ *
+ * ---- what a comp is allowed to be ----
+ *
+ * A comp is licensed for test and sample use for 30 days, never for final or
+ * public material, and must not be modified as downloaded. Three consequences
+ * live in other files and are listed here because this is where anyone looking
+ * for them will come: the watermark is never cropped or painted over, a stock
+ * frame is never handed to an image model (model.js: modelFrame), and the age
+ * of every placement is shown in Settings so a lapsed comp says so.
+ *
+ * ---- one lane ----
+ *
+ * Getty's per-key QPS is set at account setup and is not published, and a
+ * drawer that scrolls has no reason to race itself. Every call queues behind
+ * the last one; a 429 waits out `Retry-After` and then doubles. A failure does
+ * not block the lane.
+ */
+(function (SB) {
+  'use strict';
+
+  const BASE = 'https://api.gettyimages.com';
+
+  /* The key lives in this browser and never in the project file — the same
+   * rule the Gemini key follows, and the reason a board can be handed to
+   * anyone. */
+  const K_KEY = 'sb.getty.key';
+
+  /* Everything the drawer draws and the manifest records, and not one field
+   * that would need a token. `display_set` is the whole picture set in one
+   * ask: thumb to judge from, comp to place. */
+  const FIELDS = ['id', 'title', 'caption', 'artist', 'collection_name', 'collection_code',
+    'asset_family', 'license_model', 'allowed_use', 'graphical_style', 'orientation',
+    'max_dimensions', 'display_set', 'referral_destinations'];
+
+  /* Swappable so the whole client can be driven against a fake Getty in node
+   * (test-getty.mjs). Nothing else in here touches the network. */
+  const deps = {
+    fetch: function () { return fetch.apply(null, arguments); },
+    sleep: function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); },
+    now: function () { return Date.now(); }
+  };
+
+  /* ---------------- the key ---------------- */
+
+  function ls(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }
+  function lsSet(k, v) {
+    try { v ? localStorage.setItem(k, v) : localStorage.removeItem(k); } catch (e) { }
+  }
+
+  let listeners = [];
+  function onChange(fn) {
+    listeners.push(fn);
+    return function () { listeners = listeners.filter(function (x) { return x !== fn; }); };
+  }
+  function notify() { listeners.slice().forEach(function (fn) { try { fn(); } catch (e) { } }); }
+
+  function key() { return ls(K_KEY).trim(); }
+  function setKey(v) { lsSet(K_KEY, String(v || '').trim()); notify(); }
+  function configured() { return !!key(); }
+
+  /* ---------------- errors ---------------- */
+
+  /* Getty spells its errors three ways depending on which layer answered —
+   * the gateway's bare {"message":"Unauthorized"}, the API's ErrorCode /
+   * ErrorMessage, and OAuth's error_description. One shape out. */
+  function gettyError(status, body, text) {
+    const j = body || {};
+    const code = j.ErrorCode || j.error_code || j.code || j.error || '';
+    let msg = j.ErrorMessage || j.message || j.Message || j.error_description || text || '';
+    if (!msg) msg = 'Getty returned ' + status;
+    if (status === 401 || status === 403) {
+      msg = msg + ' — check the API key in Settings → Getty.';
+    }
+    const e = new Error(msg + (code && String(msg).indexOf(code) < 0 ? ' [' + code + ']' : ''));
+    e.status = status;
+    e.code = String(code);
+    e.body = body;
+    return e;
+  }
+
+  /* ---------------- the lane ---------------- */
+
+  let lane = Promise.resolve();
+  let calls = 0;
+
+  function enqueue(fn) {
+    const run = lane.then(fn, fn);
+    lane = run.then(function () { }, function () { });
+    return run;
+  }
+
+  function query(params) {
+    const parts = [];
+    Object.keys(params || {}).forEach(function (k) {
+      let v = params[k];
+      if (v === undefined || v === null || v === '' || (Array.isArray(v) && !v.length)) return;
+      if (Array.isArray(v)) v = v.join(',');
+      if (v === false) return;                       // an unset flag is not a filter
+      parts.push(encodeURIComponent(k) + '=' + encodeURIComponent(String(v)));
+    });
+    return parts.length ? '?' + parts.join('&') : '';
+  }
+
+  /* opts: { query, body, raw (a Blob/ArrayBuffer sent as-is), type } */
+  function request(method, path, opts) {
+    return enqueue(function () { return send(method, path, opts || {}); });
+  }
+
+  async function send(method, path, opts) {
+    const k = key();
+    if (!k) {
+      const e = new Error('No Getty API key yet — paste one in Settings → Getty.');
+      e.unconfigured = true;
+      throw e;
+    }
+    const url = BASE + path + query(opts.query);
+    let netFails = 0;
+    let backoff = 1000;
+
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const headers = { 'Api-Key': k, 'Accept': 'application/json' };
+      let body;
+      if (opts.raw !== undefined) {
+        headers['Content-Type'] = opts.type || 'application/octet-stream';
+        body = opts.raw;
+      } else if (opts.body !== undefined) {
+        headers['Content-Type'] = 'application/json';
+        body = JSON.stringify(opts.body);
+      }
+
+      let res;
+      calls++;
+      try {
+        res = await deps.fetch(url, { method: method, headers: headers, body: body, mode: 'cors' });
+      } catch (e) {
+        /* Three different failures look identical from inside a page and none
+         * of them is Getty saying no — see the README on this. Say which one
+         * this is as far as it can be known, and retry twice before believing
+         * it. */
+        if (++netFails > 2) {
+          const err = new Error('Could not reach Getty — the request never left the browser. ' +
+            'Check the connection, and that nothing on this network is intercepting ' +
+            'api.gettyimages.com.');
+          err.network = true;
+          throw err;
+        }
+        await deps.sleep(backoff); backoff *= 2;
+        continue;
+      }
+
+      if (res.status === 429) {
+        const ra = Number(res.headers && res.headers.get && res.headers.get('retry-after'));
+        const wait = ra > 0 ? ra * 1000 : backoff;
+        await deps.sleep(wait);
+        backoff = Math.min(backoff * 2, 30000);
+        continue;
+      }
+
+      const text = await readText(res);
+      let json = null;
+      if (text) { try { json = JSON.parse(text); } catch (e) { json = null; } }
+      if (res.status >= 200 && res.status < 300) return json === null ? (text || true) : json;
+      throw gettyError(res.status, json, text);
+    }
+    throw new Error('Getty kept asking us to slow down. Try again in a minute.');
+  }
+
+  function readText(res) {
+    if (!res || typeof res.text !== 'function') return Promise.resolve('');
+    return res.text().catch(function () { return ''; });
+  }
+
+  /* ---------------- searching ---------------- */
+
+  /* f: { phrase, orientations, compositions, people, styles, moods, minSize,
+   *      color, sort, safe, excludeEditorialOnly, collections, ages }
+   * family: 'creative' (the default) | 'editorial'. */
+  function searchParams(f, page, pageSize) {
+    f = f || {};
+    return {
+      phrase: f.phrase,
+      orientations: f.orientations,
+      compositions: f.compositions,
+      number_of_people: f.people,
+      graphical_styles: f.styles,
+      moods: f.moods,
+      minimum_size: f.minSize,
+      color: f.color,
+      age_of_people: f.ages,
+      collection_codes: f.collections,
+      sort_order: f.sort,
+      safe_search: f.safe === false ? '' : 'true',
+      /* The one filter that must default on: a client video is commercial
+       * use, and an editorial-only asset boarded into one is a problem
+       * discovered at the worst moment. Switchable, because an internal
+       * explainer about a real event is a real case. */
+      exclude_editorial_use_only: f.excludeEditorialOnly === false ? '' : 'true',
+      page: page || 1,
+      page_size: pageSize || 60,
+      fields: FIELDS
+    };
+  }
+
+  function searchImages(family, f, page, pageSize) {
+    const path = '/v3/search/images/' + (family === 'editorial' ? 'editorial' : 'creative');
+    return request('GET', path, { query: searchParams(f, page, pageSize) }).then(shapeResults);
+  }
+
+  function similar(id, page, pageSize) {
+    return request('GET', '/v3/images/' + encodeURIComponent(id) + '/similar', {
+      query: { page: page || 1, page_size: pageSize || 60, fields: FIELDS }
+    }).then(shapeResults);
+  }
+
+  /* By picture rather than by words: either an asset already on Getty, or a
+   * URL Getty can reach — which for a frame out of this app means uploading it
+   * first (uploadSearchImage below).
+   *
+   * Getty documents neither the upload's response nor this pair anywhere but
+   * the OpenAPI spec, and the spec gives the upload no response schema at all,
+   * so both are written defensively and the drawer says plainly when an
+   * account cannot do it. */
+  function byImage(src, f, page, pageSize) {
+    const q = searchParams(f, page, pageSize);
+    if (src && src.assetId) q.asset_id = src.assetId;
+    if (src && src.imageUrl) q.image_url = src.imageUrl;
+    delete q.compositions;             // the picture IS the composition
+    delete q.people;
+    return request('GET', '/v3/search/images/creative/by-image', { query: q }).then(shapeResults);
+  }
+
+  /* PUT the bytes, get back something that names where they landed. The reply
+   * has been seen as a bare string and as an object under several keys, so
+   * every shape is accepted and an unrecognised one is reported as what it is
+   * rather than as a search with no results. */
+  function uploadSearchImage(name, blob, type) {
+    const safe = String(name || 'frame.jpg').replace(/[^A-Za-z0-9._-]/g, '_');
+    return request('PUT', '/v3/search/by-image/uploads/' + encodeURIComponent(safe), {
+      raw: blob, type: type || blobType(blob) || 'image/jpeg'
+    }).then(function (r) {
+      const u = (typeof r === 'string') ? r
+        : (r && (r.uri || r.url || r.image_url || r.imageUrl || r.location)) || '';
+      if (!u || !/^https?:/i.test(String(u))) {
+        const e = new Error('Getty took the picture but did not say where to find it, so it ' +
+          'cannot be searched by. This account may not have search-by-image enabled.');
+        e.unsupported = true;
+        throw e;
+      }
+      return String(u);
+    });
+  }
+
+  function blobType(b) { return (b && b.type) || ''; }
+
+  /* One shape for every search: the drawer never learns which call it came
+   * from. */
+  function shapeResults(r) {
+    const list = (r && (r.images || r.result || [])) || [];
+    return {
+      total: (r && (r.result_count || 0)) | 0,
+      images: list.map(asset).filter(Boolean),
+      related: (r && r.related_searches) || []
+    };
+  }
+
+  /* ---------------- one asset ---------------- */
+
+  function sizes(a) {
+    return (a && (a.display_sizes || a.display_set)) || [];
+  }
+
+  function sizeNamed(a, names) {
+    const all = sizes(a);
+    for (let i = 0; i < names.length; i++) {
+      for (let j = 0; j < all.length; j++) {
+        if (all[j] && all[j].name === names[i] && all[j].uri) return all[j].uri;
+      }
+    }
+    return '';
+  }
+
+  /* Thumbs are what you scan, the comp is what you decide on. Both come out of
+   * the same display set, so asking for one costs nothing extra. */
+  function thumbUrl(a) { return sizeNamed(a, ['thumb', 'preview', 'comp']); }
+  function previewUrl(a) { return sizeNamed(a, ['preview', 'comp', 'high_res_comp', 'thumb']); }
+  function compUrl(a) { return sizeNamed(a, ['high_res_comp', 'comp', 'preview', 'thumb']); }
+
+  /* The normalised asset. `raw` is kept so a later field is one line away and
+   * nothing has to re-derive what a display set meant. */
+  function asset(a) {
+    if (!a || !a.id) return null;
+    const dest = (a.referral_destinations || [])[0] || null;
+    return {
+      id: String(a.id),
+      title: a.title || '',
+      caption: a.caption || '',
+      artist: a.artist || '',
+      collection: a.collection_name || '',
+      collectionCode: a.collection_code || '',
+      family: a.asset_family || '',
+      license: a.license_model || '',
+      allowedUse: (a.allowed_use && (a.allowed_use.usage_restrictions || a.allowed_use.release_info)) || '',
+      editorialOnly: editorialOnly(a),
+      style: a.graphical_style || '',
+      orientation: a.orientation || '',
+      max: a.max_dimensions || null,
+      thumb: thumbUrl(a),
+      preview: previewUrl(a),
+      comp: compUrl(a),
+      link: (dest && (dest.uri || dest.site_name)) || '',
+      raw: a
+    };
+  }
+
+  /* "Editorial use only" is carried as a usage restriction rather than a flag,
+   * and the words differ between collections — so this matches on the one
+   * phrase they all contain and treats anything it cannot read as fine, since
+   * the search filter has already excluded the real ones. */
+  function editorialOnly(a) {
+    const u = (a && a.allowed_use) || {};
+    const s = [u.usage_restrictions, u.how_can_i_use_it_collection_text, u.release_info]
+      .filter(Boolean).join(' ');
+    return /editorial use only/i.test(Array.isArray(s) ? s.join(' ') : String(s));
+  }
+
+  /* What goes in the project file when a comp is placed. Small on purpose: it
+   * is the licence trail and the manifest row, not a cache of the search. */
+  function record(a) {
+    return {
+      id: a.id, title: a.title || a.caption || '', artist: a.artist || '',
+      collection: a.collection || '', family: a.family || '', license: a.license || '',
+      link: a.link || '', at: deps.now()
+    };
+  }
+
+  /* ---------------- the comp, as bytes ---------------- */
+
+  /* The media host allows cross-origin reads, so the comp can be fetched and
+   * stored in the .storyboard like any other picture. If that ever stops being
+   * true the board can still SHOW a comp from its URL, but it could not carry
+   * one — so this failure is reported as itself rather than as a broken
+   * picture. */
+  function fetchComp(a) {
+    const url = (typeof a === 'string') ? a : compUrl(a);
+    if (!url) return Promise.reject(new Error('That asset came back with no comp to place.'));
+    return deps.fetch(url, { mode: 'cors' }).then(function (res) {
+      if (!res.ok) throw new Error('The comp could not be downloaded (' + res.status + ').');
+      return res.blob();
+    }).catch(function (e) {
+      if (e && e.message && /could not be downloaded/.test(e.message)) throw e;
+      throw new Error('The comp could not be read from Getty\u2019s media host — the picture ' +
+        'can be shown but not placed on a card. (' + (e && e.message || e) + ')');
+    });
+  }
+
+  /* ---------------- a card, as a search ---------------- */
+
+  /* The expertise this replaces: knowing that a "Close-up" is Getty's
+   * `close_up`, that a "Talking head" is a headshot looking at the camera with
+   * one person in it, and that an "Insert" has no people in it at all.
+   *
+   * Keyed on the DEFAULT shot types, because the list is user-editable
+   * (p.settings.shotTypes): a renamed or invented type contributes no filter
+   * rather than a guessed one, and the drawer says which filters it applied so
+   * a silent guess is impossible anyway.
+   */
+  const BY_TYPE = {
+    'wide': { compositions: ['wide_shot'] },
+    'medium': { compositions: ['medium_shot', 'waist_up'] },
+    'close-up': { compositions: ['close_up'] },
+    'extreme close-up': { compositions: ['macro', 'close_up'] },
+    'two shot': { people: ['two'] },
+    'insert': { compositions: ['still_life', 'cut_out', 'macro'], people: ['none'] },
+    'cutaway': { people: ['none'] },
+    'talking head': { compositions: ['headshot', 'looking_at_camera'], people: ['one'] }
+  };
+
+  /* Over the shoulder, POV and Screen capture are deliberately absent: Getty
+   * has no composition that means any of them, and a wrong filter is worse
+   * than none because it silently hides the right picture. */
+
+  function typeFilters(type) {
+    const t = String(type || '').trim().toLowerCase();
+    return BY_TYPE[t] || null;
+  }
+
+  function orientationFor(p, shot) {
+    const a = (SB.Imagine && SB.Imagine.aspectFor) ? SB.Imagine.aspectFor(p, shot) : '16:9';
+    const m = /^(\d+(?:\.\d+)?)\s*:\s*(\d+(?:\.\d+)?)$/.exec(String(a || ''));
+    if (!m) return 'horizontal';
+    const r = Number(m[1]) / Number(m[2]);
+    if (r > 1.05) return r >= 2 ? 'panoramic_horizontal' : 'horizontal';
+    if (r < 0.95) return 'vertical';
+    return 'square';
+  }
+
+  /* The filters a card asks for, and the words for them. Both come from here
+   * so the chips in the drawer cannot drift from what was sent. */
+  function shotFilters(p, shot) {
+    const f = {
+      orientations: [orientationFor(p, shot)],
+      styles: ['photography'],
+      safe: true,
+      excludeEditorialOnly: true,
+      sort: 'best_match'
+    };
+    const t = shot ? typeFilters(shot.type) : null;
+    if (t) {
+      if (t.compositions) f.compositions = t.compositions.slice();
+      if (t.people) f.people = t.people.slice();
+    }
+    /* Cast is a fact about the card and the type does not always imply it: two
+     * subjects on a Wide is a two-shot whatever the dropdown says. Only when
+     * the type has not already spoken. */
+    if (!f.people && shot && (shot.personaIds || []).length) {
+      const n = shot.personaIds.length;
+      f.people = [n === 1 ? 'one' : (n === 2 ? 'two' : 'group')];
+    }
+    return f;
+  }
+
+  /* The phrase a card starts from. `SB.Refs.plain` is the boundary for "a
+   * description, read by a machine" — it resolves @{id|Name} marks to the
+   * names they now have. Never read a description raw. */
+  function phraseFor(p, shot) {
+    if (!shot) return '';
+    const src = shot.imageDescription || shot.description || '';
+    const txt = (SB.Refs && SB.Refs.plain) ? SB.Refs.plain(p, src) : String(src);
+    return String(txt || '').replace(/\s+/g, ' ').trim().slice(0, 180);
+  }
+
+  /* The chips: what was filtered, in the words a person would use. */
+  const WORDS = {
+    close_up: 'close-up', medium_shot: 'medium shot', wide_shot: 'wide shot',
+    headshot: 'headshot', waist_up: 'waist up', macro: 'macro', still_life: 'still life',
+    cut_out: 'cut out', looking_at_camera: 'looking at camera',
+    horizontal: 'horizontal', vertical: 'vertical', square: 'square',
+    panoramic_horizontal: 'panoramic', none: 'no people', one: 'one person',
+    two: 'two people', group: 'a group', photography: 'photographs'
+  };
+  function word(v) { return WORDS[v] || String(v).replace(/_/g, ' '); }
+
+  function chips(f) {
+    const out = [];
+    (f.compositions || []).forEach(function (c) { out.push({ k: 'compositions', v: c, label: word(c) }); });
+    (f.orientations || []).forEach(function (c) { out.push({ k: 'orientations', v: c, label: word(c) }); });
+    (f.people || []).forEach(function (c) { out.push({ k: 'people', v: c, label: word(c) }); });
+    (f.styles || []).forEach(function (c) { out.push({ k: 'styles', v: c, label: word(c) }); });
+    if (f.excludeEditorialOnly !== false) {
+      out.push({ k: 'excludeEditorialOnly', v: true, label: 'commercial use' });
+    }
+    return out;
+  }
+
+  SB.Getty = {
+    /* the key */
+    key: key, setKey: setKey, configured: configured, onChange: onChange,
+    /* calls */
+    searchImages: searchImages, similar: similar, byImage: byImage,
+    uploadSearchImage: uploadSearchImage, fetchComp: fetchComp,
+    /* shaping */
+    asset: asset, record: record, thumbUrl: thumbUrl, previewUrl: previewUrl, compUrl: compUrl,
+    /* a card as a search */
+    shotFilters: shotFilters, typeFilters: typeFilters, phraseFor: phraseFor,
+    chips: chips, word: word, orientationFor: orientationFor,
+    /* seams */
+    deps: deps, FIELDS: FIELDS, BASE: BASE,
+    calls: function () { return calls; }
   };
 
 })(window.SB);
@@ -11171,6 +11809,91 @@ window.SB = window.SB || {};
     return true;
   }
 
+  /* ---------------- licensed stock ----------------
+   *
+   * A Getty comp on a card is a picture like any other and a licence like
+   * nothing else in this file, so the board has to know which frames are
+   * comps — and know it everywhere, not only on the card it was dropped on.
+   *
+   * It is keyed by the blob reference of the proxy rather than stored on the
+   * shot, for three reasons that each cost a bug the other way round:
+   *
+   *   - takes carry {image, render, at}, so a swap or a promotion moves the
+   *     picture between slots and cards; a flag on the shot would stay behind
+   *     and a comp would quietly become an ordinary frame;
+   *   - blob refs are content hashes, so the same comp placed on four cards is
+   *     one entry and cannot disagree with itself;
+   *   - when an original fails to store the card keeps the proxy alone, and a
+   *     record living on `render.made` would be the thing that went missing —
+   *     which is exactly the case where nothing may be fed to a model.
+   *
+   * `render.made` still records it too: that is the export manifest's story of
+   * where a picture came from. This map is the licence.
+   */
+  function stockMap(p) { return (p.stock = p.stock || {}); }
+
+  function refOf(img) {
+    if (!img) return '';
+    return typeof img === 'string' ? img : (img.ref || '');
+  }
+
+  function markStock(p, img, rec) {
+    const ref = refOf(img);
+    if (!p || !ref || !rec) return null;
+    stockMap(p)[ref] = rec;
+    return rec;
+  }
+
+  /* The record for one picture, or null. Takes a shot, an image/render
+   * record, or a bare reference — every caller has one of those. */
+  function stockFor(p, x) {
+    if (!p || !x) return null;
+    const m = stockMap(p);
+    if (typeof x === 'string') return m[x] || null;
+    if (x.ref) return m[x.ref] || null;
+    /* a shot: the chosen frame decides, proxy first, then the original */
+    return m[refOf(x.image)] || m[refOf(x.render)] || null;
+  }
+
+  function isStock(p, shot) { return !!stockFor(p, shot); }
+
+  /* THE PREDICATE. Every place that used to ask `shot.render || shot.image`
+   * before handing a picture to a model asks this instead, and gets nothing
+   * for a card whose frame is a comp. The comp licence covers looking at the
+   * picture; it does not cover deriving from it, and an image model is
+   * nothing but derivation. One line, in one place, so the rule cannot be
+   * half-applied. */
+  function modelFrame(p, shot) {
+    if (!shot) return null;
+    if (isStock(p, shot)) return null;
+    return shot.render || shot.image || null;
+  }
+
+  /* Every stock picture on the board, newest first, with the card it sits on
+   * — Settings counts them and the export writes them out. A comp that has
+   * been replaced still has its entry until the sweep takes it, so this walks
+   * the cards rather than the map. */
+  function stockShots(p) {
+    const out = [];
+    eachShot(p, function (sh, sc, i) {
+      const rec = stockFor(p, sh);
+      if (!rec) return;
+      const f = findShot(p, sh.id);
+      out.push({ shot: sh, scene: sc, rec: rec, code: f ? f.code : '' });
+    });
+    return out.sort(function (a, b) { return (b.rec.at || 0) - (a.rec.at || 0); });
+  }
+
+  /* A comp is licensed for 30 days. Past that the board is still a board, but
+   * the picture on it is no longer covered — which is worth saying out loud
+   * rather than discovering from a letter. */
+  const COMP_DAYS = 30;
+  function compAgeDays(rec, now) {
+    if (!rec || !rec.at) return 0;
+    return Math.floor(((now || Date.now()) - rec.at) / 86400000);
+  }
+  function compLapsed(rec, now) { return compAgeDays(rec, now) > COMP_DAYS; }
+
   function newShot(opts) {
     opts = opts || {};
     return {
@@ -11309,6 +12032,11 @@ window.SB = window.SB || {};
       updatedAt: Date.now(),
       master: SB.Doc.make(''),
       blobs: {},                        // hash -> data URL; images live here once
+      /* Which pictures in this file are licensed stock, keyed by the blob
+       * reference of the copy the board draws: {id, title, artist, collection,
+       * family, license, link, at}. See stockOf() for why it is keyed that
+       * way and not stored on the shot. */
+      stock: {},
       scriptComments: [],               // notes anchored to ranges of the master
       personas: [],
       /* High-water mark for render serials. Only ever goes up: a number
@@ -11607,6 +12335,10 @@ window.SB = window.SB || {};
       });
       (v.snapshot.personas || []).forEach(function (per) { migratePersona(p, per); });
     });
+    /* No board written before stock existed has one, and a reader that found
+       undefined here would decide every frame on it was a comp or none of
+       them, depending on which way it guessed. */
+    if (!p.stock || typeof p.stock !== 'object') p.stock = {};
     const s = p.settings = p.settings || {};
     s.shotTypes = (s.shotTypes && s.shotTypes.length) ? s.shotTypes : DEFAULT_SHOT_TYPES.slice();
     /* Absent is empty is exactly how every board behaved before takes. Walked
@@ -12465,6 +13197,10 @@ window.SB = window.SB || {};
   SB.Model = {
     FILE_VERSION: FILE_VERSION,
     CARD_COLORS: CARD_COLORS,
+    /* licensed stock — markStock records a placement, modelFrame is the rule */
+    markStock: markStock, stockFor: stockFor, isStock: isStock, stockShots: stockShots,
+    modelFrame: modelFrame, compAgeDays: compAgeDays, compLapsed: compLapsed,
+    COMP_DAYS: COMP_DAYS,
     DEFAULT_SHOT_TYPES: DEFAULT_SHOT_TYPES,
     DEFAULT_FRAMING: DEFAULT_FRAMING, framingFor: framingFor, guessFraming: guessFraming,
     takes: takes, takeCount: takeCount, addTake: addTake, repairTakes: repairTakes,
@@ -12595,7 +13331,7 @@ window.SB = window.SB || {};
      * imagine.js uploads that original as image 1 regardless. The frame went
      * up with no <Picture 1> naming it, and any arrival riding with it went
      * up unnamed too. */
-    if (shot.render || shot.image) {
+    if (SB.Model.modelFrame(p, shot)) {
       out.push({ n: 1, kind: 'frame', label: 'the first frame of this shot', feedN: null });
     }
     if (!out.length) return out;        // nothing to anchor the rest to
@@ -12757,7 +13493,7 @@ window.SB = window.SB || {};
     const types = [];
     /* the same test pictures() makes, and the same one the upload makes: a
        board can hold an original with no proxy */
-    if (shot.render || shot.image) types.push('keyframe completion');
+    if (SB.Model.modelFrame(p, shot)) types.push('keyframe completion');
     /* "reference generation" is true only when a reference photograph is
        actually in the call — which is now possible again, for somebody who
        arrives partway through and would otherwise be in no picture at all. */
@@ -15391,7 +16127,7 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
        goes up with a clip only while there is no frame to stand in for it (refs.js keeps it off the video
        feed for the same reason). Sent alongside a frame it is a second, grey version of the same picture,
        and its clay leaks into the clip. The clay CLIP is motion, which no frame carries, so it stays. */
-    const framed = lane === 'video' && !!(shot.render || shot.image);
+    const framed = lane === 'video' && !!SB.Model.modelFrame(p, shot);
     if (lane === 'video' && clip) {
       add({ kind: 'clay-clip', ext: 'mp4', name: 'clay', role: 'the grey clay render of this shot, animated' });
     } else if (poseOK(shot) && !framed) {
@@ -15435,7 +16171,7 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
       lane: lane, code: code, target: lane === 'image' ? 'MiniMax Image' : 'MiniMax H3',
       shotType: shot.type || '', scene: f ? tidy(f.scene.heading) : '',
       assets: assets, figures: figures, boxes: boxes, perf: perf, clip: clip,
-      blocked: poseOK(shot), frame: !!(shot.render || shot.image),
+      blocked: poseOK(shot), frame: !!SB.Model.modelFrame(p, shot),
       style: st.style, negatives: lane === 'image' ? st.negImage : st.negVideo,
       aspect: SB.Imagine && SB.Imagine.aspectFor ? SB.Imagine.aspectFor(p, shot) : '16:9',
       minS: st.minS, maxS: st.maxS,
@@ -16252,6 +16988,11 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
 
   const DND_SHOT = 'application/x-sb-shot';
   const DND_SCENE = 'application/x-sb-scene';
+  /* A comp dragged out of the stock drawer. The drawer also sets
+   * text/uri-list, which the existing drop paths already handle on their own —
+   * this type exists so the drop knows WHICH asset it was, which a bare URL
+   * cannot say and the licence trail needs. */
+  const DND_STOCK = 'application/x-sb-getty';
 
   const B = {
     openBox: {},              // shotId:role -> the lane box is open on this card
@@ -16366,6 +17107,10 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
       bar.appendChild(selectionBar());
       bar.classList.toggle('hidden', sel.length < 2);
     }
+    /* The stock drawer is about the selected card — which card it says it is
+       searching for, and which card "Use on 3b" would put a comp on. It never
+       searches on its own; this only repaints. */
+    if (SB.Stock && SB.Stock.isOpen()) SB.Stock.sync();
   }
 
   /* ---------------- marquee selection ----------------
@@ -17295,6 +18040,18 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
       ev.preventDefault();
       ev.stopPropagation();
       el.classList.remove('drag-over');
+      /* Dropped on the scene rather than on a card: the same thing a dropped
+         file does here — a new card at the end, with the comp on it. */
+      const stock = stockFromTransfer(ev.dataTransfer);
+      if (stock) {
+        const sh = SB.Model.addShot(P(), sc.id, {});
+        if (sh) {
+          SB.app.selectedShotId = sh.id;
+          SB.app.changed(true);
+          placeStock(sh, stock);
+        }
+        return;
+      }
       SB.imagesFromTransfer(ev.dataTransfer).then(function (imgs) {
         if (!imgs.length) { SB.toast('No image found in that drop', true); return; }
         /* One at a time: the cards then land in the order they were picked,
@@ -18349,6 +19106,34 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
       }
     }
 
+    /* This frame is licensed stock. Said on the card because everything else
+       about the card stops being true for it: it is not generated, it is not
+       fed to a model, and the licence on it runs out. The watermark in the
+       picture says the same thing — this says WHICH picture, and how old the
+       comp is. */
+    {
+      const st = SB.Model.stockFor(P(), sh);
+      if (st && shown) {
+        const days = SB.Model.compAgeDays(st);
+        const lapsed = SB.Model.compLapsed(st);
+        const sb = SB.el('button', 'stock-badge' + (lapsed ? ' stale' : ''), '◧ Getty');
+        sb.title = 'Getty ' + st.id + (st.artist ? ' · ' + st.artist : '') +
+          (st.collection ? ' · ' + st.collection : '') +
+          '\nPlaced ' + (days ? days + ' day' + (days === 1 ? '' : 's') + ' ago' : 'today') + '. ' +
+          (lapsed
+            ? 'A comp is licensed for ' + SB.Model.COMP_DAYS + ' days — this one has run out. ' +
+              'Replace it, or license the asset.'
+            : 'Comp use only: never in final or public material, and the watermark stays on.') +
+          '\nClick to open it on gettyimages.com.';
+        sb.onclick = function (ev) {
+          ev.stopPropagation();
+          const u = st.link || ('https://www.gettyimages.com/detail/' + encodeURIComponent(st.id));
+          window.open(u, '_blank', 'noopener');
+        };
+        f.appendChild(sb);
+      }
+    }
+
     const tools = SB.el('div', 'frame-tools');
     if (SB.app.commentMode && sh.image) {
       const dr = SB.el('button', 'mini', 'draw');
@@ -18443,6 +19228,11 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
       if (ev.dataTransfer.types.indexOf(DND_SHOT) >= 0) return;
       ev.preventDefault();
       f.classList.remove('drag-over');
+      /* A comp out of the drawer, checked first and exactly like DND_SHOT
+         above: it carries the asset, so it can be placed WITH its licence
+         rather than as an anonymous picture off a URL. */
+      const stock = stockFromTransfer(ev.dataTransfer);
+      if (stock) { ev.stopPropagation(); placeStock(sh, stock); return; }
       /* A video dropped on a card is a clip for that card, not a picture that
          failed to decode — which is what it used to be reported as. A drop
          carrying both is two things for the same card, and taking only the
@@ -18579,9 +19369,43 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
     });
   }
 
+  /* The asset out of a drop, or null. Anything unreadable is null rather than
+     a half-asset: the plain-URL path behind it still places the picture, so a
+     malformed payload loses the licence trail and not the drop. */
+  function stockFromTransfer(dt) {
+    if (!dt || !dt.types || dt.types.indexOf(DND_STOCK) < 0) return null;
+    try {
+      const a = JSON.parse(dt.getData(DND_STOCK) || 'null');
+      return (a && a.id && (a.comp || a.preview || a.thumb)) ? a : null;
+    } catch (e) { return null; }
+  }
+
+  /* Put a comp on a card. The bytes come from Getty's media host, go into the
+     file like any other picture, and the licence record goes in beside them —
+     one call, so a comp can never land without its asset id. */
+  function placeStock(sh, a) {
+    if (!SB.Getty) return Promise.resolve();
+    const made = {
+      by: 'getty', id: a.id, artist: a.artist || '', collection: a.collection || '',
+      title: a.title || a.caption || '', license: a.license || '', at: Date.now(),
+      stock: SB.Getty.record(a)
+    };
+    return SB.Getty.fetchComp(a.comp || a.preview || a.thumb).then(function (blob) {
+      return setImage(sh, blob, made);
+    }).catch(function (e) {
+      SB.toast(e.message || String(e), true);
+    });
+  }
+
   function setImage(sh, src, made) {
     return SB.downscaleImage(src).then(function (img) {
       const proxy = SB.Blobs.image(P(), img.data, img.w, img.h);
+      /* The licence, filed against the picture itself (model.js: stockFor).
+         Before the slot changes hands, because by the next line this ref may
+         be the chosen frame or a banked take and both are the same comp. */
+      if (made && made.by === 'getty' && made.stock) {
+        SB.Model.markStock(P(), proxy, made.stock);
+      }
       /* The picture that was here joins the card's takes rather than being
          overwritten — rendering a shot again is the ordinary case, and until
          now the second landing silently deleted the first. Banked BEFORE the
@@ -18676,11 +19500,12 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
     refreshFeed: refreshFeed,
     saveFeed: saveFeed,
     setImage: setImage, clipDrop: clipDrop,
+    placeStock: placeStock,
     swap: doSwap,
     select: selectShot,
     selection: selection,
     clearSelection: clearSelection,
-    DND_SHOT: DND_SHOT
+    DND_SHOT: DND_SHOT, DND_STOCK: DND_STOCK
   };
 
 })(window.SB);
@@ -19361,7 +20186,7 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
        uploads the same pictures. Empty, the general description stands in. Only once there IS a frame: with
        none, the setting has to come from words, and "He lowers the letter" alone gave the writer no place and
        not even a name. */
-    if (role === 'video' && (shot.render || shot.image) && SB.Refs.plain(P(), shot.videoDescription || '').trim()) {
+    if (role === 'video' && SB.Model.modelFrame(P(), shot) && SB.Refs.plain(P(), shot.videoDescription || '').trim()) {
       return SB.Refs.plain(P(), shot.videoDescription).trim();
     }
     const parts = SB.Refs.boxes(shot, role)
@@ -19385,7 +20210,7 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
      * the block tells the writer the model can see all this, and on a
      * frameless card the model sees nothing. Three riders already assume a
      * picture; this one at least knows whether there is one. */
-    if (!(shot.render || shot.image)) return '';
+    if (!SB.Model.modelFrame(P(), shot)) return '';
     const bits = [];
     const own = SB.Refs.plain(P(), shot.imageDescription || '').trim();
     if (own) bits.push(own);
@@ -23717,6 +24542,604 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
 
 </script>
 <script>
+/* ===== js/gettypanel.js ===== */
+/* gettypanel.js — the stock drawer.
+ *
+ * Every other panel in this app is a backdrop over a centred box, because
+ * every other panel is somewhere you GO. This one is open while you work, and
+ * the gesture it exists for is dragging a picture out of it onto a card — so a
+ * backdrop would put the thing you need to drop on behind the thing you are
+ * dragging from.
+ *
+ * It is a flex sibling of #main rather than a fixed strip over the board, and
+ * that is the whole layout decision: #app is a column, #main is flex:1, so a
+ * drawer with a fixed height makes the board SHRINK. Laid over the board
+ * instead, the drawer would cover exactly the cards you want to drop on, and
+ * the last row of the board would be unreachable — which is the same mistake
+ * as using a modal, arrived at a second way.
+ *
+ * ---- what it hands over ----
+ *
+ * A tile sets two things on the drag: application/x-sb-getty with the asset,
+ * and text/uri-list with the comp URL. The second one is already understood by
+ * every drop path in the app (SB.imageFromTransfer fetches a dropped URL), so
+ * the picture would land even with no new code in board.js at all. The first
+ * one is what the licence needs — which asset this was — and board.js checks
+ * it before falling through. Dropping on a card replaces its frame (the old
+ * one banks as a take); dropping on empty scene space makes a new card.
+ *
+ * ---- and what it refuses to do ----
+ *
+ * Nothing in here searches on its own. A drawer that re-queried on every
+ * selection change would spend somebody's QPS on scrolling and overwrite a
+ * phrase mid-typing, so the phrase box re-seeds from the selected card only
+ * while it has not been typed in, and the search runs when asked.
+ */
+(function (SB) {
+  'use strict';
+
+  const K_OPEN = 'sb.getty.open';
+  const K_H = 'sb.getty.h';
+  const MIN_H = 150, MAX_FRAC = 0.72, DEF_H = 320;
+
+  const S = {
+    el: null, headEl: null, chipEl: null, stripEl: null, judgeEl: null, phraseEl: null,
+    statusEl: null, matchEl: null,
+    /* the search as it stands */
+    filters: null, phrase: '', family: 'creative',
+    page: 1, total: 0, images: [], more: false,
+    busy: false, error: '', typed: false, seededFor: '',
+    /* what the judging pane is showing, and what a click would place */
+    chosen: null,
+    /* by-image: the uploaded frame's URL, so "more like this" can page */
+    byImage: null,
+    askedUpload: false
+  };
+
+  function P() { return SB.app.project; }
+
+  function height() {
+    const h = parseInt(ls(K_H), 10);
+    const cap = Math.round(window.innerHeight * MAX_FRAC);
+    if (!(h > 0)) return Math.min(DEF_H, cap);
+    return Math.max(MIN_H, Math.min(h, cap));
+  }
+  function ls(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }
+  function lsSet(k, v) { try { v ? localStorage.setItem(k, v) : localStorage.removeItem(k); } catch (e) { } }
+
+  function isOpen() { return !!S.el; }
+
+  /* ---------------- open / close ---------------- */
+
+  function open() {
+    if (S.el) { sync(); return; }
+    const app = document.getElementById('app');
+    const main = document.getElementById('main');
+    if (!app || !main) return;
+
+    S.el = SB.el('section', 'stock');
+    S.el.id = 'stockDrawer';
+    S.el.style.height = height() + 'px';
+
+    const grip = SB.el('div', 'stock-grip');
+    grip.title = 'Drag to resize';
+    grip.addEventListener('mousedown', startResize);
+    S.el.appendChild(grip);
+
+    S.headEl = SB.el('div', 'stock-head');
+    S.el.appendChild(S.headEl);
+
+    const body = SB.el('div', 'stock-body');
+    S.stripEl = SB.el('div', 'stock-strip');
+    S.judgeEl = SB.el('div', 'stock-judge');
+    body.appendChild(S.stripEl);
+    body.appendChild(S.judgeEl);
+    S.el.appendChild(body);
+
+    /* after #main, so the board above it shrinks rather than being covered */
+    main.parentNode.insertBefore(S.el, main.nextSibling);
+    document.body.classList.add('stock-on');
+    const btn = document.getElementById('btnStock');
+    if (btn) btn.classList.add('on');
+    lsSet(K_OPEN, '1');
+
+    if (!S.filters) seed(true);
+    drawHead();
+    drawStrip();
+    drawJudge();
+    if (SB.Getty) S.unwatch = SB.Getty.onChange(function () { drawHead(); drawStrip(); });
+    window.addEventListener('keydown', onKey);
+  }
+
+  function close() {
+    if (!S.el) return;
+    if (S.unwatch) { S.unwatch(); S.unwatch = null; }
+    window.removeEventListener('keydown', onKey);
+    S.el.remove();
+    S.el = null;
+    document.body.classList.remove('stock-on');
+    const btn = document.getElementById('btnStock');
+    if (btn) btn.classList.remove('on');
+    lsSet(K_OPEN, '');
+  }
+
+  function toggle() { isOpen() ? close() : open(); }
+
+  function onKey(ev) {
+    if (ev.key === 'Escape' && S.el && !document.querySelector('.modal-back, .lib-back')) {
+      /* Escape closes the drawer only when nothing is open over it — a modal
+         on top owns the key. */
+      if (document.activeElement === S.phraseEl) { S.phraseEl.blur(); return; }
+      close();
+    }
+  }
+
+  /* ---------------- resizing ---------------- */
+
+  function startResize(ev) {
+    ev.preventDefault();
+    const y0 = ev.clientY, h0 = S.el.getBoundingClientRect().height;
+    const cap = Math.round(window.innerHeight * MAX_FRAC);
+    const move = function (e) {
+      const h = Math.max(MIN_H, Math.min(h0 + (y0 - e.clientY), cap));
+      S.el.style.height = h + 'px';
+    };
+    const up = function () {
+      document.removeEventListener('mousemove', move);
+      document.removeEventListener('mouseup', up);
+      document.body.classList.remove('resizing');
+      lsSet(K_H, String(Math.round(S.el.getBoundingClientRect().height)));
+      drawStrip();
+    };
+    document.addEventListener('mousemove', move);
+    document.addEventListener('mouseup', up);
+    document.body.classList.add('resizing');
+  }
+
+  /* ---------------- the card this is about ---------------- */
+
+  function shot() {
+    const id = SB.app.selectedShotId;
+    if (!id) return null;
+    const f = SB.Model.findShot(P(), id);
+    return f || null;
+  }
+
+  /* Re-seed the phrase and the filters from the selected card. `force` is the
+   * first open and the explicit "from this card" button; otherwise a phrase
+   * somebody has typed is theirs and is never overwritten — the same rule the
+   * Create panel follows about the caret. */
+  function seed(force) {
+    const f = shot();
+    const p = P();
+    S.filters = SB.Getty ? SB.Getty.shotFilters(p, f && f.shot) : {};
+    if (force || !S.typed) {
+      S.phrase = SB.Getty ? SB.Getty.phraseFor(p, f && f.shot) : '';
+      S.typed = false;
+      if (S.phraseEl) S.phraseEl.value = S.phrase;
+    }
+    S.seededFor = f ? f.shot.id : '';
+  }
+
+  /* The board's selection moved, or a card was retyped. Cheap, and never a
+     search. */
+  function sync() {
+    if (!S.el) return;
+    const f = shot();
+    if (f && f.shot.id !== S.seededFor) seed(false);
+    drawHead();
+    drawJudge();
+  }
+
+  /* ---------------- the head ---------------- */
+
+  function drawHead() {
+    if (!S.headEl) return;
+    const h = S.headEl;
+    h.textContent = '';
+
+    const title = SB.el('div', 'stock-title', '◧ Stock');
+    title.title = 'Getty Images — comps, for boarding. Licensing happens in the edit, not here.';
+    h.appendChild(title);
+
+    const f = shot();
+    const forCard = SB.el('span', 'stock-for',
+      f ? f.code + (f.shot.type ? ' · ' + f.shot.type : '') : 'no card selected');
+    h.appendChild(forCard);
+
+    const box = SB.el('input', 'stock-phrase');
+    box.type = 'text';
+    box.placeholder = 'what the shot shows…';
+    box.spellcheck = false;
+    box.value = S.phrase;
+    box.addEventListener('input', function () { S.phrase = box.value; S.typed = true; });
+    box.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Enter') { ev.preventDefault(); run(1); }
+      ev.stopPropagation();        // the board's own shortcuts are not for this box
+    });
+    S.phraseEl = box;
+    h.appendChild(box);
+
+    const go = SB.el('button', 'mini primary', 'Search');
+    go.onclick = function () { run(1); };
+    h.appendChild(go);
+
+    const re = SB.el('button', 'mini', '↺ from this card');
+    re.title = 'Rewrite the phrase and the filters from the selected card';
+    re.onclick = function () { seed(true); drawHead(); };
+    h.appendChild(re);
+
+    /* Find a match for this frame — the reason this drawer is worth having on
+       a board that was generated rather than shot. */
+    const mf = SB.el('button', 'mini', '◎ match this frame');
+    const canMatch = !!(f && SB.Model.modelFrame(P(), f.shot));
+    mf.title = canMatch
+      ? 'Upload this card’s frame to Getty and find real photographs that look like it'
+      : (f && SB.Model.isStock(P(), f.shot)
+        ? 'This card already holds a comp — use “more like this” on the tile instead'
+        : 'Select a card that has a frame first');
+    mf.disabled = !canMatch;
+    mf.onclick = function () { matchFrame(f); };
+    S.matchEl = mf;
+    h.appendChild(mf);
+
+    h.appendChild(SB.el('span', 'spacer'));
+
+    S.statusEl = SB.el('span', 'stock-status', statusWords());
+    h.appendChild(S.statusEl);
+
+    const shut = SB.el('button', 'mini', '✕');
+    shut.title = 'Close the drawer';
+    shut.onclick = close;
+    h.appendChild(shut);
+
+    /* the chips, on their own line */
+    S.chipEl = SB.el('div', 'stock-chips');
+    drawChips();
+    h.appendChild(S.chipEl);
+  }
+
+  function statusWords() {
+    if (S.busy) return 'searching…';
+    if (S.error) return '';
+    if (!S.images.length) return '';
+    return S.images.length + ' of ' + (S.total || S.images.length);
+  }
+
+  function drawChips() {
+    if (!S.chipEl) return;
+    const c = S.chipEl;
+    c.textContent = '';
+    if (!SB.Getty) return;
+    const chips = SB.Getty.chips(S.filters || {});
+    if (!chips.length) {
+      c.appendChild(SB.el('span', 'stock-chip-none', 'no filters — everything Getty has'));
+      return;
+    }
+    c.appendChild(SB.el('span', 'stock-chip-lbl', 'filtered to'));
+    chips.forEach(function (ch) {
+      const b = SB.el('button', 'stock-chip', ch.label + ' ✕');
+      b.title = 'Drop this filter';
+      b.onclick = function () { dropChip(ch); };
+      c.appendChild(b);
+    });
+    /* The types Getty has no word for. Said once, here, rather than leaving
+       somebody to wonder why a POV search looks like any other search. */
+    const f = shot();
+    if (f && f.shot.type && SB.Getty.typeFilters && !SB.Getty.typeFilters(f.shot.type)) {
+      c.appendChild(SB.el('span', 'stock-chip-none',
+        '· Getty has no filter for “' + f.shot.type + '” — words only'));
+    }
+  }
+
+  function dropChip(ch) {
+    const f = S.filters || {};
+    if (ch.k === 'excludeEditorialOnly') f.excludeEditorialOnly = false;
+    else if (Array.isArray(f[ch.k])) f[ch.k] = f[ch.k].filter(function (v) { return v !== ch.v; });
+    drawChips();
+  }
+
+  /* ---------------- searching ---------------- */
+
+  function run(page) {
+    if (!SB.Getty) return;
+    if (!SB.Getty.configured()) {
+      S.error = 'No Getty API key yet.';
+      S.images = [];
+      drawStrip();
+      return;
+    }
+    const f = Object.assign({}, S.filters || {}, { phrase: S.phrase });
+    S.busy = true; S.error = '';
+    if (page === 1) { S.images = []; S.chosen = null; S.byImage = null; }
+    paintStatus();
+    const want = ++S.seq;
+    const call = S.byImage
+      ? SB.Getty.byImage({ imageUrl: S.byImage }, f, page, 60)
+      : SB.Getty.searchImages(S.family, f, page, 60);
+    call.then(function (r) {
+      if (want !== S.seq) return;                 // a later search won
+      S.busy = false;
+      S.page = page;
+      S.total = r.total;
+      S.images = page === 1 ? r.images : S.images.concat(r.images);
+      S.more = r.images.length >= 60 && S.images.length < r.total;
+      if (!S.chosen && S.images.length) S.chosen = S.images[0];
+      drawStrip(); drawJudge(); paintStatus();
+    }).catch(function (e) {
+      if (want !== S.seq) return;
+      S.busy = false;
+      S.error = e && e.message || String(e);
+      drawStrip(); paintStatus();
+    });
+  }
+  S.seq = 0;
+
+  function paintStatus() {
+    if (S.statusEl) S.statusEl.textContent = statusWords();
+  }
+
+  function moreLikeThis(a) {
+    if (!SB.Getty) return;
+    S.busy = true; S.error = ''; S.byImage = null;
+    paintStatus();
+    const want = ++S.seq;
+    SB.Getty.similar(a.id, 1, 60).then(function (r) {
+      if (want !== S.seq) return;
+      S.busy = false;
+      S.images = r.images; S.total = r.total || r.images.length; S.more = false;
+      S.page = 1;
+      S.chosen = S.images[0] || null;
+      S.phrase = 'like ' + a.id; S.typed = true;
+      if (S.phraseEl) S.phraseEl.value = S.phrase;
+      drawStrip(); drawJudge(); paintStatus();
+    }).catch(function (e) {
+      if (want !== S.seq) return;
+      S.busy = false; S.error = e && e.message || String(e);
+      drawStrip(); paintStatus();
+    });
+  }
+
+  /* Board it with a model, then find the licensable picture that looks like
+   * what you drew. It sends a frame out of the project to Getty, which is a
+   * thing to say plainly and ask about once. */
+  function matchFrame(f) {
+    if (!f || !SB.Getty) return;
+    const p = P();
+    const frame = SB.Model.modelFrame(p, f.shot);
+    if (!frame) return;
+    if (!S.askedUpload) {
+      const ok = window.confirm(
+        'Find Getty photographs that look like this frame?\n\n' +
+        'This uploads the picture on ' + f.code + ' to Getty’s search service. It is a ' +
+        'client frame leaving this machine — Getty searches with it and does not license ' +
+        'or publish it, but it does leave.\n\nAsked once per session.');
+      if (!ok) return;
+      S.askedUpload = true;
+    }
+    S.busy = true; S.error = ''; paintStatus();
+    const want = ++S.seq;
+    frameBlob(p, f.shot).then(function (blob) {
+      if (!blob) throw new Error('That card’s picture could not be read back out of the file.');
+      return SB.Getty.uploadSearchImage(f.code.replace(/\W+/g, '') + '.jpg', blob);
+    }).then(function (url) {
+      S.byImage = url;
+      S.phrase = ''; S.typed = true;
+      if (S.phraseEl) S.phraseEl.value = '';
+      S.seq = want - 1;                            // let run() claim the next ticket
+      run(1);
+    }).catch(function (e) {
+      if (want !== S.seq) return;
+      S.busy = false;
+      S.error = (e && e.message || String(e));
+      drawStrip(); paintStatus();
+    });
+  }
+
+  function frameBlob(p, sh) {
+    return SB.Renders.file(p, sh.render).then(function (file) {
+      if (file) return file;
+      const src = sh.image ? SB.Blobs.src(p, sh.image) : '';
+      if (!src) return null;
+      return fetch(src).then(function (r) { return r.blob(); });
+    });
+  }
+
+  /* ---------------- the strip ---------------- */
+
+  function drawStrip() {
+    if (!S.stripEl) return;
+    const strip = S.stripEl;
+    strip.textContent = '';
+
+    if (SB.Getty && !SB.Getty.configured()) {
+      strip.appendChild(note('Getty needs an API key before it can search. ' +
+        'Settings → Getty, then come back.', 'Open Settings', function () {
+          SB.Settings.open('getty');
+        }));
+      return;
+    }
+    if (S.error) {
+      strip.appendChild(note(S.error, 'Try again', function () { run(1); }));
+      return;
+    }
+    if (!S.images.length) {
+      strip.appendChild(note(S.busy ? 'Searching Getty…'
+        : 'Type what the shot shows and press Search. The filters above come from the card.'));
+      return;
+    }
+
+    S.images.forEach(function (a) {
+      strip.appendChild(tile(a));
+    });
+    if (S.more) {
+      const m = SB.el('button', 'stock-more', 'more\n›');
+      m.onclick = function () { run(S.page + 1); };
+      strip.appendChild(m);
+    }
+  }
+
+  function note(text, label, fn) {
+    const n = SB.el('div', 'stock-note');
+    n.appendChild(SB.el('div', null, text));
+    if (label) {
+      const b = SB.el('button', 'mini', label);
+      b.onclick = fn;
+      n.appendChild(b);
+    }
+    return n;
+  }
+
+  function tile(a) {
+    const t = SB.el('div', 'stock-tile' + (S.chosen && S.chosen.id === a.id ? ' on' : ''));
+    t.draggable = true;
+    t.dataset.id = a.id;
+
+    const img = document.createElement('img');
+    img.src = a.thumb || a.preview || a.comp;
+    img.alt = a.title || a.id;
+    img.draggable = false;                 // the TILE is the drag, not the <img>
+    t.appendChild(img);
+
+    if (a.editorialOnly) {
+      const e = SB.el('span', 'stock-flag', '✎ editorial only');
+      e.title = 'Licensed for editorial use only — not for a commercial client video.';
+      t.appendChild(e);
+    }
+
+    const cap = SB.el('div', 'stock-cap');
+    cap.appendChild(SB.el('span', 'stock-artist', a.artist || a.collection || a.id));
+    t.appendChild(cap);
+
+    t.addEventListener('mouseenter', function () { choose(a); });
+    t.addEventListener('focus', function () { choose(a); });
+    t.addEventListener('click', function () { choose(a); });
+    t.tabIndex = 0;
+
+    t.addEventListener('dragstart', function (ev) {
+      const dt = ev.dataTransfer;
+      dt.effectAllowed = 'copy';
+      /* The asset, for the licence trail… */
+      dt.setData(SB.Board.DND_STOCK, JSON.stringify({
+        id: a.id, title: a.title, caption: a.caption, artist: a.artist,
+        collection: a.collection, family: a.family, license: a.license,
+        link: a.link, comp: a.comp, preview: a.preview, thumb: a.thumb
+      }));
+      /* …and the plain URL, which every drop path in the app already reads, so
+         the picture lands even where nothing knows about Getty. */
+      if (a.comp) {
+        dt.setData('text/uri-list', a.comp);
+        dt.setData('text/plain', a.comp);
+      }
+      try { dt.setDragImage(img, Math.min(80, img.width / 2), 40); } catch (e) { }
+      document.body.classList.add('stock-dragging');
+      choose(a);
+    });
+    t.addEventListener('dragend', function () {
+      document.body.classList.remove('stock-dragging');
+    });
+
+    return t;
+  }
+
+  function choose(a) {
+    if (S.chosen && S.chosen.id === a.id) return;
+    S.chosen = a;
+    if (S.stripEl) {
+      S.stripEl.querySelectorAll('.stock-tile').forEach(function (el) {
+        el.classList.toggle('on', el.dataset.id === a.id);
+      });
+    }
+    drawJudge();
+  }
+
+  /* ---------------- the judging pane ----------------
+   *
+   * Thumbs are what you scan; the comp is what you decide on. Deciding from a
+   * 170px thumb is how the wrong picture gets onto a board, and the comp is
+   * already paid for by looking at it, so it costs nothing but a fetch.
+   */
+  function drawJudge() {
+    if (!S.judgeEl) return;
+    const j = S.judgeEl;
+    j.textContent = '';
+    const a = S.chosen;
+    if (!a) { j.classList.add('empty'); return; }
+    j.classList.remove('empty');
+
+    const im = document.createElement('img');
+    im.src = a.preview || a.comp || a.thumb;
+    im.alt = a.title || a.id;
+    j.appendChild(im);
+
+    const meta = SB.el('div', 'stock-meta');
+    meta.appendChild(SB.el('div', 'stock-meta-title', a.title || a.caption || a.id));
+    const line = [a.artist, a.collection, a.family].filter(Boolean).join(' · ');
+    meta.appendChild(SB.el('div', 'stock-meta-sub', line));
+    meta.appendChild(SB.el('div', 'stock-meta-sub', a.id + (a.license ? ' · ' + a.license : '')));
+    j.appendChild(meta);
+
+    const row = SB.el('div', 'stock-acts');
+    const f = shot();
+    const use = SB.el('button', 'mini primary', f ? 'Use on ' + f.code : 'Use as frame');
+    use.disabled = !f;
+    use.title = f ? 'Put this comp on ' + f.code + ' (its current frame banks as a take)'
+      : 'Select a card first — or just drag the picture onto one';
+    use.onclick = function () {
+      if (!f) return;
+      use.disabled = true;
+      use.textContent = 'placing…';
+      SB.Board.placeStock(f.shot, a).then(function () {
+        use.textContent = 'Use on ' + f.code;
+        use.disabled = false;
+      });
+    };
+    row.appendChild(use);
+
+    const like = SB.el('button', 'mini', 'more like this');
+    like.onclick = function () { moreLikeThis(a); };
+    row.appendChild(like);
+
+    if (a.link) {
+      const go = SB.el('button', 'mini', 'on gettyimages ↗');
+      go.onclick = function () { window.open(a.link, '_blank', 'noopener'); };
+      row.appendChild(go);
+    }
+    j.appendChild(row);
+
+    j.appendChild(SB.el('div', 'stock-legal',
+      'Comp — layout and proofing only, for ' + SB.Model.COMP_DAYS + ' days. ' +
+      'The watermark stays on, and it is never handed to a model.'));
+  }
+
+  /* ---------------- dragging onto a board that has scrolled away ----------
+   *
+   * With the drawer open the card you want is often above the fold, and a
+   * browser will not scroll a custom drag for you. So the board scrolls itself
+   * while something is being dragged over its edges.
+   */
+  function edgeScroll(ev) {
+    const panel = document.getElementById('boardPanel');
+    if (!panel || !document.body.classList.contains('stock-dragging')) return;
+    const r = panel.getBoundingClientRect();
+    const edge = 60;
+    if (ev.clientY < r.top + edge) panel.scrollTop -= 18;
+    else if (ev.clientY > r.bottom - edge) panel.scrollTop += 18;
+  }
+  document.addEventListener('dragover', edgeScroll);
+
+  SB.Stock = {
+    open: open, close: close, toggle: toggle, isOpen: isOpen, sync: sync,
+    /* app.js calls this once on boot: the drawer reopens where it was left */
+    restore: function () { if (ls(K_OPEN) === '1') open(); },
+    /* tests reach in for the search state rather than scraping the DOM */
+    _state: S
+  };
+
+})(window.SB);
+
+</script>
+<script>
 /* ===== js/mentions.js ===== */
 /* mentions.js — the @ popover.
  *
@@ -24123,6 +25546,43 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
     return (n / 1048576).toFixed(1) + ' MB';
   }
 
+  /* Which cards are standing on borrowed pictures, and for how long.
+   *
+   * A comp is licensed for 30 days. Nothing in a file announces that, and a
+   * board that sat for a quarter holds comps whose licence quietly ran out —
+   * so the board says it, with the age of each one, in the same place it says
+   * what it weighs. Empty on every board with no stock on it, which is most
+   * of them, so it costs nothing to carry. */
+  function stockBlock() {
+    const rows = SB.Model.stockShots(P());
+    const box = SB.el('div', 'pp-block');
+    if (!rows.length) return box;
+    const lapsed = rows.filter(function (r) { return SB.Model.compLapsed(r.rec); }).length;
+    box.appendChild(SB.el('div', 't', 'licensed stock on this board'));
+    box.appendChild(SB.el('div', 'pp-note',
+      rows.length + ' card' + (rows.length === 1 ? '' : 's') + ' hold a Getty comp. ' +
+      'A comp is a stand-in licensed for layout for ' + SB.Model.COMP_DAYS + ' days and never ' +
+      'for final or public material' +
+      (lapsed ? ' — and ' + lapsed + ' of these ' + (lapsed === 1 ? 'has' : 'have') +
+        ' run past that. Replace them, or license the assets in the edit.' : '.')));
+    rows.forEach(function (r) {
+      const days = SB.Model.compAgeDays(r.rec);
+      const el = SB.el('div', 'st-row' + (SB.Model.compLapsed(r.rec) ? ' lapsed' : ''));
+      const src = r.shot.image ? SB.Blobs.src(P(), r.shot.image) : '';
+      if (src) { const im = document.createElement('img'); im.src = src; el.appendChild(im); }
+      const who = SB.el('div', 'spacer');
+      who.appendChild(SB.el('div', null, r.code + ' · ' + (r.rec.title || r.rec.id)));
+      who.appendChild(SB.el('div', 'st-id',
+        r.rec.id + (r.rec.artist ? ' · ' + r.rec.artist : '') +
+        (r.rec.collection ? ' · ' + r.rec.collection : '')));
+      el.appendChild(who);
+      el.appendChild(SB.el('div', 'st-age',
+        days ? days + ' day' + (days === 1 ? '' : 's') : 'today'));
+      box.appendChild(el);
+    });
+    return box;
+  }
+
   let pendingOriginals = null;
 
   function originalsBlock() {
@@ -24271,7 +25731,7 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
     const tabs = SB.el('div', 'tabs');
     const panels = {};
     const order = [['general', 'General'], ['fields', 'Card fields'], ['brand', 'Brand style'],
-    ['models', 'Models & templates'], ['imagine', 'ImagineArt'], ['api', 'API']];
+    ['models', 'Models & templates'], ['imagine', 'ImagineArt'], ['getty', 'Getty'], ['api', 'API']];
     order.forEach(function (t) {
       const b = SB.el('button', 'tab', t[1]);
       b.dataset.tab = t[0];
@@ -24339,6 +25799,7 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
 
     /* ---- what this board is carrying ---- */
     panels.general.appendChild(originalsBlock());
+    panels.general.appendChild(stockBlock());
 
     /* ---------------- Card fields ---------------- */
     panels.fields.appendChild(SB.el('div', 'pp-note',
@@ -25162,6 +26623,70 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
       IM.refreshCatalog().then(function () { drawCatalogLine(); }).catch(function () { });
     }
 
+    let gettyKeyEl = null;
+
+    /* ---------------- Getty ----------------
+     *
+     * One field, because that is genuinely all it takes: Getty's API answers a
+     * browser directly (its hosts send Access-Control-Allow-Origin: *), and a
+     * search needs the key and nothing else. No sign-in, no token, no proxy.
+     *
+     * What is NOT here is just as deliberate. There is no licensing in this
+     * app and no button that spends money: the Premiere panel owns that,
+     * because it owns the ledger that stops an asset being bought twice.
+     */
+    {
+      const g = panels.getty;
+      g.appendChild(SB.el('div', 'pp-note',
+        'Search Getty from the Stock drawer and drag a comp onto a card. Comps are free, ' +
+        'watermarked stand-ins — this app never licenses or downloads a final asset, which ' +
+        'happens in the edit, against the Premiere panel’s ledger.'));
+
+      const gk = document.createElement('input');
+      gk.type = 'password';
+      gk.value = SB.Getty ? SB.Getty.key() : '';
+      gk.placeholder = 'your Getty API key';
+      g.appendChild(field('Getty Images API key', gk));
+      g.appendChild(SB.el('div', 'pp-note',
+        'Stored in this browser only — never written into the .storyboard file, so a board ' +
+        'carrying comps can still be shared. Keys come from developer.gettyimages.com; the ' +
+        'account also has to allow this app’s searches.'));
+
+      const checkRow = SB.el('div', 'pp-actions');
+      const check = SB.el('button', 'tb', 'Check this key');
+      const checkNote = SB.el('div', 'pp-note', '');
+      check.onclick = function () {
+        if (!SB.Getty) return;
+        SB.Getty.setKey(gk.value.trim());
+        check.disabled = true;
+        checkNote.classList.remove('err');
+        checkNote.textContent = 'asking Getty…';
+        SB.Getty.searchImages('creative', { phrase: 'test' }, 1, 1).then(function (r) {
+          check.disabled = false;
+          checkNote.textContent = 'Working — Getty answered with ' +
+            (r.total ? r.total.toLocaleString() + ' results for “test”.' : 'a result set.');
+        }).catch(function (e) {
+          check.disabled = false;
+          checkNote.textContent = e.message || String(e);
+          checkNote.classList.add('err');
+        });
+      };
+      checkRow.appendChild(check);
+      g.appendChild(checkRow);
+      g.appendChild(checkNote);
+
+      g.appendChild(SB.el('div', 'pp-label', 'What a comp is'));
+      g.appendChild(SB.el('div', 'pp-note',
+        'Getty licenses a comp for test and layout use for ' + SB.Model.COMP_DAYS + ' days, ' +
+        'and never in final or public material. So a comp on this board is a stand-in for a ' +
+        'shot, its watermark is never cropped or painted over, and it is never handed to an ' +
+        'image model — a card holding one is kept out of every model feed, and the Create ' +
+        'panel says so on the button. Cards holding comps are listed on the General tab with ' +
+        'the age of each one.'));
+
+      gettyKeyEl = gk;
+    }
+
     /* ---------------- API ----------------
      * Two backends, picked at the top: Google's Gemini, or any local
      * OpenAI-compatible server (oobabooga's text-generation-webui, LM Studio,
@@ -25533,6 +27058,7 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
             }
             if (pendingOriginals) p.settings.originals = pendingOriginals;
             SB.Store.setApiKey(key.value.trim());
+            if (SB.Getty && gettyKeyEl) SB.Getty.setKey(gettyKeyEl.value.trim());
             SB.Store.setOoba({ url: oUrl.value, model: oobaModel, key: oKey.value });
             p.settings.imagineAspect = imAspect.value || '16:9';
             p.settings.imagineResolution = imRes.value || 'best';
@@ -26779,6 +28305,16 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
 
   /* ---------------------------------------------------------------- model */
 
+  /* "Only what was made in here" means GENERATED in here. A Getty comp also
+   * carries a `made` record — it has to, so the manifest can say where the
+   * picture came from — but nobody asking for what this board produced means
+   * the stock somebody dragged onto it. Stock is the third category, and this
+   * is the line that keeps it out of the other two. */
+  function madeHere(rec) {
+    const m = rec && rec.made;
+    return !!(m && m.by !== 'getty');
+  }
+
   function rows(p, scope) {
     const out = [];
     const sel = (SB.Board.selection && SB.Board.selection()) || [];
@@ -26894,7 +28430,7 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
       if (o.originals) {
         const rec = sh.render;
         if (rec && SB.Renders.has(p, rec)) {
-          if (!o.madeOnly || rec.made) {
+          if (!o.madeOnly || madeHere(rec)) {
             const data = SB.Renders.dataUrl(p, rec);
             items.push({
               name: nameFor(r.code, rec, o.naming, null, w), kind: 'original', data: data,
@@ -26924,12 +28460,12 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
                so a card holding two dead takes reported nothing missing while
                Settings could see them perfectly well. */
             if (!v.ref || !SB.Renders.has(p, v)) {
-              if (o.madeOnly && !v.made) return;
+              if (o.madeOnly && !madeHere(v)) return;
               if (v.url) linkOnly++;
               else missing++;
               return;
             }
-            if (o.madeOnly && !v.made) return;
+            if (o.madeOnly && !madeHere(v)) return;
             const data = SB.Renders.dataUrl(p, v);
             items.push({
               name: nameFor(r.code, v, o.naming, 'mp4', w, many ? tk.n : 0),
@@ -26942,7 +28478,7 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
       }
 
       if (o.proxies && sh.image) {
-        if (!o.madeOnly || (sh.render && sh.render.made)) {
+        if (!o.madeOnly || madeHere(sh.render)) {
           const data = SB.Blobs.src(p, sh.image);
           if (data) {
             items.push({
@@ -27010,6 +28546,22 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
       items.push({
         name: (SB.Renders.slug(p.name) || 'board') + '-shots.csv', kind: 'list',
         text: csv(p, list, namesByShot(items)), bytes: 0
+      });
+    }
+    /* The stock on this board, as a list an editor can work from with no
+       panel and no plugin: a Getty asset id per card, which is the one thing
+       a comp on a storyboard has to carry into the edit. Written whenever the
+       board holds any — it is two columns of text and it is the difference
+       between "find the one that looks like this" and "license 1437816897".
+       Licensing itself happens in Premiere, against its ledger. */
+    const stock = SB.Model.stockShots(p).filter(function (st) {
+      return list.some(function (r) { return r.shot.id === st.shot.id; });
+    });
+    if (stock.length) {
+      const text = gettyCsv(p, stock);
+      items.push({
+        name: (SB.Renders.slug(p.name) || 'board') + '-getty.csv', kind: 'list',
+        text: text, bytes: textBytes(text)
       });
     }
     /* A manifest of nothing is not an export. With no files to describe, the
@@ -27212,6 +28764,27 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
     return lines.join('\r\n');
   }
 
+  /* Every comp on the board, with the asset id, so the edit can license the
+   * ones that survived into the cut. Dates are what the licence runs on, so
+   * the day it was placed and its age in days both go in. */
+  function gettyCsv(p, stock) {
+    const head = ['Code', 'Scene', 'Shot type', 'Getty asset id', 'Title', 'Artist',
+      'Collection', 'Licence model', 'Comp placed', 'Days old', 'Lapsed', 'Link'];
+    const lines = [head.map(cell).join(',')];
+    stock.forEach(function (st) {
+      const days = SB.Model.compAgeDays(st.rec);
+      lines.push([
+        st.code, (st.scene && st.scene.heading) || '', st.shot.type || '',
+        st.rec.id, st.rec.title || '', st.rec.artist || '', st.rec.collection || '',
+        st.rec.license || '',
+        st.rec.at ? new Date(st.rec.at).toISOString().slice(0, 10) : '',
+        String(days), SB.Model.compLapsed(st.rec) ? 'yes' : '',
+        st.rec.link || ('https://www.gettyimages.com/detail/' + st.rec.id)
+      ].map(cell).join(','));
+    });
+    return lines.join('\r\n');
+  }
+
   /* What made each file. This is the half of a generated export that cannot be
    * rebuilt afterwards — the pictures do not say which model produced them,
    * and the prompt on the card moves on. */
@@ -27219,6 +28792,18 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
     const out = {
       board: p.name || 'Untitled project',
       version: p.versionName || '',
+      /* The licence trail, once, at the top — rather than only scattered
+         through the file rows, where a comp placed on a card whose picture was
+         not exported would not appear at all. */
+      stock: SB.Model.stockShots(p).map(function (st) {
+        return {
+          shot: st.code, id: st.rec.id, title: st.rec.title || '', artist: st.rec.artist || '',
+          collection: st.rec.collection || '', license: st.rec.license || '',
+          placed: st.rec.at ? new Date(st.rec.at).toISOString() : null,
+          daysOld: SB.Model.compAgeDays(st.rec),
+          compLapsed: SB.Model.compLapsed(st.rec)
+        };
+      }),
       files: items.filter(function (it) { return it.kind !== 'list'; }).map(function (it) {
         const m = it.made;
         return {
@@ -27232,8 +28817,9 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
           bytes: it.bytes || 0,
           pixels: it.rec && it.rec.w ? it.rec.w + '×' + it.rec.h : null,
           boardCopy: !!it.isProxy,
-          madeHere: !!m,
-          model: m ? m.model : null,
+          madeHere: !!(m && m.by !== 'getty'),
+          stock: m && m.by === 'getty' ? { id: m.id, artist: m.artist, collection: m.collection } : null,
+          model: m && m.by !== 'getty' ? m.model : null,
           imagineModel: m ? m.slug : null,
           promptOnTheCardNow: m ? promptFor(p, it.shot, m) : null
         };
@@ -27663,7 +29249,7 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
   SB.ExportPanel = {
     open: open, close: close, toggle: toggle, isOpen: function () { return !!root; },
     /* the pure half, which is what the tests hold on to */
-    plan: plan, csv: csv, manifest: manifest, opts: opts, nameFor: nameFor
+    plan: plan, csv: csv, gettyCsv: gettyCsv, manifest: manifest, opts: opts, nameFor: nameFor
   };
 
 })(window.SB);
@@ -27874,6 +29460,9 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
     SB.ScriptMode.init();
     SB.PromptPanel.init();
     SB.PersonaPanel.init();
+    /* The drawer comes back open if that is how it was left — it is a place to
+       work from, not a dialog, and reopening it every session is friction. */
+    if (SB.Stock) SB.Stock.restore();
     SB.Store.S.getProject = function () { return app.project; };
     SB.Store.S.onState = function (txt, cls) {
       const el = document.getElementById('saveState');
@@ -28067,6 +29656,8 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
     $('btnPersonas').addEventListener('click', function () { SB.PersonaPanel.toggle(); });
 
     $('btnPrompts').addEventListener('click', function () { SB.PromptPanel.toggle(); });
+
+    $('btnStock').addEventListener('click', function () { SB.Stock.toggle(); });
 
     $('btnTheme').addEventListener('click', function () { SB.Theme.toggle(); });
 

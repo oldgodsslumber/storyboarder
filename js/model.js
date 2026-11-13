@@ -566,6 +566,91 @@
     return true;
   }
 
+  /* ---------------- licensed stock ----------------
+   *
+   * A Getty comp on a card is a picture like any other and a licence like
+   * nothing else in this file, so the board has to know which frames are
+   * comps — and know it everywhere, not only on the card it was dropped on.
+   *
+   * It is keyed by the blob reference of the proxy rather than stored on the
+   * shot, for three reasons that each cost a bug the other way round:
+   *
+   *   - takes carry {image, render, at}, so a swap or a promotion moves the
+   *     picture between slots and cards; a flag on the shot would stay behind
+   *     and a comp would quietly become an ordinary frame;
+   *   - blob refs are content hashes, so the same comp placed on four cards is
+   *     one entry and cannot disagree with itself;
+   *   - when an original fails to store the card keeps the proxy alone, and a
+   *     record living on `render.made` would be the thing that went missing —
+   *     which is exactly the case where nothing may be fed to a model.
+   *
+   * `render.made` still records it too: that is the export manifest's story of
+   * where a picture came from. This map is the licence.
+   */
+  function stockMap(p) { return (p.stock = p.stock || {}); }
+
+  function refOf(img) {
+    if (!img) return '';
+    return typeof img === 'string' ? img : (img.ref || '');
+  }
+
+  function markStock(p, img, rec) {
+    const ref = refOf(img);
+    if (!p || !ref || !rec) return null;
+    stockMap(p)[ref] = rec;
+    return rec;
+  }
+
+  /* The record for one picture, or null. Takes a shot, an image/render
+   * record, or a bare reference — every caller has one of those. */
+  function stockFor(p, x) {
+    if (!p || !x) return null;
+    const m = stockMap(p);
+    if (typeof x === 'string') return m[x] || null;
+    if (x.ref) return m[x.ref] || null;
+    /* a shot: the chosen frame decides, proxy first, then the original */
+    return m[refOf(x.image)] || m[refOf(x.render)] || null;
+  }
+
+  function isStock(p, shot) { return !!stockFor(p, shot); }
+
+  /* THE PREDICATE. Every place that used to ask `shot.render || shot.image`
+   * before handing a picture to a model asks this instead, and gets nothing
+   * for a card whose frame is a comp. The comp licence covers looking at the
+   * picture; it does not cover deriving from it, and an image model is
+   * nothing but derivation. One line, in one place, so the rule cannot be
+   * half-applied. */
+  function modelFrame(p, shot) {
+    if (!shot) return null;
+    if (isStock(p, shot)) return null;
+    return shot.render || shot.image || null;
+  }
+
+  /* Every stock picture on the board, newest first, with the card it sits on
+   * — Settings counts them and the export writes them out. A comp that has
+   * been replaced still has its entry until the sweep takes it, so this walks
+   * the cards rather than the map. */
+  function stockShots(p) {
+    const out = [];
+    eachShot(p, function (sh, sc, i) {
+      const rec = stockFor(p, sh);
+      if (!rec) return;
+      const f = findShot(p, sh.id);
+      out.push({ shot: sh, scene: sc, rec: rec, code: f ? f.code : '' });
+    });
+    return out.sort(function (a, b) { return (b.rec.at || 0) - (a.rec.at || 0); });
+  }
+
+  /* A comp is licensed for 30 days. Past that the board is still a board, but
+   * the picture on it is no longer covered — which is worth saying out loud
+   * rather than discovering from a letter. */
+  const COMP_DAYS = 30;
+  function compAgeDays(rec, now) {
+    if (!rec || !rec.at) return 0;
+    return Math.floor(((now || Date.now()) - rec.at) / 86400000);
+  }
+  function compLapsed(rec, now) { return compAgeDays(rec, now) > COMP_DAYS; }
+
   function newShot(opts) {
     opts = opts || {};
     return {
@@ -704,6 +789,11 @@
       updatedAt: Date.now(),
       master: SB.Doc.make(''),
       blobs: {},                        // hash -> data URL; images live here once
+      /* Which pictures in this file are licensed stock, keyed by the blob
+       * reference of the copy the board draws: {id, title, artist, collection,
+       * family, license, link, at}. See stockOf() for why it is keyed that
+       * way and not stored on the shot. */
+      stock: {},
       scriptComments: [],               // notes anchored to ranges of the master
       personas: [],
       /* High-water mark for render serials. Only ever goes up: a number
@@ -1002,6 +1092,10 @@
       });
       (v.snapshot.personas || []).forEach(function (per) { migratePersona(p, per); });
     });
+    /* No board written before stock existed has one, and a reader that found
+       undefined here would decide every frame on it was a comp or none of
+       them, depending on which way it guessed. */
+    if (!p.stock || typeof p.stock !== 'object') p.stock = {};
     const s = p.settings = p.settings || {};
     s.shotTypes = (s.shotTypes && s.shotTypes.length) ? s.shotTypes : DEFAULT_SHOT_TYPES.slice();
     /* Absent is empty is exactly how every board behaved before takes. Walked
@@ -1860,6 +1954,10 @@
   SB.Model = {
     FILE_VERSION: FILE_VERSION,
     CARD_COLORS: CARD_COLORS,
+    /* licensed stock — markStock records a placement, modelFrame is the rule */
+    markStock: markStock, stockFor: stockFor, isStock: isStock, stockShots: stockShots,
+    modelFrame: modelFrame, compAgeDays: compAgeDays, compLapsed: compLapsed,
+    COMP_DAYS: COMP_DAYS,
     DEFAULT_SHOT_TYPES: DEFAULT_SHOT_TYPES,
     DEFAULT_FRAMING: DEFAULT_FRAMING, framingFor: framingFor, guessFraming: guessFraming,
     takes: takes, takeCount: takeCount, addTake: addTake, repairTakes: repairTakes,

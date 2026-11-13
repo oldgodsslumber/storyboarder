@@ -134,7 +134,7 @@
        goes up with a clip only while there is no frame to stand in for it (refs.js keeps it off the video
        feed for the same reason). Sent alongside a frame it is a second, grey version of the same picture,
        and its clay leaks into the clip. The clay CLIP is motion, which no frame carries, so it stays. */
-    const framed = lane === 'video' && !!(shot.render || shot.image);
+    const framed = lane === 'video' && !!SB.Model.modelFrame(p, shot);
     if (lane === 'video' && clip) {
       add({ kind: 'clay-clip', ext: 'mp4', name: 'clay', role: 'the grey clay render of this shot, animated' });
     } else if (poseOK(shot) && !framed) {
@@ -178,7 +178,7 @@
       lane: lane, code: code, target: lane === 'image' ? 'MiniMax Image' : 'MiniMax H3',
       shotType: shot.type || '', scene: f ? tidy(f.scene.heading) : '',
       assets: assets, figures: figures, boxes: boxes, perf: perf, clip: clip,
-      blocked: poseOK(shot), frame: !!(shot.render || shot.image),
+      blocked: poseOK(shot), frame: !!SB.Model.modelFrame(p, shot),
       style: st.style, negatives: lane === 'image' ? st.negImage : st.negVideo,
       aspect: SB.Imagine && SB.Imagine.aspectFor ? SB.Imagine.aspectFor(p, shot) : '16:9',
       minS: st.minS, maxS: st.maxS,

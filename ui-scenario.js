@@ -2856,8 +2856,9 @@
         return !!b;
       };
       t('settings modal', document.querySelectorAll('.modal').length === 1, '');
-      t('settings is tabbed', document.querySelectorAll('.modal .tab').length === 6,
+      t('settings is tabbed', document.querySelectorAll('.modal .tab').length === 7,
         document.querySelectorAll('.modal .tab').length);
+      t('settings has a Getty tab', tab('Getty'), '');
       /* the slug field offers the real catalog, filtered to the model's kind */
       (function () {
         const tab = Array.prototype.filter.call(document.querySelectorAll('.modal .tab'),
@@ -4408,6 +4409,195 @@
       SB.Board.render();
       t('comment inputs appear', document.querySelectorAll('.comment-add').length === document.querySelectorAll('.card').length,
         document.querySelectorAll('.comment-add').length);
+
+      /* ---------------- the stock drawer ----------------
+       *
+       * Three things here that a hand-test passes by accident: that the board
+       * shrinking actually leaves the LAST card droppable, that a drop which
+       * carries only a URL still works, and that a comp on a card stays out
+       * of the model feeds.
+       */
+      await (async function () {
+        app.commentMode = false;
+        SB.Board.render();
+        /* Two DIFFERENT pictures on purpose. Blob references are content
+           hashes, so the same bytes are the same picture everywhere in the
+           file — dropping the comp's own bytes a second time would be the
+           same comp, licence and all, which is correct and is asserted at the
+           end of this block rather than being tripped over here. */
+        const comp = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAMAAAACCAYAAACddGYaAAAAEUlEQVR4nGO4Iyf3H4YZkDkAoeEMi4M52m8AAAAASUVORK5CYII=';
+        const mine = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAQAAAADCAYAAAC09K7GAAAAEklEQVR4nGOQs7nzHxkzEBQAAJAZGn1YZZ9KAAAAAElFTkSuQmCC';
+        const cardOf = function (sh) { return document.querySelector('.card[data-shot="' + sh.id + '"]'); };
+
+        /* a board long enough to scroll, so "the last card is reachable" is a
+           real question rather than a vacuous one */
+        const filler = [];
+        for (let i = 0; i < 24; i++) {
+          filler.push(SB.Model.addShot(P(), P().scenes[0].id, { type: 'Insert' }));
+        }
+        app.changed(true);
+
+        SB.Stock.open();
+        const drawer = document.getElementById('stockDrawer');
+        t('the drawer opens', !!drawer && document.body.classList.contains('stock-on'), '');
+        t('it is not a modal', !!drawer && !document.querySelector('.modal-back, .lib-back'), '');
+
+        const panel = document.getElementById('boardPanel');
+        panel.scrollTop = panel.scrollHeight;
+        /* a timer, not requestAnimationFrame: this runs under Chrome's
+           virtual-time budget, where a frame callback may never arrive */
+        await new Promise(function (r) { setTimeout(r, 50); });
+        const last = cardOf(filler[filler.length - 1]);
+        const lastFrame = last && last.querySelector('.frame');
+        const dTop = drawer.getBoundingClientRect().top;
+        const fBottom = lastFrame ? lastFrame.getBoundingClientRect().bottom : 1e9;
+        /* THE layout test: the board shrinks above the drawer rather than
+           being covered by it, so the last card can still be dropped on. */
+        t('the last card is still droppable with the drawer open', fBottom <= dTop + 1,
+          'frame bottom ' + Math.round(fBottom) + ' vs drawer top ' + Math.round(dTop));
+        t('the drawer is at the bottom of the window',
+          Math.abs(drawer.getBoundingClientRect().bottom - window.innerHeight) < 2,
+          drawer.getBoundingClientRect().bottom + ' vs ' + window.innerHeight);
+
+        /* With no key the drawer says the one thing that is true and useful,
+           rather than an empty grid. */
+        t('with no key the drawer points at Settings',
+          /API key/.test(drawer.querySelector('.stock-strip').textContent),
+          drawer.querySelector('.stock-strip').textContent.slice(0, 80));
+
+        /* A search, against a stubbed Getty: the tiles, the chips, the comp
+           in the judging pane, and the drag payload a tile carries. */
+        SB.Getty.setKey('ui-test-key');
+        const fakeAssets = [1, 2, 3].map(function (n) {
+          return {
+            id: '100' + n, title: 'Picture ' + n, caption: '', artist: 'Someone',
+            collection: 'Moment', family: 'creative', license: 'royaltyfree',
+            thumb: 'data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACwAAAAAAQABAAACAkQBADs=',
+            preview: 'data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACwAAAAAAQABAAACAkQBADs=',
+            comp: 'https://media.gettyimages.com/c/100' + n + '.jpg',
+            link: 'https://www.gettyimages.com/detail/100' + n, editorialOnly: n === 3
+          };
+        });
+        SB.Getty.searchImages = function () {
+          return Promise.resolve({ total: 3, images: fakeAssets, related: [] });
+        };
+        SB.Board.select(filler[0].id);
+        SB.Stock.sync();
+        const searchBtn = Array.prototype.filter.call(drawer.querySelectorAll('.stock-head button'),
+          function (b) { return b.textContent === 'Search'; })[0];
+        t('the drawer has a search button', !!searchBtn, '');
+        searchBtn.click();
+        await new Promise(function (r) { setTimeout(r, 120); });
+        const tiles = drawer.querySelectorAll('.stock-tile');
+        t('results draw as tiles', tiles.length === 3, tiles.length);
+        t('a tile is draggable', tiles[0].draggable, '');
+        t('an editorial-only result is flagged',
+          !!tiles[2].querySelector('.stock-flag'), tiles[2].innerHTML.slice(0, 100));
+        t('the chips say what the card filtered to',
+          /Insert|no people|still life/i.test(drawer.querySelector('.stock-chips').textContent),
+          drawer.querySelector('.stock-chips').textContent);
+        t('the judging pane shows the first result',
+          /Picture 1/.test(drawer.querySelector('.stock-judge').textContent),
+          drawer.querySelector('.stock-judge').textContent.slice(0, 60));
+        tiles[1].dispatchEvent(new MouseEvent('mouseenter'));
+        t('hovering a tile moves the judging pane to it',
+          /Picture 2/.test(drawer.querySelector('.stock-judge').textContent),
+          drawer.querySelector('.stock-judge').textContent.slice(0, 60));
+        const useBtn = Array.prototype.filter.call(drawer.querySelectorAll('.stock-judge button'),
+          function (b) { return /^Use on /.test(b.textContent); })[0];
+        t('and the pane offers it to the selected card', !!useBtn,
+          drawer.querySelector('.stock-judge').textContent.slice(0, 120));
+
+        /* A drop carrying the asset: the picture lands AND the licence does.
+           The bytes do not come from Getty here — the drop path is what is
+           being tested, not their media host. */
+        const asset = {
+          id: '1437816897', title: 'Office at night', artist: 'Someone',
+          collection: 'Moment', family: 'creative', license: 'royaltyfree',
+          link: 'https://www.gettyimages.com/detail/1437816897', comp: 'https://media.gettyimages.com/c/1.jpg'
+        };
+        SB.Getty.fetchComp = function () { return fetch(comp).then(function (r) { return r.blob(); }); };
+
+        const target = filler[0];
+        const drop = function (sh, data) {
+          const dt = new DataTransfer();
+          Object.keys(data).forEach(function (k) { dt.setData(k, data[k]); });
+          const el = cardOf(sh).querySelector('.frame');
+          el.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
+        };
+        drop(target, { 'application/x-sb-getty': JSON.stringify(asset) });
+        await new Promise(function (r) { setTimeout(r, 300); });
+        t('a dragged comp lands on the card', !!target.image, JSON.stringify(target.image));
+        const rec = SB.Model.stockFor(P(), target);
+        t('and brings its asset id with it', !!rec && rec.id === '1437816897',
+          JSON.stringify(rec));
+        t('the card says it is stock',
+          !!cardOf(target).querySelector('.stock-badge'), cardOf(target).innerHTML.slice(0, 120));
+
+        /* The same drop with the asset stripped out — which is what dragging
+           from a browser tab looks like. The picture still has to land. */
+        const plain = filler[1];
+        drop(plain, { 'text/uri-list': mine });
+        await new Promise(function (r) { setTimeout(r, 300); });
+        t('a drop carrying only a URL still places the picture', !!plain.image,
+          JSON.stringify(plain.image));
+        t('but it is not stock, because nothing said which asset it was',
+          !SB.Model.isStock(P(), plain), '');
+
+        /* The licence follows the pixels, not the card: dropping a comp's own
+           bytes again — off the desktop, out of another board — is the same
+           picture and the same comp. Which is the point of keying it by
+           content hash, and means a comp cannot be laundered into an
+           ordinary frame by going round the drawer. */
+        const again = filler[2];
+        drop(again, { 'text/uri-list': comp });
+        await new Promise(function (r) { setTimeout(r, 300); });
+        t('the same comp dropped as a plain picture is still that comp',
+          !!SB.Model.isStock(P(), again), JSON.stringify(SB.Model.stockFor(P(), again)));
+
+        /* And the rule: this card is not fed to a model, and the push button
+           says so rather than leaving it to be discovered. */
+        t('a comp is not a frame a model may be handed',
+          SB.Model.modelFrame(P(), target) === null, '');
+        const vm = SB.Model.videoModel(P());
+        const why = SB.Imagine.whyNot(P(), target, vm, 'video');
+        t('and the clip push says why', !!why && /comp/i.test(why.short + ' ' + why.long),
+          JSON.stringify(why));
+        const mm = SB.Mxm.manifest(P(), target, 'video');
+        t('the MiniMax package leaves the comp out', !mm.frame &&
+          !mm.assets.some(function (x) { return x.kind === 'first-frame'; }),
+          JSON.stringify(mm.assets.map(function (x) { return x.kind; })));
+
+        /* The still lane is deliberately NOT blocked: rendering a real frame
+           over a stand-in is how a comp leaves the board. */
+        const im = SB.Model.imageModel(P());
+        target.prompts = target.prompts || {};
+        target.prompts[im.id] = { imagePrompt: 'a dim office at night' };
+        const whyImg = SB.Imagine.whyNot(P(), target, im, 'image');
+        t('but the still lane is not blocked by it',
+          !whyImg || !/comp/i.test(whyImg.short || ''), JSON.stringify(whyImg));
+
+        /* Settings counts it, with its age. */
+        SB.Settings.open('general');
+        const rows = document.querySelectorAll('.modal .st-row');
+        t('Settings lists the cards holding comps', rows.length === 2, rows.length);
+        t('with the asset id on the row', /1437816897/.test(document.querySelector('.modal').textContent), '');
+        document.querySelector('.modal-back').remove();
+
+        /* The export carries the asset ids out for the edit to license. */
+        const pl = SB.ExportPanel.plan(P(), Object.assign({}, SB.ExportPanel.opts,
+          { originals: true, proxies: true }));
+        const gettyFile = pl.items.filter(function (x) { return /-getty\.csv$/.test(x.name); })[0];
+        t('the export writes a Getty asset list', !!gettyFile,
+          JSON.stringify(pl.items.map(function (x) { return x.name; }).slice(0, 8)));
+        t('and that list carries the asset id', !!gettyFile && /1437816897/.test(gettyFile.text), '');
+
+        SB.Stock.close();
+        t('closing the drawer gives the board back',
+          !document.getElementById('stockDrawer') && !document.body.classList.contains('stock-on'), '');
+        filler.forEach(function (sh) { SB.Model.deleteShot(P(), sh.id); });
+        app.changed(true);
+      })();
     } catch (e) {
       out.push('FAIL exception :: ' + (e && e.stack || e));
     }

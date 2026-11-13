@@ -32,7 +32,7 @@
        uploads the same pictures. Empty, the general description stands in. Only once there IS a frame: with
        none, the setting has to come from words, and "He lowers the letter" alone gave the writer no place and
        not even a name. */
-    if (role === 'video' && (shot.render || shot.image) && SB.Refs.plain(P(), shot.videoDescription || '').trim()) {
+    if (role === 'video' && SB.Model.modelFrame(P(), shot) && SB.Refs.plain(P(), shot.videoDescription || '').trim()) {
       return SB.Refs.plain(P(), shot.videoDescription).trim();
     }
     const parts = SB.Refs.boxes(shot, role)
@@ -56,7 +56,7 @@
      * the block tells the writer the model can see all this, and on a
      * frameless card the model sees nothing. Three riders already assume a
      * picture; this one at least knows whether there is one. */
-    if (!(shot.render || shot.image)) return '';
+    if (!SB.Model.modelFrame(P(), shot)) return '';
     const bits = [];
     const own = SB.Refs.plain(P(), shot.imageDescription || '').trim();
     if (own) bits.push(own);

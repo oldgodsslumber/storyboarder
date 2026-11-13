@@ -1,8 +1,23 @@
 # Getty Images in Storyboarder — integration plan
 
-Status: **not built.** Written 2026-11-13. §1 is read off the wire today (Getty's live
-`swagger/v3/swagger.json`, plus preflights run against the real hosts) and is the reference;
-§2 is the one decision that shapes everything else; §3–§9 are the build.
+Status: **built** (branch `V3-getty`, 2026-11-13) — phases 1–5. §1 is read off the wire and
+is still the reference; §2 is the decision everything else follows from; §3–§9 are the design
+the code was written from. Three things came out differently in the building and this file
+says so where they are:
+
+- the drawer is a **flex sibling of `#main`**, not a fixed strip with `body` padding (§5) —
+  `#app` is already a column, so the board shrinks by construction rather than by arithmetic
+  that could be wrong;
+- a comp's licence is keyed by **blob reference** in `p.stock`, not by a flag on the shot
+  (§6) — takes move pictures between slots and cards, and a flag would stay behind;
+- **phase 6 — sign-in and the Getty Board push — is not built.** It needs a redirect URI
+  registered with Getty by hand (§1), which has not been asked for yet. The export's
+  `<board>-getty.csv` carries the asset ids out in the meantime, so the handoff works
+  without it.
+
+Nothing here has run against a real Getty key. The three questions in the phase-0 spike (§9)
+are still open, and `fetchComp` reports the one that matters as itself rather than as a
+broken picture.
 
 The sibling project is `d:\claudecode\gettyforpremiere` — a UXP panel that already does
 search → comp → batch licensing → download → relink inside Premiere. **That panel is where

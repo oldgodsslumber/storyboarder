@@ -222,6 +222,22 @@
        * derive a frame from that same frame is nonsense. */
       if (m.id === shot.id) return;
       if (m.kind === 'shot') {
+        /* A card whose frame is a Getty comp feeds NOTHING, and says so where
+         * the strip can be read. The mark is a deliberate instruction to show
+         * a model that picture, and a comp is the one picture that may not be
+         * shown to one — so this is the case where silently obeying would be
+         * the bug. The words are on the card, in the strip, before any push.
+         * (model.js: modelFrame, getty_integration_plan.md §6.) */
+        const comp = SB.Model.stockFor(p, m.target.shot);
+        if (comp) {
+          out.push({
+            kind: 'shot', id: m.id, label: m.target.label, mentioned: true,
+            images: [], renders: [], stock: comp,
+            why: m.target.label + ' is a Getty comp (' + comp.id + ') — it is shown on the board ' +
+              'and never handed to a model. Describe it in words, or render that card first.'
+          });
+          return;
+        }
         const img = m.target.shot.image;
         out.push({
           kind: 'shot', id: m.id, label: m.target.label, mentioned: true,

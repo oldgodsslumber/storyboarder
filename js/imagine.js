@@ -2303,7 +2303,7 @@
      * transport and would be nonsense on the other. */
     if (role === 'video' && transport() === 'key') {
       const info = modelInfo(slugOf(model));
-      const has = !!(shot.render || shot.image);
+      const has = !!SB.Model.modelFrame(p, shot);
       if (info && info.mode === 't2v' && has) {
         return Promise.reject(new Error('“' + slugOf(model) + '” is a text-to-video model, and ' +
           'this shot has a frame to animate. Point this model at the matching ' +
@@ -2729,7 +2729,11 @@
     }).catch(function () { return null; });
   }
 
+  /* The card's own frame, as bytes, for the model to animate. The last gate
+   * before a picture leaves the browser: a Getty comp stops here even if some
+   * caller above forgot to ask (model.js: modelFrame). */
   function startFrame(p, shot) {
+    if (!SB.Model.modelFrame(p, shot)) return Promise.resolve(null);
     return SB.Renders.file(p, shot.render).then(function (f) {
       if (f) return { blob: f, name: f.name };
       const src = shot.image ? SB.Blobs.src(p, shot.image) : '';
@@ -3300,10 +3304,10 @@
     if (role === 'video') {
       return {
         role: 'video',
-        frame: !!(shot.render || shot.image),
+        frame: !!SB.Model.modelFrame(p, shot),
         feed: feed.length,
         wordsOnly: wordsOnly,
-        carries: (shot.render || shot.image) ? 1 : 0,
+        carries: SB.Model.modelFrame(p, shot) ? 1 : 0,
         first: null,
         byKey: transport() === 'key'
       };
@@ -3342,6 +3346,21 @@
     }
     if (shot.noShot) {
       return { short: 'no shot', long: 'A \u201cno shot\u201d card is never generated.' };
+    }
+    /* A clip animates THIS CARD'S FRAME, and this card's frame is a licensed
+     * comp \u2014 which may be looked at and not derived from. Said on the button
+     * rather than discovered as a clip that quietly became text-to-video, or
+     * worse, as a comp uploaded to a model. The still lane is deliberately
+     * NOT blocked: generating a real frame over a stand-in is exactly how a
+     * comp stops being on the board. */
+    if (role === 'video' && SB.Model.isStock(p, shot)) {
+      const st = SB.Model.stockFor(p, shot);
+      return {
+        short: 'Getty comp',
+        long: 'This card\u2019s frame is a Getty comp (' + st.id + ') \u2014 a stand-in licensed for ' +
+          'layout, never to be handed to a model. Render a first frame for this card and the ' +
+          'clip can animate that.'
+      };
     }
     /* A clip with no frame to animate quietly becomes text-to-video - the
      * shot invented over again rather than moved. Worth SAYING, and the badge

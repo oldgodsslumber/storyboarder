@@ -164,6 +164,16 @@
       freed += (b[k] || '').length;
       delete b[k];
     });
+    /* The stock register is keyed by the same references (model.js: stockFor),
+       so a comp replaced by a real render leaves a row behind. Swept on
+       exactly the same terms as the bytes — anything else drifts, and a stale
+       row means Settings counts a comp the board no longer has. */
+    if (p.stock) {
+      Object.keys(p.stock).forEach(function (k) {
+        if (keep[k] || fresh.has(k)) return;
+        delete p.stock[k];
+      });
+    }
     return freed;
   }
 

@@ -29,6 +29,43 @@
     return (n / 1048576).toFixed(1) + ' MB';
   }
 
+  /* Which cards are standing on borrowed pictures, and for how long.
+   *
+   * A comp is licensed for 30 days. Nothing in a file announces that, and a
+   * board that sat for a quarter holds comps whose licence quietly ran out —
+   * so the board says it, with the age of each one, in the same place it says
+   * what it weighs. Empty on every board with no stock on it, which is most
+   * of them, so it costs nothing to carry. */
+  function stockBlock() {
+    const rows = SB.Model.stockShots(P());
+    const box = SB.el('div', 'pp-block');
+    if (!rows.length) return box;
+    const lapsed = rows.filter(function (r) { return SB.Model.compLapsed(r.rec); }).length;
+    box.appendChild(SB.el('div', 't', 'licensed stock on this board'));
+    box.appendChild(SB.el('div', 'pp-note',
+      rows.length + ' card' + (rows.length === 1 ? '' : 's') + ' hold a Getty comp. ' +
+      'A comp is a stand-in licensed for layout for ' + SB.Model.COMP_DAYS + ' days and never ' +
+      'for final or public material' +
+      (lapsed ? ' — and ' + lapsed + ' of these ' + (lapsed === 1 ? 'has' : 'have') +
+        ' run past that. Replace them, or license the assets in the edit.' : '.')));
+    rows.forEach(function (r) {
+      const days = SB.Model.compAgeDays(r.rec);
+      const el = SB.el('div', 'st-row' + (SB.Model.compLapsed(r.rec) ? ' lapsed' : ''));
+      const src = r.shot.image ? SB.Blobs.src(P(), r.shot.image) : '';
+      if (src) { const im = document.createElement('img'); im.src = src; el.appendChild(im); }
+      const who = SB.el('div', 'spacer');
+      who.appendChild(SB.el('div', null, r.code + ' · ' + (r.rec.title || r.rec.id)));
+      who.appendChild(SB.el('div', 'st-id',
+        r.rec.id + (r.rec.artist ? ' · ' + r.rec.artist : '') +
+        (r.rec.collection ? ' · ' + r.rec.collection : '')));
+      el.appendChild(who);
+      el.appendChild(SB.el('div', 'st-age',
+        days ? days + ' day' + (days === 1 ? '' : 's') : 'today'));
+      box.appendChild(el);
+    });
+    return box;
+  }
+
   let pendingOriginals = null;
 
   function originalsBlock() {
@@ -177,7 +214,7 @@
     const tabs = SB.el('div', 'tabs');
     const panels = {};
     const order = [['general', 'General'], ['fields', 'Card fields'], ['brand', 'Brand style'],
-    ['models', 'Models & templates'], ['imagine', 'ImagineArt'], ['api', 'API']];
+    ['models', 'Models & templates'], ['imagine', 'ImagineArt'], ['getty', 'Getty'], ['api', 'API']];
     order.forEach(function (t) {
       const b = SB.el('button', 'tab', t[1]);
       b.dataset.tab = t[0];
@@ -245,6 +282,7 @@
 
     /* ---- what this board is carrying ---- */
     panels.general.appendChild(originalsBlock());
+    panels.general.appendChild(stockBlock());
 
     /* ---------------- Card fields ---------------- */
     panels.fields.appendChild(SB.el('div', 'pp-note',
@@ -1068,6 +1106,70 @@
       IM.refreshCatalog().then(function () { drawCatalogLine(); }).catch(function () { });
     }
 
+    let gettyKeyEl = null;
+
+    /* ---------------- Getty ----------------
+     *
+     * One field, because that is genuinely all it takes: Getty's API answers a
+     * browser directly (its hosts send Access-Control-Allow-Origin: *), and a
+     * search needs the key and nothing else. No sign-in, no token, no proxy.
+     *
+     * What is NOT here is just as deliberate. There is no licensing in this
+     * app and no button that spends money: the Premiere panel owns that,
+     * because it owns the ledger that stops an asset being bought twice.
+     */
+    {
+      const g = panels.getty;
+      g.appendChild(SB.el('div', 'pp-note',
+        'Search Getty from the Stock drawer and drag a comp onto a card. Comps are free, ' +
+        'watermarked stand-ins — this app never licenses or downloads a final asset, which ' +
+        'happens in the edit, against the Premiere panel’s ledger.'));
+
+      const gk = document.createElement('input');
+      gk.type = 'password';
+      gk.value = SB.Getty ? SB.Getty.key() : '';
+      gk.placeholder = 'your Getty API key';
+      g.appendChild(field('Getty Images API key', gk));
+      g.appendChild(SB.el('div', 'pp-note',
+        'Stored in this browser only — never written into the .storyboard file, so a board ' +
+        'carrying comps can still be shared. Keys come from developer.gettyimages.com; the ' +
+        'account also has to allow this app’s searches.'));
+
+      const checkRow = SB.el('div', 'pp-actions');
+      const check = SB.el('button', 'tb', 'Check this key');
+      const checkNote = SB.el('div', 'pp-note', '');
+      check.onclick = function () {
+        if (!SB.Getty) return;
+        SB.Getty.setKey(gk.value.trim());
+        check.disabled = true;
+        checkNote.classList.remove('err');
+        checkNote.textContent = 'asking Getty…';
+        SB.Getty.searchImages('creative', { phrase: 'test' }, 1, 1).then(function (r) {
+          check.disabled = false;
+          checkNote.textContent = 'Working — Getty answered with ' +
+            (r.total ? r.total.toLocaleString() + ' results for “test”.' : 'a result set.');
+        }).catch(function (e) {
+          check.disabled = false;
+          checkNote.textContent = e.message || String(e);
+          checkNote.classList.add('err');
+        });
+      };
+      checkRow.appendChild(check);
+      g.appendChild(checkRow);
+      g.appendChild(checkNote);
+
+      g.appendChild(SB.el('div', 'pp-label', 'What a comp is'));
+      g.appendChild(SB.el('div', 'pp-note',
+        'Getty licenses a comp for test and layout use for ' + SB.Model.COMP_DAYS + ' days, ' +
+        'and never in final or public material. So a comp on this board is a stand-in for a ' +
+        'shot, its watermark is never cropped or painted over, and it is never handed to an ' +
+        'image model — a card holding one is kept out of every model feed, and the Create ' +
+        'panel says so on the button. Cards holding comps are listed on the General tab with ' +
+        'the age of each one.'));
+
+      gettyKeyEl = gk;
+    }
+
     /* ---------------- API ----------------
      * Two backends, picked at the top: Google's Gemini, or any local
      * OpenAI-compatible server (oobabooga's text-generation-webui, LM Studio,
@@ -1439,6 +1541,7 @@
             }
             if (pendingOriginals) p.settings.originals = pendingOriginals;
             SB.Store.setApiKey(key.value.trim());
+            if (SB.Getty && gettyKeyEl) SB.Getty.setKey(gettyKeyEl.value.trim());
             SB.Store.setOoba({ url: oUrl.value, model: oobaModel, key: oKey.value });
             p.settings.imagineAspect = imAspect.value || '16:9';
             p.settings.imagineResolution = imRes.value || 'best';
