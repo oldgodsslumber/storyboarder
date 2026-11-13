@@ -271,31 +271,97 @@ Differences from ImagineArt, all of them from §1:
 
 ---
 
-## 5. `js/gettypanel.js` — the Stock panel
+## 5. `js/gettypanel.js` — the stock drawer
 
-A panel in the existing mould (`promptpanel.js`, `personapanel.js`, `exportpanel.js`), opened
-from a card and from the toolbar.
+**Not a modal.** Every other panel in this app (`promptpanel`, `personapanel`, `exportpanel`,
+`reviewer`) is a `*-back` backdrop over a centred box, because every one of them is somewhere
+you *go*. The stock drawer is the opposite: it is open **while** you work on the board, and
+the gesture it exists for is dragging a picture out of it onto a card. A modal cannot do
+that — the thing you need to drop on is behind the backdrop.
 
-- **Header**: the card it was opened from (`SH 014 · Close-up`), the phrase box seeded from
-  the description, and a one-line *"filtered to: close-up · horizontal · no people"* that
-  says out loud what §3 did on the user's behalf, with every chip removable.
-- **Grid** of comps, `page_size=60`, infinite "Load more" by `page`. Each tile: the comp,
-  the artist, the collection, a `✎` editorial-only flag if `allowed_use` says so (should be
-  impossible given the default filter — show it anyway, because a filter default can be
-  switched off).
-- **Per-tile actions**: *Use as frame* (§6), *More like this* (`/v3/images/{id}/similar`),
-  *Open on gettyimages.com* (`referral_destinations`, which is the field that exists for
-  exactly this).
-- **Find a match for this frame** (phase 4): takes the card's own `shot.render` — the
-  generated or dropped full-size original — `PUT`s it to
-  `/v3/search/by-image/uploads/{name}`, then searches `creative/by-image`. This is the
-  feature that justifies the whole thing: board it with AI, then find the licensable picture
-  that looks like what you drew. **It uploads client content to Getty**, so it asks first,
-  once per session, and says so in the dialog.
+So: a drawer docked to the bottom, **the board shrinks above it rather than being covered.**
 
-UI rules this app already enforces and this panel inherits: no async result ever steals the
-caret or overwrites an in-flight edit, and the panel never fires a search on its own — the
-header counts, the user presses.
+```
+┌──────────────────────────────────────────── top bar ─────────┐
+│  board — scrolls, all cards still reachable                  │
+│  ░░ the drop target is a card frame up here ░░               │
+├─────────────────────────── ⋯ drag to resize ─────────────────┤
+│ ◧ Stock   [phrase…………]  close-up ✕  horizontal ✕  ⚙   ⌄ │   <- head
+│ ┌────┬────┬────┬────┬────┬────┐                  ┌────────┐ │
+│ │thmb│thmb│thmb│thmb│thmb│thmb│  → scrolls       │  comp  │ │   <- strip + judging pane
+│ └────┴────┴────┴────┴────┴────┘                  └────────┘ │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**Layout.** A fixed element at `left:0;right:0;bottom:0`, and `body.stock-on` gets a
+`padding-bottom` equal to the drawer height so the last row of cards can still be scrolled
+into view and dropped on. Overlaying the board would hide exactly the cards you want — that
+is the whole reason this is not a modal, and getting it wrong reproduces the modal.
+The top edge is a drag handle; the height, and whether it is open at all, live in
+`localStorage` (a per-browser convenience, never in the project file). `⌄` collapses it to
+the head strip alone so it can stay open all day without costing board.
+
+**Head.** The phrase box, seeded from the selected card's description via
+`SB.Refs.plain()` and re-seeded when the selection changes *unless the box has been typed
+in* — the caret is never stolen and a typed query is never overwritten. Beside it, the
+filters §3 applied on the user's behalf as removable chips: *close-up · horizontal · no
+people*. A search fires on Enter or the button, **never on its own** — the same rule the
+Create panel follows.
+
+**The strip.** One horizontally scrolling row of `thumb`s by default (a storyboard is wide
+and so is the gesture), two or three rows when the drawer is dragged taller. `page_size=60`,
+"more" appends by `page`. Each tile carries the artist, the collection, and a `✎` flag if
+`allowed_use` says editorial-only — which the default filter should make impossible, but a
+default can be switched off.
+
+**The judging pane.** Hovering or arrow-keying a tile shows that asset's `comp` big on the
+right of the drawer, with title, artist, collection and size. Thumbs are what you scan;
+the comp is what you decide on, and deciding from a 170 px thumb is how the wrong picture
+ends up on a board. Nothing is fetched at comp size until a tile is actually looked at.
+
+**Dragging out — the contract.** HTML5 drag, with two types set on the tile:
+
+```js
+const DND_STOCK = 'application/x-sb-getty';          // follows DND_SHOT / DND_SCENE
+dt.setData(DND_STOCK, JSON.stringify({ id, title, artist, collection_name,
+                                       asset_family, license_model, comp, link }));
+dt.setData('text/uri-list', compUrl);                 // the fallback that already works
+dt.setDragImage(tileImg, w/2, h/2);
+```
+
+The second line is free mileage: `SB.imageFromTransfer()` already reads `text/uri-list` and
+fetches it with `mode:'cors'`, and the card frame and the scene background already call it.
+**So a comp dragged onto a card lands with no change to `board.js` at all** — dropping it on
+empty space in a scene even creates a new card, because that handler already does that for
+any dropped picture. (It also means dragging straight out of a gettyimages.com tab works,
+which is worth knowing but is not the feature.)
+
+What the plain URL loses is *which asset it was* — the id, the artist, the licence model.
+That is what the first line is for, and it needs the one change `board.js` does need: the
+frame and scene drop handlers check `DND_STOCK` before falling through to
+`imageFromTransfer`, exactly as they already check `DND_SHOT` first, and route it to the
+provenance path in §6. Two handlers, one branch each.
+
+Two details that only show up once it is built:
+- **The board must auto-scroll while dragging.** With the drawer taking the bottom third,
+  the card you want is often off-screen upward; browsers do not reliably auto-scroll a
+  custom drag. Scroll on `dragover` within ~60 px of the board's top edge.
+- **Drag is never the only way.** `Use as frame` is on the tile's hover row and applies to
+  the selected card, and the tile's context menu offers *replace the frame* / *add as a
+  take* / *new card after this one*. Drag is the good gesture, not the only one — a trackpad
+  drag across a shrinking board is a bad single point of failure.
+
+**Other drop targets, for free or nearly:** a persona's reference box (`refbox.js`) takes
+pictures the same way, so a stock photo can be a subject's look reference — subject to the
+hard rule in §6.2, which means a comp dropped there is *shown to people and never to a
+model*, and the box says so.
+
+**Find a match for this frame** (phase 4) sits in the head as a button that is live when a
+card with a picture is selected: it `PUT`s that card's `shot.render` to
+`/v3/search/by-image/uploads/{name}` and searches `creative/by-image`, filling the same
+strip. This is the feature that justifies the whole thing — board it with AI, then find the
+licensable picture that looks like what you drew. **It uploads client content to Getty**, so
+it asks once per session and says exactly what it is sending.
 
 ---
 
@@ -303,7 +369,9 @@ header counts, the user presses.
 
 The entry point exists and needs no change: `SB.Board.setImage(shot, blob, made)` handles the
 ≤480p proxy, the full-size original, the take-banking, the serial, and the provenance record.
-A comp arrives as a `Blob` from `fetchComp()` and lands exactly like a generated still.
+A comp arrives as a `Blob` from `fetchComp()` and lands exactly like a generated still —
+whether it got there by being dragged out of the drawer (§5), by *Use as frame*, or by being
+dropped on empty board space, which makes a new card.
 
 ```js
 const made = { by: 'getty', id: asset.id, artist, collection: collection_name,
@@ -391,21 +459,34 @@ discover it halfway through building §5.
 3. Is this key public or confidential? (Only answerable by trying both; §4.)
 
 Then: **1** client + Settings tab (key, client id, connection check via a one-result search)
-→ **2** panel + search + filters → **3** *Use as frame* and the four consequences in §6
-→ **4** find-a-match-for-this-frame → **5** export manifest → **6** sign-in + board push.
-Phases 1–5 need no sign-in and no registered redirect URI; send the registration email at
-the start of phase 1 so it is answered by phase 6.
+→ **2** the drawer: dock, resize, head, strip, judging pane, search + filters → **3** drag
+out and the four consequences in §6 → **4** find-a-match-for-this-frame → **5** export
+manifest → **6** sign-in + board push. Phases 1–5 need no sign-in and no registered redirect
+URI; send the registration email at the start of phase 1 so it is answered by phase 6.
 
-**The build discipline is the repo's, and it bites here:** edit `js/`, add the
-`<script src>` line to `index.html` (it sets inline order — `getty.js` after `refs.js`,
+Phase 2 and phase 3 are worth separating even though they feel like one thing: a drawer that
+searches and shows comps is already useful on its own (it is a better stock browser than the
+website, because it knows the card), and the drop plumbing can be judged against a drawer
+that already works rather than at the same time as it.
+
+**The build discipline is the repo's, and it bites here:** edit `js/` and `css/app.css`, add
+the `<script src>` line to `index.html` (it sets inline order — `getty.js` after `refs.js`,
 `gettypanel.js` after `promptpanel.js`), run `node build.mjs`, *then* test. Every suite reads
 the built `storyboarder.html`, so an untested build is a lying green.
 
 New tests: **`test-getty.mjs`** against a fake Getty — port the fake from
 `gettyforpremiere/test/` rather than writing a second one — covering the filter mapping per
 shot type, the 429/`Retry-After` ladder, the 401-refresh-once rule, field selection, and the
-PKCE challenge against Node's crypto. Plus a `ui-scenario.js` case that places a comp and
-asserts the four §6 consequences, especially that the model feeds exclude it.
+PKCE challenge against Node's crypto. Plus `ui-scenario.js` cases, which is where the drawer
+has to be held honest, because all three of these are things a hand-test passes by accident:
+
+- the drawer is open and `body.stock-on` padding actually leaves the **last** card droppable
+  (drive it with 40 cards, scroll to the bottom, assert the last frame's bounding box is
+  above the drawer);
+- a synthesised drag carrying `DND_STOCK` onto a frame places the comp **with** its asset id
+  on `shot.stock`, and the same drag carrying only `text/uri-list` still places the picture;
+- a placed comp is excluded from the `mxm`/`vexport` manifests and the Create panel's push
+  button says why — the §6.2 rule, which is the one that costs money to get wrong.
 
 Keys and tokens live in `localStorage` only and are **never** written into the project file —
 the rule the README already makes about the Gemini key, and the reason a board can be handed
@@ -423,6 +504,14 @@ to anyone. Asset ids, comps and `shot.stock` *do* go in the file; they are the b
   Access, so nobody boards a shot around a picture that turns out to cost extra. Needs
   `/v3/products` and a token to read, which is phase 6 — until then the grid shows everything
   and the manifest is honest about `license_model`.
+- **Should the drawer have a Footage tab?** These are client *videos*, and the b-roll that
+  ends up in them is Getty footage, not stills — `/v3/search/videos/creative` is the same
+  call and the drawer is the same strip. A card already holds a clip (`shot.video`, the `▷`
+  badge, `clipDrop`), and a watermarked preview mp4 fetched to a Blob would land in it. The
+  reason it is a question and not a phase: a storyboard card wants a *frame*, and a clip on
+  a card is a different claim about the shot. Worth asking the user before building it —
+  and the Premiere panel already covers video end to end, which may be the right place for
+  it to stay.
 - **Does showing a watermarked comp to a client count as proofing?** Almost certainly yes,
   that is what comps are for, but the 30-day window and "no final materials" line are worth
   one email to the Getty rep before a board goes out — and the answer belongs in this file.
