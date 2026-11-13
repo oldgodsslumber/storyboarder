@@ -1,4 +1,4 @@
-/* gettypanel.js — the footage drawer.
+/* gettypanel.js — the Getty drawer.
  *
  * Every other panel in this app is a backdrop over a centred box, because
  * every other panel is somewhere you GO. This one is open while you work, and
@@ -192,7 +192,7 @@
     const h = S.headEl;
     h.textContent = '';
 
-    const title = SB.el('div', 'stock-title', '\u25b7 Footage');
+    const title = SB.el('div', 'stock-title', '\u25b7 Getty');
     title.title = 'Getty Images footage — watermarked comps, for boarding. ' +
       'Licensing happens in the edit, not here.';
     h.appendChild(title);

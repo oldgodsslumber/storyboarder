@@ -4773,6 +4773,22 @@
         await new Promise(function (r) { setTimeout(r, 360); });
 
         SB.Stock.close();
+        /* The comp is in the file, so the board can be watched: a card
+           holding a clip plays it on the card. This is how a board of comps
+           gets reviewed without opening a window per card. */
+        (function () {
+          const card = document.querySelector('.card[data-shot="' + target.id + '"]');
+          const play = Array.prototype.filter.call(card.querySelectorAll('.frame-tools button'),
+            function (b) { return /play/.test(b.textContent); })[0];
+          t('a card holding a clip offers to play it in place', !!play,
+            card.querySelector('.frame-tools').textContent);
+          t('and a card with no clip does not', (function () {
+            const bare = document.querySelector('.card[data-shot="' + filler[7].id + '"]');
+            return !Array.prototype.some.call(bare.querySelectorAll('.frame-tools button'),
+              function (b) { return /play/.test(b.textContent); });
+          })(), '');
+        })();
+
         t('closing the drawer gives the board back',
           !document.getElementById('stockDrawer') && !document.body.classList.contains('stock-on'), '');
         filler.forEach(function (sh) { SB.Model.deleteShot(P(), sh.id); });

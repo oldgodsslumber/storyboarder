@@ -1544,6 +1544,12 @@ body.resizing{user-select:none;cursor:ns-resize}
 .stock-acts{display:flex;gap:5px;flex-wrap:wrap}
 .stock-legal{font-size:10.5px;color:var(--fg-dim);line-height:1.4;border-top:1px solid var(--line);padding-top:5px}
 
+/* a clip playing on the card itself */
+.shot-vid{
+  position:absolute;inset:0;width:100%;height:100%;object-fit:contain;
+  background:#000;z-index:2;cursor:zoom-out;
+}
+
 /* the badge on a card whose frame is a comp */
 .stock-badge{
   position:absolute;left:4px;top:4px;z-index:3;

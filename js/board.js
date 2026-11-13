@@ -10,6 +10,12 @@
    * cannot say and the licence trail needs. */
   const DND_STOCK = 'application/x-sb-getty';
 
+  /* What is playing on the board right now, by shot id: {video, url}. A board
+   * of Getty comps is reviewed by watching it, so a card plays its clip in
+   * place rather than in a window — and a re-render has to be able to find
+   * the element it created and give back the object URL it took. */
+  const playing = {};
+
   const B = {
     openBox: {},              // shotId:role -> the lane box is open on this card
     scriptEditors: {},        // shotId -> editor api
@@ -554,6 +560,10 @@
   function render() { SB.Focus.keep(renderNow); }
 
   function renderNow() {
+    /* Every playing element is about to be discarded along with its object
+       URL, so playback stops first: otherwise the bytes leak and a "stop"
+       button is left looking for an element that no longer exists. */
+    stopAllInline();
     armAutoScroll();
     const panel = document.getElementById('boardPanel');
     const prevTop = panel ? panel.scrollTop : 0;
@@ -2014,6 +2024,58 @@
     }
   }
 
+  /* Stop a card playing, and give the bytes back. Called by the button, by a
+   * re-render, and by starting another card — one clip at a time, because
+   * twenty muted videos on a board is a board that stops scrolling. */
+  function stopInline(id) {
+    const rec = playing[id];
+    if (!rec) return;
+    delete playing[id];
+    try { rec.video.pause(); } catch (e) { }
+    try { rec.video.remove(); } catch (e) { }
+    if (rec.url) { try { URL.revokeObjectURL(rec.url); } catch (e) { } }
+  }
+
+  function stopAllInline() { Object.keys(playing).forEach(stopInline); }
+
+  /* Play this card's clip ON the card. Muted and looping: this is for reading
+   * a board, not for watching a film, and an unmuted autoplay would be
+   * refused by the browser anyway. */
+  function playInline(sh, btn) {
+    const p = P();
+    if (!sh.video) return;
+    stopAllInline();
+    const host = document.querySelector('.card[data-shot="' + sh.id + '"] .frame');
+    if (!host) return;
+    if (btn) { btn.textContent = '\u2026'; btn.disabled = true; }
+    SB.Renders.file(p, sh.video).then(function (file) {
+      if (!file) throw new Error('the clip is not in this file');
+      const url = URL.createObjectURL(file);
+      const v = document.createElement('video');
+      v.className = 'shot-vid';
+      v.muted = true;
+      v.loop = true;
+      v.autoplay = true;
+      v.playsInline = true;
+      v.src = url;
+      /* Clicking the video is "stop", not "open the Reviewer" — the frame's
+         own click handler would otherwise fire underneath it. */
+      v.addEventListener('click', function (ev) {
+        ev.stopPropagation();
+        stopInline(sh.id);
+        SB.Board.render();
+      });
+      host.appendChild(v);
+      playing[sh.id] = { video: v, url: url };
+      const pr = v.play();
+      if (pr && pr.catch) pr.catch(function () { });
+      if (btn) { btn.textContent = '\u25a0 stop'; btn.disabled = false; }
+    }).catch(function (e) {
+      if (btn) { btn.textContent = '\u25b6 play'; btn.disabled = false; }
+      SB.toast('That clip could not be played: ' + (e.message || e), true);
+    });
+  }
+
   function frame(sh) {
     const f = SB.el('div', 'frame');
     /* The board copy is what this draws, and where there is none the ORIGINAL
@@ -2194,6 +2256,24 @@
         tools.appendChild(rb);
       }
     }
+    /* Watch the clip here, on the card. The ▷ badge above opens the clip
+       window — takes, replace, remove — and this is the other thing somebody
+       wants from a card holding footage: to see it move while reading the
+       board around it. A board of Getty comps is reviewed by watching it. */
+    if (sh.video) {
+      const on = !!playing[sh.id];
+      const pv = SB.el('button', 'mini', on ? '■ stop' : '▶ play');
+      pv.title = on ? 'Stop playing this clip'
+        : 'Play this card’s clip here, on the board' +
+          (SB.Model.isStock(P(), sh) ? ' — the Getty comp, watermark and all' : '');
+      pv.onclick = function (ev) {
+        ev.stopPropagation();
+        if (playing[sh.id]) { stopInline(sh.id); pv.textContent = '▶ play'; }
+        else playInline(sh, pv);
+      };
+      tools.appendChild(pv);
+    }
+
     if (sh.image || sh.render) {
       const rm = SB.el('button', 'mini danger', '✕');
       const nTakes = SB.Model.stillTakeCount(sh);
@@ -2520,7 +2600,12 @@
         /* The comp, as the card's clip. A video/* type is what Clip.attach
            insists on and Getty's media host does not always send one. */
         const file = named(got.clip, 'getty-' + a.id + '.mp4');
-        return SB.Clip.attach(P(), sh, file, made).catch(function (e) {
+        return SB.Clip.attach(P(), sh, file, made).then(function (rec) {
+          /* Getty already told us how long it runs, so the badge says so even
+             on a build where the clip's own metadata could not be read. */
+          if (rec && !rec.dur && a.seconds) { rec.dur = a.seconds; SB.app.changed(true); }
+          return rec;
+        }).catch(function (e) {
           SB.toast('The frame is on the card, but the comp clip could not be kept: ' +
             (e.message || e), true);
           return null;

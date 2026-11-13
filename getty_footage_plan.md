@@ -132,6 +132,10 @@ This is the part the user specified, and it is the right mechanism:
    the `▷` badge with the duration, and the footage is *in the file* — a board you can hand to
    somebody and watch.
 5. **One licence record covers both**, now carrying `kind: 'video'` and `clipLength`.
+6. **The card plays it.** A frame is a still and a comp is not: a `▶ play` button on any card
+   holding a clip runs it in place, muted and looping, one at a time, so a board of comps is
+   reviewed by watching it. The drawer is called **Getty**, not Footage — it is the name of
+   the thing it talks to.
 
 Honest fallbacks, because three steps there can fail independently:
 

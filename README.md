@@ -216,9 +216,9 @@ prints; the clip is the motion made from it.
 - A clip put there by hand carries no provenance, so the Export panel's **only what was made
   in here** filter passes it by. That is the point of the filter.
 
-### Real footage instead: the Footage drawer
+### Real footage instead: the Getty drawer
 
-Not every shot has to be invented. **Footage** in the toolbar opens a drawer along the bottom
+Not every shot has to be invented. **Getty** in the toolbar opens a drawer along the bottom
 of the window, searches Getty Images footage, and you drag a clip straight onto a card — or
 onto empty board space, which makes a new card for it.
 
@@ -228,8 +228,13 @@ the top edge to resize; the height and whether it was open come back next time.
 
 **What lands on a card is the comp and its own first frame.** Not the thumbnail — that is
 about 170px and prints like it. The watermarked comp is 720p or better, so the card draws
-frame one of the actual clip, and the clip itself goes into the `.storyboard` and gets the
-`▷` badge with its length. A board you can hand to somebody and *watch*.
+frame one of the actual clip, and the clip itself goes into the `.storyboard`.
+
+**And the board plays.** A card holding a clip has a **▶ play** button on the frame: the clip
+runs in place, muted and looping, so a board of comps is reviewed by watching it rather than
+by opening a window per card. Click the video to stop it. One plays at a time — twenty muted
+videos is a board that stops scrolling — and the `▷` badge still opens the clip window for
+takes, replacing and removing. A board you can hand to somebody and *watch*.
 
 - **The search is yours.** The drawer does not read the selected card: not its shot type, not
   its description. You find the footage and then drag the shot up onto the board. The only
