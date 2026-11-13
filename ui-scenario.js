@@ -4773,20 +4773,35 @@
         await new Promise(function (r) { setTimeout(r, 360); });
 
         SB.Stock.close();
-        /* The comp is in the file, so the board can be watched: a card
-           holding a clip plays it on the card. This is how a board of comps
-           gets reviewed without opening a window per card. */
+        /* The comp plays through the SAME route a generated clip does: the
+           play badge on the card, opening the clip window. No Getty-only
+           control — a second way to watch a video is a second thing to
+           explain. */
         (function () {
           const card = document.querySelector('.card[data-shot="' + target.id + '"]');
-          const play = Array.prototype.filter.call(card.querySelectorAll('.frame-tools button'),
-            function (b) { return /play/.test(b.textContent); })[0];
-          t('a card holding a clip offers to play it in place', !!play,
+          const badge = card.querySelector('.clip-badge');
+          t('a comp card gets the ordinary clip badge', !!badge,
+            card.querySelector('.frame').className);
+          t('and the badge says it is the comp', /Getty comp/.test(badge.title || ''),
+            badge && badge.title);
+          t('with no second play control beside it',
+            !Array.prototype.some.call(card.querySelectorAll('.frame-tools button'),
+              function (b) { return /play|stop/i.test(b.textContent); }),
             card.querySelector('.frame-tools').textContent);
-          t('and a card with no clip does not', (function () {
-            const bare = document.querySelector('.card[data-shot="' + filler[7].id + '"]');
-            return !Array.prototype.some.call(bare.querySelectorAll('.frame-tools button'),
-              function (b) { return /play/.test(b.textContent); });
-          })(), '');
+          /* and the window it opens is the one generated clips open */
+          badge.click();
+          const stage = document.querySelector('.rev-back, .modal-back');
+          t('clicking it opens the clip window', !!stage, '');
+          const vid = stage && stage.querySelector('video');
+          t('which plays the clip with the usual controls',
+            !!vid && vid.controls && vid.loop, vid ? 'controls=' + vid.controls : 'no video');
+          t('and says what the clip is, without claiming it was generated here',
+            /Getty comp/.test(stage.textContent) && !/Made here/.test(stage.textContent),
+            stage.textContent.slice(0, 160));
+          const close = stage.querySelector('.rev-close, .modal .foot button, button');
+          if (close) close.click();
+          const left = document.querySelector('.rev-back, .modal-back');
+          if (left) left.remove();
         })();
 
         t('closing the drawer gives the board back',

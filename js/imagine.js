@@ -3504,6 +3504,7 @@
   function clipLabel(rec) {
     if (!rec) return '';
     const bits = [];
+    if (rec.made && rec.made.by === 'getty') bits.push('Getty comp');
     if (rec.dur) bits.push(rec.dur + 's');
     if (rec.w) bits.push(rec.w + '×' + rec.h);
     if (rec.bytes) bits.push((rec.bytes / 1048576).toFixed(1) + ' MB');
@@ -3531,6 +3532,18 @@
 
   function describeMade(p, shot, rec) {
     const made = rec && rec.made;
+    /* A Getty comp goes through this window like every other clip — same
+     * badge, same player, same takes — so this is the one place that has to
+     * know the difference, or it would read "Made here by a model" about a
+     * clip nothing here made. */
+    if (made && made.by === 'getty') {
+      const when = made.at ? ' on ' + new Date(made.at).toLocaleDateString() : '';
+      const who = [made.artist, made.collection].filter(Boolean).join(' · ');
+      return 'A Getty comp — asset ' + (made.id || '?') + (who ? ' (' + who + ')' : '') +
+        ', placed' + when + '. Watermarked, licensed for layout for ' +
+        SB.Model.COMP_DAYS + ' days, and never in the cut: the edit licenses the asset. ' +
+        'An export of \u201cwhat was made in here\u201d passes it by.';
+    }
     if (!made) {
       return rec ? 'Added from a file' + (rec.name ? ' (' + rec.name + ')' : '') +
         ' — nothing here generated it, so an export of “what was made in here” passes it by.'

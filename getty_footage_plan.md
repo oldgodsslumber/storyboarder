@@ -132,10 +132,14 @@ This is the part the user specified, and it is the right mechanism:
    the `▷` badge with the duration, and the footage is *in the file* — a board you can hand to
    somebody and watch.
 5. **One licence record covers both**, now carrying `kind: 'video'` and `clipLength`.
-6. **The card plays it.** A frame is a still and a comp is not: a `▶ play` button on any card
-   holding a clip runs it in place, muted and looping, one at a time, so a board of comps is
-   reviewed by watching it. The drawer is called **Getty**, not Footage — it is the name of
-   the thing it talks to.
+6. **It plays exactly like a generated clip**, because it IS the card's clip: the `▷` badge,
+   the clip window, the takes list, the same player. The first cut of this added a separate
+   `▶ play` button on the card for comps, which was the wrong instinct — two ways to watch a
+   video on the same board is a thing somebody has to explain, and the right fix for "I cannot
+   review comps" was to route them through the existing experience rather than to invent a
+   second one beside it. The one place that has to know the difference is `describeMade`,
+   which would otherwise say "Made here by a model" about a clip nothing here made.
+   The drawer is called **Getty**, not Footage — it is the name of the thing it talks to.
 
 Honest fallbacks, because three steps there can fail independently:
 

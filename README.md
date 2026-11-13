@@ -230,11 +230,12 @@ the top edge to resize; the height and whether it was open come back next time.
 about 170px and prints like it. The watermarked comp is 720p or better, so the card draws
 frame one of the actual clip, and the clip itself goes into the `.storyboard`.
 
-**And the board plays.** A card holding a clip has a **▶ play** button on the frame: the clip
-runs in place, muted and looping, so a board of comps is reviewed by watching it rather than
-by opening a window per card. Click the video to stop it. One plays at a time — twenty muted
-videos is a board that stops scrolling — and the `▷` badge still opens the clip window for
-takes, replacing and removing. A board you can hand to somebody and *watch*.
+**And it plays like every other clip on the board.** A comp lands in `shot.video`, so it gets
+the ordinary `▷` badge with its length and opens the ordinary clip window — same gesture, same
+player, same takes list as a clip you generated. There is deliberately no Getty-only play
+control: a second way to watch a video is a second thing to explain. The window names it *a
+Getty comp* with its asset id and artist rather than claiming the board made it. A board you
+can hand to somebody and *watch*.
 
 - **The search is yours.** The drawer does not read the selected card: not its shot type, not
   its description. You find the footage and then drag the shot up onto the board. The only
