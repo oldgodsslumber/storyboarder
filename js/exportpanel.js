@@ -303,8 +303,13 @@
     const stock = SB.Model.stockShots(p).filter(function (st) {
       return list.some(function (r) { return r.shot.id === st.shot.id; });
     });
-    if (stock.length) {
-      const text = gettyCsv(p, stock);
+    /* The shot list is what an editor licenses, so it is the CHOSEN frames:
+       a comp sitting in a banked take is in the file but is not on the board,
+       and billing the account for it would be a mistake this list caused.
+       The manifest reports both, flagged. */
+    const onBoard = stock.filter(function (st) { return st.chosen; });
+    if (onBoard.length) {
+      const text = gettyCsv(p, onBoard);
       items.push({
         name: (SB.Renders.slug(p.name) || 'board') + '-getty.csv', kind: 'list',
         text: text, bytes: textBytes(text)
@@ -313,7 +318,7 @@
     /* A manifest of nothing is not an export. With no files to describe, the
        panel says "nothing selected" instead of offering one empty JSON. */
     if (o.manifest && items.length) {
-      const text = manifest(p, items);
+      const text = manifest(p, items, stock);
       items.push({
         name: (SB.Renders.slug(p.name) || 'board') + '-manifest.json', kind: 'list',
         text: text, bytes: textBytes(text)
@@ -534,17 +539,23 @@
   /* What made each file. This is the half of a generated export that cannot be
    * rebuilt afterwards — the pictures do not say which model produced them,
    * and the prompt on the card moves on. */
-  function manifest(p, items) {
+  /* `stock` is the scope's comps, passed in rather than re-read: a one-scene
+   * export used to hand over a manifest listing every comp on the board,
+   * including cards it was not exporting. Optional, so a caller that only
+   * wants the file rows (and the tests) still works. */
+  function manifest(p, items, stock) {
     const out = {
       board: p.name || 'Untitled project',
       version: p.versionName || '',
       /* The licence trail, once, at the top — rather than only scattered
          through the file rows, where a comp placed on a card whose picture was
          not exported would not appear at all. */
-      stock: SB.Model.stockShots(p).map(function (st) {
+      stock: (stock || SB.Model.stockShots(p)).map(function (st) {
         return {
           shot: st.code, id: st.rec.id, title: st.rec.title || '', artist: st.rec.artist || '',
           collection: st.rec.collection || '', license: st.rec.license || '',
+          /* false means it is a banked take: in the file, not on the board */
+          onTheBoard: !!st.chosen,
           placed: st.rec.at ? new Date(st.rec.at).toISOString() : null,
           daysOld: SB.Model.compAgeDays(st.rec),
           compLapsed: SB.Model.compLapsed(st.rec)

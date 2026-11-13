@@ -1513,7 +1513,11 @@
       return wrap;
     }
     if (role === 'video') {
-      const framed = !!(sh.render || sh.image);
+      /* What the model will ACTUALLY be sent. A Getty comp is a frame on the
+         card and not one of these, and this strip used to say "the only
+         picture the video call is sent" about a picture the push beside it
+         was refusing to send. */
+      const framed = !!SB.Model.modelFrame(P(), sh);
       const head = SB.el('div', 'pt-fe pt-frame' + (framed ? '' : ' empty'));
       head.appendChild(SB.el('span', 'feed-n', framed ? '1' : '\u2013'));
       const th = SB.el('span', 'feed-thumb' + (framed ? '' : ' none'));

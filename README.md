@@ -251,8 +251,17 @@ never for final or public material. The app is built around that rather than aro
   reference on another card, not in a MiniMax package. The clip push goes dark and says
   *"this card's frame is a Getty comp"*. The still lane is deliberately left open — rendering
   a real frame over a stand-in is exactly how a comp leaves the board.
+- **A comp is never fed as a *subject's* reference either.** A Getty picture in a subject's
+  reference box is shown on screen and on paper, and held back from every model — the feed
+  strip says which picture it held back and why, and the subject is described in words
+  instead.
 - The licence follows the *pixels*, not the card: the same comp dropped in again from
-  anywhere is still that comp, so it cannot be laundered into an ordinary frame.
+  anywhere is still that comp, so it cannot be laundered into an ordinary frame. A comp
+  dragged straight out of a gettyimages.com tab is recognised from its URL and marked, even
+  though nothing came with it but the picture.
+- Replacing a comp with a real render keeps the comp as a *take*, so it is still in the file.
+  Settings says so, and the Getty shot list deliberately does not — that list is what the
+  edit licenses, and it is only what is on the board.
 - Nothing here licenses anything or spends money. The export writes a
   `<board>-getty.csv` of every asset id with the card it sits on, and the buying happens in
   the edit — the Premiere panel at `d:\claudecode\gettyforpremiere` owns that, and owns the

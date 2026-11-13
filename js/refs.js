@@ -182,6 +182,46 @@
     return out;
   }
 
+  /* One subject in the feed, whether it got there by an @ mark or by being
+   * cast on the card.
+   *
+   * It exists because of what the two copies of this used to have in common:
+   * both handed over every picture a subject holds, and a Getty comp dropped
+   * into a subject's reference box is one of those pictures. The licence that
+   * keeps a comp off a CARD'S frame has to keep it out of here too — this is
+   * the same handover, one level down, and it reaches the same models. A comp
+   * among a subject's references is shown to people and never sent: the other
+   * photographs still go, and the strip says which one was held back.
+   */
+  function subjectEntry(p, subject, id, label, mentioned) {
+    const all = SB.Personas.imagesOf(subject);
+    const imgs = [], comps = [];
+    all.forEach(function (x) {
+      const st = SB.Model.stockFor(p, x) || SB.Model.stockFor(p, x.render);
+      (st ? comps : imgs).push(st ? Object.assign({ stock: st }, x) : x);
+    });
+    const held = comps.length
+      ? comps.length + ' of their reference pictures ' + (comps.length === 1 ? 'is' : 'are') +
+        ' a Getty comp (' + comps.map(function (c) { return c.stock.id; }).join(', ') +
+        ') — shown here, never sent to a model'
+      : '';
+    return {
+      kind: 'subject', id: id, label: label, mentioned: !!mentioned,
+      subject: subject, images: imgs,
+      renders: imgs.map(function (x) { return x.render || null; }),
+      comps: comps,
+      why: imgs.length
+        ? (held || (mentioned ? null : 'cast on this card but not mentioned in the description'))
+        : (held
+          ? 'their only reference ' + (comps.length === 1 ? 'picture is' : 'pictures are') +
+            ' a Getty comp (' + comps.map(function (c) { return c.stock.id; }).join(', ') +
+            ') — shown here, never sent, so they will be described in full instead'
+          : (mentioned
+            ? 'no reference image yet — it will be described in full instead'
+            : 'cast on this card but not mentioned in the description'))
+    };
+  }
+
   function feed(p, shot, role) {
     const out = [];
     const seen = {};
@@ -249,13 +289,8 @@
         });
         return;
       }
-      const imgs = SB.Personas.imagesOf(m.target.subject);
-      out.push({
-        kind: 'subject', id: m.id, label: m.target.label, mentioned: true,
-        subject: m.target.subject, images: imgs,
-        renders: imgs.map(function (x) { return x.render || null; }),
-        why: imgs.length ? null : 'no reference image yet — it will be described in full instead'
-      });
+      const sub = subjectEntry(p, m.target.subject, m.id, m.target.label, true);
+      out.push(sub);
     });
 
     /* Cast, but nobody said to show it — so it joins every lane, because
@@ -281,13 +316,7 @@
       if (seen[per.id]) return;
       if (elsewhere[per.id]) return;
       seen[per.id] = 1;
-      const imgs = SB.Personas.imagesOf(per);
-      out.push({
-        kind: 'subject', id: per.id, label: per.name || 'unnamed', mentioned: false,
-        subject: per, images: imgs,
-        renders: imgs.map(function (x) { return x.render || null; }),
-        why: 'cast on this card but not mentioned in the description'
-      });
+      out.push(subjectEntry(p, per, per.id, per.name || 'unnamed', false));
     });
 
     /* image numbers, assigned once across the whole feed — this is the order

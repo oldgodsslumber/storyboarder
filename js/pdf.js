@@ -173,6 +173,11 @@
           img: sh.image ? SB.Blobs.src(p, sh.image)
             : blocked ? SB.Blobs.src(p, sh.pose.image) : null,
           blocked: blocked,
+          /* Licensed stock. The printed board is the thing a client actually
+             holds, so it is the LAST place a comp should pass for a frame
+             somebody shot: the watermark says it is a comp and this says
+             which comp, beside the picture. */
+          stock: SB.Model.stockFor(p, sh),
           script: SB.Doc.renderHTML(w.doc, w.from, w.to, null),
           /* every box: a card written only in a lane box printed as
              "(no description yet)" on the deliverable */
@@ -544,6 +549,8 @@
       '<div class="frame">' +
       (c.img ? '<img src="' + c.img + '">' : '<div class="empty">no frame</div>') +
       (c.img && c.blocked ? '<span class="blk">blocking</span>' : '') +
+      (c.img && c.stock
+        ? '<span class="stk">Getty ' + SB.esc(c.stock.id) + ' · comp</span>' : '') +
       '</div>' +
       '<div class="side">' + meta + text + '</div>' +
       '</figure>';
@@ -593,6 +600,8 @@
       'display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative}',
       '.blk{position:absolute;left:3px;bottom:3px;padding:1px 4px;border-radius:2px;' +
       'background:rgba(255,255,255,.85);color:#555;font-size:7px;letter-spacing:.4px;text-transform:uppercase}',
+      '.stk{position:absolute;right:3px;top:3px;padding:1px 4px;border-radius:2px;' +
+      'background:rgba(255,255,255,.85);color:#555;font-size:7px;letter-spacing:.4px}',
       pr.frame === 'fill'
         ? '.cell .frame{flex:1 1 auto;min-height:0}'
         : '.cell .frame{flex:0 0 ' + pr.frame + ';height:' + pr.frame + '}',

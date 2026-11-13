@@ -1068,6 +1068,7 @@
         }
         return;
       }
+      const fromGetty = stockUrlFromTransfer(ev.dataTransfer);
       SB.imagesFromTransfer(ev.dataTransfer).then(function (imgs) {
         if (!imgs.length) { SB.toast('No image found in that drop', true); return; }
         /* One at a time: the cards then land in the order they were picked,
@@ -1078,7 +1079,7 @@
             if (!sh) return null;
             SB.app.selectedShotId = sh.id;
             SB.app.changed(true);          // the card shows at once, then fills in
-            return setImage(sh, src);
+            return setDroppedImage(sh, src, fromGetty);
           });
         }, Promise.resolve()).then(function () {
           if (imgs.length > 1) SB.toast('Added ' + imgs.length + ' shots');
@@ -2153,6 +2154,13 @@
     const tools = SB.el('div', 'frame-tools');
     if (SB.app.commentMode && sh.image) {
       const dr = SB.el('button', 'mini', 'draw');
+      /* Ink is a separate transparent layer and never touches the picture
+         underneath — but it can still be drawn ACROSS a comp's watermark,
+         which the licence does not allow, so the card says so here. */
+      if (SB.Model.isStock(P(), sh)) {
+        dr.title = 'Review ink on a Getty comp — keep it clear of the watermark, which must ' +
+          'stay visible. The comp itself is never altered.';
+      }
       dr.onclick = function (ev) { ev.stopPropagation(); SB.Comments.draw(sh); };
       tools.appendChild(dr);
       if (sh.annotation) {
@@ -2254,8 +2262,9 @@
          carrying both is two things for the same card, and taking only the
          clip threw the picture away in silence. */
       const clips = SB.videosFromTransfer(ev.dataTransfer);
+      const fromGetty = stockUrlFromTransfer(ev.dataTransfer);
       SB.imageFromTransfer(ev.dataTransfer).then(function (src) {
-        if (src) setImage(sh, src);
+        if (src) setDroppedImage(sh, src, fromGetty);
         if (clips.length) { clipDrop(sh, clips); return; }
         if (!src) SB.toast('No image or clip found in that drop', true);
       });
@@ -2385,15 +2394,49 @@
     });
   }
 
-  /* The asset out of a drop, or null. Anything unreadable is null rather than
-     a half-asset: the plain-URL path behind it still places the picture, so a
-     malformed payload loses the licence trail and not the drop. */
+  /* The asset out of a drop, or null. A payload that will not parse falls
+     through to the URL path below, which now recognises a Getty picture on
+     its own — so a malformed payload loses the artist and the title, and not
+     the licence. */
   function stockFromTransfer(dt) {
     if (!dt || !dt.types || dt.types.indexOf(DND_STOCK) < 0) return null;
     try {
       const a = JSON.parse(dt.getData(DND_STOCK) || 'null');
       return (a && a.id && (a.comp || a.preview || a.thumb)) ? a : null;
     } catch (e) { return null; }
+  }
+
+  /* A Getty picture dropped as a bare URL — dragged straight out of a
+     gettyimages.com tab, or out of our own drawer after a payload we could
+     not read. The id is in the URL, so the picture does NOT land as an
+     anonymous frame that a model may be handed. What we cannot know (artist,
+     collection, title) stays empty rather than invented. */
+  function stockUrlFromTransfer(dt) {
+    if (!dt || !dt.getData || !SB.Getty) return null;
+    let u = '';
+    try { u = dt.getData('text/uri-list') || dt.getData('text/plain') || ''; } catch (e) { u = ''; }
+    if (!u) {
+      try {
+        const html = dt.getData('text/html') || '';
+        const m = /<img[^>]+src=["']([^"']+)["']/i.exec(html);
+        if (m) u = m[1];
+      } catch (e) { }
+    }
+    u = String(u).trim().split(/\s+/)[0];
+    const rec = u ? SB.Getty.recordFromUrl(u) : null;
+    return rec ? { url: u, rec: rec } : null;
+  }
+
+  /* Place a dropped picture, recording the licence when the drop was a Getty
+     URL. One helper, because the card frame and the scene background both do
+     exactly this and getting it right in only one of them is how a comp ends
+     up unmarked. */
+  function setDroppedImage(sh, src, stockUrl) {
+    const made = stockUrl ? {
+      by: 'getty', id: stockUrl.rec.id, artist: '', collection: '', title: '',
+      license: '', at: Date.now(), fromUrl: true, stock: stockUrl.rec
+    } : null;
+    return setImage(sh, src, made);
   }
 
   /* Put a comp on a card. The bytes come from Getty's media host, go into the
@@ -2448,6 +2491,13 @@
            by now a swap may have moved it to another card, and a second
            landing may have banked it as a take. Both were addresses this
            used to get wrong. */
+        /* The licence goes on the ORIGINAL's reference as well as the proxy's.
+           The register is keyed by reference, and a board can hold an original
+           whose proxy has gone — in that state the card still draws the comp
+           and `stockFor` had nothing to find. */
+        if (made && made.by === 'getty' && made.stock) {
+          SB.Model.markStock(P(), rec, made.stock);
+        }
         if (!SB.Model.placeRender(P(), proxy.ref, rec)) return;
         SB.Store.touch();
         const holder = SB.Model.shotHolding(P(), proxy.ref);

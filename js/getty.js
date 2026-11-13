@@ -236,8 +236,12 @@
     const q = searchParams(f, page, pageSize);
     if (src && src.assetId) q.asset_id = src.assetId;
     if (src && src.imageUrl) q.image_url = src.imageUrl;
-    delete q.compositions;             // the picture IS the composition
-    delete q.people;
+    /* The picture IS the composition, and it is the cast too — both filters
+     * come off. The names here are the WIRE names, which is the whole reason
+     * this needs saying: `people` is called number_of_people by the time it
+     * reaches this object, and deleting the friendly name deleted nothing. */
+    delete q.compositions;
+    delete q.number_of_people;
     return request('GET', '/v3/search/images/creative/by-image', { query: q }).then(shapeResults);
   }
 
@@ -267,7 +271,11 @@
   /* One shape for every search: the drawer never learns which call it came
    * from. */
   function shapeResults(r) {
-    const list = (r && (r.images || r.result || [])) || [];
+    /* Anything that is not a list of assets is no assets. An `images` that
+     * came back as an object or a string used to reach .map and throw, and
+     * the drawer showed the TypeError where "nothing found" belonged. */
+    const raw = r && (r.images || r.result);
+    const list = Array.isArray(raw) ? raw : [];
     return {
       total: (r && (r.result_count || 0)) | 0,
       images: list.map(asset).filter(Boolean),
@@ -332,7 +340,34 @@
     const u = (a && a.allowed_use) || {};
     const s = [u.usage_restrictions, u.how_can_i_use_it_collection_text, u.release_info]
       .filter(Boolean).join(' ');
-    return /editorial use only/i.test(Array.isArray(s) ? s.join(' ') : String(s));
+    return /editorial use only/i.test(s);
+  }
+
+  /* The asset id out of a Getty media URL, or ''.
+   *
+   * This exists for the drop nobody planned: a comp dragged straight out of a
+   * gettyimages.com tab arrives as a bare URL with no asset beside it, lands
+   * on a card like any dropped picture — and would be a comp with no licence
+   * record, which is to say a comp a model may be handed. The id is right
+   * there in the URL, so it is read rather than lost. Both URL shapes Getty
+   * has used are matched; anything else is not a Getty picture. */
+  function assetIdFromUrl(url) {
+    const s = String(url || '');
+    if (!/(^|\.)gettyimages\.com\//i.test(s) && !/media\.gettyimages\.com/i.test(s)) return '';
+    const m = /\/id\/(\d{4,})\//.exec(s) || /-id(\d{4,})\b/.exec(s) ||
+      /\/detail\/[^?#]*?\/(\d{4,})\b/.exec(s);
+    return m ? m[1] : '';
+  }
+
+  /* The record for a comp we know only by its URL. Honest about what is
+   * missing: an id and where it came from, and no artist invented. */
+  function recordFromUrl(url) {
+    const id = assetIdFromUrl(url);
+    if (!id) return null;
+    return {
+      id: id, title: '', artist: '', collection: '', family: '', license: '',
+      link: 'https://www.gettyimages.com/detail/' + id, at: deps.now(), fromUrl: true
+    };
   }
 
   /* What goes in the project file when a comp is placed. Small on purpose: it
@@ -472,6 +507,7 @@
     uploadSearchImage: uploadSearchImage, fetchComp: fetchComp,
     /* shaping */
     asset: asset, record: record, thumbUrl: thumbUrl, previewUrl: previewUrl, compUrl: compUrl,
+    assetIdFromUrl: assetIdFromUrl, recordFromUrl: recordFromUrl,
     /* a card as a search */
     shotFilters: shotFilters, typeFilters: typeFilters, phraseFor: phraseFor,
     chips: chips, word: word, orientationFor: orientationFor,

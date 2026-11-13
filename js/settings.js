@@ -41,9 +41,12 @@
     const box = SB.el('div', 'pp-block');
     if (!rows.length) return box;
     const lapsed = rows.filter(function (r) { return SB.Model.compLapsed(r.rec); }).length;
-    box.appendChild(SB.el('div', 't', 'licensed stock on this board'));
+    const kept = rows.filter(function (r) { return !r.chosen; }).length;
+    box.appendChild(SB.el('div', 't', 'licensed stock in this file'));
     box.appendChild(SB.el('div', 'pp-note',
-      rows.length + ' card' + (rows.length === 1 ? '' : 's') + ' hold a Getty comp. ' +
+      rows.length + ' comp' + (rows.length === 1 ? '' : 's') +
+      (kept ? ' (' + kept + ' of them in a card’s other takes rather than on the board)' : '') +
+      '. ' +
       'A comp is a stand-in licensed for layout for ' + SB.Model.COMP_DAYS + ' days and never ' +
       'for final or public material' +
       (lapsed ? ' — and ' + lapsed + ' of these ' + (lapsed === 1 ? 'has' : 'have') +
@@ -51,10 +54,12 @@
     rows.forEach(function (r) {
       const days = SB.Model.compAgeDays(r.rec);
       const el = SB.el('div', 'st-row' + (SB.Model.compLapsed(r.rec) ? ' lapsed' : ''));
-      const src = r.shot.image ? SB.Blobs.src(P(), r.shot.image) : '';
+      const shown = r.chosen ? r.shot.image : (r.take && r.take.image);
+      const src = shown ? SB.Blobs.src(P(), shown) : '';
       if (src) { const im = document.createElement('img'); im.src = src; el.appendChild(im); }
       const who = SB.el('div', 'spacer');
-      who.appendChild(SB.el('div', null, r.code + ' · ' + (r.rec.title || r.rec.id)));
+      who.appendChild(SB.el('div', null, r.code + (r.chosen ? '' : ' · a take') +
+        ' · ' + (r.rec.title || r.rec.id)));
       who.appendChild(SB.el('div', 'st-id',
         r.rec.id + (r.rec.artist ? ' · ' + r.rec.artist : '') +
         (r.rec.collection ? ' · ' + r.rec.collection : '')));

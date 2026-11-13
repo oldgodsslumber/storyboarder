@@ -19,6 +19,34 @@ Nothing here has run against a real Getty key. The three questions in the phase-
 are still open, and `fetchComp` reports the one that matters as itself rather than as a
 broken picture.
 
+**A review pass the same day found eight real bugs, all fixed and all now tested.** Four are
+worth reading as a warning about this feature's shape, because three of the four *looked like
+they worked*:
+
+- **"Match this frame" uploaded the user's frame to Getty and threw the answer away.** `run(1)`
+  cleared the uploaded URL two lines above the call that reads it, so it fell through to a
+  keyword search with an empty phrase — and filled the strip, so it looked right. The user had
+  consented to a client picture leaving the machine for nothing. Keyword search and by-image
+  search are now separate entry points (`search()` vs `run()`), because `run()` cannot be the
+  place that forgets which search it is.
+- **A comp in a *subject's* reference box was fed to models.** §6 put the licence gate on a
+  card's frame; a subject's reference picture is the same handover one level down and reaches
+  the same models. The two copies of that code in `refs.js` are now one `subjectEntry()`, which
+  is also how one of them came to have a check the other did not.
+- **A comp dropped as a bare URL landed with no licence record** — the "drag it out of a
+  gettyimages.com tab" route this file advertises — and was therefore feedable. The asset id is
+  in the URL, so `assetIdFromUrl` reads it and the drop is marked.
+- **Placing the same asset on a second card restarted the first card's 30-day clock.** One row
+  per picture, restamped on every placement; `markStock` now keeps the first `at`.
+
+The rest: `shapeResults` threw on a malformed payload; `byImage` stripped `compositions` but
+not `number_of_people` (it deleted the friendly name, not the wire name); the PDF printed no
+comp marker although §6.1 promised one; the manifest's `stock` array ignored the export scope;
+a comp living only in a banked take was invisible to every count. Also fixed, from the same
+pass: the Create panel's video strip called a comp "the only picture the video call is sent"
+while the push button beside it refused to send it, and `modelFrame` fell open on a board
+holding an original whose proxy had gone (`stockFor` now also believes a getty `made`).
+
 The sibling project is `d:\claudecode\gettyforpremiere` — a UXP panel that already does
 search → comp → batch licensing → download → relink inside Premiere. **That panel is where
 money gets spent and this one is not**, which is the whole architecture (§2). Its

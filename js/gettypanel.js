@@ -113,6 +113,9 @@
     S.el.remove();
     S.el = null;
     document.body.classList.remove('stock-on');
+    /* the edge-scroll guard: a drag that ended with the drawer closing would
+       otherwise leave it armed for every later drag in the app */
+    document.body.classList.remove('stock-dragging');
     const btn = document.getElementById('btnStock');
     if (btn) btn.classList.remove('on');
     lsSet(K_OPEN, '');
@@ -155,7 +158,10 @@
 
   function shot() {
     const id = SB.app.selectedShotId;
-    if (!id) return null;
+    /* restore() runs inside boot(), before the first project exists — and a
+       drawer reopened from localStorage must not be the thing that throws
+       during start-up. */
+    if (!id || !P()) return null;
     const f = SB.Model.findShot(P(), id);
     return f || null;
   }
@@ -209,14 +215,14 @@
     box.value = S.phrase;
     box.addEventListener('input', function () { S.phrase = box.value; S.typed = true; });
     box.addEventListener('keydown', function (ev) {
-      if (ev.key === 'Enter') { ev.preventDefault(); run(1); }
+      if (ev.key === 'Enter') { ev.preventDefault(); search(); }
       ev.stopPropagation();        // the board's own shortcuts are not for this box
     });
     S.phraseEl = box;
     h.appendChild(box);
 
     const go = SB.el('button', 'mini primary', 'Search');
-    go.onclick = function () { run(1); };
+    go.onclick = search;
     h.appendChild(go);
 
     const re = SB.el('button', 'mini', '↺ from this card');
@@ -296,6 +302,16 @@
 
   /* ---------------- searching ---------------- */
 
+  /* A keyword search: the phrase and the chips, and NOT by-image.
+   *
+   * The two are separate entry points because run() cannot be the place that
+   * forgets the uploaded frame. It used to clear S.byImage on page 1 — two
+   * lines above the ternary that reads it — so "match this frame" uploaded
+   * the user's picture to Getty, threw the answer away, and ran an ordinary
+   * keyword search with an empty phrase. It filled the strip, so it looked
+   * like it had worked. */
+  function search() { S.byImage = null; run(1); }
+
   function run(page) {
     if (!SB.Getty) return;
     if (!SB.Getty.configured()) {
@@ -306,7 +322,7 @@
     }
     const f = Object.assign({}, S.filters || {}, { phrase: S.phrase });
     S.busy = true; S.error = '';
-    if (page === 1) { S.images = []; S.chosen = null; S.byImage = null; }
+    if (page === 1) { S.images = []; S.chosen = null; }
     paintStatus();
     const want = ++S.seq;
     const call = S.byImage
@@ -373,15 +389,19 @@
       S.askedUpload = true;
     }
     S.busy = true; S.error = ''; paintStatus();
+    /* The upload holds a ticket of its own: a keyword search started while
+       the bytes are going up wins, and this must not then overwrite the strip
+       with results for a frame nobody is waiting for any more. run() claims
+       its own ticket after this one — no arithmetic on S.seq. */
     const want = ++S.seq;
     frameBlob(p, f.shot).then(function (blob) {
       if (!blob) throw new Error('That card’s picture could not be read back out of the file.');
       return SB.Getty.uploadSearchImage(f.code.replace(/\W+/g, '') + '.jpg', blob);
     }).then(function (url) {
+      if (want !== S.seq) return;                  // a later search took over
       S.byImage = url;
       S.phrase = ''; S.typed = true;
       if (S.phraseEl) S.phraseEl.value = '';
-      S.seq = want - 1;                            // let run() claim the next ticket
       run(1);
     }).catch(function (e) {
       if (want !== S.seq) return;

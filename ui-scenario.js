@@ -4592,6 +4592,51 @@
           JSON.stringify(pl.items.map(function (x) { return x.name; }).slice(0, 8)));
         t('and that list carries the asset id', !!gettyFile && /1437816897/.test(gettyFile.text), '');
 
+        /* "match this frame" uploaded the card's picture to Getty and then
+           threw the answer away: run(1) cleared the uploaded URL two lines
+           before the call that reads it, so it searched by keyword with an
+           empty phrase — and filled the strip, so it looked like it worked.
+           The user had consented to a client frame leaving the machine for
+           nothing, which is why this is asserted on the calls and not on the
+           tiles. */
+        (function () {
+          const real = filler[3];
+          real.image = SB.Blobs.image(P(), mine, 4, 3);
+          real.render = { ref: SB.Blobs.put(P(), mine), w: 4, h: 3, serial: 77, ext: 'png' };
+          app.changed(true);
+          SB.Board.select(real.id);
+          SB.Stock.sync();
+          let uploads = 0, byImage = 0, keyword = 0;
+          SB.Getty.uploadSearchImage = function () {
+            uploads++;
+            return Promise.resolve('https://uploads.gettyimages.com/abc.jpg');
+          };
+          SB.Getty.byImage = function (src) {
+            byImage++;
+            t('the by-image search is pointed at the uploaded frame',
+              !!src && src.imageUrl === 'https://uploads.gettyimages.com/abc.jpg',
+              JSON.stringify(src));
+            return Promise.resolve({ total: 1, images: fakeAssets.slice(0, 1), related: [] });
+          };
+          const keywordDoor = SB.Getty.searchImages;
+          SB.Getty.searchImages = function () { keyword++; return keywordDoor.apply(null, arguments); };
+          const confirmWas = window.confirm;
+          window.confirm = function () { return true; };
+          const mb = Array.prototype.filter.call(drawer.querySelectorAll('.stock-head button'),
+            function (b) { return /match this frame/.test(b.textContent); })[0];
+          t('the match button is live on a card with a real frame', !!mb && !mb.disabled,
+            mb ? 'disabled=' + mb.disabled : 'no button');
+          mb.click();
+          return new Promise(function (r) { setTimeout(r, 300); }).then(function () {
+            window.confirm = confirmWas;
+            t('matching a frame uploads it once', uploads === 1, uploads);
+            t('and searches BY that picture', byImage === 1, byImage);
+            t('and does not fall back to a keyword search', keyword === 0, keyword);
+            SB.Getty.searchImages = keywordDoor;
+          });
+        })();
+        await new Promise(function (r) { setTimeout(r, 360); });
+
         SB.Stock.close();
         t('closing the drawer gives the board back',
           !document.getElementById('stockDrawer') && !document.body.classList.contains('stock-on'), '');

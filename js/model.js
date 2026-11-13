@@ -597,19 +597,51 @@
   function markStock(p, img, rec) {
     const ref = refOf(img);
     if (!p || !ref || !rec) return null;
-    stockMap(p)[ref] = rec;
+    const m = stockMap(p);
+    const had = m[ref];
+    /* The 30-day clock runs from when this comp was first taken, and one row
+     * serves every card holding it — so putting the same asset on a second
+     * card must not restamp it. The old behaviour wiped a lapse warning off
+     * card A because somebody dropped the same picture on card C.
+     *
+     * A row for a DIFFERENT asset under the same reference would mean two
+     * assets with byte-identical comps; the newer record wins, because the
+     * thing it is describing is the thing that was just placed. */
+    if (had && had.id === rec.id && had.at) {
+      m[ref] = Object.assign({}, rec, { at: had.at });
+      return m[ref];
+    }
+    m[ref] = rec;
     return rec;
   }
 
   /* The record for one picture, or null. Takes a shot, an image/render
    * record, or a bare reference — every caller has one of those. */
+  /* Read-only: a lookup on a repaint must not write to the project, which
+   * `stockMap` would. */
   function stockFor(p, x) {
     if (!p || !x) return null;
-    const m = stockMap(p);
+    const m = p.stock || {};
     if (typeof x === 'string') return m[x] || null;
-    if (x.ref) return m[x.ref] || null;
+    if (x.ref) return m[x.ref] || madeStock(x) || null;
     /* a shot: the chosen frame decides, proxy first, then the original */
-    return m[refOf(x.image)] || m[refOf(x.render)] || null;
+    return m[refOf(x.image)] || m[refOf(x.render)] ||
+      madeStock(x.render) || madeStock(x.image) || null;
+  }
+
+  /* The record a picture carries in its own provenance. The register is the
+   * authority, but a board can hold an original whose proxy is gone, or
+   * arrive from a future version of this app, and in those states the answer
+   * to "may a model have this" must still be no. Defence in depth: a getty
+   * `made` is enough on its own. */
+  function madeStock(rec) {
+    const made = rec && rec.made;
+    if (!made || made.by !== 'getty') return null;
+    return made.stock || {
+      id: made.id || '', title: made.title || '', artist: made.artist || '',
+      collection: made.collection || '', family: '', license: made.license || '',
+      link: '', at: made.at || 0
+    };
   }
 
   function isStock(p, shot) { return !!stockFor(p, shot); }
@@ -633,12 +665,24 @@
   function stockShots(p) {
     const out = [];
     eachShot(p, function (sh, sc, i) {
-      const rec = stockFor(p, sh);
-      if (!rec) return;
       const f = findShot(p, sh.id);
-      out.push({ shot: sh, scene: sc, rec: rec, code: f ? f.code : '' });
+      const code = f ? f.code : '';
+      const rec = stockFor(p, sh);
+      if (rec) out.push({ shot: sh, scene: sc, rec: rec, code: code, chosen: true });
+      /* The takes too. A comp replaced by a real render is still IN the file —
+         the bytes, the watermark and the licence — and it used to vanish from
+         every count the moment it stopped being the chosen frame, which is
+         exactly the comp somebody would forget about. Flagged, so the shot
+         list that goes to the edit can still be only what is on the board. */
+      (sh.imageAlts || []).forEach(function (tk) {
+        if (!tk) return;
+        const r = stockFor(p, tk.image) || stockFor(p, tk.render);
+        if (r) out.push({ shot: sh, scene: sc, rec: r, code: code, chosen: false, take: tk });
+      });
     });
-    return out.sort(function (a, b) { return (b.rec.at || 0) - (a.rec.at || 0); });
+    return out.sort(function (a, b) {
+      return (b.chosen ? 1 : 0) - (a.chosen ? 1 : 0) || (b.rec.at || 0) - (a.rec.at || 0);
+    });
   }
 
   /* A comp is licensed for 30 days. Past that the board is still a board, but
