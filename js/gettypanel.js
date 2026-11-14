@@ -47,7 +47,7 @@
     statusEl: null, matchEl: null,
     /* the search as it stands. `filters` is only ever what a person set. */
     filters: null, phrase: '', family: 'creative',
-    page: 1, total: 0, images: [], more: false,
+    page: 1, total: 0, images: [], more: false, used: null,
     busy: false, error: '', searched: false,
     /* what the judging pane is playing, and what Use-on would place */
     chosen: null,
@@ -306,6 +306,16 @@
       return;
     }
     c.appendChild(SB.el('span', 'stock-chip-lbl', 'filtered to'));
+    /* The by-image endpoint takes a short parameter list of its own, and most
+       of these are not on it. Said out loud rather than letting the panel
+       promise a frame-rate filter that search never sent. */
+    const ignored = (S.byImage && SB.Getty.byImageIgnores)
+      ? SB.Getty.byImageIgnores(S.filters || {}).map(function (x) { return x.label; })
+      : [];
+    if (ignored.length) {
+      c.appendChild(SB.el('span', 'stock-chip-none',
+        '· a match-this-frame search cannot filter by ' + ignored.join(', ') + ' —'));
+    }
     chips.forEach(function (ch) {
       const b = SB.el('button', 'stock-chip', ch.label + ' ✕');
       b.title = 'Drop this filter';
@@ -339,7 +349,22 @@
    * the user's picture to Getty, threw the answer away, and ran an ordinary
    * keyword search with an empty phrase. It filled the strip, so it looked
    * like it had worked. */
-  function search() { S.byImage = null; run(1); }
+  function search() {
+    /* Getty says so out loud: "Search requests without a phrase parameter are
+       not supported and may not always work." A filter-only search therefore
+       comes back empty in a way that reads as the filters' fault. */
+    if (!String(S.phrase || '').trim()) {
+      S.byImage = null;
+      S.searched = true;
+      S.images = [];
+      S.error = 'Getty needs something to search for - type what the shot shows. ' +
+        'The filters narrow a search; they cannot be one.';
+      drawStrip();
+      return;
+    }
+    S.byImage = null;
+    run(1);
+  }
 
   function run(page) {
     if (!SB.Getty) return;
@@ -349,7 +374,13 @@
       drawStrip();
       return;
     }
-    const f = Object.assign({}, S.filters || {}, { phrase: S.phrase });
+    /* Page 1 takes the filters as they are NOW and remembers them; later
+       pages use that snapshot. Reading S.filters live meant that picking a
+       filter and pressing "more" appended page 2 of a DIFFERENT search to
+       page 1 of this one - duplicated rows, skipped rows, and chips
+       describing only half of what was on screen. */
+    if (page === 1) S.used = Object.assign({}, S.filters || {}, { phrase: S.phrase });
+    const f = S.used || Object.assign({}, S.filters || {}, { phrase: S.phrase });
     S.busy = true; S.error = ''; S.searched = true;
     if (page === 1) { S.images = []; S.chosen = null; }
     paintStatus();
@@ -363,7 +394,10 @@
       S.page = page;
       S.total = r.total;
       S.images = page === 1 ? r.images : S.images.concat(r.images);
-      S.more = r.images.length >= 60 && S.images.length < r.total;
+      /* what Getty SENT, not what survived shaping: one asset without an id
+         used to end paging at result 59 */
+      S.more = (r.raw === undefined ? r.images.length : r.raw) >= 60 &&
+        S.images.length < r.total;
       if (!S.chosen && S.images.length) S.chosen = S.images[0];
       drawStrip(); drawJudge(); paintStatus();
     }).catch(function (e) {
@@ -410,7 +444,7 @@
     if (!frame) return;
     if (!S.askedUpload) {
       const ok = window.confirm(
-        'Find Getty photographs that look like this frame?\n\n' +
+        'Find Getty footage that looks like this frame?\n\n' +
         'This uploads the picture on ' + f.code + ' to Getty’s search service. It is a ' +
         'client frame leaving this machine — Getty searches with it and does not license ' +
         'or publish it, but it does leave.\n\nAsked once per session.');
@@ -440,12 +474,24 @@
     });
   }
 
+  /* The frame to search by, as JPEG.
+   *
+   * Getty's upload declares image/jpeg and image/png and nothing else, and
+   * originals in this file are usually WebP because WebP is smaller
+   * (renders.js) — so the bytes went up as image/webp under a .jpg name,
+   * which is a 400 nobody would have been able to read. Converted here, so
+   * there is one place that knows what that endpoint accepts. */
   function frameBlob(p, sh) {
     return SB.Renders.file(p, sh.render).then(function (file) {
       if (file) return file;
       const src = sh.image ? SB.Blobs.src(p, sh.image) : '';
       if (!src) return null;
       return fetch(src).then(function (r) { return r.blob(); });
+    }).then(function (b) {
+      if (!b) return null;
+      if (/^image\/(jpeg|png)$/i.test(b.type || '')) return b;
+      if (!SB.toJpegBlob) return b;
+      return SB.toJpegBlob(b, 1600).catch(function () { return b; });
     });
   }
 
@@ -642,10 +688,14 @@
     S.useEl = SB.el('button', 'mini primary', 'Use as frame');
     S.useEl.onclick = function () {
       const f = shot();
-      if (!f) return;
+      if (!f || !a.comp) return;
       S.useEl.disabled = true;
       S.useEl.textContent = 'placing\u2026';
-      SB.Board.placeStock(f.shot, a).then(function () { paintUse(); });
+      /* Re-enabled on the way out as well as the way through: a placement
+         that failed used to leave this button reading "placing\u2026" for the rest
+         of the session. */
+      const done = function () { paintUse(); };
+      SB.Board.placeStock(f.shot, a).then(done, done);
     };
     row.appendChild(S.useEl);
     paintUse();
@@ -672,12 +722,20 @@
     const b = S.useEl;
     if (!b) return;
     const f = shot();
-    b.disabled = !f || !S.chosen;
-    b.textContent = f ? 'Use on ' + f.code : 'Use as frame';
-    b.title = f
-      ? 'Put this comp on ' + f.code + ': its first frame becomes the card\u2019s picture and ' +
-        'the clip goes in the file. Anything already there is kept as a take.'
-      : 'Select a card first \u2014 or just drag the tile onto one';
+    const a = S.chosen;
+    /* An asset Getty sent no playable comp for cannot go on a card, and the
+       tile already says so. Offering the button anyway was the panel making
+       two opposite claims about one result. */
+    const noComp = !!a && !a.comp;
+    b.disabled = !f || !a || noComp;
+    b.textContent = noComp ? 'no comp to place' : (f ? 'Use on ' + f.code : 'Use as frame');
+    b.title = noComp
+      ? 'Getty sent no playable comp for this clip, so there is nothing to put on a card. ' +
+        'Open it on gettyimages.com instead.'
+      : (f
+        ? 'Put this comp on ' + f.code + ': its first frame becomes the card\u2019s picture and ' +
+          'the clip goes in the file. Anything already there is kept as a take.'
+        : 'Select a card first \u2014 or just drag the tile onto one');
   }
 
   /* ---------------- dragging onto a board that has scrolled away ----------

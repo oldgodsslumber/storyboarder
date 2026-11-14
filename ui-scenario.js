@@ -4591,8 +4591,17 @@
            What is being tested is what ONE DRAG leaves on the card — a frame
            and a clip and one licence record — not Chrome's video decoder. */
         let compFetches = 0, frameGrabs = 0;
-        SB.Getty.fetchComp = function () {
+        /* URL-aware, because placeStock fetches two different things through
+           this door: the comp clip, and — when the clip will not decode — the
+           largest STILL, as bytes. (As bytes and never as a URL: a
+           cross-origin URL taints the canvas and the picture path used to hang
+           on exactly that.) A stub that answered mp4 to everything made the
+           still fallback look broken. */
+        SB.Getty.fetchComp = function (url) {
           compFetches++;
+          if (/^data:image/.test(String(url || ''))) {
+            return fetch(url).then(function (r) { return r.blob(); });
+          }
           return Promise.resolve(new Blob([new Uint8Array(2048)], { type: 'video/mp4' }));
         };
         SB.Getty.deps.firstFrame = function () { frameGrabs++; return Promise.resolve(comp); };
@@ -4631,7 +4640,8 @@
         SB.Getty.deps.firstFrame = function () {
           return Promise.reject(new Error('no decoder in this test'));
         };
-        await SB.Board.placeStock(posterOnly, Object.assign({}, asset, { id: '2222', poster: poster2 }));
+        await SB.Board.placeStock(posterOnly,
+          Object.assign({}, asset, { id: '2222', poster: poster2, still: poster2 }));
         await new Promise(function (r) { setTimeout(r, 300); });
         t('a comp that cannot be decoded falls back to the poster', !!posterOnly.image,
           JSON.stringify(posterOnly.image));
@@ -4753,8 +4763,12 @@
               JSON.stringify(src));
             return Promise.resolve({ total: 1, images: fakeAssets.slice(0, 1), related: [] });
           };
-          const keywordDoor = SB.Getty.searchImages;
-          SB.Getty.searchImages = function () { keyword++; return keywordDoor.apply(null, arguments); };
+          /* searchVideos, not searchImages: the image door was removed with the
+             photograph search, so wrapping it counted calls to a function
+             nothing calls — the "did not fall back to a keyword search" check
+             was passing on an empty counter. */
+          const keywordDoor = SB.Getty.searchVideos;
+          SB.Getty.searchVideos = function () { keyword++; return keywordDoor.apply(null, arguments); };
           const confirmWas = window.confirm;
           window.confirm = function () { return true; };
           const mb = Array.prototype.filter.call(drawer.querySelectorAll('.stock-head button'),
@@ -4767,10 +4781,138 @@
             t('matching a frame uploads it once', uploads === 1, uploads);
             t('and searches BY that picture', byImage === 1, byImage);
             t('and does not fall back to a keyword search', keyword === 0, keyword);
-            SB.Getty.searchImages = keywordDoor;
+            SB.Getty.searchVideos = keywordDoor;
           });
         })();
         await new Promise(function (r) { setTimeout(r, 360); });
+
+        /* ---- what the live-API hunt found, the half that needs a browser ---- */
+
+        /* A cross-origin picture taints the canvas and toDataURL throws INSIDE
+           img.onload, which used to leave the promise neither resolved nor
+           rejected: no picture, no error, no toast, a button stuck on
+           "placing…" for good. The old fixture was a data: URL — same-origin,
+           can never taint — so the suite was green over it. What matters is
+           that it SETTLES; which way depends on what this origin may read. */
+        await (async function () {
+          let outcome = 'never settled';
+          const far = 'https://media.gettyimages.com/id/nope/photo/nope.jpg';
+          await Promise.race([
+            SB.downscaleImage(far).then(
+              function () { outcome = 'resolved'; },
+              function (e) { outcome = 'rejected: ' + (e && e.message || e); }),
+            new Promise(function (r) { setTimeout(r, 3000); })
+          ]);
+          t('a cross-origin picture settles rather than hanging for ever',
+            outcome !== 'never settled', outcome);
+        })();
+
+        /* A placement whose picture cannot be made must still leave the
+           licence on the card: the comp clip is in the file either way, and it
+           used to be there with nothing counting it. */
+        await (async function () {
+          const card = filler[8];
+          const bad = Object.assign({}, asset, { id: '5150' });
+          const wasFrame = SB.Getty.deps.firstFrame;
+          const wasFetch = SB.Getty.fetchComp;
+          SB.Getty.deps.firstFrame = function () { return Promise.reject(new Error('no decode')); };
+          SB.Getty.fetchComp = function (url) {
+            if (/\.mp4/.test(String(url || ''))) {
+              return Promise.resolve(new Blob([new Uint8Array(2048)], { type: 'video/mp4' }));
+            }
+            return Promise.reject(new Error('no still either'));
+          };
+          await SB.Board.placeStock(card, bad);
+          await new Promise(function (r) { setTimeout(r, 400); });
+          SB.Getty.fetchComp = wasFetch;
+          SB.Getty.deps.firstFrame = wasFrame;
+          t('a comp whose picture failed still lands as a clip', !!card.video,
+            JSON.stringify({ image: !!card.image, video: !!card.video }));
+          const rec = SB.Model.stockFor(P(), card);
+          t('and the licence is recorded against the clip', !!rec && rec.id === '5150',
+            JSON.stringify(rec));
+          t('so Settings and the handoff can count it',
+            SB.Model.stockShots(P()).some(function (r) {
+              return r.rec.id === '5150' && r.asClip;
+            }), '');
+          t('and it is still not a frame a model may be handed',
+            SB.Model.modelFrame(P(), card) === null, '');
+        })();
+
+        /* Picking a filter and pressing "more" used to append page 2 of a
+           DIFFERENT search to page 1 of this one. */
+        await (async function () {
+          const sent = [];
+          const door = SB.Getty.searchVideos;
+          SB.Getty.searchVideos = function (family, f, page) {
+            sent.push({ page: page, viewpoints: (f.viewpoints || []).join(',') });
+            return Promise.resolve({
+              total: 300, raw: 60, related: [],
+              images: fakeAssets.concat(fakeAssets).concat(fakeAssets)
+            });
+          };
+          phraseBox.value = 'office';
+          phraseBox.dispatchEvent(new Event('input', { bubbles: true }));
+          searchBtn.click();
+          await new Promise(function (r) { setTimeout(r, 150); });
+          const pick = Array.prototype.filter.call(drawer.querySelectorAll('.stock-pick'),
+            function (sel) {
+              return Array.prototype.some.call(sel.options, function (o) {
+                return o.value === 'tracking_shot';
+              });
+            })[0];
+          pick.value = 'tracking_shot';
+          pick.dispatchEvent(new Event('change', { bubbles: true }));
+          const more = drawer.querySelector('.stock-more');
+          t('a full page offers "more"', !!more, '');
+          if (more) {
+            more.click();
+            await new Promise(function (r) { setTimeout(r, 150); });
+          }
+          SB.Getty.searchVideos = door;
+          t('page 2 pages the search the strip came from, not a filter picked since',
+            sent.length === 2 && sent[1].page === 2 && sent[1].viewpoints === sent[0].viewpoints,
+            JSON.stringify(sent));
+        })();
+
+        /* A result Getty sent no comp for cannot be placed, and the tile says
+           so — so the pane must not offer to place it. */
+        await (async function () {
+          const door = SB.Getty.searchVideos;
+          SB.Getty.searchVideos = function () {
+            return Promise.resolve({
+              total: 1, raw: 1, related: [],
+              images: [Object.assign({}, fakeAssets[0], { id: '9999', comp: '' })]
+            });
+          };
+          searchBtn.click();
+          await new Promise(function (r) { setTimeout(r, 150); });
+          SB.Getty.searchVideos = door;
+          const tile = drawer.querySelector('.stock-tile');
+          t('a tile with no comp refuses the drag', !!tile && tile.draggable === false,
+            tile ? 'draggable=' + tile.draggable : 'no tile');
+          const use = Array.prototype.filter.call(drawer.querySelectorAll('.stock-judge button'),
+            function (b) { return /no comp|Use on|Use as/.test(b.textContent); })[0];
+          t('and the pane does not offer to place it',
+            !!use && use.disabled && /no comp/.test(use.textContent),
+            use ? use.textContent + ' disabled=' + use.disabled : 'no button');
+        })();
+
+        /* Getty does not support a search with no phrase, so the drawer must
+           not send one and then read the empty result as the filters' fault. */
+        (function () {
+          let calls = 0;
+          const door = SB.Getty.searchVideos;
+          SB.Getty.searchVideos = function () { calls++; return door.apply(null, arguments); };
+          phraseBox.value = '   ';
+          phraseBox.dispatchEvent(new Event('input', { bubbles: true }));
+          searchBtn.click();
+          SB.Getty.searchVideos = door;
+          t('an empty phrase is not sent to Getty', calls === 0, calls);
+          t('and the drawer says why rather than blaming the filters',
+            /needs something to search for/.test(drawer.querySelector('.stock-strip').textContent),
+            drawer.querySelector('.stock-strip').textContent.slice(0, 90));
+        })();
 
         SB.Stock.close();
         /* The comp plays through the SAME route a generated clip does: the

@@ -158,15 +158,36 @@
       try {
         res = await deps.fetch(url, { method: method, headers: headers, body: body, mode: 'cors' });
       } catch (e) {
-        /* Three different failures look identical from inside a page and none
-         * of them is Getty saying no — see the README on this. Say which one
-         * this is as far as it can be known, and retry twice before believing
-         * it. */
+        /* A rejected fetch is NOT necessarily a dead network, and assuming it
+         * was is the most misleading thing this client ever said.
+         *
+         * Getty's gateway answers a bad or unentitled key with 401/403 and
+         * **no Access-Control-Allow-Origin header**, so the browser refuses to
+         * let the page read the response at all: `fetch` rejects exactly as if
+         * the request had never left. The old message then blamed the network
+         * — "check that nothing is intercepting api.gettyimages.com" — for a
+         * typo in the key. (The same is true of a 429, which is why the
+         * Retry-After ladder below can never run in a browser.)
+         *
+         * The status is unreadable, so it is not guessed: one no-cors probe
+         * asks the only question that can be answered — did the host answer
+         * at all? An opaque response that resolves means Getty replied and
+         * the browser hid it, which means the key or the account, not the
+         * wire. */
         if (++netFails > 2) {
-          const err = new Error('Could not reach Getty — the request never left the browser. ' +
-            'Check the connection, and that nothing on this network is intercepting ' +
-            'api.gettyimages.com.');
-          err.network = true;
+          const answered = await hostAnswered(url);
+          const err = new Error(answered
+            ? 'Getty answered, but the browser would not let this page read the answer — ' +
+              'which is what a rejected API key looks like from a web page, because Getty ' +
+              'sends 401, 403 and 429 without the header a browser needs. Check the key in ' +
+              'Settings → Getty first, and that the account is entitled to the footage ' +
+              'API. If the key is right, this can also mean the per-second limit was hit; ' +
+              'wait a moment and try again.'
+            : 'Could not reach Getty — the request never left the browser, and ' +
+              'api.gettyimages.com did not answer at all. Check the connection, and that ' +
+              'nothing on this network is intercepting it.');
+          err.network = !answered;
+          err.opaque = !!answered;
           throw err;
         }
         await deps.sleep(backoff); backoff *= 2;
@@ -188,6 +209,17 @@
       throw gettyError(res.status, json, text);
     }
     throw new Error('Getty kept asking us to slow down. Try again in a minute.');
+  }
+
+  /* Did the host answer anything at all? A no-cors GET is a simple request —
+   * no preflight, no readable body — and it resolves for a 401 or a 403 just
+   * as it does for a 200. That is exactly what is needed here: not the status,
+   * only the difference between "Getty replied and the browser hid it" and
+   * "nothing came back". */
+  function hostAnswered(url) {
+    return deps.fetch(url, { method: 'GET', mode: 'no-cors', cache: 'no-store' })
+      .then(function () { return true; })
+      .catch(function () { return false; });
   }
 
   function readText(res) {
@@ -220,7 +252,9 @@
       /* video has exactly two orientations, not five */
       orientations: f.orientations,
       aspect_ratios: f.aspects,
-      format_available: f.formats,
+      /* single-valued in the spec, unlike every other filter here: a comma
+         list would be a 400 the moment anything set two */
+      format_available: one(f.formats),
       frame_rates: f.frameRates,
       image_techniques: f.techniques,
       viewpoints: f.viewpoints,
@@ -240,6 +274,9 @@
       fields: FIELDS
     };
   }
+
+  /* The first of a set, for a parameter the spec declares as one value. */
+  function one(v) { return Array.isArray(v) ? v[0] : v; }
 
   function searchVideos(family, f, page, pageSize) {
     return searchVideosRaw(family, f, page, pageSize).then(shapeResults);
@@ -266,39 +303,62 @@
    * the OpenAPI spec, and the spec gives the upload no response schema at all,
    * so both are written defensively and the drawer says plainly when an
    * account cannot do it. */
+  /* The by-image endpoint declares a SHORT parameter list, and it is not the
+   * search's: no clip length, no frame rate, no format, no sort, no safe
+   * search. The first cut blacklisted the four filters a picture obviously
+   * answers and sent everything else, which meant seven undeclared parameters
+   * went out on every call — including sort_order and safe_search, which are
+   * on by default.
+   *
+   * A whitelist, from the spec, because a blacklist is wrong the moment a new
+   * filter is added. BY_IMAGE_OK is the full set the spec allows that this app
+   * has any use for. */
+  const BY_IMAGE_OK = ['asset_id', 'image_url', 'phrase', 'fields', 'page', 'page_size',
+    'collection_codes', 'collections_filter_type', 'exclude_editorial_use_only',
+    'product_types', 'istock_exclusive'];
+
   function byImage(src, f, page, pageSize) {
-    const q = searchParams(f, page, pageSize);
+    const all = searchParams(f, page, pageSize);
+    const q = {};
+    BY_IMAGE_OK.forEach(function (k) { if (all[k] !== undefined) q[k] = all[k]; });
     if (src && src.assetId) q.asset_id = src.assetId;
     if (src && src.imageUrl) q.image_url = src.imageUrl;
-    /* The picture answers these, so asking them again only narrows the one
-     * thing it is already describing. Deleted under their WIRE names — the
-     * friendly name is gone by the time the object exists, and deleting that
-     * deleted nothing. */
-    delete q.aspect_ratios;
-    delete q.orientations;
-    delete q.viewpoints;
-    delete q.image_techniques;
     return request('GET', '/v3/search/videos/creative/by-image', { query: q }).then(shapeResults);
+  }
+
+  /* Which of the drawer's filters a by-image search can actually honour, so
+   * the chips can say so rather than promising a frame-rate filter the
+   * endpoint has never heard of. */
+  function byImageIgnores(f) {
+    const out = [];
+    chips(f || {}).forEach(function (c) {
+      const wire = WIRE[c.k];
+      if (wire && BY_IMAGE_OK.indexOf(wire) < 0) out.push(c);
+    });
+    return out;
   }
 
   /* PUT the bytes, get back something that names where they landed. The reply
    * has been seen as a bare string and as an object under several keys, so
    * every shape is accepted and an unrecognised one is reported as what it is
    * rather than as a search with no results. */
+  /* PUT the bytes, then search by the URL they now live at.
+   *
+   * That URL is OURS to build: the spec gives this endpoint a 200 with no
+   * response body at all, and Getty's own documentation says to pass the
+   * upload URL you chose as `image_url`. The first cut demanded a URL in the
+   * reply and, on the empty 200 the spec describes, threw an error blaming the
+   * account — after the user's frame had already been sent. A reply that DOES
+   * name a location still wins, in case an account's gateway adds one. */
   function uploadSearchImage(name, blob, type) {
     const safe = String(name || 'frame.jpg').replace(/[^A-Za-z0-9._-]/g, '_');
-    return request('PUT', '/v3/search/by-image/uploads/' + encodeURIComponent(safe), {
+    const path = '/v3/search/by-image/uploads/' + encodeURIComponent(safe);
+    return request('PUT', path, {
       raw: blob, type: type || blobType(blob) || 'image/jpeg'
     }).then(function (r) {
-      const u = (typeof r === 'string') ? r
+      const said = (typeof r === 'string') ? r
         : (r && (r.uri || r.url || r.image_url || r.imageUrl || r.location)) || '';
-      if (!u || !/^https?:/i.test(String(u))) {
-        const e = new Error('Getty took the picture but did not say where to find it, so it ' +
-          'cannot be searched by. This account may not have search-by-image enabled.');
-        e.unsupported = true;
-        throw e;
-      }
-      return String(u);
+      return /^https?:/i.test(String(said)) ? String(said) : (BASE + path);
     });
   }
 
@@ -324,6 +384,10 @@
     return {
       total: (r && (r.result_count || 0)) | 0,
       images: list.map(asset).filter(Boolean),
+      /* How many Getty SENT, which is what says whether there is another page.
+       * Counting the shaped ones instead ended somebody's paging at result 59
+       * because one asset in the page had no id. */
+      raw: list.length,
       related: (r && r.related_searches) || []
     };
   }
@@ -380,16 +444,35 @@
     return all[0];
   }
 
-  /* The poster: what a tile shows while nothing is playing. Deliberately NOT
-   * what lands on a card — see firstFrame(). */
+  function stills(a) {
+    return sizes(a).filter(function (z) { return z && z.uri && looksLikeStill(z); });
+  }
+
+  /* Two jobs, opposite needs, so two functions rather than one with a
+   * compromise order.
+   *
+   * The TILE wants the cheapest thing that fills a 168px box — forty of them
+   * scroll. A FALLBACK FRAME, used when the clip itself will not decode, wants
+   * the largest still there is, because it is going on a card and into a PDF.
+   * One ordering served both and handed a ~170px thumbnail to the card. */
   function posterUrl(a) {
-    const still = sizes(a).filter(function (z) { return !isClipSize(z) && z.uri; });
+    const list = stills(a);
     const order = ['thumb', 'preview_image', 'comp_image', 'preview', 'comp'];
     for (let i = 0; i < order.length; i++) {
-      const hit = still.filter(function (z) { return z.name === order[i]; })[0];
+      const hit = list.filter(function (z) { return z.name === order[i]; })[0];
       if (hit) return hit.uri;
     }
-    return still.length ? still[0].uri : '';
+    return list.length ? list[0].uri : '';
+  }
+
+  function bestStillUrl(a) {
+    const list = stills(a);
+    const order = ['high_res_comp', 'comp', 'comp_image', 'preview', 'preview_image', 'thumb'];
+    for (let i = 0; i < order.length; i++) {
+      const hit = list.filter(function (z) { return z.name === order[i]; })[0];
+      if (hit) return hit.uri;
+    }
+    return list.length ? list[list.length - 1].uri : '';
   }
 
   /* The watermarked comp clip — what the judging pane plays, what the card
@@ -427,7 +510,6 @@
   function asset(a) {
     if (!a || !a.id) return null;
     const dest = (a.referral_destinations || [])[0] || null;
-    const z = clipSize(a);
     return {
       id: String(a.id),
       kind: 'video',
@@ -446,8 +528,10 @@
       speed: a.shot_speed || '',
       mastered: a.mastered_to || '',
       poster: posterUrl(a),
+      /* the biggest still there is, for the one case where the clip will not
+         decode and a frame still has to go on the card */
+      still: bestStillUrl(a),
       comp: compUrl(a),
-      compBytes: (z && (z.bytes || z.file_size)) || 0,
       link: (dest && (dest.uri || dest.site_name)) || '',
       raw: a
     };
@@ -478,10 +562,20 @@
    * and the words differ between collections — so this matches on the one
    * phrase they all contain and treats anything it cannot read as fine, since
    * the search filter has already excluded the real ones. */
+  /* `allowed_use.editorial_use_only` is a boolean and it is the authority.
+   * The first cut only regexed the prose fields — and read
+   * `how_can_i_use_it_collection_text`, which is not a field; the real one is
+   * `how_can_i_use_it` — so the flag missed every asset that states it
+   * properly and fired only where a collection happened to spell it out. The
+   * prose stays as a fallback, because a collection that says it in words and
+   * leaves the boolean unset should still be flagged. */
   function editorialOnly(a) {
     const u = (a && a.allowed_use) || {};
-    const s = [u.usage_restrictions, u.how_can_i_use_it_collection_text, u.release_info]
-      .filter(Boolean).join(' ');
+    if (u.editorial_use_only === true) return true;
+    const parts = [u.usage_restrictions, u.how_can_i_use_it, u.release_info];
+    const s = parts.map(function (x) {
+      return Array.isArray(x) ? x.join(' ') : String(x == null ? '' : x);
+    }).join(' ');
     return /editorial use only/i.test(s);
   }
 
@@ -662,6 +756,15 @@
   /* What is filtering this search, in the words a person would use, each one
    * removable. Built from the filters that are SET — so an empty filter set
    * says so, instead of a row of chips nobody chose. */
+  /* friendly name -> the name that goes on the wire */
+  const WIRE = {
+    orientations: 'orientations', aspects: 'aspect_ratios', formats: 'format_available',
+    frameRates: 'frame_rates', techniques: 'image_techniques', viewpoints: 'viewpoints',
+    licenses: 'license_models', minLength: 'min_clip_length', maxLength: 'max_clip_length',
+    collections: 'collection_codes', sort: 'sort_order', safe: 'safe_search',
+    excludeEditorialOnly: 'exclude_editorial_use_only'
+  };
+
   function chips(f) {
     const out = [];
     const add = function (k, vals) {
@@ -717,7 +820,8 @@
     similar: similar, byImage: byImage, describeRaw: describeRaw,
     uploadSearchImage: uploadSearchImage, fetchComp: fetchComp,
     /* shaping */
-    asset: asset, record: record, posterUrl: posterUrl, compUrl: compUrl,
+    asset: asset, record: record, posterUrl: posterUrl, bestStillUrl: bestStillUrl,
+    compUrl: compUrl, byImageIgnores: byImageIgnores, BY_IMAGE_OK: BY_IMAGE_OK,
     thumbUrl: thumbUrl, previewUrl: previewUrl, clipSize: clipSize,
     seconds: seconds, clock: clock,
     assetIdFromUrl: assetIdFromUrl, recordFromUrl: recordFromUrl,

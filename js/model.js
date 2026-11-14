@@ -624,9 +624,13 @@
     const m = p.stock || {};
     if (typeof x === 'string') return m[x] || null;
     if (x.ref) return m[x.ref] || madeStock(x) || null;
-    /* a shot: the chosen frame decides, proxy first, then the original */
-    return m[refOf(x.image)] || m[refOf(x.render)] ||
-      madeStock(x.render) || madeStock(x.image) || null;
+    /* A shot: the chosen frame decides, proxy first then the original — and
+     * failing both, the CLIP, because a comp can be on a card as footage with
+     * no picture of its own (the frame failed to decode, or a real render was
+     * put over it and the comp stayed as the clip). It is on the board and it
+     * is licensed either way. */
+    return m[refOf(x.image)] || m[refOf(x.render)] || m[refOf(x.video)] ||
+      madeStock(x.render) || madeStock(x.image) || madeStock(x.video) || null;
   }
 
   /* The record a picture carries in its own provenance. The register is the
@@ -668,7 +672,14 @@
       const f = findShot(p, sh.id);
       const code = f ? f.code : '';
       const rec = stockFor(p, sh);
-      if (rec) out.push({ shot: sh, scene: sc, rec: rec, code: code, chosen: true });
+      if (rec) {
+        out.push({
+          shot: sh, scene: sc, rec: rec, code: code, chosen: true,
+          /* what is actually on the card: the picture, the clip, or both */
+          asFrame: !!(stockFor(p, sh.image) || stockFor(p, sh.render)),
+          asClip: !!stockFor(p, sh.video)
+        });
+      }
       /* The takes too. A comp replaced by a real render is still IN the file —
          the bytes, the watermark and the licence — and it used to vanish from
          every count the moment it stopped being the chosen frame, which is
@@ -678,6 +689,13 @@
         if (!tk) return;
         const r = stockFor(p, tk.image) || stockFor(p, tk.render);
         if (r) out.push({ shot: sh, scene: sc, rec: r, code: code, chosen: false, take: tk });
+      });
+      /* and the clip takes, for the same reason */
+      (sh.videoAlts || []).forEach(function (v) {
+        const r = stockFor(p, v);
+        if (r && !(sh.video && refOf(sh.video) === refOf(v))) {
+          out.push({ shot: sh, scene: sc, rec: r, code: code, chosen: false, clipTake: v });
+        }
       });
     });
     return out.sort(function (a, b) {

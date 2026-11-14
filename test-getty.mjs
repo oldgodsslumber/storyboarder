@@ -69,7 +69,10 @@ function fakeGetty(plan) {
     const call = {
       url: url, method: (init && init.method) || 'GET',
       path: u.pathname, q: Object.fromEntries(u.searchParams.entries()),
-      headers: (init && init.headers) || {}, body: init && init.body
+      headers: (init && init.headers) || {}, body: init && init.body,
+      /* recorded because the client's last resort is a no-cors probe, and
+         "did it probe" is a thing to assert rather than infer */
+      mode: (init && init.mode) || ''
     };
     calls.push(call);
     const a = typeof plan === 'function' ? plan(call, i++) : plan[Math.min(i++, plan.length - 1)];
@@ -316,9 +319,11 @@ section('when Getty says no');
   let err = null;
   try { await SB.Getty.searchVideos('creative', { phrase: 'x' }, 1, 10); }
   catch (e) { err = e; }
-  eq(f.calls.length, 3, 'a network failure is retried twice before it is believed');
-  ok(err && err.network, 'and is marked as a network failure, not a refusal');
-  ok(/never left the browser/.test(err.message), 'the message says which kind of failure it is');
+  eq(f.calls.length, 4, 'a dropped request is retried twice, then probed once');
+  eq(f.calls.filter(function (c) { return c.mode === 'no-cors'; }).length, 1,
+    'and the probe is the no-cors one that asks whether the host answered at all');
+  ok(err && err.network, 'nothing answering is a network failure, not a refusal');
+  ok(/never left the browser/.test(err.message), 'and the message says so');
 }
 {
   store.delete('sb.getty.key');
@@ -354,20 +359,20 @@ section('by picture');
   eq(f.calls[1].q.image_url, url, 'pointing at the uploaded picture');
   ok(!('aspect_ratios' in f.calls[1].q) && !('viewpoints' in f.calls[1].q),
     'without the filters the picture itself answers');
-  eq(f.calls[1].q.format_available, 'hd',
-    'but format is about the deliverable, not the picture, so it stays');
+  ok(!('format_available' in f.calls[1].q),
+    'and without format either - the by-image endpoint does not declare it, whatever ' +
+    'we might want it to mean (the whitelist case below is the full check)');
   eq(r.images.length, 1, 'results come back in the same shape as any search');
 }
 {
-  /* Getty documents no response for the upload, so an unrecognised one has to
-     be reported as itself rather than as a search with no results. */
+  /* A reply that names nothing is CORRECT - the spec gives this endpoint a 200
+     with no body - so the URL comes from the request, not the response. The
+     first cut threw here and blamed the account, after the frame had gone. */
   const f = fakeGetty([{ body: { ok: true } }]);
   SB.Getty.deps.fetch = f;
-  let err = null;
-  try { await SB.Getty.uploadSearchImage('x.jpg', { size: 1, type: 'image/png' }); }
-  catch (e) { err = e; }
-  ok(err && err.unsupported, 'an unreadable upload reply is flagged, not swallowed');
-  ok(/search-by-image/.test(err.message), 'and names the thing the account may not have');
+  const u = await SB.Getty.uploadSearchImage('x.jpg', { size: 1, type: 'image/png' });
+  eq(u, SB.Getty.BASE + '/v3/search/by-image/uploads/x.jpg',
+    'a reply with nothing useful in it still leaves a searchable URL');
 }
 
 /* ---------------- 4. the card is not an input ---------------- */
@@ -706,6 +711,158 @@ section('the printed board');
   ok(/Getty 1437816897/.test(html),
     'and the page a client holds says so beside the picture');
   ok(/\.stk\{/.test(html), 'with a style for it');
+}
+
+
+/* ---------------- 9. what a live-API bug hunt found ----------------
+ *
+ * Every case here is a defect that shipped, and every fixture is built from
+ * the live spec rather than from this client. Cases that need a browser live
+ * in ui-scenario.js instead.
+ */
+
+section('a rejected key is not a dead network');
+{
+  /* Getty's gateway answers a bad key with 401/403 and NO
+     Access-Control-Allow-Origin, so the browser will not let the page read the
+     response and `fetch` rejects exactly as if nothing had left the machine.
+     The old message blamed the network for a typo in a key. */
+  let probes = 0;
+  SB.Getty.deps.fetch = function (url, init) {
+    if (init && init.mode === 'no-cors') { probes++; return Promise.resolve({ status: 0 }); }
+    return Promise.reject(new TypeError('Failed to fetch'));
+  };
+  let err = null;
+  try { await SB.Getty.searchVideos('creative', { phrase: 'x' }, 1, 10); }
+  catch (e) { err = e; }
+  eq(probes, 1, 'one no-cors probe asks the only answerable question: did the host reply');
+  ok(err.opaque, 'a reply the browser hid is flagged as that');
+  ok(!err.network, 'and is NOT called a network failure');
+  ok(/rejected API key/.test(err.message), 'the message leads with the likely cause');
+  ok(/Settings/.test(err.message), 'and says where to fix it');
+  ok(!/intercepting/.test(err.message), 'and stops blaming the network');
+
+  SB.Getty.deps.fetch = function () { return Promise.reject(new TypeError('Failed to fetch')); };
+  err = null;
+  try { await SB.Getty.searchVideos('creative', { phrase: 'x' }, 1, 10); }
+  catch (e) { err = e; }
+  ok(err.network, 'a host that answers nothing at all is a network failure');
+  ok(/did not answer at all/.test(err.message), 'and says exactly that');
+}
+
+section('the by-image upload');
+{
+  /* The spec gives the upload a 200 with NO response body, and Getty's own
+     docs say the client passes the URL it chose. The first cut demanded a URL
+     in the reply and otherwise threw, blaming the account - after the user's
+     frame had already been sent. */
+  const f = fakeGetty(function (call) {
+    if (call.method === 'PUT') return { status: 200, body: '' };
+    return { body: videosReply([clip('1')]) };
+  });
+  SB.Getty.deps.fetch = f;
+  const url = await SB.Getty.uploadSearchImage('3b frame.jpg', { size: 10, type: 'image/jpeg' });
+  eq(url, SB.Getty.BASE + '/v3/search/by-image/uploads/3b_frame.jpg',
+    'an empty 200 is fine - the URL is the one we uploaded to');
+  const g = fakeGetty([{ body: { uri: 'https://uploads.getty/x.jpg' } }]);
+  SB.Getty.deps.fetch = g;
+  eq(await SB.Getty.uploadSearchImage('x.jpg', { size: 1, type: 'image/png' }),
+    'https://uploads.getty/x.jpg', 'and a reply that does name a location still wins');
+}
+
+section('by-image sends only what that endpoint has');
+{
+  const f = fakeGetty([{ body: videosReply([clip('1')]) }]);
+  SB.Getty.deps.fetch = f;
+  await SB.Getty.byImage({ imageUrl: 'https://uploads.getty/x.jpg' }, {
+    phrase: 'x', formats: ['hd'], frameRates: ['25'], viewpoints: ['panning'],
+    licenses: ['royaltyfree'], minLength: 5, maxLength: 20, sort: 'newest', safe: true,
+    aspects: ['16:9'], techniques: ['slow_motion'], orientations: ['horizontal']
+  }, 1, 60);
+  const sent = Object.keys(f.calls[0].q).sort();
+  const allowed = SB.Getty.BY_IMAGE_OK.slice().sort();
+  eq(sent.filter(function (k) { return allowed.indexOf(k) < 0; }), [],
+    'nothing goes out that the by-image endpoint does not declare');
+  ok(sent.indexOf('image_url') >= 0, 'the picture does');
+  ok(sent.indexOf('fields') >= 0 && sent.indexOf('page_size') >= 0, 'and what it does take');
+  ok(!('sort_order' in f.calls[0].q) && !('safe_search' in f.calls[0].q),
+    'including the two that were on by default and are not declared here');
+
+  const ig = SB.Getty.byImageIgnores({ formats: ['hd'], minLength: 5, excludeEditorialOnly: true })
+    .map(function (c) { return c.k; });
+  ok(ig.indexOf('formats') >= 0 && ig.indexOf('minLength') >= 0,
+    'the chips such a search cannot honour are named');
+  ok(ig.indexOf('excludeEditorialOnly') < 0, 'and the one it can is not');
+}
+
+section('editorial-use-only, read from the field that says so');
+{
+  ok(SB.Getty.asset(clip('1', { allowed_use: { editorial_use_only: true } })).editorialOnly,
+    'the boolean the spec declares is believed');
+  ok(!SB.Getty.asset(clip('2', { allowed_use: { editorial_use_only: false } })).editorialOnly,
+    'and so is a false one');
+  ok(SB.Getty.asset(clip('3', { allowed_use: { usage_restrictions: ['EDITORIAL USE ONLY'] } })).editorialOnly,
+    'prose still counts, as a fallback');
+  ok(SB.Getty.asset(clip('4', { allowed_use: { how_can_i_use_it: 'Editorial use only.' } })).editorialOnly,
+    'in the field the spec actually names - the old code read one that does not exist');
+  ok(!SB.Getty.asset(clip('5', { allowed_use: {} })).editorialOnly, 'and silence is not a flag');
+}
+
+section('two stills, two jobs');
+{
+  const a = SB.Getty.asset(clip('1', {
+    display_sizes: [
+      { name: 'thumb', uri: 'https://m.gettyimages.com/a/1.jpg' },
+      { name: 'preview', uri: 'https://m.gettyimages.com/b/1.jpg' },
+      { name: 'comp', uri: 'https://m.gettyimages.com/c/1.mp4' }
+    ]
+  }));
+  eq(a.poster, 'https://m.gettyimages.com/a/1.jpg', 'a tile takes the cheap thumb');
+  eq(a.still, 'https://m.gettyimages.com/b/1.jpg',
+    'while a frame going on a card takes the biggest still there is');
+  eq(a.comp, 'https://m.gettyimages.com/c/1.mp4', 'and the clip is the clip');
+}
+
+section('paging counts what Getty sent');
+{
+  const page = [];
+  for (let i = 0; i < 60; i++) page.push(clip('p' + i));
+  delete page[7].id;
+  const f = fakeGetty([{ body: videosReply(page, 300) }]);
+  SB.Getty.deps.fetch = f;
+  const r = await SB.Getty.searchVideos('creative', { phrase: 'x' }, 1, 60);
+  eq(r.images.length, 59, 'an unusable asset is dropped from the strip');
+  eq(r.raw, 60, 'but the page was a full page, and paging reads that');
+  eq(r.total, 300, 'with the real total beside it');
+}
+
+section('a single-valued parameter stays single');
+{
+  const f = fakeGetty([{ body: videosReply([]) }]);
+  SB.Getty.deps.fetch = f;
+  await SB.Getty.searchVideos('creative', { phrase: 'x', formats: ['hd', '4k'] }, 1, 10);
+  eq(f.calls[0].q.format_available, 'hd',
+    'format_available is one value in the spec, so a pair is not sent as a comma list');
+}
+
+section('a comp that is only a clip is still on the board');
+{
+  /* The register was keyed by picture refs alone, so a comp whose frame
+     failed - or one left as the clip after a real render went over it - sat in
+     the file with nothing counting it: no badge, nothing in Settings, no row
+     in the handoff, and a 30-day clock that never started. */
+  const p = SB.Model.newProject();
+  const sh = p.scenes[0].shots[0];
+  const rec = SB.Getty.record(SB.Getty.asset(clip('4242')));
+  sh.video = { ref: 'blob-clip', serial: 1, ext: 'mp4', made: { by: 'getty', id: '4242' } };
+  SB.Model.markStock(p, sh.video, rec);
+  ok(SB.Model.isStock(p, sh), 'a card whose only comp is its clip reads as stock');
+  eq(SB.Model.stockFor(p, sh).id, '4242', 'with the asset id');
+  const rows = SB.Model.stockShots(p);
+  eq(rows.length, 1, 'and it is counted');
+  ok(rows[0].chosen && rows[0].asClip && !rows[0].asFrame,
+    'reported as what it is: on the board, as the clip');
+  eq(SB.Model.modelFrame(p, sh), null, 'and still not a frame a model may be handed');
 }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed');

@@ -2501,34 +2501,63 @@
     const keepClip = !SB.Getty.keepCompOff || !SB.Getty.keepCompOff();
 
     return SB.Getty.fetchComp(a.comp).then(function (clip) {
-      /* The first frame, off the clip we already have in hand. On a build
-         that cannot decode it — or a drawer handing over a poster-only
-         asset — the thumbnail stands in, and the toast says so: boarding a
-         170px picture is a thing somebody has to know happened. */
+      /* The first frame, off the clip we already have in hand. Where that
+         cannot be decoded, the largest STILL Getty offers stands in — fetched
+         as bytes, never handed over as a URL: a cross-origin URL taints the
+         canvas, and the picture path used to hang forever on exactly that. */
       return SB.Getty.firstFrame(clip).then(function (data) {
         return { clip: clip, frame: data, fell: false };
       }).catch(function (e) {
-        return { clip: clip, frame: a.poster || '', fell: true, why: e && e.message };
+        const still = a.still || a.poster || '';
+        if (!still) return { clip: clip, frame: '', fell: true, why: e && e.message };
+        return SB.Getty.fetchComp(still).then(function (bytes) {
+          return { clip: clip, frame: bytes, fell: true, why: e && e.message };
+        }).catch(function () {
+          return { clip: clip, frame: '', fell: true, why: e && e.message };
+        });
       });
     }).then(function (got) {
-      if (!got.frame) throw new Error('Nothing came back that could be put on the card.');
-      return setImage(sh, got.frame, made).then(function () {
-        if (got.fell) {
-          SB.toast('Placed the poster thumbnail — the clip\u2019s own first frame could not be ' +
-            'read here' + (got.why ? ' (' + got.why + ')' : '') + ', so this picture is small.', true);
+      if (!got.frame && !got.clip) {
+        throw new Error('Nothing came back that could be put on the card.');
+      }
+      /* The clip goes on FIRST when there is no frame, so a comp can never sit
+         in the file with no licence record against it: the register is keyed
+         by reference, and the clip's reference is a reference. */
+      const frameStep = got.frame
+        ? setImage(sh, got.frame, made).then(function () { return !!sh.image; })
+        : Promise.resolve(false);
+      return frameStep.then(function (placed) {
+        if (got.fell && placed) {
+          SB.toast('Placed a still instead — the clip\u2019s own first frame could not be read ' +
+            'here' + (got.why ? ' (' + got.why + ')' : '') + '.', true);
         }
-        if (!keepClip || !got.clip) return null;
+        if (!placed) {
+          SB.toast('The picture could not be placed on the card' +
+            (got.clip && keepClip ? ' — the comp clip is still here, and the card says so.'
+              : '.'), true);
+        }
+        if (!keepClip || !got.clip) {
+          if (!placed) throw new Error('Nothing could be put on the card.');
+          return null;
+        }
         /* The comp, as the card's clip. A video/* type is what Clip.attach
            insists on and Getty's media host does not always send one. */
         const file = named(got.clip, 'getty-' + a.id + '.mp4');
         return SB.Clip.attach(P(), sh, file, made).then(function (rec) {
           /* Getty already told us how long it runs, so the badge says so even
              on a build where the clip's own metadata could not be read. */
-          if (rec && !rec.dur && a.seconds) { rec.dur = a.seconds; SB.app.changed(true); }
+          if (rec && !rec.dur && a.seconds) rec.dur = a.seconds;
+          /* The licence, against the CLIP as well as the picture. A comp that
+             is only a clip — because the frame failed, or because a real
+             render was put over it later — used to be in the file with
+             nothing counting it: no badge, nothing in Settings, no row in the
+             handoff CSV, and a 30-day clock that never started. */
+          if (rec) SB.Model.markStock(P(), rec, made.stock);
+          SB.app.changed(true);
           return rec;
         }).catch(function (e) {
-          SB.toast('The frame is on the card, but the comp clip could not be kept: ' +
-            (e.message || e), true);
+          SB.toast((placed ? 'The frame is on the card, but the' : 'The') +
+            ' comp clip could not be kept: ' + (e.message || e), true);
           return null;
         });
       });

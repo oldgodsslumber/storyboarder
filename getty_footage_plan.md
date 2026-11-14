@@ -160,6 +160,55 @@ are video ids — so `partition()` in the Premiere panel imports them instead of
 into `stills` and reporting them skipped. The manifest's `stock` array gains the same two
 fields.
 
+## 6a. What a live-API bug hunt found, after it was built
+
+A second review pass, with real Getty bytes but no key, found twelve defects. Two could have
+stopped the feature working at all and are worth reading:
+
+- **The documented poster fallback never settled.** `SB.downscaleImage` loads a picture with
+  no `crossOrigin` and then calls `toDataURL`; a cross-origin picture taints the canvas, so
+  that throws — *inside `img.onload`*, where an uncaught throw means the promise neither
+  resolves nor rejects. The fallback handed it exactly such a URL, so a comp that would not
+  decode produced no picture, no clip, no licence, no error and no toast, with the button
+  stuck on "placing…" for good. Fixed twice over: the loader asks in CORS mode and catches
+  anyway, and the fallback now fetches the still as **bytes** rather than passing a URL.
+  The fixture was a `data:` URL — same-origin, can never taint — which is why the suite was
+  green over it.
+- **A rejected key read as a firewall problem.** Getty's gateway answers 401, 403 and 429
+  with no `Access-Control-Allow-Origin`, so the browser refuses to let the page read the
+  response and `fetch` rejects exactly as if the request had never left. The client called
+  that a network failure and told the user to check whether something was intercepting
+  api.gettyimages.com — for a typo in a key. The status is unreadable, so it is not guessed:
+  one `no-cors` probe asks the only answerable question, *did the host reply at all*, and the
+  message leads with the key when it did. The same mechanism means the `Retry-After` ladder
+  can never run in a browser, which the message now covers.
+
+The other ten: the by-image upload demanded a URL in a reply the spec gives no body (the URL
+is ours to build, and Getty's docs say so); that upload sent WebP under a `.jpg` name to an
+endpoint declaring jpeg and png only; `byImage` sent seven parameters that endpoint does not
+declare, including `sort_order` and `safe_search` by default, because it blacklisted instead
+of whitelisting; `allowed_use.editorial_use_only` — the authoritative boolean — was ignored in
+favour of prose, read from a field name that does not exist in the spec; a card could hold a
+comp clip with no licence record at all, invisible to the badge, Settings and the handoff;
+`more` paged whatever filters were set at the time rather than the ones the strip came from;
+the judging pane offered to place an asset the tile had already said could not be placed;
+the fallback poster was the *smallest* still available; paging stopped at result 59 if one
+asset in a page had no id; and an empty-phrase search went out although Getty documents it as
+unsupported. Plus two stale labels.
+
+**Three things that pass muster and are worth not re-litigating:** nothing in the client can
+spend money (three GETs and one PUT, no POST, no `/v3/downloads`, `/v3/boards`, `/v3/products`,
+no `Authorization` header, no token-gated field); the licence gate holds for the new clip
+shape (nothing reads `shot.video` as a model input); and the real decode path **works** — a
+genuine 1.69 MB Getty comp fetched cross-origin, decoded in 24 ms, landing a 768×432 picture,
+the clip and one licence record. The gap §7 admitted is closed.
+
+**And one harness fact that cost an hour of someone else's time too:** under
+`--virtual-time-budget` the media pipeline never delivers a frame, so `firstFrame` fails after
+its full 15-second cap — a *false* failure. Anything that decodes media has to run on
+wall-clock time. There is a harness for that in the scratchpad (`serve.mjs`), and
+`--user-data-dir` silently prevents Chrome launching here.
+
 ## 7. Tests
 
 - **The removal is a test.** No `shotFilters`/`typeFilters` anywhere, no image-search path,

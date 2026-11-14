@@ -31,7 +31,11 @@ writeFileSync(tmp, html, 'utf8');
    reported "did not report", which reads like a crash and is not one.
    If this file ever says that again, try raising this before hunting. */
 const dom = execFileSync(CHROME, [
-  '--headless=new', '--disable-gpu', '--virtual-time-budget=20000',
+  /* Raised from 20000 when the scenario grew the Getty drawer: the footage
+     section alone waits out several placements, and a budget that runs out
+     mid-scenario reports "did not report", which reads like a crash and is
+     not one. */
+  '--headless=new', '--disable-gpu', '--virtual-time-budget=40000',
   '--dump-dom', 'file:///' + tmp.replace(/\\/g, '/')
 ], { maxBuffer: 64 * 1024 * 1024, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
 

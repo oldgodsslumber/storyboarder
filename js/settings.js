@@ -58,7 +58,10 @@
       const src = shown ? SB.Blobs.src(P(), shown) : '';
       if (src) { const im = document.createElement('img'); im.src = src; el.appendChild(im); }
       const who = SB.el('div', 'spacer');
-      who.appendChild(SB.el('div', null, r.code + (r.chosen ? '' : ' · a take') +
+      const what = r.chosen
+        ? (r.asFrame && r.asClip ? '' : (r.asClip ? ' · clip only' : ' · frame only'))
+        : (r.clipTake ? ' · a clip take' : ' · a take');
+      who.appendChild(SB.el('div', null, r.code + what +
         ' · ' + (r.rec.title || r.rec.id)));
       who.appendChild(SB.el('div', 'st-id',
         r.rec.id + (r.rec.artist ? ' · ' + r.rec.artist : '') +
@@ -1127,7 +1130,7 @@
     {
       const g = panels.getty;
       g.appendChild(SB.el('div', 'pp-note',
-        'Search Getty footage from the Footage drawer and drag a clip onto a card. What lands ' +
+        'Search Getty footage from the Getty drawer and drag a clip onto a card. What lands ' +
         'is the watermarked comp: its first frame becomes the card’s picture, and the clip ' +
         'itself goes in the file so the board can be watched. This app never licenses or ' +
         'downloads a final asset — that happens in the edit, against the Premiere panel’s ' +

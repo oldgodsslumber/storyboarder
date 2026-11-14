@@ -237,23 +237,90 @@ window.SB = window.SB || {};
   SB.downscaleImage = function (blobOrDataUrl) {
     return new Promise(function (resolve, reject) {
       const img = new Image();
+      /* A picture loaded from another origin TAINTS the canvas, and then
+       * toDataURL throws — inside this onload, where an uncaught throw used to
+       * mean the promise neither resolved nor rejected. The caller waited
+       * forever: no picture, no error, no toast, a button stuck on "placing…".
+       * Two fixes, because either alone is not enough:
+       *   - ask for the picture in CORS mode, so a host that allows it (Getty's
+       *     media host does) can be drawn and exported;
+       *   - and catch anyway, so a host that does not is a rejection rather
+       *     than a hang. Everything in here is wrapped: a canvas that cannot
+       *     be allocated throws from createElement/getContext too. */
+      const remote = typeof blobOrDataUrl === 'string' && /^https?:/i.test(blobOrDataUrl);
+      if (remote) img.crossOrigin = 'anonymous';
       img.onload = function () {
-        let w = img.naturalWidth, h = img.naturalHeight;
-        if (!w || !h) { reject(new Error('bad image')); return; }
-        const scale = Math.min(1, MAX_W / w, MAX_H / h);
-        w = Math.max(1, Math.round(w * scale));
-        h = Math.max(1, Math.round(h * scale));
-        const c = document.createElement('canvas');
-        c.width = w; c.height = h;
-        const ctx = c.getContext('2d');
-        ctx.fillStyle = '#000';
-        ctx.fillRect(0, 0, w, h);
-        ctx.drawImage(img, 0, 0, w, h);
-        resolve({ data: c.toDataURL('image/jpeg', 0.82), w: w, h: h });
+        try {
+          let w = img.naturalWidth, h = img.naturalHeight;
+          if (!w || !h) { reject(new Error('bad image')); return; }
+          const scale = Math.min(1, MAX_W / w, MAX_H / h);
+          w = Math.max(1, Math.round(w * scale));
+          h = Math.max(1, Math.round(h * scale));
+          const c = document.createElement('canvas');
+          c.width = w; c.height = h;
+          const ctx = c.getContext('2d');
+          ctx.fillStyle = '#000';
+          ctx.fillRect(0, 0, w, h);
+          ctx.drawImage(img, 0, 0, w, h);
+          resolve({ data: c.toDataURL('image/jpeg', 0.82), w: w, h: h });
+        } catch (e) {
+          reject(new Error(remote
+            ? 'that picture could not be read off the canvas — the server did not allow it ' +
+              '(' + (e && e.message || e) + ')'
+            : (e && e.message) || 'could not read the image'));
+        }
       };
-      img.onerror = function () { reject(new Error('could not decode image')); };
-      if (typeof blobOrDataUrl === 'string') img.src = blobOrDataUrl;
-      else img.src = URL.createObjectURL(blobOrDataUrl);
+      img.onerror = function () {
+        reject(new Error(remote
+          ? 'could not load that picture from ' + (function () {
+            try { return new URL(blobOrDataUrl).host; } catch (x) { return 'that address'; }
+          })()
+          : 'could not decode image'));
+      };
+      try {
+        if (typeof blobOrDataUrl === 'string') img.src = blobOrDataUrl;
+        else img.src = URL.createObjectURL(blobOrDataUrl);
+      } catch (e) { reject(e); }
+    });
+  };
+
+  /* The same picture as JPEG bytes, at most `maxEdge` on its long side.
+   *
+   * For the one place that needs a specific format rather than a proxy: the
+   * by-image search upload, which Getty declares as image/jpeg or image/png
+   * only — and originals in this file are usually WebP, because WebP is
+   * smaller (renders.js). Sending one under a .jpg name is a 400. */
+  SB.toJpegBlob = function (blobOrDataUrl, maxEdge) {
+    const cap = maxEdge || 1600;
+    return new Promise(function (resolve, reject) {
+      const img = new Image();
+      const remote = typeof blobOrDataUrl === 'string' && /^https?:/i.test(blobOrDataUrl);
+      if (remote) img.crossOrigin = 'anonymous';
+      img.onload = function () {
+        try {
+          let w = img.naturalWidth, h = img.naturalHeight;
+          if (!w || !h) { reject(new Error('bad image')); return; }
+          const scale = Math.min(1, cap / w, cap / h);
+          w = Math.max(1, Math.round(w * scale));
+          h = Math.max(1, Math.round(h * scale));
+          const c = document.createElement('canvas');
+          c.width = w; c.height = h;
+          c.getContext('2d').drawImage(img, 0, 0, w, h);
+          if (c.toBlob) {
+            c.toBlob(function (b) {
+              b ? resolve(b) : reject(new Error('could not encode that picture as JPEG'));
+            }, 'image/jpeg', 0.9);
+          } else {
+            const data = c.toDataURL('image/jpeg', 0.9);
+            fetch(data).then(function (r) { return r.blob(); }).then(resolve, reject);
+          }
+        } catch (e) { reject(e); }
+      };
+      img.onerror = function () { reject(new Error('could not decode that picture')); };
+      try {
+        if (typeof blobOrDataUrl === 'string') img.src = blobOrDataUrl;
+        else img.src = URL.createObjectURL(blobOrDataUrl);
+      } catch (e) { reject(e); }
     });
   };
 

@@ -247,6 +247,13 @@ can hand to somebody and *watch*.
 - **The pane plays it.** Hover or arrow onto a tile and the comp plays, muted and looping, on
   the right. A locked-off shot and a slow push are the same poster frame, and the difference
   is the whole reason you are looking at footage.
+- **A search needs words.** Getty does not support a search with no phrase, so the filters
+  narrow a search rather than being one, and the drawer says so instead of coming back empty.
+- **If a search keeps coming back empty**, Settings → Getty → *Check this key* prints what
+  Getty actually sent — the reply keys, the result count and the display sizes it found. That
+  one line separates a wrong key from an entitlement problem from a shape this app misread.
+  A key the gateway rejects looks identical to a dead network from inside a page, so the error
+  says the key first.
 - **◎ match this frame.** Boarded a shot with a model already? This uploads that card's frame
   to Getty and finds *footage* that looks like it. It asks first, once a session — that is a
   client frame leaving the machine.

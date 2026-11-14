@@ -307,6 +307,9 @@
        a comp sitting in a banked take is in the file but is not on the board,
        and billing the account for it would be a mistake this list caused.
        The manifest reports both, flagged. */
+    /* `chosen` covers a comp on the board as its picture OR as its clip —
+       both are on the board and both are what the edit would license. A
+       banked take is not. */
     const onBoard = stock.filter(function (st) { return st.chosen; });
     if (onBoard.length) {
       const text = gettyCsv(p, onBoard);

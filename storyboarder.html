@@ -1573,7 +1573,7 @@ body.stock-dragging .frame{outline:1px dashed color-mix(in srgb, var(--accent) 5
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-11-13 23:11 · 96560da+";</script>
+<script>window.SB_BUILD = "2026-11-14 00:18 · 43628d0+";</script>
 
 <div id="app">
 
@@ -1939,23 +1939,90 @@ window.SB = window.SB || {};
   SB.downscaleImage = function (blobOrDataUrl) {
     return new Promise(function (resolve, reject) {
       const img = new Image();
+      /* A picture loaded from another origin TAINTS the canvas, and then
+       * toDataURL throws — inside this onload, where an uncaught throw used to
+       * mean the promise neither resolved nor rejected. The caller waited
+       * forever: no picture, no error, no toast, a button stuck on "placing…".
+       * Two fixes, because either alone is not enough:
+       *   - ask for the picture in CORS mode, so a host that allows it (Getty's
+       *     media host does) can be drawn and exported;
+       *   - and catch anyway, so a host that does not is a rejection rather
+       *     than a hang. Everything in here is wrapped: a canvas that cannot
+       *     be allocated throws from createElement/getContext too. */
+      const remote = typeof blobOrDataUrl === 'string' && /^https?:/i.test(blobOrDataUrl);
+      if (remote) img.crossOrigin = 'anonymous';
       img.onload = function () {
-        let w = img.naturalWidth, h = img.naturalHeight;
-        if (!w || !h) { reject(new Error('bad image')); return; }
-        const scale = Math.min(1, MAX_W / w, MAX_H / h);
-        w = Math.max(1, Math.round(w * scale));
-        h = Math.max(1, Math.round(h * scale));
-        const c = document.createElement('canvas');
-        c.width = w; c.height = h;
-        const ctx = c.getContext('2d');
-        ctx.fillStyle = '#000';
-        ctx.fillRect(0, 0, w, h);
-        ctx.drawImage(img, 0, 0, w, h);
-        resolve({ data: c.toDataURL('image/jpeg', 0.82), w: w, h: h });
+        try {
+          let w = img.naturalWidth, h = img.naturalHeight;
+          if (!w || !h) { reject(new Error('bad image')); return; }
+          const scale = Math.min(1, MAX_W / w, MAX_H / h);
+          w = Math.max(1, Math.round(w * scale));
+          h = Math.max(1, Math.round(h * scale));
+          const c = document.createElement('canvas');
+          c.width = w; c.height = h;
+          const ctx = c.getContext('2d');
+          ctx.fillStyle = '#000';
+          ctx.fillRect(0, 0, w, h);
+          ctx.drawImage(img, 0, 0, w, h);
+          resolve({ data: c.toDataURL('image/jpeg', 0.82), w: w, h: h });
+        } catch (e) {
+          reject(new Error(remote
+            ? 'that picture could not be read off the canvas — the server did not allow it ' +
+              '(' + (e && e.message || e) + ')'
+            : (e && e.message) || 'could not read the image'));
+        }
       };
-      img.onerror = function () { reject(new Error('could not decode image')); };
-      if (typeof blobOrDataUrl === 'string') img.src = blobOrDataUrl;
-      else img.src = URL.createObjectURL(blobOrDataUrl);
+      img.onerror = function () {
+        reject(new Error(remote
+          ? 'could not load that picture from ' + (function () {
+            try { return new URL(blobOrDataUrl).host; } catch (x) { return 'that address'; }
+          })()
+          : 'could not decode image'));
+      };
+      try {
+        if (typeof blobOrDataUrl === 'string') img.src = blobOrDataUrl;
+        else img.src = URL.createObjectURL(blobOrDataUrl);
+      } catch (e) { reject(e); }
+    });
+  };
+
+  /* The same picture as JPEG bytes, at most `maxEdge` on its long side.
+   *
+   * For the one place that needs a specific format rather than a proxy: the
+   * by-image search upload, which Getty declares as image/jpeg or image/png
+   * only — and originals in this file are usually WebP, because WebP is
+   * smaller (renders.js). Sending one under a .jpg name is a 400. */
+  SB.toJpegBlob = function (blobOrDataUrl, maxEdge) {
+    const cap = maxEdge || 1600;
+    return new Promise(function (resolve, reject) {
+      const img = new Image();
+      const remote = typeof blobOrDataUrl === 'string' && /^https?:/i.test(blobOrDataUrl);
+      if (remote) img.crossOrigin = 'anonymous';
+      img.onload = function () {
+        try {
+          let w = img.naturalWidth, h = img.naturalHeight;
+          if (!w || !h) { reject(new Error('bad image')); return; }
+          const scale = Math.min(1, cap / w, cap / h);
+          w = Math.max(1, Math.round(w * scale));
+          h = Math.max(1, Math.round(h * scale));
+          const c = document.createElement('canvas');
+          c.width = w; c.height = h;
+          c.getContext('2d').drawImage(img, 0, 0, w, h);
+          if (c.toBlob) {
+            c.toBlob(function (b) {
+              b ? resolve(b) : reject(new Error('could not encode that picture as JPEG'));
+            }, 'image/jpeg', 0.9);
+          } else {
+            const data = c.toDataURL('image/jpeg', 0.9);
+            fetch(data).then(function (r) { return r.blob(); }).then(resolve, reject);
+          }
+        } catch (e) { reject(e); }
+      };
+      img.onerror = function () { reject(new Error('could not decode that picture')); };
+      try {
+        if (typeof blobOrDataUrl === 'string') img.src = blobOrDataUrl;
+        else img.src = URL.createObjectURL(blobOrDataUrl);
+      } catch (e) { reject(e); }
     });
   };
 
@@ -9719,15 +9786,36 @@ window.SB = window.SB || {};
       try {
         res = await deps.fetch(url, { method: method, headers: headers, body: body, mode: 'cors' });
       } catch (e) {
-        /* Three different failures look identical from inside a page and none
-         * of them is Getty saying no — see the README on this. Say which one
-         * this is as far as it can be known, and retry twice before believing
-         * it. */
+        /* A rejected fetch is NOT necessarily a dead network, and assuming it
+         * was is the most misleading thing this client ever said.
+         *
+         * Getty's gateway answers a bad or unentitled key with 401/403 and
+         * **no Access-Control-Allow-Origin header**, so the browser refuses to
+         * let the page read the response at all: `fetch` rejects exactly as if
+         * the request had never left. The old message then blamed the network
+         * — "check that nothing is intercepting api.gettyimages.com" — for a
+         * typo in the key. (The same is true of a 429, which is why the
+         * Retry-After ladder below can never run in a browser.)
+         *
+         * The status is unreadable, so it is not guessed: one no-cors probe
+         * asks the only question that can be answered — did the host answer
+         * at all? An opaque response that resolves means Getty replied and
+         * the browser hid it, which means the key or the account, not the
+         * wire. */
         if (++netFails > 2) {
-          const err = new Error('Could not reach Getty — the request never left the browser. ' +
-            'Check the connection, and that nothing on this network is intercepting ' +
-            'api.gettyimages.com.');
-          err.network = true;
+          const answered = await hostAnswered(url);
+          const err = new Error(answered
+            ? 'Getty answered, but the browser would not let this page read the answer — ' +
+              'which is what a rejected API key looks like from a web page, because Getty ' +
+              'sends 401, 403 and 429 without the header a browser needs. Check the key in ' +
+              'Settings → Getty first, and that the account is entitled to the footage ' +
+              'API. If the key is right, this can also mean the per-second limit was hit; ' +
+              'wait a moment and try again.'
+            : 'Could not reach Getty — the request never left the browser, and ' +
+              'api.gettyimages.com did not answer at all. Check the connection, and that ' +
+              'nothing on this network is intercepting it.');
+          err.network = !answered;
+          err.opaque = !!answered;
           throw err;
         }
         await deps.sleep(backoff); backoff *= 2;
@@ -9749,6 +9837,17 @@ window.SB = window.SB || {};
       throw gettyError(res.status, json, text);
     }
     throw new Error('Getty kept asking us to slow down. Try again in a minute.');
+  }
+
+  /* Did the host answer anything at all? A no-cors GET is a simple request —
+   * no preflight, no readable body — and it resolves for a 401 or a 403 just
+   * as it does for a 200. That is exactly what is needed here: not the status,
+   * only the difference between "Getty replied and the browser hid it" and
+   * "nothing came back". */
+  function hostAnswered(url) {
+    return deps.fetch(url, { method: 'GET', mode: 'no-cors', cache: 'no-store' })
+      .then(function () { return true; })
+      .catch(function () { return false; });
   }
 
   function readText(res) {
@@ -9781,7 +9880,9 @@ window.SB = window.SB || {};
       /* video has exactly two orientations, not five */
       orientations: f.orientations,
       aspect_ratios: f.aspects,
-      format_available: f.formats,
+      /* single-valued in the spec, unlike every other filter here: a comma
+         list would be a 400 the moment anything set two */
+      format_available: one(f.formats),
       frame_rates: f.frameRates,
       image_techniques: f.techniques,
       viewpoints: f.viewpoints,
@@ -9801,6 +9902,9 @@ window.SB = window.SB || {};
       fields: FIELDS
     };
   }
+
+  /* The first of a set, for a parameter the spec declares as one value. */
+  function one(v) { return Array.isArray(v) ? v[0] : v; }
 
   function searchVideos(family, f, page, pageSize) {
     return searchVideosRaw(family, f, page, pageSize).then(shapeResults);
@@ -9827,39 +9931,62 @@ window.SB = window.SB || {};
    * the OpenAPI spec, and the spec gives the upload no response schema at all,
    * so both are written defensively and the drawer says plainly when an
    * account cannot do it. */
+  /* The by-image endpoint declares a SHORT parameter list, and it is not the
+   * search's: no clip length, no frame rate, no format, no sort, no safe
+   * search. The first cut blacklisted the four filters a picture obviously
+   * answers and sent everything else, which meant seven undeclared parameters
+   * went out on every call — including sort_order and safe_search, which are
+   * on by default.
+   *
+   * A whitelist, from the spec, because a blacklist is wrong the moment a new
+   * filter is added. BY_IMAGE_OK is the full set the spec allows that this app
+   * has any use for. */
+  const BY_IMAGE_OK = ['asset_id', 'image_url', 'phrase', 'fields', 'page', 'page_size',
+    'collection_codes', 'collections_filter_type', 'exclude_editorial_use_only',
+    'product_types', 'istock_exclusive'];
+
   function byImage(src, f, page, pageSize) {
-    const q = searchParams(f, page, pageSize);
+    const all = searchParams(f, page, pageSize);
+    const q = {};
+    BY_IMAGE_OK.forEach(function (k) { if (all[k] !== undefined) q[k] = all[k]; });
     if (src && src.assetId) q.asset_id = src.assetId;
     if (src && src.imageUrl) q.image_url = src.imageUrl;
-    /* The picture answers these, so asking them again only narrows the one
-     * thing it is already describing. Deleted under their WIRE names — the
-     * friendly name is gone by the time the object exists, and deleting that
-     * deleted nothing. */
-    delete q.aspect_ratios;
-    delete q.orientations;
-    delete q.viewpoints;
-    delete q.image_techniques;
     return request('GET', '/v3/search/videos/creative/by-image', { query: q }).then(shapeResults);
+  }
+
+  /* Which of the drawer's filters a by-image search can actually honour, so
+   * the chips can say so rather than promising a frame-rate filter the
+   * endpoint has never heard of. */
+  function byImageIgnores(f) {
+    const out = [];
+    chips(f || {}).forEach(function (c) {
+      const wire = WIRE[c.k];
+      if (wire && BY_IMAGE_OK.indexOf(wire) < 0) out.push(c);
+    });
+    return out;
   }
 
   /* PUT the bytes, get back something that names where they landed. The reply
    * has been seen as a bare string and as an object under several keys, so
    * every shape is accepted and an unrecognised one is reported as what it is
    * rather than as a search with no results. */
+  /* PUT the bytes, then search by the URL they now live at.
+   *
+   * That URL is OURS to build: the spec gives this endpoint a 200 with no
+   * response body at all, and Getty's own documentation says to pass the
+   * upload URL you chose as `image_url`. The first cut demanded a URL in the
+   * reply and, on the empty 200 the spec describes, threw an error blaming the
+   * account — after the user's frame had already been sent. A reply that DOES
+   * name a location still wins, in case an account's gateway adds one. */
   function uploadSearchImage(name, blob, type) {
     const safe = String(name || 'frame.jpg').replace(/[^A-Za-z0-9._-]/g, '_');
-    return request('PUT', '/v3/search/by-image/uploads/' + encodeURIComponent(safe), {
+    const path = '/v3/search/by-image/uploads/' + encodeURIComponent(safe);
+    return request('PUT', path, {
       raw: blob, type: type || blobType(blob) || 'image/jpeg'
     }).then(function (r) {
-      const u = (typeof r === 'string') ? r
+      const said = (typeof r === 'string') ? r
         : (r && (r.uri || r.url || r.image_url || r.imageUrl || r.location)) || '';
-      if (!u || !/^https?:/i.test(String(u))) {
-        const e = new Error('Getty took the picture but did not say where to find it, so it ' +
-          'cannot be searched by. This account may not have search-by-image enabled.');
-        e.unsupported = true;
-        throw e;
-      }
-      return String(u);
+      return /^https?:/i.test(String(said)) ? String(said) : (BASE + path);
     });
   }
 
@@ -9885,6 +10012,10 @@ window.SB = window.SB || {};
     return {
       total: (r && (r.result_count || 0)) | 0,
       images: list.map(asset).filter(Boolean),
+      /* How many Getty SENT, which is what says whether there is another page.
+       * Counting the shaped ones instead ended somebody's paging at result 59
+       * because one asset in the page had no id. */
+      raw: list.length,
       related: (r && r.related_searches) || []
     };
   }
@@ -9941,16 +10072,35 @@ window.SB = window.SB || {};
     return all[0];
   }
 
-  /* The poster: what a tile shows while nothing is playing. Deliberately NOT
-   * what lands on a card — see firstFrame(). */
+  function stills(a) {
+    return sizes(a).filter(function (z) { return z && z.uri && looksLikeStill(z); });
+  }
+
+  /* Two jobs, opposite needs, so two functions rather than one with a
+   * compromise order.
+   *
+   * The TILE wants the cheapest thing that fills a 168px box — forty of them
+   * scroll. A FALLBACK FRAME, used when the clip itself will not decode, wants
+   * the largest still there is, because it is going on a card and into a PDF.
+   * One ordering served both and handed a ~170px thumbnail to the card. */
   function posterUrl(a) {
-    const still = sizes(a).filter(function (z) { return !isClipSize(z) && z.uri; });
+    const list = stills(a);
     const order = ['thumb', 'preview_image', 'comp_image', 'preview', 'comp'];
     for (let i = 0; i < order.length; i++) {
-      const hit = still.filter(function (z) { return z.name === order[i]; })[0];
+      const hit = list.filter(function (z) { return z.name === order[i]; })[0];
       if (hit) return hit.uri;
     }
-    return still.length ? still[0].uri : '';
+    return list.length ? list[0].uri : '';
+  }
+
+  function bestStillUrl(a) {
+    const list = stills(a);
+    const order = ['high_res_comp', 'comp', 'comp_image', 'preview', 'preview_image', 'thumb'];
+    for (let i = 0; i < order.length; i++) {
+      const hit = list.filter(function (z) { return z.name === order[i]; })[0];
+      if (hit) return hit.uri;
+    }
+    return list.length ? list[list.length - 1].uri : '';
   }
 
   /* The watermarked comp clip — what the judging pane plays, what the card
@@ -9988,7 +10138,6 @@ window.SB = window.SB || {};
   function asset(a) {
     if (!a || !a.id) return null;
     const dest = (a.referral_destinations || [])[0] || null;
-    const z = clipSize(a);
     return {
       id: String(a.id),
       kind: 'video',
@@ -10007,8 +10156,10 @@ window.SB = window.SB || {};
       speed: a.shot_speed || '',
       mastered: a.mastered_to || '',
       poster: posterUrl(a),
+      /* the biggest still there is, for the one case where the clip will not
+         decode and a frame still has to go on the card */
+      still: bestStillUrl(a),
       comp: compUrl(a),
-      compBytes: (z && (z.bytes || z.file_size)) || 0,
       link: (dest && (dest.uri || dest.site_name)) || '',
       raw: a
     };
@@ -10039,10 +10190,20 @@ window.SB = window.SB || {};
    * and the words differ between collections — so this matches on the one
    * phrase they all contain and treats anything it cannot read as fine, since
    * the search filter has already excluded the real ones. */
+  /* `allowed_use.editorial_use_only` is a boolean and it is the authority.
+   * The first cut only regexed the prose fields — and read
+   * `how_can_i_use_it_collection_text`, which is not a field; the real one is
+   * `how_can_i_use_it` — so the flag missed every asset that states it
+   * properly and fired only where a collection happened to spell it out. The
+   * prose stays as a fallback, because a collection that says it in words and
+   * leaves the boolean unset should still be flagged. */
   function editorialOnly(a) {
     const u = (a && a.allowed_use) || {};
-    const s = [u.usage_restrictions, u.how_can_i_use_it_collection_text, u.release_info]
-      .filter(Boolean).join(' ');
+    if (u.editorial_use_only === true) return true;
+    const parts = [u.usage_restrictions, u.how_can_i_use_it, u.release_info];
+    const s = parts.map(function (x) {
+      return Array.isArray(x) ? x.join(' ') : String(x == null ? '' : x);
+    }).join(' ');
     return /editorial use only/i.test(s);
   }
 
@@ -10223,6 +10384,15 @@ window.SB = window.SB || {};
   /* What is filtering this search, in the words a person would use, each one
    * removable. Built from the filters that are SET — so an empty filter set
    * says so, instead of a row of chips nobody chose. */
+  /* friendly name -> the name that goes on the wire */
+  const WIRE = {
+    orientations: 'orientations', aspects: 'aspect_ratios', formats: 'format_available',
+    frameRates: 'frame_rates', techniques: 'image_techniques', viewpoints: 'viewpoints',
+    licenses: 'license_models', minLength: 'min_clip_length', maxLength: 'max_clip_length',
+    collections: 'collection_codes', sort: 'sort_order', safe: 'safe_search',
+    excludeEditorialOnly: 'exclude_editorial_use_only'
+  };
+
   function chips(f) {
     const out = [];
     const add = function (k, vals) {
@@ -10278,7 +10448,8 @@ window.SB = window.SB || {};
     similar: similar, byImage: byImage, describeRaw: describeRaw,
     uploadSearchImage: uploadSearchImage, fetchComp: fetchComp,
     /* shaping */
-    asset: asset, record: record, posterUrl: posterUrl, compUrl: compUrl,
+    asset: asset, record: record, posterUrl: posterUrl, bestStillUrl: bestStillUrl,
+    compUrl: compUrl, byImageIgnores: byImageIgnores, BY_IMAGE_OK: BY_IMAGE_OK,
     thumbUrl: thumbUrl, previewUrl: previewUrl, clipSize: clipSize,
     seconds: seconds, clock: clock,
     assetIdFromUrl: assetIdFromUrl, recordFromUrl: recordFromUrl,
@@ -12175,9 +12346,13 @@ window.SB = window.SB || {};
     const m = p.stock || {};
     if (typeof x === 'string') return m[x] || null;
     if (x.ref) return m[x.ref] || madeStock(x) || null;
-    /* a shot: the chosen frame decides, proxy first, then the original */
-    return m[refOf(x.image)] || m[refOf(x.render)] ||
-      madeStock(x.render) || madeStock(x.image) || null;
+    /* A shot: the chosen frame decides, proxy first then the original — and
+     * failing both, the CLIP, because a comp can be on a card as footage with
+     * no picture of its own (the frame failed to decode, or a real render was
+     * put over it and the comp stayed as the clip). It is on the board and it
+     * is licensed either way. */
+    return m[refOf(x.image)] || m[refOf(x.render)] || m[refOf(x.video)] ||
+      madeStock(x.render) || madeStock(x.image) || madeStock(x.video) || null;
   }
 
   /* The record a picture carries in its own provenance. The register is the
@@ -12219,7 +12394,14 @@ window.SB = window.SB || {};
       const f = findShot(p, sh.id);
       const code = f ? f.code : '';
       const rec = stockFor(p, sh);
-      if (rec) out.push({ shot: sh, scene: sc, rec: rec, code: code, chosen: true });
+      if (rec) {
+        out.push({
+          shot: sh, scene: sc, rec: rec, code: code, chosen: true,
+          /* what is actually on the card: the picture, the clip, or both */
+          asFrame: !!(stockFor(p, sh.image) || stockFor(p, sh.render)),
+          asClip: !!stockFor(p, sh.video)
+        });
+      }
       /* The takes too. A comp replaced by a real render is still IN the file —
          the bytes, the watermark and the licence — and it used to vanish from
          every count the moment it stopped being the chosen frame, which is
@@ -12229,6 +12411,13 @@ window.SB = window.SB || {};
         if (!tk) return;
         const r = stockFor(p, tk.image) || stockFor(p, tk.render);
         if (r) out.push({ shot: sh, scene: sc, rec: r, code: code, chosen: false, take: tk });
+      });
+      /* and the clip takes, for the same reason */
+      (sh.videoAlts || []).forEach(function (v) {
+        const r = stockFor(p, v);
+        if (r && !(sh.video && refOf(sh.video) === refOf(v))) {
+          out.push({ shot: sh, scene: sc, rec: r, code: code, chosen: false, clipTake: v });
+        }
       });
     });
     return out.sort(function (a, b) {
@@ -19837,34 +20026,63 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
     const keepClip = !SB.Getty.keepCompOff || !SB.Getty.keepCompOff();
 
     return SB.Getty.fetchComp(a.comp).then(function (clip) {
-      /* The first frame, off the clip we already have in hand. On a build
-         that cannot decode it — or a drawer handing over a poster-only
-         asset — the thumbnail stands in, and the toast says so: boarding a
-         170px picture is a thing somebody has to know happened. */
+      /* The first frame, off the clip we already have in hand. Where that
+         cannot be decoded, the largest STILL Getty offers stands in — fetched
+         as bytes, never handed over as a URL: a cross-origin URL taints the
+         canvas, and the picture path used to hang forever on exactly that. */
       return SB.Getty.firstFrame(clip).then(function (data) {
         return { clip: clip, frame: data, fell: false };
       }).catch(function (e) {
-        return { clip: clip, frame: a.poster || '', fell: true, why: e && e.message };
+        const still = a.still || a.poster || '';
+        if (!still) return { clip: clip, frame: '', fell: true, why: e && e.message };
+        return SB.Getty.fetchComp(still).then(function (bytes) {
+          return { clip: clip, frame: bytes, fell: true, why: e && e.message };
+        }).catch(function () {
+          return { clip: clip, frame: '', fell: true, why: e && e.message };
+        });
       });
     }).then(function (got) {
-      if (!got.frame) throw new Error('Nothing came back that could be put on the card.');
-      return setImage(sh, got.frame, made).then(function () {
-        if (got.fell) {
-          SB.toast('Placed the poster thumbnail — the clip\u2019s own first frame could not be ' +
-            'read here' + (got.why ? ' (' + got.why + ')' : '') + ', so this picture is small.', true);
+      if (!got.frame && !got.clip) {
+        throw new Error('Nothing came back that could be put on the card.');
+      }
+      /* The clip goes on FIRST when there is no frame, so a comp can never sit
+         in the file with no licence record against it: the register is keyed
+         by reference, and the clip's reference is a reference. */
+      const frameStep = got.frame
+        ? setImage(sh, got.frame, made).then(function () { return !!sh.image; })
+        : Promise.resolve(false);
+      return frameStep.then(function (placed) {
+        if (got.fell && placed) {
+          SB.toast('Placed a still instead — the clip\u2019s own first frame could not be read ' +
+            'here' + (got.why ? ' (' + got.why + ')' : '') + '.', true);
         }
-        if (!keepClip || !got.clip) return null;
+        if (!placed) {
+          SB.toast('The picture could not be placed on the card' +
+            (got.clip && keepClip ? ' — the comp clip is still here, and the card says so.'
+              : '.'), true);
+        }
+        if (!keepClip || !got.clip) {
+          if (!placed) throw new Error('Nothing could be put on the card.');
+          return null;
+        }
         /* The comp, as the card's clip. A video/* type is what Clip.attach
            insists on and Getty's media host does not always send one. */
         const file = named(got.clip, 'getty-' + a.id + '.mp4');
         return SB.Clip.attach(P(), sh, file, made).then(function (rec) {
           /* Getty already told us how long it runs, so the badge says so even
              on a build where the clip's own metadata could not be read. */
-          if (rec && !rec.dur && a.seconds) { rec.dur = a.seconds; SB.app.changed(true); }
+          if (rec && !rec.dur && a.seconds) rec.dur = a.seconds;
+          /* The licence, against the CLIP as well as the picture. A comp that
+             is only a clip — because the frame failed, or because a real
+             render was put over it later — used to be in the file with
+             nothing counting it: no badge, nothing in Settings, no row in the
+             handoff CSV, and a 30-day clock that never started. */
+          if (rec) SB.Model.markStock(P(), rec, made.stock);
+          SB.app.changed(true);
           return rec;
         }).catch(function (e) {
-          SB.toast('The frame is on the card, but the comp clip could not be kept: ' +
-            (e.message || e), true);
+          SB.toast((placed ? 'The frame is on the card, but the' : 'The') +
+            ' comp clip could not be kept: ' + (e.message || e), true);
           return null;
         });
       });
@@ -25092,7 +25310,7 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
     statusEl: null, matchEl: null,
     /* the search as it stands. `filters` is only ever what a person set. */
     filters: null, phrase: '', family: 'creative',
-    page: 1, total: 0, images: [], more: false,
+    page: 1, total: 0, images: [], more: false, used: null,
     busy: false, error: '', searched: false,
     /* what the judging pane is playing, and what Use-on would place */
     chosen: null,
@@ -25351,6 +25569,16 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
       return;
     }
     c.appendChild(SB.el('span', 'stock-chip-lbl', 'filtered to'));
+    /* The by-image endpoint takes a short parameter list of its own, and most
+       of these are not on it. Said out loud rather than letting the panel
+       promise a frame-rate filter that search never sent. */
+    const ignored = (S.byImage && SB.Getty.byImageIgnores)
+      ? SB.Getty.byImageIgnores(S.filters || {}).map(function (x) { return x.label; })
+      : [];
+    if (ignored.length) {
+      c.appendChild(SB.el('span', 'stock-chip-none',
+        '· a match-this-frame search cannot filter by ' + ignored.join(', ') + ' —'));
+    }
     chips.forEach(function (ch) {
       const b = SB.el('button', 'stock-chip', ch.label + ' ✕');
       b.title = 'Drop this filter';
@@ -25384,7 +25612,22 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
    * the user's picture to Getty, threw the answer away, and ran an ordinary
    * keyword search with an empty phrase. It filled the strip, so it looked
    * like it had worked. */
-  function search() { S.byImage = null; run(1); }
+  function search() {
+    /* Getty says so out loud: "Search requests without a phrase parameter are
+       not supported and may not always work." A filter-only search therefore
+       comes back empty in a way that reads as the filters' fault. */
+    if (!String(S.phrase || '').trim()) {
+      S.byImage = null;
+      S.searched = true;
+      S.images = [];
+      S.error = 'Getty needs something to search for - type what the shot shows. ' +
+        'The filters narrow a search; they cannot be one.';
+      drawStrip();
+      return;
+    }
+    S.byImage = null;
+    run(1);
+  }
 
   function run(page) {
     if (!SB.Getty) return;
@@ -25394,7 +25637,13 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
       drawStrip();
       return;
     }
-    const f = Object.assign({}, S.filters || {}, { phrase: S.phrase });
+    /* Page 1 takes the filters as they are NOW and remembers them; later
+       pages use that snapshot. Reading S.filters live meant that picking a
+       filter and pressing "more" appended page 2 of a DIFFERENT search to
+       page 1 of this one - duplicated rows, skipped rows, and chips
+       describing only half of what was on screen. */
+    if (page === 1) S.used = Object.assign({}, S.filters || {}, { phrase: S.phrase });
+    const f = S.used || Object.assign({}, S.filters || {}, { phrase: S.phrase });
     S.busy = true; S.error = ''; S.searched = true;
     if (page === 1) { S.images = []; S.chosen = null; }
     paintStatus();
@@ -25408,7 +25657,10 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
       S.page = page;
       S.total = r.total;
       S.images = page === 1 ? r.images : S.images.concat(r.images);
-      S.more = r.images.length >= 60 && S.images.length < r.total;
+      /* what Getty SENT, not what survived shaping: one asset without an id
+         used to end paging at result 59 */
+      S.more = (r.raw === undefined ? r.images.length : r.raw) >= 60 &&
+        S.images.length < r.total;
       if (!S.chosen && S.images.length) S.chosen = S.images[0];
       drawStrip(); drawJudge(); paintStatus();
     }).catch(function (e) {
@@ -25455,7 +25707,7 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
     if (!frame) return;
     if (!S.askedUpload) {
       const ok = window.confirm(
-        'Find Getty photographs that look like this frame?\n\n' +
+        'Find Getty footage that looks like this frame?\n\n' +
         'This uploads the picture on ' + f.code + ' to Getty’s search service. It is a ' +
         'client frame leaving this machine — Getty searches with it and does not license ' +
         'or publish it, but it does leave.\n\nAsked once per session.');
@@ -25485,12 +25737,24 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
     });
   }
 
+  /* The frame to search by, as JPEG.
+   *
+   * Getty's upload declares image/jpeg and image/png and nothing else, and
+   * originals in this file are usually WebP because WebP is smaller
+   * (renders.js) — so the bytes went up as image/webp under a .jpg name,
+   * which is a 400 nobody would have been able to read. Converted here, so
+   * there is one place that knows what that endpoint accepts. */
   function frameBlob(p, sh) {
     return SB.Renders.file(p, sh.render).then(function (file) {
       if (file) return file;
       const src = sh.image ? SB.Blobs.src(p, sh.image) : '';
       if (!src) return null;
       return fetch(src).then(function (r) { return r.blob(); });
+    }).then(function (b) {
+      if (!b) return null;
+      if (/^image\/(jpeg|png)$/i.test(b.type || '')) return b;
+      if (!SB.toJpegBlob) return b;
+      return SB.toJpegBlob(b, 1600).catch(function () { return b; });
     });
   }
 
@@ -25687,10 +25951,14 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
     S.useEl = SB.el('button', 'mini primary', 'Use as frame');
     S.useEl.onclick = function () {
       const f = shot();
-      if (!f) return;
+      if (!f || !a.comp) return;
       S.useEl.disabled = true;
       S.useEl.textContent = 'placing\u2026';
-      SB.Board.placeStock(f.shot, a).then(function () { paintUse(); });
+      /* Re-enabled on the way out as well as the way through: a placement
+         that failed used to leave this button reading "placing\u2026" for the rest
+         of the session. */
+      const done = function () { paintUse(); };
+      SB.Board.placeStock(f.shot, a).then(done, done);
     };
     row.appendChild(S.useEl);
     paintUse();
@@ -25717,12 +25985,20 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
     const b = S.useEl;
     if (!b) return;
     const f = shot();
-    b.disabled = !f || !S.chosen;
-    b.textContent = f ? 'Use on ' + f.code : 'Use as frame';
-    b.title = f
-      ? 'Put this comp on ' + f.code + ': its first frame becomes the card\u2019s picture and ' +
-        'the clip goes in the file. Anything already there is kept as a take.'
-      : 'Select a card first \u2014 or just drag the tile onto one';
+    const a = S.chosen;
+    /* An asset Getty sent no playable comp for cannot go on a card, and the
+       tile already says so. Offering the button anyway was the panel making
+       two opposite claims about one result. */
+    const noComp = !!a && !a.comp;
+    b.disabled = !f || !a || noComp;
+    b.textContent = noComp ? 'no comp to place' : (f ? 'Use on ' + f.code : 'Use as frame');
+    b.title = noComp
+      ? 'Getty sent no playable comp for this clip, so there is nothing to put on a card. ' +
+        'Open it on gettyimages.com instead.'
+      : (f
+        ? 'Put this comp on ' + f.code + ': its first frame becomes the card\u2019s picture and ' +
+          'the clip goes in the file. Anything already there is kept as a take.'
+        : 'Select a card first \u2014 or just drag the tile onto one');
   }
 
   /* ---------------- dragging onto a board that has scrolled away ----------
@@ -26188,7 +26464,10 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
       const src = shown ? SB.Blobs.src(P(), shown) : '';
       if (src) { const im = document.createElement('img'); im.src = src; el.appendChild(im); }
       const who = SB.el('div', 'spacer');
-      who.appendChild(SB.el('div', null, r.code + (r.chosen ? '' : ' · a take') +
+      const what = r.chosen
+        ? (r.asFrame && r.asClip ? '' : (r.asClip ? ' · clip only' : ' · frame only'))
+        : (r.clipTake ? ' · a clip take' : ' · a take');
+      who.appendChild(SB.el('div', null, r.code + what +
         ' · ' + (r.rec.title || r.rec.id)));
       who.appendChild(SB.el('div', 'st-id',
         r.rec.id + (r.rec.artist ? ' · ' + r.rec.artist : '') +
@@ -27257,7 +27536,7 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
     {
       const g = panels.getty;
       g.appendChild(SB.el('div', 'pp-note',
-        'Search Getty footage from the Footage drawer and drag a clip onto a card. What lands ' +
+        'Search Getty footage from the Getty drawer and drag a clip onto a card. What lands ' +
         'is the watermarked comp: its first frame becomes the card’s picture, and the clip ' +
         'itself goes in the file so the board can be watched. This app never licenses or ' +
         'downloads a final asset — that happens in the edit, against the Premiere panel’s ' +
@@ -29218,6 +29497,9 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
        a comp sitting in a banked take is in the file but is not on the board,
        and billing the account for it would be a mistake this list caused.
        The manifest reports both, flagged. */
+    /* `chosen` covers a comp on the board as its picture OR as its clip —
+       both are on the board and both are what the edit would license. A
+       banked take is not. */
     const onBoard = stock.filter(function (st) { return st.chosen; });
     if (onBoard.length) {
       const text = gettyCsv(p, onBoard);
