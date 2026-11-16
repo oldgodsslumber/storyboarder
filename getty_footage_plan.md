@@ -209,6 +209,24 @@ its full 15-second cap — a *false* failure. Anything that decodes media has to
 wall-clock time. There is a harness for that in the scratchpad (`serve.mjs`), and
 `--user-data-dir` silently prevents Chrome launching here.
 
+**And the one that cost fifteen hours of wall clock after that:** the virtual clock does not
+just run fast, it *stops* while a network request is in flight, so one request to a host that
+is not on this machine does not fail the suite or slow it — it hangs it, with no output, for
+as long as anyone leaves it running. `test-ui.mjs` reported nothing and looked like a long
+test. Two doors were open: a taint assertion pointing an `<img>` at media.gettyimages.com
+(a `Promise.race` against a `setTimeout` is no rescue — that timer is on the same frozen
+clock), and the blocking editor, which is mounted with **`srcdoc`** and loads three.js,
+mediabunny and the mediapipe models from three CDNs. A `srcdoc` frame is its own realm, so
+nothing stubbed in the parent reaches it, and its inline `import('https://cdn…')` is neither
+a fetch nor an attribute — no stub could catch it even in the same realm; the string has to be
+rewritten before it is mounted. That second one is why the hang was *intermittent*: the
+frame's subresources and the scenario's last assertions were racing.
+
+Closed at three levels, since the failure mode is silence: the scenario refuses anything bound
+off-machine against a closed port and asserts at the end that nothing went, and `test-ui.mjs`
+has a 120-second wall-clock ceiling that kills Chrome and says what to look for. The suite now
+runs in about seven seconds, six runs for six.
+
 ## 7. Tests
 
 - **The removal is a test.** No `shotFilters`/`typeFilters` anywhere, no image-search path,

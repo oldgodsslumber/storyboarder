@@ -30,14 +30,39 @@ writeFileSync(tmp, html, 'utf8');
    now a second document besides -- past that, the run stopped mid-way and
    reported "did not report", which reads like a crash and is not one.
    If this file ever says that again, try raising this before hunting. */
-const dom = execFileSync(CHROME, [
-  /* Raised from 20000 when the scenario grew the Getty drawer: the footage
-     section alone waits out several placements, and a budget that runs out
-     mid-scenario reports "did not report", which reads like a crash and is
-     not one. */
-  '--headless=new', '--disable-gpu', '--virtual-time-budget=40000',
-  '--dump-dom', 'file:///' + tmp.replace(/\\/g, '/')
-], { maxBuffer: 64 * 1024 * 1024, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+/* The budget is VIRTUAL ms and the virtual clock stops dead while a network
+   request is in flight, so a single request to a host that is not on this
+   machine does not slow the run down -- it stops it, silently, for ever. One
+   left in the scenario sat here for fifteen hours. The scenario now refuses
+   anything that tries to leave the machine, and this wall-clock ceiling is
+   the backstop: whatever gets past that, the run ends and says so instead of
+   becoming a Chrome nobody notices. */
+const WALL_MS = 120000;
+let dom;
+try {
+  dom = execFileSync(CHROME, [
+    /* Raised from 20000 when the scenario grew the Getty drawer: the footage
+       section alone waits out several placements, and a budget that runs out
+       mid-scenario reports "did not report", which reads like a crash and is
+       not one. */
+    '--headless=new', '--disable-gpu', '--virtual-time-budget=40000',
+    '--dump-dom', 'file:///' + tmp.replace(/\\/g, '/')
+  ], {
+    maxBuffer: 64 * 1024 * 1024, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'],
+    timeout: WALL_MS, killSignal: 'SIGKILL'
+  });
+} catch (e) {
+  try { unlinkSync(tmp); } catch { /* already gone */ }
+  if (e && (e.code === 'ETIMEDOUT' || e.signal)) {
+    console.error('Chrome ran past ' + (WALL_MS / 1000) + 's of wall clock and was killed.\n' +
+      'The virtual clock had almost certainly stalled on a pending request.\n' +
+      'Look for a URL in ui-scenario.js that is not on 127.0.0.1 -- the\n' +
+      'scenario reports those itself as "went out to the network" when it\n' +
+      'gets far enough to report at all.');
+    process.exit(3);
+  }
+  throw e;
+}
 
 unlinkSync(tmp);
 

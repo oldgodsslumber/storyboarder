@@ -1,5 +1,133 @@
-/* headless UI scenario — injected by test-ui.mjs, not part of the app */
+/* headless UI scenario - injected by test-ui.mjs, not part of the app */
 (function () {
+  /* NETWORK SENTRY. Under --virtual-time-budget the clock STOPS while a
+     request is in flight, so one request to a host that is not on this
+     machine does not fail the suite -- it hangs it, with no output, for as
+     long as anyone leaves it running. A `Promise.race` against a setTimeout
+     is no rescue: that timer is on the same frozen clock.
+     That is what happened: the taint assertion below pointed an <img> at
+     media.gettyimages.com and the run sat there for fifteen hours.
+     So nothing here may leave the machine. Anything that tries is refused
+     against a closed port -- which fails instantly and keeps the clock
+     moving -- and recorded, so a hang becomes a named failure at the end. */
+  const offMachine = [];
+  const LOCAL = /^(https?:)?\/\/(127\.0\.0\.1|localhost|\[::1\])(:|\/|$)/i;
+  const REFUSED = 'http://127.0.0.1:1/blocked-by-sentry';
+  const remote = function (u) {
+    u = String(u || '');
+    return /^https?:/i.test(u) && !LOCAL.test(u);
+  };
+  const realFetch = window.fetch;
+  window.fetch = function (input) {
+    const u = (input && input.url) || input;
+    if (remote(u)) {
+      offMachine.push('fetch ' + String(u).slice(0, 120));
+      return Promise.reject(new TypeError('blocked by the UI suite network sentry'));
+    }
+    return realFetch.apply(this, arguments);
+  };
+  /* Every door out, not just fetch and <img>: the judging pane plays the comp
+     through a <video>, and a <video> pointed at a remote host stalls the
+     virtual clock exactly as hard while looking like nothing at all. */
+  [[window.HTMLImageElement, 'img'], [window.HTMLMediaElement, 'media'],
+   [window.HTMLSourceElement, 'source'], [window.HTMLIFrameElement, 'iframe'],
+   [window.HTMLScriptElement, 'script'], [window.HTMLTrackElement, 'track']
+  ].forEach(function (pair) {
+    const C = pair[0];
+    if (!C) return;
+    const sd = Object.getOwnPropertyDescriptor(C.prototype, 'src');
+    if (!sd || !sd.set) return;
+    Object.defineProperty(C.prototype, 'src', {
+      configurable: true,
+      get: function () { return sd.get.call(this); },
+      set: function (v) {
+        if (remote(v)) {
+          offMachine.push(pair[1] + ' ' + String(v).slice(0, 120));
+          return sd.set.call(this, REFUSED);
+        }
+        return sd.set.call(this, v);
+      }
+    });
+  });
+  /* setAttribute bypasses the property setter entirely. */
+  const realSet = Element.prototype.setAttribute;
+  Element.prototype.setAttribute = function (name, value) {
+    if (/^(src|srcset|poster|href)$/i.test(String(name)) && remote(value) &&
+        !/^a$|^link$/i.test(this.tagName)) {
+      offMachine.push('@' + name + ' ' + String(value).slice(0, 120));
+      return realSet.call(this, name, REFUSED);
+    }
+    return realSet.apply(this, arguments);
+  };
+  /* <video> gets its bytes through .load()/.play() off whatever src survived,
+     and a poster is a picture request of its own. */
+  const posterD = window.HTMLVideoElement &&
+    Object.getOwnPropertyDescriptor(HTMLVideoElement.prototype, 'poster');
+  if (posterD && posterD.set) {
+    Object.defineProperty(HTMLVideoElement.prototype, 'poster', {
+      configurable: true,
+      get: function () { return posterD.get.call(this); },
+      set: function (v) {
+        if (remote(v)) {
+          offMachine.push('poster ' + String(v).slice(0, 120));
+          return posterD.set.call(this, REFUSED);
+        }
+        return posterD.set.call(this, v);
+      }
+    });
+  }
+  /* The blocking editor is a whole document carried in the build as a string
+     and mounted with srcdoc -- and it loads three.js, mediabunny and the
+     mediapipe models from three different CDNs. A srcdoc frame is its own
+     realm, so nothing stubbed out here reaches it, and its inline
+     `import('https://cdn...')` is not a fetch and not an attribute: no stub
+     could catch it even in the same realm. Rewriting the string before it is
+     mounted is the only door, and it is the one that was open. Intermittently
+     fatal, which is the worst kind: the frame's subresources and the
+     scenario's last assertions race, so the suite passed or hung by timing.
+     The frame still exists, still gets its attributes, and the assertions
+     about it are about the frame and not about three.js. */
+  const inner = [];
+  const frameD = window.HTMLIFrameElement &&
+    Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'srcdoc');
+  if (frameD && frameD.set) {
+    Object.defineProperty(HTMLIFrameElement.prototype, 'srcdoc', {
+      configurable: true,
+      get: function () { return frameD.get.call(this); },
+      set: function (v) {
+        let s = String(v == null ? '' : v);
+        const hits = s.match(/https?:\/\/[a-z0-9.-]+/gi) || [];
+        const far = hits.filter(function (h) { return !LOCAL.test(h); });
+        if (far.length) {
+          far.forEach(function (h) { if (inner.indexOf(h) < 0) inner.push(h); });
+          s = s.replace(/https?:\/\/[a-z0-9.-]+[^"'\s)]*/gi, function (u) {
+            return LOCAL.test(u) ? u : REFUSED;
+          });
+        }
+        return frameD.set.call(this, s);
+      }
+    });
+  }
+  window.__inner = inner;
+
+  const realOpen = XMLHttpRequest.prototype.open;
+  XMLHttpRequest.prototype.open = function (m, u) {
+    if (remote(u)) {
+      offMachine.push('xhr ' + String(u).slice(0, 120));
+      return realOpen.call(this, m, REFUSED);
+    }
+    return realOpen.apply(this, arguments);
+  };
+  /* A hang gives no DOM dump, so the list has to be readable from outside the
+     scenario's own reporting: it goes on the title as it grows. */
+  window.__offMachine = offMachine;
+  const note = function () {
+    try { document.title = 'OFFMACHINE:' + offMachine.length + ':' + offMachine.join(' ; '); }
+    catch (e) { /* nothing to be done */ }
+  };
+  const push = offMachine.push.bind(offMachine);
+  offMachine.push = function () { const n = push.apply(null, arguments); note(); return n; };
+
   setTimeout(async function () {
     const out = [];
     const t = function (name, cond, extra) {
@@ -4796,7 +4924,14 @@
            that it SETTLES; which way depends on what this origin may read. */
         await (async function () {
           let outcome = 'never settled';
-          const far = 'https://media.gettyimages.com/id/nope/photo/nope.jpg';
+          /* A closed port on this machine: cross-origin from file:// just like
+             Getty's host, refused instantly instead of stalling the virtual
+             clock. What is under test is that the promise SETTLES -- the
+             regression was it doing neither -- and an unreadable picture
+             settles the same way whichever reason it is unreadable for.
+             Whether real Getty bytes decode is not a question a headless
+             fixture can answer; the wall-clock harness answered it. */
+          const far = 'http://127.0.0.1:1/nope.jpg';
           await Promise.race([
             SB.downscaleImage(far).then(
               function () { outcome = 'resolved'; },
@@ -4948,6 +5083,14 @@
 
         t('closing the drawer gives the board back',
           !document.getElementById('stockDrawer') && !document.body.classList.contains('stock-on'), '');
+        t('and nothing in this suite went out to the network',
+          (window.__offMachine || []).length === 0,
+          JSON.stringify(window.__offMachine || []));
+        /* Not a defect in the app -- the blocking editor is meant to load
+           three.js from a CDN when a person opens it. This asserts the suite
+           neutralised it, because the virtual clock cannot survive it. */
+        t('and the blocking editor\'s CDN loads were kept off the network',
+          (window.__inner || []).length > 0, JSON.stringify(window.__inner || []));
         filler.forEach(function (sh) { SB.Model.deleteShot(P(), sh.id); });
         app.changed(true);
       })();
