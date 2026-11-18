@@ -11,7 +11,10 @@
   const DND_STOCK = 'application/x-sb-getty';
 
   const B = {
-    openBox: {},              // shotId:role -> the lane box is open on this card
+    /* Kept because app.js calls forgetOpenBoxes() when a board is opened: an
+       empty register is cheaper to keep than a caller to chase. The lane chips
+       that used to fill it are gone -- a lane is on a card when it has words. */
+    openBox: {},
     scriptEditors: {},        // shotId -> editor api
     scriptEls: {},            // shotId -> element
     sceneScriptEditors: {},   // sceneId -> editor api, for a scene's own section
@@ -1544,38 +1547,23 @@
         'the clip is handed the frame, not their photo.' }
   ];
 
+  /* A lane is on the card when it has words in it, and not otherwise.
+   *
+   * It used to be a pair of chips -- "first frame" and "motion" -- on every
+   * card, always, with an empty box waiting behind each. On a board where half
+   * the shots are filmed rather than generated that is two controls per card
+   * that most cards will never use, sitting where the eye lands first.
+   * Nothing is lost by taking them off: the same two lanes, under the same two
+   * labels, are columns in the Prompts panel (promptpanel.js: LANES), which is
+   * where the work of writing prompts actually happens. A lane with words in it
+   * still shows on its card, because text nobody can see is worse than a taller
+   * card. */
   function laneOpen(sh, lane) {
-    if ((sh[lane.key] || '').trim()) return true;
-    return !!B.openBox[sh.id + ':' + lane.role];
+    return !!(sh[lane.key] || '').trim();
   }
 
   function laneBoxes(sh, si, sj) {
     const wrap = SB.el('div', 'lanes');
-    const chips = SB.el('div', 'lane-chips');
-    LANES.forEach(function (lane) {
-      const open = laneOpen(sh, lane);
-      const has = !!(sh[lane.key] || '').trim();
-      const chip = SB.el('button', 'lane-chip' + (has ? ' has' : '') + (open ? ' open' : ''),
-        (has ? '\u25cf ' : '\u2295 ') + lane.label);
-      chip.title = lane.hint + (has ? '' : '\nEmpty — this lane uses the description above.');
-      chip.onclick = function () {
-        const k = sh.id + ':' + lane.role;
-        /* Read live: typing in the box does not re-render the card, so the
-           value captured when the chip was drawn is a lie by the time anyone
-           clicks it — and the chip then silently cleared the open flag
-           instead of saying why it would not close. */
-        if ((sh[lane.key] || '').trim()) {
-          /* a filled box is never hidden — emptying it is how you close it */
-          SB.toast('Clear the ' + lane.label + ' box to put it away');
-          return;
-        }
-        if (B.openBox[k]) delete B.openBox[k]; else B.openBox[k] = 1;
-        render();
-      };
-      chips.appendChild(chip);
-    });
-    wrap.appendChild(chips);
-
     LANES.forEach(function (lane) {
       if (!laneOpen(sh, lane)) return;
       const lbl = SB.el('div', 'box-label lane-label');

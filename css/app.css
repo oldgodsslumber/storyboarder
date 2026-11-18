@@ -326,18 +326,14 @@ body.marquee-on{user-select:none;cursor:crosshair}
 .script-box.broken{border-color:var(--danger);background:rgba(255,95,86,.07)}
 .script-box:empty::before{content:"(empty)";color:var(--fg-dim)}
 .desc-box{min-height:70px;max-height:260px;overflow:auto;width:calc(100% - 12px);font-size:12.5px}
-/* The still and the clip can have words of their own. Most cards never need
-   them, so they are chips until opened — and a card that never opens one is
-   exactly as tall as it was. */
+/* The still and the clip can have words of their own, and a card that has
+   them says so by showing them. There used to be a chip per lane on every
+   card, open or not; on a board where half the shots are filmed rather than
+   generated that was two controls per card that most cards never use, sitting
+   where the eye lands first. The lanes are columns in the Prompts panel, which
+   is where prompts get written. A card with nothing in either lane is now
+   exactly as tall as its description. */
 .lanes{display:flex;flex-direction:column;gap:2px;margin-top:2px}
-.lane-chips{display:flex;gap:5px;flex-wrap:wrap;padding:1px 2px 2px}
-.lane-chip{
-  font-size:10px;padding:2px 7px;border-radius:999px;cursor:pointer;
-  border:1px solid var(--line2);background:transparent;color:var(--fg-dim);
-}
-.lane-chip:hover{color:var(--fg);border-color:var(--accent)}
-.lane-chip.has{border-color:var(--accent);color:var(--accent)}
-.lane-chip.open{background:var(--bg3)}
 .lane-label{opacity:.85}
 .lane-box{min-height:46px;font-size:12px;background:var(--bg3)}
 .lane-box.lane-image{box-shadow:inset 2px 0 0 var(--accent)}

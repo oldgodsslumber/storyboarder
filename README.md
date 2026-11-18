@@ -491,12 +491,14 @@ it will never make a card or scene reappear or vanish.
   last card, or below the last scene, means *last*. Both used to mean something else —
   the gap sent a card to the far end of the scene, and dropping below the scene list did
   nothing at all, which is why reordering at the two ends rarely stuck.
-- **The still and the clip can have words of their own.** Under the description, two chips —
-  `⊕ first frame` and `⊕ motion` — open a box each. The **first frame** box is only what is
+- **The still and the clip can have words of their own**, written in the Prompts panel, which
+  is where each lane sits beside the prompt it feeds. The **first frame** box is only what is
   true as the shot opens; the **motion** box is what moves, in what order, how it ends. Both
-  are optional, both start closed, and a card that never uses them is exactly as tall as it
-  was. A box with words in it is open on sight — text nobody can see is worse than a taller
-  card — and empty it to put it away.
+  are optional. A lane with words in it also shows on its card, labelled, because text nobody
+  can see is worse than a taller card — and emptying it takes it off the card again. A card
+  that uses neither shows neither: there used to be a chip per lane on every card whether it
+  was used or not, which on a board where half the shots are filmed rather than generated is
+  two controls per card that most cards never need, sitting where the eye lands first.
 
   Because **a reference is an `@` mark in the text it was written in**, splitting the words
   splits the references for free: `@` the rig in the first-frame box and the still is shown

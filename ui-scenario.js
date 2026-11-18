@@ -1774,33 +1774,39 @@
         const card = function () {
           return document.querySelector('.card[data-shot="' + sh.id + '"]');
         };
-        const chips = card().querySelectorAll('.lane-chip');
-        t('a card offers a first-frame and a motion box', chips.length === 2,
-          chips.length + ' chips');
-        t('and neither is open until it is asked for',
-          card().querySelectorAll('.lane-box').length === 0, '');
-
-        chips[1].click();
-        await nap(60);
-        t('clicking one opens it',
-          card().querySelectorAll('.lane-box.lane-video').length === 1, '');
-        t('and the other stays shut',
-          card().querySelectorAll('.lane-box.lane-image').length === 0, '');
-
-        chips[1].click();
-        await nap(60);
-        t('clicking it again puts it away',
-          card().querySelectorAll('.lane-box').length === 0, '');
+        /* A card that uses neither lane shows neither. There used to be a
+           chip per lane on every card, open or not, with an empty box waiting
+           behind each -- two controls per card that most cards never use, on a
+           board where half the shots are filmed rather than generated. The
+           lanes are columns in the Prompts panel, which is where prompts get
+           written; the card only carries one once it has words in it. */
+        t('a card with nothing in either lane shows neither',
+          card().querySelectorAll('.lane-box').length === 0 &&
+          card().querySelectorAll('.lane-chip').length === 0,
+          card().querySelectorAll('.lane-box,.lane-chip').length + ' left on it');
 
         /* text nobody can see is worse than a taller card */
         sh.videoDescription = 'She lets go of the cup.';
         SB.app.changed(true);
         await nap(60);
-        t('a box with words in it is open on sight',
+        t('a lane with words in it is on the card',
           card().querySelectorAll('.lane-box.lane-video').length === 1, '');
-        t('and its chip says so',
-          /\u25cf/.test(card().querySelectorAll('.lane-chip')[1].textContent),
-          card().querySelectorAll('.lane-chip')[1].textContent);
+        t('and says which lane it is',
+          /motion/.test((card().querySelector('.lane-label') || {}).textContent || ''),
+          (card().querySelector('.lane-label') || {}).textContent);
+        t('while the empty one is still nowhere on it',
+          card().querySelectorAll('.lane-box.lane-image').length === 0, '');
+
+        sh.videoDescription = '';
+        SB.app.changed(true);
+        await nap(60);
+        t('emptying it takes it off the card again',
+          card().querySelectorAll('.lane-box').length === 0, '');
+        /* left filled for the table assertions below, which want exactly one
+           lane using the shared description */
+        sh.videoDescription = 'She lets go of the cup.';
+        SB.app.changed(true);
+        await nap(60);
 
         /* the lanes in the table */
         SB.PromptPanel.open();
@@ -1881,29 +1887,24 @@
         SB.PromptPanel.close();
         await nap(40);
 
-        /* the chip reads the box, not what the box said when it was drawn */
+        /* On the card, a lane that has words is a box you can type in. The
+           chips that used to open an EMPTY one are gone, and with them the
+           only way to start a lane from the card -- that now begins in the
+           Prompts panel, beside the rest of the prompt. */
         const card = function () {
           return document.querySelector('.card[data-shot="' + sh.id + '"]');
         };
-        sh.videoDescription = '';
+        sh.videoDescription = 'She lets go.';
         SB.app.changed(true);
         await nap(60);
-        const chip = card().querySelectorAll('.lane-chip')[1];
-        chip.click();                       // open it
-        await nap(60);
         const vbox = card().querySelector('.lane-box.lane-video');
-        type(vbox, 'She lets go.');
+        t('a lane with words is a box on the card', !!vbox, '');
+        type(vbox, 'She lets go of the cup.');
         await nap(40);
-        /* Counting toasts raced their own dismissal timer — one expiring in
-           the same 60ms window made the count stand still. Read what it says. */
-        card().querySelectorAll('.lane-chip')[1].click();
-        await nap(80);
-        const said = Array.prototype.map.call(document.querySelectorAll('.toast'),
-          function (x) { return x.textContent; }).join(' | ');
-        t('clicking the chip of a box that now has words says why it stays',
-          /clear the motion box/i.test(said), said || '(no toast)');
-        t('and the box is still there',
-          card().querySelectorAll('.lane-box.lane-video').length === 1, '');
+        t('and what is typed into it is kept',
+          sh.videoDescription === 'She lets go of the cup.', sh.videoDescription);
+        t('without the card rebuilding under the caret',
+          card().querySelector('.lane-box.lane-video') === vbox, '');
 
         sh.description = wasDesc;
         sh.imageDescription = '';
