@@ -525,13 +525,13 @@
   function armAutoScroll() {
     if (B.autoScroll) return;
     B.autoScroll = true;
-    const panel = document.getElementById('boardPanel');
-    panel.addEventListener('dragover', function (ev) {
-      if (ev.dataTransfer.types.indexOf(DND_SHOT) < 0) return;
-      const r = panel.getBoundingClientRect();
-      const edge = 70;
-      if (ev.clientY < r.top + edge) panel.scrollTop -= 18;
-      else if (ev.clientY > r.bottom - edge) panel.scrollTop += 18;
+    /* Shared with the Getty drawer: SB.dragScroll in util.js. This used to be
+       its own copy, moving the board 18px per dragover event -- the same
+       defect, and worth fixing in both places at once rather than leaving card
+       dragging to feel one way and tile dragging another. */
+    SB.dragScroll.claim(function (ev) {
+      const types = ev && ev.dataTransfer && ev.dataTransfer.types;
+      return !!types && Array.prototype.indexOf.call(types, DND_SHOT) >= 0;
     });
     document.addEventListener('dragend', function () {
       document.querySelectorAll('.drag-over,.drop-shot,.dragging,.copy-target,.swap-target').forEach(function (el) {

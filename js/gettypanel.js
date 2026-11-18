@@ -742,17 +742,14 @@
    *
    * With the drawer open the card you want is often above the fold, and a
    * browser will not scroll a custom drag for you. So the board scrolls itself
-   * while something is being dragged over its edges.
+   * while a tile is held at its edges -- one shared implementation with card
+   * dragging, in util.js, where the reason it waits to be asked is written
+   * down. This drawer is the reason it has to: it sits along the bottom of the
+   * window, so every drag out of it crosses the board's lower band.
    */
-  function edgeScroll(ev) {
-    const panel = document.getElementById('boardPanel');
-    if (!panel || !document.body.classList.contains('stock-dragging')) return;
-    const r = panel.getBoundingClientRect();
-    const edge = 60;
-    if (ev.clientY < r.top + edge) panel.scrollTop -= 18;
-    else if (ev.clientY > r.bottom - edge) panel.scrollTop += 18;
-  }
-  document.addEventListener('dragover', edgeScroll);
+  SB.dragScroll.claim(function () {
+    return document.body.classList.contains('stock-dragging');
+  });
 
   SB.Stock = {
     open: open, close: close, toggle: toggle, isOpen: isOpen, sync: sync,

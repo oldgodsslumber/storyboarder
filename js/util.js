@@ -502,4 +502,124 @@ window.SB = window.SB || {};
     return e;
   };
 
+  /* ---------------- auto-scroll while something is being dragged ----------
+   *
+   * A browser will not scroll a container for a custom drag, so the board has
+   * to scroll itself while a card -- or a Getty tile -- is held at its edges.
+   *
+   * There were two copies of this, one for each kind of drag, and both did the
+   * same wrong thing: move the board 18px per `dragover` event. `dragover`
+   * fires every few milliseconds for as long as a drag is live, whether or not
+   * the pointer has moved at all, so that is something over a thousand pixels
+   * a second, at a rate set by the machine rather than by anybody's intent.
+   * And the band reached 60-70px up from the BOTTOM of the board -- which is
+   * exactly the strip of screen a drag out of the bottom drawer must cross on
+   * its way to a card. The board bolted away from under every thumbnail.
+   *
+   * The rule now: a drag has to ASK for a scroll by parking in the band, and
+   * does not get one merely for passing through. Nothing moves until the
+   * pointer has settled -- DWELL_MS having travelled less than SLOP -- which
+   * is never true of a pointer on its way somewhere else. Once armed it
+   * scrolls on the frame clock rather than the event clock, eased by how deep
+   * into the band it sits, and a decisive move disarms it again.
+   */
+  const DS = {
+    TOP: 64,        /* how far up from the bottom / down from the top it reaches */
+    BOTTOM: 52,     /* shallower: it abuts the drawer and is crossed constantly */
+    DWELL_MS: 220,  /* park this long before anything moves... */
+    SLOP: 10,       /* ...having travelled less than this while parked */
+    BREAK: 26,      /* a move this big means "I am going somewhere", not "scroll" */
+    SLOW: 90,       /* px/s at the outer limit of the band */
+    FAST: 620       /* px/s hard against the edge */
+  };
+  const ds = {
+    x: 0, y: 0, ax: 0, ay: 0, since: 0, last: 0,
+    inBand: false, armed: false, live: false, raf: 0
+  };
+  const dsWants = [];
+
+  function dsNow() {
+    return (window.performance && performance.now) ? performance.now() : Date.now();
+  }
+
+  /* 0 outside the band, and towards -1 or +1 the harder it is pressed */
+  function dsPush(r, x, y) {
+    if (x < r.left || x > r.right || y < r.top || y > r.bottom) return 0;
+    if (y < r.top + DS.TOP) return -(1 - (y - r.top) / DS.TOP);
+    if (y > r.bottom - DS.BOTTOM) return 1 - (r.bottom - y) / DS.BOTTOM;
+    return 0;
+  }
+
+  function dsStop() {
+    ds.armed = false; ds.inBand = false; ds.live = false;
+    if (ds.raf && window.cancelAnimationFrame) cancelAnimationFrame(ds.raf);
+    ds.raf = 0;
+  }
+
+  function dsMove(ev, now) {
+    const p = document.getElementById('boardPanel');
+    let want = false;
+    for (let i = 0; i < dsWants.length && !want; i++) {
+      try { want = !!dsWants[i](ev); } catch (e) { /* a claim must not break a drag */ }
+    }
+    if (!p || !want) return dsStop();
+    ds.live = true;
+    now = now == null ? dsNow() : now;
+    const push = dsPush(p.getBoundingClientRect(), ev.clientX, ev.clientY);
+    ds.x = ev.clientX; ds.y = ev.clientY;
+    if (!push) { ds.armed = false; ds.inBand = false; return; }
+    const travel = Math.abs(ev.clientX - ds.ax) + Math.abs(ev.clientY - ds.ay);
+    if (!ds.inBand) {
+      /* just arrived: start the clock, and do not scroll yet */
+      ds.inBand = true; ds.armed = false; ds.since = now;
+      ds.ax = ev.clientX; ds.ay = ev.clientY;
+    } else if (travel > (ds.armed ? DS.BREAK : DS.SLOP)) {
+      /* still travelling -- start the clock again from where it is now */
+      ds.armed = false; ds.since = now; ds.ax = ev.clientX; ds.ay = ev.clientY;
+    } else if (!ds.armed && now - ds.since >= DS.DWELL_MS) {
+      ds.armed = true; ds.last = now;
+    }
+    if (ds.armed && !ds.raf && window.requestAnimationFrame) {
+      ds.raf = requestAnimationFrame(dsTick);
+    }
+  }
+
+  function dsTick(now) {
+    ds.raf = 0;
+    const p = document.getElementById('boardPanel');
+    if (!p || !ds.live || !ds.armed) return;
+    now = now == null ? dsNow() : now;
+    const push = dsPush(p.getBoundingClientRect(), ds.x, ds.y);
+    if (!push) { ds.armed = false; return; }
+    /* a tab that was in the background must come back and resume, not lurch */
+    const dt = Math.min(64, Math.max(0, now - ds.last));
+    ds.last = now;
+    /* eased: the first pixels of the band are a nudge, the last are a sweep */
+    const speed = DS.SLOW + (DS.FAST - DS.SLOW) * push * push;
+    const step = (push < 0 ? -1 : 1) * speed * dt / 1000;
+    const was = p.scrollTop;
+    p.scrollTop = was + step;
+    /* at the end of the board: stop, rather than asking for a frame for ever */
+    if (Math.abs(step) > 0.5 && p.scrollTop === was) { ds.armed = false; return; }
+    if (window.requestAnimationFrame) ds.raf = requestAnimationFrame(dsTick);
+  }
+
+  /* the node suites run these files against a stub document, which has no
+     event plumbing and needs none: the two halves below are what they test */
+  if (document && document.addEventListener) {
+    document.addEventListener('dragover', function (ev) { dsMove(ev); });
+    document.addEventListener('dragend', dsStop);
+    document.addEventListener('drop', dsStop);
+  }
+
+  SB.dragScroll = {
+    /* the board and the Getty drawer each say when a live drag is theirs */
+    claim: function (fn) { dsWants.push(fn); },
+    /* The tick runs on requestAnimationFrame, which never fires under the
+       headless suite's virtual clock, and the dwell is a question about time.
+       So both halves are reachable directly and take the `now` they are given
+       -- the behaviour is testable without waiting on a real clock. */
+    _move: dsMove, _tick: dsTick, _stop: dsStop, _state: ds, _tune: DS
+  };
+
 })(window.SB);

@@ -129,7 +129,9 @@
   offMachine.push = function () { const n = push.apply(null, arguments); note(); return n; };
 
   setTimeout(async function () {
-    const out = [];
+    /* shared with the harness: it ships progress out as this fills, so a run
+       that stalls names the last assertion that passed instead of nothing */
+    const out = (window.__out = window.__out || []);
     const t = function (name, cond, extra) {
       out.push((cond ? 'ok   ' : 'FAIL ') + name + (cond ? '' : ' :: ' + extra));
     };
@@ -5079,6 +5081,98 @@
           if (close) close.click();
           const left = document.querySelector('.rev-back, .modal-back');
           if (left) left.remove();
+        })();
+
+        /* ---- the auto-scroll has to be asked for ----------------------
+           It used to move the board 18px per dragover event, in a band 60px
+           up from the bottom -- and this drawer is along the bottom, so every
+           drag from a tile to a card crosses that band. The board bolted away
+           from under the thumbnail and you could not put one down.
+           requestAnimationFrame never fires under the virtual clock and the
+           dwell is a question about time, so both halves are driven directly
+           with the `now` they are given. */
+        (function () {
+          const panel = document.getElementById('boardPanel');
+          const DS = SB.dragScroll, st = DS._state, tune = DS._tune;
+          const r = panel.getBoundingClientRect();
+          const mid = Math.round((r.left + r.right) / 2);
+          const lowEdge = r.bottom - 6, highEdge = r.top + 6;
+          const ev = function (x, y) {
+            return { clientX: x, clientY: y, dataTransfer: { types: [] } };
+          };
+          /* park in the band, then take one 16ms frame, and say how far the
+             board went: the whole mechanism in one call */
+          const parkAndTick = function (x, y, clock) {
+            DS._stop();
+            panel.scrollTop = Math.floor(panel.scrollHeight / 2);
+            const was = panel.scrollTop;
+            DS._move(ev(x, y), clock);
+            DS._move(ev(x, y), clock + tune.DWELL_MS + 30);
+            DS._tick(clock + tune.DWELL_MS + 46);
+            return panel.scrollTop - was;
+          };
+
+          document.body.classList.add('stock-dragging');
+          panel.scrollTop = Math.floor(panel.scrollHeight / 2);
+          t('the board is long enough for this to mean anything',
+            panel.scrollTop > 40, 'scrollTop ' + panel.scrollTop);
+
+          /* a pointer on its way from a tile up to a card */
+          DS._stop();
+          const start = panel.scrollTop;
+          DS._move(ev(mid, lowEdge), 1000);
+          DS._tick(1016);
+          DS._move(ev(mid, lowEdge - 40), 1030);
+          DS._tick(1046);
+          t('passing through the edge band does not scroll the board',
+            panel.scrollTop === start, panel.scrollTop + ' vs ' + start);
+          t('and it is not left armed behind the pointer', !st.armed, '');
+
+          t('parking at the bottom band scrolls down', parkAndTick(mid, lowEdge, 2000) > 0,
+            parkAndTick(mid, lowEdge, 2000));
+          t('parking at the top band scrolls up', parkAndTick(mid, highEdge, 3000) < 0,
+            parkAndTick(mid, highEdge, 3000));
+
+          /* eased, so the band is usable: a nudge at its outer limit */
+          const deep = parkAndTick(mid, r.bottom - 2, 4000);
+          const shallow = parkAndTick(mid, r.bottom - (tune.BOTTOM - 2), 4500);
+          t('the band eases rather than switching on at full speed',
+            deep > shallow * 2, deep.toFixed(2) + ' vs ' + shallow.toFixed(2));
+          t('and one frame moves the board by pixels, not by a screenful',
+            deep > 1 && deep < 24, deep.toFixed(2));
+
+          /* a decisive move means the pointer is going somewhere */
+          DS._stop();
+          panel.scrollTop = Math.floor(panel.scrollHeight / 2);
+          DS._move(ev(mid, lowEdge), 6000);
+          DS._move(ev(mid, lowEdge), 6000 + tune.DWELL_MS + 30);
+          const wasArmed = st.armed;
+          DS._move(ev(mid, lowEdge - (tune.BREAK + 6)), 6000 + tune.DWELL_MS + 40);
+          t('a decisive move disarms it again', wasArmed && !st.armed,
+            JSON.stringify({ wasArmed: wasArmed, armed: st.armed }));
+
+          t('a drag beside the board does not scroll it',
+            parkAndTick(r.left - 30, lowEdge, 7000) === 0, '');
+
+          document.body.classList.remove('stock-dragging');
+          t('and nothing scrolls when no drag of ours is live',
+            parkAndTick(mid, lowEdge, 8000) === 0, '');
+          document.body.classList.add('stock-dragging');
+
+          /* at the end of the board it must stop asking for frames */
+          DS._stop();
+          panel.scrollTop = panel.scrollHeight;
+          const end = panel.scrollTop;
+          DS._move(ev(mid, lowEdge), 9000);
+          DS._move(ev(mid, lowEdge), 9000 + tune.DWELL_MS + 30);
+          DS._tick(9000 + tune.DWELL_MS + 46);
+          t('at the end of the board it stops rather than spinning',
+            panel.scrollTop === end && !st.armed,
+            JSON.stringify({ at: panel.scrollTop, end: end, armed: st.armed }));
+
+          document.body.classList.remove('stock-dragging');
+          DS._stop();
+          panel.scrollTop = panel.scrollHeight;
         })();
 
         t('closing the drawer gives the board back',
