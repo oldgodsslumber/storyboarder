@@ -222,10 +222,21 @@ a fetch nor an attribute — no stub could catch it even in the same realm; the 
 rewritten before it is mounted. That second one is why the hang was *intermittent*: the
 frame's subresources and the scenario's last assertions were racing.
 
-Closed at three levels, since the failure mode is silence: the scenario refuses anything bound
-off-machine against a closed port and asserts at the end that nothing went, and `test-ui.mjs`
-has a 120-second wall-clock ceiling that kills Chrome and says what to look for. The suite now
-runs in about seven seconds, six runs for six.
+First I chased the two open doors and closed them: the scenario refuses anything bound
+off-machine against a closed port, asserts at the end that nothing went, and `test-ui.mjs`
+grew a wall-clock ceiling. Six runs for six went green and I believed it. **It was luck** --
+the next eight runs hung five times. Closing instances of a class is not closing the class,
+and a race does not care how many times you have won it.
+
+So the clock is real now. `test-ui.mjs` serves the built page over `http://127.0.0.1` on an
+ephemeral port, runs Chrome with no virtual time at all, and the page POSTs its result back
+same-origin -- no CORS, no `file://` privileges, and none of a URL’s length limit. A load that
+never settles now costs what it actually costs and the run still finishes. Ten runs for ten at
+14.5s, to the tenth of a second. Two things fell out of it worth keeping: the page reports
+progress as it goes, so a stall names the last assertion that passed rather than printing
+nothing, and each run gets a fresh origin, which ends the `file://` localStorage leak between
+runs as a side effect. The sentry stays -- not as the fix, but because a suite that reaches the
+network is a suite that depends on somebody’s connectivity.
 
 ## 7. Tests
 
