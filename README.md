@@ -473,10 +473,16 @@ it will never make a card or scene reappear or vanish.
   the scene block, **+ Add shot**, and the scene in the left-hand list. A file dropped
   anywhere else is refused with a note — without that, the browser navigates to the file and
   the board is simply gone.
-- The frame is taken a third of a second in, not at frame zero: frame zero of a handheld
-  clip is usually a hand still on the record button with the exposure settling. If it
-  picked a dud, open the clip and press **use this frame** — it takes whatever is at the
-  playhead, so a bad guess is two clicks rather than a re-drop.
+- **Pick the frame yourself.** The drop takes one a third of a second in, which is a guess
+  and often a bad one — a clip off a director’s viewfinder opens on a wall while the
+  operator raises the phone, shows the room somewhere in the middle, and ends on the
+  viewfinder app’s own slate card, so first, last and “a moment in” are all wrong on the
+  same clip. **▣ frame** on any card that holds a clip opens a picker: a strip of
+  thumbnails across the whole length to find the moment, a scrubber and ← → to land on the
+  exact frame (hold shift for bigger steps), and one button to put it on the card at full
+  size. The toast offers the same thing the moment a clip lands, so the fix is where the
+  mistake is rather than in a menu. The clip window’s **use this frame** does the same for
+  whatever is playing there.
 - **Our own footage carries no licence**, so unlike a Getty comp its frame is a reference
   like any other and the model lanes will take it. It is still not *output*: an export of
   “only what was made in here” passes it by, and the clip window says so.

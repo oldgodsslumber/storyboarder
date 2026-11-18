@@ -220,3 +220,35 @@ clock that never delivered a frame. 776 UI checks, ten runs for ten; 1947 node c
 **Still unverified, as §7 said:** HEVC and rotation. Both want a real iPhone clip, in both
 formats, portrait and landscape, on this machine. The `.mov` container is now known to be
 fine; what an iPhone puts *inside* it is not.
+
+
+## 12. The frame is picked, not guessed — 2026-11-18
+
+§3 recommended seeking 0.3s in, and said the re-pick button mattered more than the default.
+Real footage settled it. A Cadrage clip opens on a **wall** while the viewfinder is being
+raised, shows the room in the middle, and **ends on Cadrage's own slate card** — lens, camera,
+date, GPS, a QR code. First frame, last frame and 0.3s are each wrong on that one clip, and no
+rule would have saved it: scoring frames for detail would have confidently picked the QR code.
+
+So the app asks. `js/framepicker.js` shows the clip with a twelve-thumbnail strip across its
+whole length, a scrubber, and arrow keys nudging a frame at a time; what is showing goes on the
+card at full resolution, not the 96px proxy the strip is made of. It opens from **▣ frame** on
+any card holding a clip, and from the toast at the moment a clip lands, so the fix sits where
+the mistake is. `SB.scanFrames` (util.js) drives the strip with one `<video>` seeking in
+sequence, skipping a thumbnail it cannot draw rather than failing the scan.
+
+Two things carried over rather than rediscovered: the picker plays from a **blob** and never
+the stored `data:` URL, because Chrome will not play `video/quicktime` that way (§11); and a
+frame taken off a **Getty comp** keeps the comp's `made`, so the licence follows the pixels —
+only own footage gets a scout `made`.
+
+**What this closes:** the "crop" reported from use was never a crop. Ten real and synthetic
+files through the full chain — iPhone `.mov`, Cadrage HEVC, webcam `.mp4`, 1728×960 footage,
+synthesised portrait, rotated and 4K — every one produced a complete, correctly-proportioned
+frame, and `createImageBitmap` agreed with `videoWidth/videoHeight` on all of them. There was
+no geometry bug. The clip just opens on a wall.
+
+**One measurement worth keeping:** Cadrage files are HEVC, and they decode only with the GPU
+available. Headless Chrome with `--disable-gpu` reports `videoWidth 0` at `readyState 4`, which
+is exactly the HEVC path §7 predicted — so the suite cannot test these files, but the error
+they produce is the right one.

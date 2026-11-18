@@ -602,6 +602,69 @@ window.SB = window.SB || {};
     } catch (e) { return false; }     // a read that throws is not a blank frame
   };
 
+  /* Thumbnails across a clip, in order, one seek at a time.
+   *
+   * Sequential on purpose: a single <video> seeking through a list is far
+   * kinder than a dozen decoders at once, and the strip filling in left to
+   * right reads as progress rather than as a stall. A thumbnail that will not
+   * draw is skipped rather than failing the scan -- the strip is a convenience
+   * and the scrubber beside it is the actual feature.
+   */
+  SB.scanFrames = function (blob, times, onEach, opts) {
+    opts = opts || {};
+    const W = opts.width || 96;
+    return new Promise(function (resolve, reject) {
+      const v = document.createElement('video');
+      let url = '', i = 0, done = false;
+      const fin = function (err) {
+        if (done) return;
+        done = true;
+        clearTimeout(cap);
+        try { v.removeAttribute('src'); v.load(); } catch (e) { }
+        if (url) { try { URL.revokeObjectURL(url); } catch (e) { } }
+        if (err) reject(err); else resolve();
+      };
+      const cap = setTimeout(function () {
+        fin(new Error('the clip did not scan in time'));
+      }, opts.capMs || 30000);
+      const shot = function () {
+        try {
+          const w = v.videoWidth, h = v.videoHeight;
+          if (w && h) {
+            const c = document.createElement('canvas');
+            c.width = W;
+            c.height = Math.max(1, Math.round(W * h / w));
+            c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+            onEach(times[i], c.toDataURL('image/jpeg', 0.7), i);
+          }
+        } catch (e) { /* one thumbnail is not the scan */ }
+        i++;
+        step();
+      };
+      const step = function () {
+        if (done) return;
+        if (i >= times.length) { fin(null); return; }
+        const t = times[i];
+        /* Setting currentTime to where it already is fires no `seeked`, and
+           the scan would sit there for ever. The first time is often 0 and a
+           freshly loaded video is already at 0. */
+        if (Math.abs(v.currentTime - t) < 0.001) { setTimeout(shot, 0); return; }
+        v.currentTime = t;
+      };
+      v.onseeked = shot;
+      v.onerror = function () { fin(new Error('the clip could not be decoded here')); };
+      v.onloadeddata = function () { step(); };
+      v.muted = true;
+      v.preload = 'auto';
+      v.playsInline = true;
+      try {
+        url = URL.createObjectURL(blob);
+        v.src = url;
+        v.load();
+      } catch (e) { fin(e); }
+    });
+  };
+
   /* A frame off a <video> that is already playing, at wherever it has got to.
    * Same-origin bytes, so no taint; a cross-origin one would throw here and
    * the caller reports it. */

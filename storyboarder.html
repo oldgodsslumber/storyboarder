@@ -1312,6 +1312,23 @@ body.comment-mode .frame{cursor:crosshair}
    it is also the way in, but not pretending to hold something */
 .clip-badge.none{border-color:var(--line2);color:var(--fg-dim);opacity:.55}
 .frame:hover .clip-badge.none{opacity:1}
+.fp{display:flex;flex-direction:column;gap:8px}
+.fp-stage{background:#000;border-radius:6px;overflow:hidden;display:flex;justify-content:center}
+.fp-stage video{max-width:100%;max-height:52vh;display:block}
+.fp-at{font-size:11px;color:var(--fg-dim);font-variant-numeric:tabular-nums}
+.fp-strip{display:flex;gap:4px;overflow-x:auto;padding-bottom:4px}
+.fp-thumb{
+  position:relative;flex:none;padding:0;border:2px solid transparent;border-radius:4px;
+  background:var(--bg3);cursor:pointer;width:96px;min-height:54px;overflow:hidden;
+}
+.fp-thumb img{display:block;width:96px;height:auto}
+.fp-thumb .fp-t{
+  position:absolute;left:0;bottom:0;font-size:9px;padding:0 3px;
+  background:rgba(0,0,0,.6);color:#fff;border-radius:0 3px 0 0;
+}
+.fp-thumb:hover{border-color:var(--accent2)}
+.fp-thumb.on{border-color:var(--accent)}
+.fp-strip-failed{display:none}
 .clip-still{display:block;width:100%;max-height:52vh;object-fit:contain;background:#000;border-radius:6px}
 .clip-prompt{
   font-size:12px;color:var(--fg-dim);font-style:italic;margin:6px 0 2px;
@@ -1569,7 +1586,7 @@ body.stock-dragging .frame{outline:1px dashed color-mix(in srgb, var(--accent) 5
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-11-18 15:21 · 36226ea+";</script>
+<script>window.SB_BUILD = "2026-11-18 16:34 · 12dd100+";</script>
 
 <div id="app">
 
@@ -2298,6 +2315,69 @@ window.SB = window.SB || {};
       }
       return true;
     } catch (e) { return false; }     // a read that throws is not a blank frame
+  };
+
+  /* Thumbnails across a clip, in order, one seek at a time.
+   *
+   * Sequential on purpose: a single <video> seeking through a list is far
+   * kinder than a dozen decoders at once, and the strip filling in left to
+   * right reads as progress rather than as a stall. A thumbnail that will not
+   * draw is skipped rather than failing the scan -- the strip is a convenience
+   * and the scrubber beside it is the actual feature.
+   */
+  SB.scanFrames = function (blob, times, onEach, opts) {
+    opts = opts || {};
+    const W = opts.width || 96;
+    return new Promise(function (resolve, reject) {
+      const v = document.createElement('video');
+      let url = '', i = 0, done = false;
+      const fin = function (err) {
+        if (done) return;
+        done = true;
+        clearTimeout(cap);
+        try { v.removeAttribute('src'); v.load(); } catch (e) { }
+        if (url) { try { URL.revokeObjectURL(url); } catch (e) { } }
+        if (err) reject(err); else resolve();
+      };
+      const cap = setTimeout(function () {
+        fin(new Error('the clip did not scan in time'));
+      }, opts.capMs || 30000);
+      const shot = function () {
+        try {
+          const w = v.videoWidth, h = v.videoHeight;
+          if (w && h) {
+            const c = document.createElement('canvas');
+            c.width = W;
+            c.height = Math.max(1, Math.round(W * h / w));
+            c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+            onEach(times[i], c.toDataURL('image/jpeg', 0.7), i);
+          }
+        } catch (e) { /* one thumbnail is not the scan */ }
+        i++;
+        step();
+      };
+      const step = function () {
+        if (done) return;
+        if (i >= times.length) { fin(null); return; }
+        const t = times[i];
+        /* Setting currentTime to where it already is fires no `seeked`, and
+           the scan would sit there for ever. The first time is often 0 and a
+           freshly loaded video is already at 0. */
+        if (Math.abs(v.currentTime - t) < 0.001) { setTimeout(shot, 0); return; }
+        v.currentTime = t;
+      };
+      v.onseeked = shot;
+      v.onerror = function () { fin(new Error('the clip could not be decoded here')); };
+      v.onloadeddata = function () { step(); };
+      v.muted = true;
+      v.preload = 'auto';
+      v.playsInline = true;
+      try {
+        url = URL.createObjectURL(blob);
+        v.src = url;
+        v.load();
+      } catch (e) { fin(e); }
+    });
   };
 
   /* A frame off a <video> that is already playing, at wherever it has got to.
@@ -17800,6 +17880,204 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
 
 </script>
 <script>
+/* ===== js/framepicker.js ===== */
+/* framepicker.js — choose the frame a clip boards with.
+ *
+ * Automatic frame choice cannot win this. A scout clip off a director's
+ * viewfinder opens on a wall while the operator raises the phone, reveals the
+ * shot somewhere in the middle, and ends on the app's own slate card — so the
+ * first frame is a wall, the last is a slate, and a third of a second in,
+ * which is what the drop used to take, is still the wall. Every rule for
+ * picking one is wrong on some clip, and the person who shot it knows which
+ * frame is the shot.
+ *
+ * So: show them the clip and let them say. A strip of thumbnails across the
+ * whole length to find the moment, a scrubber to land on the exact frame, and
+ * one button that puts it on the card.
+ *
+ * The frame it takes is the one showing, at full resolution — not the
+ * thumbnail, which is a 96px proxy for choosing with.
+ */
+(function (SB) {
+  'use strict';
+
+  const STRIP = 12;          /* thumbnails across the clip */
+  const NUDGE = 1 / 30;      /* arrow keys: one frame at 30fps, near enough */
+
+  function madeFor(rec) {
+    /* A frame off a Getty comp is the comp's pixels, so it carries the comp's
+       licence -- setImage files it against the picture, and losing that here
+       would be the hole the Getty work spent a day closing. Own footage keeps
+       its own provenance; anything else is left to say what it already says. */
+    if (rec && rec.made) return rec.made;
+    return { by: 'scout', name: (rec && rec.name) || '', at: Date.now() };
+  }
+
+  function open(p, shot) {
+    const rec = shot && shot.video;
+    if (!rec) {
+      SB.toast('That card has no clip to take a frame from.', true);
+      return;
+    }
+
+    const box = SB.el('div', 'fp');
+    const stage = SB.el('div', 'fp-stage');
+    const v = document.createElement('video');
+    v.controls = true;
+    v.muted = true;
+    v.playsInline = true;
+    v.preload = 'auto';
+    stage.appendChild(v);
+    box.appendChild(stage);
+
+    const at = SB.el('div', 'fp-at', 'loading the clip…');
+    box.appendChild(at);
+
+    const strip = SB.el('div', 'fp-strip');
+    box.appendChild(strip);
+
+    const note = SB.el('div', 'pp-note',
+      'Click a thumbnail to jump there, then scrub or use ← → to land on the exact ' +
+      'frame. What is showing is what goes on the card, at full size.');
+    box.appendChild(note);
+
+    let url = '';
+    let ready = false;
+
+    const say = function () {
+      if (!ready) return;
+      const d = isFinite(v.duration) ? v.duration : 0;
+      at.textContent = v.currentTime.toFixed(2) + 's' + (d ? ' of ' + d.toFixed(2) + 's' : '') +
+        (v.videoWidth ? '  ·  ' + v.videoWidth + '×' + v.videoHeight : '');
+      const atT = v.currentTime;
+      Array.prototype.forEach.call(strip.children, function (b) {
+        b.classList.toggle('on', Math.abs(Number(b.dataset.t) - atT) < 0.35);
+      });
+    };
+    v.addEventListener('timeupdate', say);
+    v.addEventListener('seeked', say);
+    v.addEventListener('loadeddata', function () {
+      ready = true;
+      say();
+      buildStrip();
+    });
+    v.addEventListener('error', function () {
+      at.textContent = 'This clip will not play here.';
+      note.textContent = 'If it came off an iPhone it is probably HEVC — Settings → Camera → ' +
+        'Formats → Most Compatible records H.264 instead, which every browser can read.';
+    });
+
+    function buildStrip() {
+      const d = isFinite(v.duration) ? v.duration : 0;
+      if (!d) return;
+      const times = [];
+      for (let i = 0; i < STRIP; i++) {
+        /* spread across the whole clip, including the ends: a slate at the
+           back is worth SEEING so it can be avoided, and on some clips the
+           opening frame really is the shot */
+        times.push(Math.min(d - 0.01, Math.max(0, d * (i + 0.5) / STRIP)));
+      }
+      times.forEach(function (t) {
+        const b = SB.el('button', 'fp-thumb');
+        b.dataset.t = String(t);
+        b.title = t.toFixed(2) + 's';
+        b.appendChild(SB.el('span', 'fp-t', t.toFixed(1) + 's'));
+        b.onclick = function () {
+          v.pause();
+          v.currentTime = t;
+          /* Mark it now rather than when the decoder reports back: the click
+             is the answer to "which one am I on", and waiting on a seek to
+             say so reads as the click not having registered. */
+          say();
+        };
+        strip.appendChild(b);
+      });
+      SB.scanFrames(blob, times, function (t, data, i) {
+        const b = strip.children[i];
+        if (!b) return;
+        const im = document.createElement('img');
+        im.src = data;
+        b.insertBefore(im, b.firstChild);
+      }).catch(function () {
+        /* the strip is a convenience; the scrubber is the feature */
+        strip.classList.add('fp-strip-failed');
+      });
+    }
+
+    let blob = null;
+    const m = SB.modal({
+      title: 'Pick the frame',
+      width: 'min(94vw, 980px)',
+      body: box,
+      buttons: [
+        {
+          label: 'Use this frame', primary: true,
+          onClick: function (close) {
+            let data = '';
+            try { data = SB.frameAtPlayhead(v); } catch (e) { data = ''; }
+            if (!data) {
+              SB.toast('There is no frame behind that yet — let the clip load a moment.', true);
+              return;
+            }
+            close();
+            SB.Board.setImage(shot, data, madeFor(rec)).then(function () {
+              const f = SB.Model.findShot(SB.app.project, shot.id);
+              SB.toast('Frame at ' + v.currentTime.toFixed(2) + 's is on ' +
+                ((f && f.code) || 'the card'));
+            }).catch(function (e) {
+              SB.toast('That frame could not be placed: ' + (e.message || e), true);
+            });
+          }
+        },
+        { label: 'Cancel' }
+      ],
+      onClose: function () {
+        try { v.pause(); v.removeAttribute('src'); v.load(); } catch (e) { }
+        if (url) { try { URL.revokeObjectURL(url); } catch (e) { } }
+        window.removeEventListener('keydown', onKey);
+      }
+    });
+
+    function onKey(ev) {
+      if (!ready) return;
+      if (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') {
+        ev.preventDefault();
+        v.pause();
+        const d = isFinite(v.duration) ? v.duration : 0;
+        const step = ev.shiftKey ? NUDGE * 10 : NUDGE;
+        v.currentTime = Math.max(0, Math.min(d ? d - 0.01 : 1e9,
+          v.currentTime + (ev.key === 'ArrowLeft' ? -step : step)));
+      }
+    }
+    window.addEventListener('keydown', onKey);
+
+    /* The bytes, as a blob and never as the data: URL they are stored in --
+       Chrome refuses a data: URL whose declared type it does not claim to
+       support, and it does not claim video/quicktime, so a .mov would not
+       play here at all. Given a blob it sniffs the container instead. */
+    SB.Renders.videoFile(p, rec).then(function (b) {
+      if (!b) {
+        if (rec.url) { v.src = rec.url; return; }
+        at.textContent = 'This board has no copy of that clip.';
+        return;
+      }
+      blob = b;
+      url = URL.createObjectURL(b);
+      v.src = url;
+      v.load();
+    }).catch(function (e) {
+      at.textContent = 'That clip could not be read: ' + (e.message || e);
+    });
+
+    return m;
+  }
+
+  SB.FramePicker = { open: open };
+
+})(window.SB);
+
+</script>
+<script>
 /* ===== js/board.js ===== */
 /* board.js — scene list, scene blocks, shot cards, drag & drop. */
 (function (SB) {
@@ -20037,6 +20315,17 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
         tools.appendChild(cl);
       }
     }
+    /* A clip on the card means there is a frame worth choosing. No rule for
+       picking one automatically survives contact with real footage -- a scout
+       clip opens on a wall while the viewfinder comes up and ends on the
+       app's own slate -- so the card offers the choice rather than guessing
+       harder. */
+    if (sh.video && SB.FramePicker) {
+      const fp = SB.el('button', 'mini', '▣ frame');
+      fp.title = 'Pick which frame of the clip this card shows';
+      fp.onclick = function (ev) { ev.stopPropagation(); SB.FramePicker.open(P(), sh); };
+      tools.appendChild(fp);
+    }
     if (SB.Pose && SB.Pose.available()) {
       const bk = SB.el('button', 'mini', SB.Pose.has(sh) ? '⛹ edit' : '⛹ block');
       bk.title = SB.Pose.has(sh) ? 'Edit this card’s 3D blocking'
@@ -20318,8 +20607,17 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
         if (quiet) return { placed: placed, rec: rec };
         if (placed) {
           const what = SB.Clip.label(rec);
+          /* The frame this picked is a guess, and on a viewfinder clip it is
+             usually the wall the operator was pointing at while raising the
+             phone. Offer the fix at the moment it is wrong, not in a menu
+             somebody has to go looking for. */
           SB.toast('Frame on ' + codeOf(sh) + (rec ? ' · clip kept' : '') +
-            (what ? ' · ' + what : ''));
+            (what ? ' · ' + what : ''), false, rec && SB.FramePicker ? {
+              action: {
+                label: 'pick the frame',
+                onClick: function () { SB.FramePicker.open(P(), sh); }
+              }
+            } : null);
         } else {
           SB.toast(scoutWhy(why) + (rec
             ? ' The clip is on the card, so you can take a frame off it in the clip window.'

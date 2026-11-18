@@ -2234,6 +2234,17 @@
         tools.appendChild(cl);
       }
     }
+    /* A clip on the card means there is a frame worth choosing. No rule for
+       picking one automatically survives contact with real footage -- a scout
+       clip opens on a wall while the viewfinder comes up and ends on the
+       app's own slate -- so the card offers the choice rather than guessing
+       harder. */
+    if (sh.video && SB.FramePicker) {
+      const fp = SB.el('button', 'mini', '▣ frame');
+      fp.title = 'Pick which frame of the clip this card shows';
+      fp.onclick = function (ev) { ev.stopPropagation(); SB.FramePicker.open(P(), sh); };
+      tools.appendChild(fp);
+    }
     if (SB.Pose && SB.Pose.available()) {
       const bk = SB.el('button', 'mini', SB.Pose.has(sh) ? '⛹ edit' : '⛹ block');
       bk.title = SB.Pose.has(sh) ? 'Edit this card’s 3D blocking'
@@ -2515,8 +2526,17 @@
         if (quiet) return { placed: placed, rec: rec };
         if (placed) {
           const what = SB.Clip.label(rec);
+          /* The frame this picked is a guess, and on a viewfinder clip it is
+             usually the wall the operator was pointing at while raising the
+             phone. Offer the fix at the moment it is wrong, not in a menu
+             somebody has to go looking for. */
           SB.toast('Frame on ' + codeOf(sh) + (rec ? ' · clip kept' : '') +
-            (what ? ' · ' + what : ''));
+            (what ? ' · ' + what : ''), false, rec && SB.FramePicker ? {
+              action: {
+                label: 'pick the frame',
+                onClick: function () { SB.FramePicker.open(P(), sh); }
+              }
+            } : null);
         } else {
           SB.toast(scoutWhy(why) + (rec
             ? ' The clip is on the card, so you can take a frame off it in the clip window.'

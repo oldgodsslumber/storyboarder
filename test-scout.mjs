@@ -44,7 +44,8 @@ vm.createContext(sandbox);
 
 for (const f of ['js/util.js', 'js/focus.js', 'js/doc.js', 'js/blobs.js', 'js/geminimodels.js',
   'js/providers.js', 'js/brand.js', 'js/renders.js', 'js/imaginemodels.js', 'js/imagine.js',
-  'js/refs.js', 'js/getty.js', 'js/personas.js', 'js/fields.js', 'js/model.js', 'js/store.js']) {
+  'js/refs.js', 'js/getty.js', 'js/personas.js', 'js/fields.js', 'js/model.js', 'js/store.js',
+  'js/framepicker.js']) {
   vm.runInContext(readFileSync(join(root, f), 'utf8'), sandbox, { filename: f });
 }
 const SB = sandbox.SB;
@@ -141,6 +142,21 @@ console.log('\n-- the frame extractor takes a seek target --');
   ok(SB.frameFromVideo(new Uint8Array(8), 0.3) instanceof sandbox.Promise ||
     typeof SB.frameFromVideo(new Uint8Array(8), 0.3).then === 'function',
     'and it answers with a promise either way');
+}
+
+console.log('\n-- picking the frame by hand --');
+{
+  ok(typeof SB.scanFrames === 'function', 'the clip can be scanned for thumbnails');
+  ok(!!SB.FramePicker && typeof SB.FramePicker.open === 'function',
+    'and there is a picker to show them in');
+  /* The reason it exists: no automatic rule survives a viewfinder clip, which
+     opens on a wall, shows the room in the middle and ends on a slate. */
+  const p = SB.Model.newProject();
+  const sh = p.scenes[0].shots[0];
+  let said = '';
+  SB.toast = function (m) { said = m; return null; };
+  SB.FramePicker.open(p, sh);
+  ok(/no clip/i.test(said), 'a card with no clip is told so rather than opening empty: ' + said);
 }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed\n');

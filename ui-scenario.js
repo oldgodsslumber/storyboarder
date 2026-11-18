@@ -1817,6 +1817,72 @@
         t('nothing complained on the way',
           !/could not/i.test((document.getElementById('toastRoot') || {}).textContent || ''),
           ((document.getElementById('toastRoot') || {}).textContent || '').slice(0, 90));
+        /* ---- picking the frame by hand ----------------------------------
+           No rule for choosing a frame survives real footage. A clip off a
+           director's viewfinder opens on a wall while the operator raises the
+           phone, shows the room somewhere in the middle, and ends on the
+           app's own slate card -- so first, last and "a third of a second in"
+           are all wrong on the same clip. The person who shot it knows which
+           frame is the shot, so the app asks. */
+        {
+          const card = document.querySelector('.card[data-shot="' + one.id + '"]');
+          const tool = Array.prototype.filter.call(card.querySelectorAll('.mini'),
+            function (b) { return /frame/.test(b.textContent); })[0];
+          t('a card with a clip offers to pick its frame', !!tool,
+            Array.prototype.map.call(card.querySelectorAll('.mini'),
+              function (b) { return b.textContent; }).join('|'));
+
+          SB.FramePicker.open(P(), one);
+          const up = await settle(function () {
+            return !!document.querySelector('.fp video');
+          }, 240);
+          t('the picker opens on the clip', up, '');
+
+          const strip = await settle(function () {
+            return document.querySelectorAll('.fp-thumb img').length >= 12;
+          }, 600);
+          t('with a thumbnail strip across the whole clip', strip,
+            document.querySelectorAll('.fp-thumb img').length + ' of 12');
+          t('and each one knows the moment it came from',
+            Array.prototype.every.call(document.querySelectorAll('.fp-thumb'),
+              function (b) { return isFinite(Number(b.dataset.t)); }), '');
+
+          const thumbs = document.querySelectorAll('.fp-thumb');
+          const want = Number(thumbs[8].dataset.t);
+          thumbs[8].click();
+          await settle(function () {
+            const v = document.querySelector('.fp video');
+            return v && Math.abs(v.currentTime - want) < 0.4;
+          }, 400);
+          const vEl = document.querySelector('.fp video');
+          t('clicking one scrubs the clip to it',
+            !!vEl && Math.abs(vEl.currentTime - want) < 0.4,
+            (vEl ? vEl.currentTime : '?') + ' vs ' + want);
+          t('and the readout says where it is',
+            /\d\.\d\ds of /.test((document.querySelector('.fp-at') || {}).textContent || ''),
+            (document.querySelector('.fp-at') || {}).textContent);
+          t('and the strip marks the one showing',
+            !!document.querySelector('.fp-thumb.on'), '');
+
+          const stamp2 = one.imageAt || 0;
+          const useBtn = Array.prototype.filter.call(
+            document.querySelectorAll('.modal .foot button'),
+            function (b) { return /Use this frame/.test(b.textContent); })[0];
+          t('and one button puts it on the card', !!useBtn, '');
+          useBtn.click();
+          const took2 = await settle(function () {
+            return !!one.image && (one.imageAt || 0) > stamp2;
+          }, 400);
+          t('which it does', took2,
+            JSON.stringify({ at: one.imageAt, was: stamp2 }));
+          t('the picker closes behind it',
+            !document.querySelector('.fp'), '');
+          /* the frame is ours, so it stays feedable -- the same rule the drop
+             obeys, asserted again because this is a second way in */
+          t('and a frame picked by hand carries no licence either',
+            !SB.Model.isStock(P(), one) && !!SB.Model.modelFrame(P(), one), '');
+        }
+
         /* Closed the way a person closes it, not by tearing the node out:
            the window hangs a keydown handler on the document and drops its
            decoders on the way out, and ripping the DOM away leaves both
