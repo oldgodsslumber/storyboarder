@@ -469,7 +469,10 @@ it will never make a card or scene reappear or vanish.
   with a camera roll, and each clip can become a card.
 - **Drop a handful on a scene and you get a card each**, in filename order, which is the
   order they were shot on every camera that names its own files. The cards do not have to
-  exist first.
+  exist first. Every target that takes a picture takes a clip: a card, a scene’s shot row,
+  the scene block, **+ Add shot**, and the scene in the left-hand list. A file dropped
+  anywhere else is refused with a note — without that, the browser navigates to the file and
+  the board is simply gone.
 - The frame is taken a third of a second in, not at frame zero: frame zero of a handheld
   clip is usually a hand still on the record button with the exposure settling. If it
   picked a dud, open the clip and press **use this frame** — it takes whatever is at the

@@ -721,6 +721,30 @@ window.SB = window.SB || {};
     document.addEventListener('dragover', function (ev) { dsMove(ev); });
     document.addEventListener('dragend', dsStop);
     document.addEventListener('drop', dsStop);
+
+    /* A file dropped anywhere the app is not listening makes the browser
+       NAVIGATE to it. The board does not crash or complain: it is simply
+       gone, replaced by a video player or a raw file, and whatever had not
+       been saved went with it. Missing a card by a few pixels was enough.
+       Nothing in here wants the browser's default drop, so it is refused at
+       the document -- but only once no target has claimed the event, which is
+       exactly what `defaultPrevented` asks. Every real target calls
+       preventDefault on its own dragover, and bubbling reaches here last. */
+    const dragFiles = function (dt) {
+      return !!(dt && dt.types && Array.prototype.indexOf.call(dt.types, 'Files') >= 0);
+    };
+    document.addEventListener('dragover', function (ev) {
+      if (!ev.defaultPrevented && dragFiles(ev.dataTransfer)) ev.preventDefault();
+    });
+    document.addEventListener('drop', function (ev) {
+      if (ev.defaultPrevented || !dragFiles(ev.dataTransfer)) return;
+      ev.preventDefault();
+      if (SB.toast) {
+        SB.toast('That landed on nothing. A picture or a clip goes on a card, on a ' +
+          'scene, or on \u201c+ Add shot\u201d \u2014 dropped anywhere else the browser ' +
+          'would leave the board and just open the file.', true);
+      }
+    });
   }
 
   SB.dragScroll = {

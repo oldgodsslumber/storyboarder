@@ -1709,6 +1709,81 @@
           (fresh[1].video || {}).name === 'B002_0002.MOV',
           fresh.map(function (x) { return (x.video || {}).name; }).join(','));
 
+        /* ---- every target that takes a picture takes a clip --------------
+           Reported from use: dropping a .mov said "No image found in that
+           drop". It had landed on "+ Add shot", whose handler knew about
+           pictures and about Getty footage and nothing else -- and which
+           stopPropagation()s, so the scene block underneath never got its
+           turn either. Its own comment calls dropping at that button the
+           gesture people try first, which is exactly why it was the one that
+           got used. These assert the two targets that were missed. */
+        const sceneOf = function () {
+          const st = document.querySelector('.shots[data-scene="' + sc.id + '"]');
+          return st && st.parentNode;
+        };
+        {
+          const seen = {};
+          sc.shots.forEach(function (x) { seen[x.id] = 1; });
+          const addBtn = sceneOf() && sceneOf().querySelector('.add-shot');
+          t('the scene has an add button to drop onto', !!addBtn, '');
+          drop(addBtn, [mov('C003_0001.MOV')]);
+          const made = await settle(function () {
+            return sc.shots.filter(function (x) { return !seen[x.id]; }).length >= 1;
+          }, 400);
+          t('a clip dropped on "+ Add shot" makes a card', made,
+            sc.shots.length + ' cards');
+          const fresh = sc.shots.filter(function (x) { return !seen[x.id]; });
+          fresh.forEach(function (x) { mine.push(x.id); });
+          await settle(function () {
+            return fresh.every(function (x) { return !!x.image; });
+          }, 400);
+          t('boarded from its own frame, like every other way in',
+            fresh.every(function (x) { return !!x.image && !!x.video; }),
+            JSON.stringify(fresh.map(function (x) {
+              return { img: !!x.image, clip: !!x.video }; })));
+          t('and it is never called an image problem again',
+            !/No image found in that drop/i.test(
+              (document.getElementById('toastRoot') || {}).textContent || ''),
+            ((document.getElementById('toastRoot') || {}).textContent || '').slice(0, 90));
+        }
+        {
+          /* the scene in the left-hand list: the shortest way to reach a scene
+             that is scrolled off the board */
+          const seen = {};
+          sc.shots.forEach(function (x) { seen[x.id] = 1; });
+          const row = document.querySelector('.scene-item');
+          t('the left list has a scene row', !!row, '');
+          drop(row, [mov('D004_0001.MOV')]);
+          const made = await settle(function () {
+            return sc.shots.filter(function (x) { return !seen[x.id]; }).length >= 1;
+          }, 400);
+          t('a clip dropped on a scene in the left list makes a card there', made,
+            sc.shots.length + ' cards');
+          sc.shots.filter(function (x) { return !seen[x.id]; })
+            .forEach(function (x) { mine.push(x.id); });
+        }
+
+        /* A file that lands on nothing must not take the board with it: the
+           browser would navigate to the file, and the board would simply be
+           gone. Asserted by whether the event was cancelled, which is the
+           only thing that stands between a near-miss and that. */
+        {
+          const dt2 = new DataTransfer();
+          dt2.items.add(mov('E005_0001.MOV'));
+          const stray = new DragEvent('drop',
+            { dataTransfer: dt2, bubbles: true, cancelable: true });
+          const went = document.body.dispatchEvent(stray);
+          t('a file dropped on nothing does not navigate away from the board',
+            went === false, 'cancelled=' + (went === false));
+          const dt3 = new DataTransfer();
+          dt3.items.add(mov('E005_0002.MOV'));
+          const over = new DragEvent('dragover',
+            { dataTransfer: dt3, bubbles: true, cancelable: true });
+          t('and the page accepts the drag so the drop can be refused at all',
+            document.body.dispatchEvent(over) === false, '');
+          await nap(40);
+        }
+
         /* ---- a better frame, off the clip itself ---- */
         const was = one.image && one.image.ref;
         SB.Clip.open(P(), one);

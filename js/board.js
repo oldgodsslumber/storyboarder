@@ -444,6 +444,16 @@
       });
       it.addEventListener('dragover', function (ev) {
         const types = ev.dataTransfer.types;
+        /* A day of footage dropped on a scene in this list is the same gesture
+           as dropping it on the scene itself: the shortest way to reach a
+           scene that is off-screen on the board. */
+        if (dragHasVideo(ev.dataTransfer)) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          ev.dataTransfer.dropEffect = 'copy';
+          it.classList.add('drop-shot');
+          return;
+        }
         /* dropping a CARD on a scene here moves it into that scene — the
          * shortest way to reach a scene that is off-screen on the board */
         if (types.indexOf(DND_SHOT) >= 0) {
@@ -470,6 +480,13 @@
         it.classList.remove('drag-under');
         it.classList.remove('drop-shot');
         unmark();
+        const vids = SB.videosFromTransfer(ev.dataTransfer);
+        if (vids.length) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          scoutCards(sc.id, vids);
+          return;
+        }
         const shotId = ev.dataTransfer.getData(DND_SHOT);
         if (shotId) {
           ev.preventDefault();
@@ -969,7 +986,7 @@
     });
 
     const add = SB.el('button', 'add-shot', '+ Add shot');
-    add.title = 'Add a shot — or drop an image here to make a card from it';
+    add.title = 'Add a shot — or drop pictures or clips here to make a card of each';
     acceptImageDrop(add, sc);
     add.onclick = function () {
       const s = SB.Model.addShot(P(), sc.id, {});
@@ -1114,9 +1131,22 @@
         }
         return;
       }
+      /* A clip dropped here is the same gesture as a clip dropped on the
+         scene: a card, boarded from the clip's own frame. This handler knew
+         about pictures and about footage out of the Getty drawer, and said
+         "No image found in that drop" about a .mov -- and because it
+         stopPropagation()s, the scene block underneath never got its turn
+         either. "+ Add shot" is the target its own comment calls the gesture
+         people try first, so it was also the likeliest place to drop one. */
+      const vids = SB.videosFromTransfer(ev.dataTransfer);
+      if (vids.length) { scoutCards(sc.id, vids); return; }
       const fromGetty = stockUrlFromTransfer(ev.dataTransfer);
       SB.imagesFromTransfer(ev.dataTransfer).then(function (imgs) {
-        if (!imgs.length) { SB.toast('No image found in that drop', true); return; }
+        if (!imgs.length) {
+          SB.toast('Nothing in that drop this could use — a picture or a clip ' +
+            'makes a card, and a .mov or .mp4 boards it from its own frame.', true);
+          return;
+        }
         /* One at a time: the cards then land in the order they were picked,
            and the blob writes do not race each other. */
         return imgs.reduce(function (chain, src) {
