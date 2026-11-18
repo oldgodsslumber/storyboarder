@@ -174,3 +174,49 @@ a portrait-aspect fixture to pin the rotation behaviour once it is known.
 5. Board/scene drop creating cards, if (1) above is a yes.
 6. Then, and only then, a real iPhone clip in both formats — portrait and landscape — before
    calling any of it done.
+
+---
+
+## 11. Built — 2026-11-18
+
+All of §10, including (1): clips dropped on a scene make a card each. Three things the plan
+did not predict, and the first is much larger than the feature:
+
+**A `.mov` on a board played nowhere in the app.** Not a codec problem and nothing to do with
+HEVC. Chrome refuses a `data:` URL whose declared type it does not claim to support, and
+`canPlayType('video/quicktime')` is `""` — so the clip window loaded with `error 4`,
+`readyState 0`, while the very same bytes behind an **object URL** play fine at `readyState 4`:
+given a blob it sniffs the container instead of trusting the label, and a `.mov` is ISO-BMFF,
+which is what its mp4 demuxer reads. Every playback path went through `Renders.dataUrl`, so
+this was waiting for the first `.mov` anyone put on a board — the scout path simply became the
+thing that put one there. The Reviewer now plays from a blob and revokes the URL in `hush()`,
+where the decoders are dropped anyway. (The older clip window in `imagine.js` had always done
+it this way, which is why the fallback worked and the primary did not.)
+
+**A clip dropped on a card made two cards.** The card's drop handler never stopped the event,
+which did not matter while the scene strip above ignored everything that was not a card being
+moved. Once the strip started making a card per clip, one drop arrived twice. The card stops
+the event now, and the strip also ignores anything that came from inside a card — two guards,
+because they fail differently.
+
+**`madeHere` meant "not Getty" when it meant "made here".** A scout clip carries a `made` so
+the card can say which file it came off, and that alone was enough to put it in an export of
+“only what was made in here” — directly contradicting what the clip window tells the user.
+Both the predicate and the manifest flag now name the two kinds of thing that are not ours.
+
+Two smaller ones: *use this frame* waited on nothing, so a click before the clip had decoded
+read a canvas with no frame behind it — it now waits for the decode itself instead of telling
+somebody to wait; and the extractor moved to `util.js` as `SB.frameFromVideo(blob, at)` with
+`SB.frameAtPlayhead` and `SB.blankFrame` beside it, Getty calling the same code with `at = 0`.
+
+**Tests:** `test-scout.mjs` (23) holds the licence invariant and its mirror — a scout frame is
+not stock and *is* feedable, a comp beside it on the same board is neither — plus provenance
+through a save/load round trip. `test-export.mjs` gained the `madeHere` pair. `ui-scenario.js`
+drives the real thing end to end: the drop, the size dialog, the scene drop making cards in
+filename order, the drop not making a card of its own, and *use this frame*. **The decode is
+real** in those — which it could not have been a week ago, when the suite ran on a virtual
+clock that never delivered a frame. 776 UI checks, ten runs for ten; 1947 node checks.
+
+**Still unverified, as §7 said:** HEVC and rotation. Both want a real iPhone clip, in both
+formats, portrait and landscape, on this machine. The `.mov` container is now known to be
+fine; what an iPhone puts *inside* it is not.

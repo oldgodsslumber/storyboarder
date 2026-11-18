@@ -43,6 +43,16 @@
 
   /* ---------------------------------------------------------------- modes */
 
+  /* Object URLs for clips being played. Revoked when the window closes --
+     where the decoders are dropped anyway -- rather than on `loadeddata`,
+     because a looping element may come back for more of the resource. */
+  const playUrls = [];
+  function freePlayUrls() {
+    while (playUrls.length) {
+      try { URL.revokeObjectURL(playUrls.pop()); } catch (e) { /* already gone */ }
+    }
+  }
+
   const MODES = {
     image: {
       title: 'Shot ',
@@ -137,11 +147,80 @@
         const src = rec.ref ? SB.Renders.dataUrl(p, rec) : (rec.url || '');
         if (src) {
           const v = document.createElement('video');
-          v.src = src;
           v.controls = true;
           v.autoplay = true;
           v.loop = true;
+          if (rec.ref) {
+            /* NOT the data: URL, though that is where the bytes live.
+               Chrome refuses a data: URL whose declared type it does not claim
+               to support, and `canPlayType('video/quicktime')` is "" -- so a
+               .mov loaded with error 4, readyState 0, and played nowhere,
+               while the very same bytes behind an object URL play fine at
+               readyState 4: given a blob it sniffs the container instead of
+               trusting the label, and a .mov IS ISO-BMFF, which is what its
+               mp4 demuxer reads.
+               Nothing on a board was a .mov until the scout path put one
+               there, which is why this sat here working for every mp4.
+               The old clip window in imagine.js always did it this way. */
+            SB.Renders.videoFile(p, rec).then(function (blob) {
+              if (!blob) return;
+              const u = URL.createObjectURL(blob);
+              playUrls.push(u);
+              v.src = u;
+            });
+          } else {
+            v.src = src;
+          }
           stage.appendChild(v);
+          /* The frame a scout clip boards with is a guess (board.js:
+             SCOUT_SEEK), and a guess about a handheld clip is wrong often
+             enough that re-picking has to be cheap. This is why the default
+             mattering less than it looks: scrub to the frame and take it.
+             The clip's own provenance goes with the frame, which is not a
+             nicety -- for a Getty comp the pixels carry a licence, and
+             setImage is what files it against the picture. Taking a frame off
+             a comp and calling it ours would be the licence hole the Getty
+             work spent a day closing. */
+          const code = (SB.Model.findShot(p, sh.id) || {}).code || 'the card';
+          const pick = SB.el('button', 'mini primary rev-grab', 'use this frame');
+          pick.title = 'Put the frame showing now on ' + code +
+            '. Whatever is there is kept as a take.';
+          /* The window opens and the button is live before the clip has
+             decoded anything, and a click in that gap read a canvas with no
+             frame behind it. Telling somebody to "let it play a moment first"
+             is making them do the waiting the button can do itself. */
+          const decoded = function () {
+            if (v.videoWidth && v.readyState >= 2) return Promise.resolve();
+            return new Promise(function (res, rej) {
+              const to = setTimeout(function () {
+                rej(new Error('the clip has not decoded a frame yet'));
+              }, 4000);
+              const go = function () {
+                if (!v.videoWidth) return;
+                clearTimeout(to);
+                res();
+              };
+              v.addEventListener('loadeddata', go);
+              v.addEventListener('canplay', go);
+              v.addEventListener('timeupdate', go);
+            });
+          };
+          pick.onclick = function (ev) {
+            ev.stopPropagation();
+            pick.disabled = true;
+            decoded().then(function () {
+              const data = SB.frameAtPlayhead(v);
+              if (!data) throw new Error('there was no frame behind that canvas');
+              const made = rec.made ||
+                { by: 'scout', name: rec.name || '', at: Date.now() };
+              return SB.Board.setImage(sh, data, made).then(function () {
+                SB.toast('That frame is on ' + code);
+              });
+            }).catch(function (e) {
+              SB.toast('That frame could not be taken: ' + (e.message || e), true);
+            }).then(function () { pick.disabled = false; });
+          };
+          stage.appendChild(pick);
         } else {
           stage.appendChild(SB.el('div', 'rev-gone',
             'This board has no copy of that clip and its link has gone.'));
@@ -216,6 +295,7 @@
      * loop set there is no end for it to stop at — so the sound of a clip
      * outlived the window it was in, and came back over the next one. */
     const hush = function () {
+      freePlayUrls();
       const media = stage.querySelectorAll('video, audio');
       Array.prototype.forEach.call(media, function (el) {
         try {

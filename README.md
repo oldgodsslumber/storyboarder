@@ -455,6 +455,36 @@ it will never make a card or scene reappear or vanish.
   reach a scene that is scrolled off the board. The board auto-scrolls while you drag near
   its top or bottom edge, and every valid target lights up. Drag scenes in the left list to
   reorder them. Everything renumbers automatically.
+- **The board auto-scroll waits to be asked.** Park the pointer in the band at the top or
+  bottom edge for a moment and the board scrolls, easing from a nudge to a sweep by how far
+  into the band you are; move decisively and it stops. It used to move 18px per `dragover`
+  event, which fires every few milliseconds whether or not the pointer moved — and the
+  lower band is the strip every drag out of the Getty drawer has to cross, so the board
+  bolted out from under every thumbnail. Cards and Getty tiles share the one implementation.
+
+### Footage we shot
+
+- **Drop a clip on a card and its frame boards the shot**, with the clip kept so the move
+  can be reviewed. `.mov` off a phone is what this is for — a location scout comes home
+  with a camera roll, and each clip can become a card.
+- **Drop a handful on a scene and you get a card each**, in filename order, which is the
+  order they were shot on every camera that names its own files. The cards do not have to
+  exist first.
+- The frame is taken a third of a second in, not at frame zero: frame zero of a handheld
+  clip is usually a hand still on the record button with the exposure settling. If it
+  picked a dud, open the clip and press **use this frame** — it takes whatever is at the
+  playhead, so a bad guess is two clicks rather than a re-drop.
+- **Our own footage carries no licence**, so unlike a Getty comp its frame is a reference
+  like any other and the model lanes will take it. It is still not *output*: an export of
+  “only what was made in here” passes it by, and the clip window says so.
+- Clips live inside the board file, so one costs about its own size again and a third and
+  every save rewrites the whole file. Past a threshold (25 MB by default, in
+  Settings → General) the drop asks whether to keep the clip or take the frame alone. The
+  frame goes on the card either way.
+- If a clip will not decode, the message says so and names the likely reason — an iPhone
+  set to *High Efficiency* writes HEVC, which Chrome reads only where the platform has a
+  decoder. The clip is still kept, so a frame can be taken off it by hand.
+
 - A **blue line** shows where the thing you are dragging will land, and it is measured
   against every card in the row (or every row in the scene list), not only the one under
   the pointer. The gap to the left of the first card means *first*; the space past the
@@ -1307,10 +1337,20 @@ node test-prompts.mjs  # the prompt pipeline against a stubbed Gemini endpoint
 node test-mxm.mjs      # the MiniMax package: labels = file order, brief, H3 sections, Write
 node test-lock.mjs     # nothing invented: the rider, the check, the clay-render opening
 node test-vexport.mjs  # video models, exported: the twin, its prompt, its files
+node test-getty.mjs    # the Getty client, and the one rule that costs money: no comp to a model
+node test-scout.mjs    # footage we shot: no licence, so its frame IS feedable — the mirror of Getty
+node test-export.mjs   # the export plan: what is ours, what is only on the board
+node test-imagine.mjs  # the ImagineArt layer against a stubbed endpoint
 ```
 
 `test-typing.mjs` exists because `test-ui.mjs` dispatches synthetic `beforeinput` events,
 which cannot catch focus, selection or caret bugs — real clicks and keypresses can.
+
+`test-ui.mjs` serves the built file over `http://127.0.0.1` and runs Chrome on a real clock.
+It used to use `--virtual-time-budget`, which does not just run the clock fast but **stops**
+it while a load is in flight: one request to a host that was not on this machine hung the
+whole suite, silently, for as long as anybody left it running. On a real clock media also
+decodes, so the tests that take a frame off a clip are testing the actual decoder.
 
 ## Build: set pieces from a local model
 

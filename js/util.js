@@ -502,6 +502,117 @@ window.SB = window.SB || {};
     return e;
   };
 
+  /* ---------------- a frame out of a video file ---------------------------
+   *
+   * The bytes are already in hand, so they go in as an object URL: the
+   * <video> reading it is same-origin, which means the canvas can never be
+   * tainted and CORS cannot break the extraction. That was the one way this
+   * could have been fragile and it is designed out rather than handled.
+   *
+   * Seeking is the fiddly part. `currentTime = 0` on a freshly loaded video
+   * does not always have a decoded frame behind it, so this waits for a seek
+   * to land and then checks the canvas is not uniformly blank before
+   * believing it; a blank frame (a clip that fades up from black is a real
+   * thing) gets one nudge forward rather than a black card.
+   *
+   * `at` is a WISH, in seconds, and 0 means the first frame. A Getty comp
+   * starts clean and asks for 0. A handheld scout clip does not: frame zero
+   * is usually a hand still on the record button with the exposure settling,
+   * so that path asks for a little way in. It is clamped to a quarter of the
+   * duration, because "a little way in" must not mean "past the end" on a
+   * two-second clip.
+   *
+   * This lived in getty.js, where the Getty client still calls it. It is not
+   * Getty's: it is the same question whether the bytes came from a media host
+   * or off a camera card.
+   */
+  SB.frameFromVideo = function (blob, at) {
+    return new Promise(function (resolve, reject) {
+      let url = '', done = false, tries = 0, target = 0;
+      const want = Math.max(0, Number(at) || 0);
+      const v = document.createElement('video');
+      const finish = function (data, err) {
+        if (done) return;
+        done = true;
+        clearTimeout(cap);
+        try { v.removeAttribute('src'); v.load(); } catch (e) { }
+        if (url) URL.revokeObjectURL(url);
+        if (data) resolve(data); else reject(err || new Error('no frame'));
+      };
+      const grab = function () {
+        try {
+          const w = v.videoWidth, h = v.videoHeight;
+          if (!w || !h) { finish(null, new Error('the clip reported no size')); return; }
+          const c = document.createElement('canvas');
+          c.width = w; c.height = h;
+          const ctx = c.getContext('2d');
+          ctx.drawImage(v, 0, 0, w, h);
+          /* A clip that opens on black would board as a black card. One
+             nudge forward, once -- this is not a hunt for a good frame, it is
+             a guard against the degenerate one. */
+          const dur = isFinite(v.duration) ? v.duration : 0;
+          if (tries === 0 && SB.blankFrame(ctx, w, h) && dur > 0.2) {
+            tries++;
+            v.currentTime = Math.min(target + 0.25, dur / 2);
+            return;
+          }
+          finish(c.toDataURL('image/png'));
+        } catch (e) { finish(null, e); }
+      };
+      const cap = setTimeout(function () {
+        finish(null, new Error('the clip did not decode in time'));
+      }, 15000);
+      v.muted = true;
+      v.preload = 'auto';
+      v.playsInline = true;
+      v.onerror = function () { finish(null, new Error('the clip could not be decoded here')); };
+      v.onseeked = grab;
+      v.onloadeddata = function () {
+        const dur = isFinite(v.duration) ? v.duration : 0;
+        target = (want > 0 && dur > 0) ? Math.min(want, dur / 4) : want;
+        if (target > 0) { v.currentTime = target; return; }
+        /* already at zero on most builds, in which case no seeked fires */
+        if (v.currentTime === 0 && v.readyState >= 2) grab();
+        else v.currentTime = 0;
+      };
+      try {
+        url = URL.createObjectURL(blob);
+        v.src = url;
+        v.load();
+      } catch (e) { finish(null, e); }
+    });
+  };
+
+  /* Uniform to the eye: every sampled pixel within a few levels of the first.
+   * Sampled rather than scanned -- this runs on a 1080p frame. */
+  SB.blankFrame = function (ctx, w, h) {
+    try {
+      const step = Math.max(1, Math.floor(Math.min(w, h) / 16));
+      const d = ctx.getImageData(0, 0, w, h).data;
+      const at = function (x, y) { return (y * w + x) * 4; };
+      const i0 = at(0, 0);
+      for (let y = 0; y < h; y += step) {
+        for (let x = 0; x < w; x += step) {
+          const i = at(x, y);
+          if (Math.abs(d[i] - d[i0]) > 6 || Math.abs(d[i + 1] - d[i0 + 1]) > 6 ||
+            Math.abs(d[i + 2] - d[i0 + 2]) > 6) return false;
+        }
+      }
+      return true;
+    } catch (e) { return false; }     // a read that throws is not a blank frame
+  };
+
+  /* A frame off a <video> that is already playing, at wherever it has got to.
+   * Same-origin bytes, so no taint; a cross-origin one would throw here and
+   * the caller reports it. */
+  SB.frameAtPlayhead = function (v) {
+    if (!v || !v.videoWidth || !v.videoHeight) return '';
+    const c = document.createElement('canvas');
+    c.width = v.videoWidth; c.height = v.videoHeight;
+    c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+    return c.toDataURL('image/png');
+  };
+
   /* ---------------- auto-scroll while something is being dragged ----------
    *
    * A browser will not scroll a container for a custom drag, so the board has

@@ -1584,6 +1584,183 @@
         await nap(20);
       }
 
+      /* ---- footage we shot: a clip boards the card it lands on ------------
+         The decode is REAL here. It could not be, under the virtual clock the
+         suite used to run on -- the media pipeline never delivered a frame and
+         anything that waited for one failed after its full timeout. So this
+         block is also the proof that moving the harness onto a real clock
+         bought something besides never hanging. */
+      {
+        const nap = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+        const settle = async function (fn, tries) {
+          for (let i = 0; i < (tries || 240) && !fn(); i++) await nap(25);
+          return fn();
+        };
+        const raw = atob(window.__tinyMp4);
+        const bs = new Uint8Array(raw.length);
+        for (let i = 0; i < raw.length; i++) bs[i] = raw.charCodeAt(i);
+        /* video/quicktime, because that is what Chrome calls a .mov and the
+           whole feature rests on it passing the type gate. */
+        const mov = function (n, pad) {
+          const parts = pad ? [bs, new Uint8Array(pad)] : [bs];
+          return new File(parts, n, { type: 'video/quicktime' });
+        };
+        const drop = function (el, files) {
+          const dt = new DataTransfer();
+          files.forEach(function (f) { dt.items.add(f); });
+          el.dispatchEvent(new DragEvent('drop',
+            { dataTransfer: dt, bubbles: true, cancelable: true }));
+        };
+        const frameOf = function (sh) {
+          return document.querySelector('.card[data-shot="' + sh.id + '"] .frame');
+        };
+
+        const sc = P().scenes[0];
+        const mine = [];
+        const addCard = function () {
+          const sh = SB.Model.addShot(P(), sc.id, {});
+          mine.push(sh.id);
+          return sh;
+        };
+
+        const one = addCard();
+        SB.app.changed(true);
+        await nap(60);
+        const wasCards = sc.shots.length;
+
+        t('there is a card to drop onto', !!frameOf(one), '');
+        drop(frameOf(one), [mov('IMG_4471.MOV')]);
+        await settle(function () { return !!(one.image && one.video); }, 400);
+
+        t('a clip dropped on a card lands as a frame AND a clip',
+          !!one.image && !!one.video, 'image=' + !!one.image + ' clip=' + !!one.video);
+        t('and a .mov is taken at its word',
+          (one.video || {}).name === 'IMG_4471.MOV', JSON.stringify((one.video || {}).name));
+        t('the clip says which file it came off',
+          !!(one.video && one.video.made) && one.video.made.by === 'scout' &&
+          one.video.made.name === 'IMG_4471.MOV', JSON.stringify(one.video && one.video.made));
+        t('it carries no licence, so its frame IS one a model may be handed',
+          !SB.Model.isStock(P(), one) && !!SB.Model.modelFrame(P(), one),
+          JSON.stringify({ stock: SB.Model.isStock(P(), one),
+            frame: !!SB.Model.modelFrame(P(), one) }));
+        t('and no card on the board reports stock because of it',
+          SB.Model.stockShots(P()).length === 0, SB.Model.stockShots(P()).length);
+        /* The drop bubbles, and the scene strip above now makes a card per
+           clip -- so without the card stopping the event, one clip on one card
+           quietly became two cards. */
+        t('the drop does not also make a card of its own beside it',
+          sc.shots.length === wasCards, sc.shots.length + ' vs ' + wasCards);
+
+        /* ---- the size question ---- */
+        const wasMax = SB.Board.scoutMax();
+        SB.Board.setScoutMax(1);
+        const big = addCard();
+        SB.app.changed(true);
+        await nap(60);
+        drop(frameOf(big), [mov('A001_BIG.MOV', 2 * 1048576)]);
+        const asked = await settle(function () {
+          return !!document.querySelector('#modalRoot .modal .clip-pick');
+        }, 240);
+        t('a clip over the threshold asks before it is kept', asked,
+          asked ? '' : 'no dialog');
+        const ask = document.querySelector('#modalRoot .modal');
+        t('and says what it would do to the board file',
+          !!ask && /board file/.test(ask.textContent) && /MB/.test(ask.textContent),
+          ask ? ask.textContent.slice(0, 90) : '');
+        const frameOnly = Array.prototype.filter.call(ask.querySelectorAll('button'),
+          function (b) { return /^Frames? only$/.test(b.textContent); })[0];
+        t('and the frame is offered without the clip', !!frameOnly,
+          Array.prototype.map.call(ask.querySelectorAll('button'),
+            function (b) { return b.textContent; }).join('|'));
+        frameOnly.click();
+        await settle(function () { return !!big.image; }, 400);
+        t('taking the frame only leaves a picture and no clip',
+          !!big.image && !big.video,
+          'image=' + !!big.image + ' clip=' + !!big.video);
+        SB.Board.setScoutMax(wasMax);
+
+        /* ---- a scout day: clips onto a scene, a card each ---- */
+        const before = sc.shots.length;
+        /* By identity, not by position: a drop lands at the insertion point
+           under the pointer, and a synthetic event points at the left edge --
+           so these arrive at the FRONT of the scene and slicing off the end
+           finds the cards that were already there. */
+        const already = {};
+        sc.shots.forEach(function (x) { already[x.id] = 1; });
+        const strip = document.querySelector('.scene-block .shots') ||
+          document.querySelector('.shots');
+        t('the scene has a strip to drop onto', !!strip, '');
+        drop(strip, [mov('B002_0002.MOV'), mov('B002_0001.MOV')]);
+        await settle(function () {
+          return sc.shots.filter(function (x) { return !already[x.id]; }).length >= 2;
+        }, 400);
+        t('clips dropped on a scene make a card each',
+          sc.shots.length === before + 2, sc.shots.length + ' vs ' + before);
+        const fresh = sc.shots.filter(function (x) { return !already[x.id]; });
+        fresh.forEach(function (x) { mine.push(x.id); });
+        await settle(function () {
+          return fresh.every(function (x) { return !!x.image; });
+        }, 400);
+        t('and each new card is boarded from its own clip',
+          fresh.every(function (x) { return !!x.image; }),
+          JSON.stringify(fresh.map(function (x) { return !!x.image; })));
+        t('in filename order, which is the order they were shot',
+          (fresh[0].video || {}).name === 'B002_0001.MOV' &&
+          (fresh[1].video || {}).name === 'B002_0002.MOV',
+          fresh.map(function (x) { return (x.video || {}).name; }).join(','));
+
+        /* ---- a better frame, off the clip itself ---- */
+        const was = one.image && one.image.ref;
+        SB.Clip.open(P(), one);
+        const grab = await settle(function () {
+          return !!document.querySelector('#modalRoot .rev-grab');
+        }, 240);
+        t('the clip window offers a frame off the clip itself', grab,
+          grab ? '' : 'no button');
+        /* wait for a decoded frame, as a person would: the button handles
+           being clicked early, and that is tested by it working here even
+           though this fixture is slow to decode in headless */
+        await settle(function () {
+          const v = document.querySelector('#modalRoot video');
+          return !!(v && v.videoWidth && v.readyState >= 2);
+        }, 240);
+        const stamp = one.imageAt || 0;
+        document.querySelector('#modalRoot .rev-grab').click();
+        /* NOT asserted on the blob ref changing. Refs are content hashes and
+           this fixture is two seconds of an unchanging test pattern, so the
+           frame at the playhead really is byte-identical to the frame at 0.3s
+           -- and setImage deliberately treats an identical picture as the same
+           picture rather than banking a duplicate take. What is under test is
+           that the button reaches setImage at all; `imageAt` is the witness
+           that survives the dedupe. */
+        const took = await settle(function () {
+          return !!one.image && (one.imageAt || 0) > stamp;
+        }, 400);
+        t('and taking it puts a frame on the card',
+          took, JSON.stringify({ at: one.imageAt, was: stamp,
+            ref: (one.image || {}).ref, before: was }));
+        t('nothing complained on the way',
+          !/could not/i.test((document.getElementById('toastRoot') || {}).textContent || ''),
+          ((document.getElementById('toastRoot') || {}).textContent || '').slice(0, 90));
+        /* Closed the way a person closes it, not by tearing the node out:
+           the window hangs a keydown handler on the document and drops its
+           decoders on the way out, and ripping the DOM away leaves both
+           behind to misbehave in whatever runs next. */
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        await settle(function () { return !document.querySelector('#modalRoot .modal'); }, 80);
+        Array.prototype.forEach.call(document.querySelectorAll('#modalRoot .modal-back'),
+          function (el) { el.remove(); });
+
+        /* leave the board as it was found -- including the screen: a toast
+           still sitting over the board is something a later block will press
+           by accident through elementFromPoint. */
+        mine.forEach(function (id) { SB.Model.deleteShot(P(), id); });
+        const tr = document.getElementById('toastRoot');
+        if (tr) tr.textContent = '';
+        SB.app.changed(true);
+        await nap(60);
+      }
+
       // the two lanes: on the card, and in the table
       {
         const nap = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };

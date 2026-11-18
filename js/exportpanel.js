@@ -56,9 +56,16 @@
    * picture came from — but nobody asking for what this board produced means
    * the stock somebody dragged onto it. Stock is the third category, and this
    * is the line that keeps it out of the other two. */
+  /* "What was made in here" means a model in this app made it. Two kinds of
+     thing on a board were not: a Getty comp, which somebody else shot and
+     licensed, and our own scout footage, which we shot on a phone. Neither is
+     output, and the clip window tells the user both are passed by -- so this
+     is the predicate that has to agree with it. The scout case was the one
+     that slipped: the test read "not Getty" when it meant "made here". */
+  const NOT_OURS = { getty: 1, scout: 1 };
   function madeHere(rec) {
     const m = rec && rec.made;
-    return !!(m && m.by !== 'getty');
+    return !!(m && m.by && !NOT_OURS[m.by]);
   }
 
   function rows(p, scope) {
@@ -580,7 +587,7 @@
           bytes: it.bytes || 0,
           pixels: it.rec && it.rec.w ? it.rec.w + '×' + it.rec.h : null,
           boardCopy: !!it.isProxy,
-          madeHere: !!(m && m.by !== 'getty'),
+          madeHere: !!(m && m.by && !NOT_OURS[m.by]),
           stock: m && m.by === 'getty' ? { id: m.id, artist: m.artist, collection: m.collection } : null,
           model: m && m.by !== 'getty' ? m.model : null,
           imagineModel: m ? m.slug : null,

@@ -976,6 +976,16 @@
     shots.appendChild(add);
 
     shots.addEventListener('dragover', function (ev) {
+      /* Clips are welcome here and a drop target is only a drop target if
+         dragover says so -- without this the files never arrive. No insertion
+         marker: they are becoming new cards, not moving an existing one. */
+      if (dragHasVideo(ev.dataTransfer)) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        shots.classList.add('drag-over');
+        ev.dataTransfer.dropEffect = 'copy';
+        return;
+      }
       if (ev.dataTransfer.types.indexOf(DND_SHOT) < 0) return;
       ev.preventDefault();
       ev.stopPropagation();
@@ -987,6 +997,21 @@
       if (!shots.contains(ev.relatedTarget)) { shots.classList.remove('drag-over'); unmark(); }
     });
     shots.addEventListener('drop', function (ev) {
+      /* Clips dropped on the strip rather than on a card: a card each. The
+         cards do not have to exist first, which is what makes this a scouting
+         tool rather than a convenience. */
+      /* Not a drop that a card has already taken: the card stops the event,
+         and this asks again in case some other path ever forgets to. */
+      const vids = (ev.target && ev.target.closest && ev.target.closest('.card'))
+        ? [] : SB.videosFromTransfer(ev.dataTransfer);
+      if (vids.length) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        shots.classList.remove('drag-over');
+        unmark();
+        scoutCards(sc.id, vids, kids(shots, 'card').length ? shotHit(shots, ev).idx : undefined);
+        return;
+      }
       if (ev.dataTransfer.types.indexOf(DND_SHOT) < 0) return;
       ev.preventDefault();
       ev.stopPropagation();
@@ -1010,6 +1035,13 @@
     /* Anywhere in the scene block — including its heading — accepts a card.
      * Aiming at a scene's title is the obvious gesture; it used to do nothing. */
     blk.addEventListener('dragover', function (ev) {
+      /* Without this the browser refuses the drop and the files do not arrive
+         at all -- a drop target is only a drop target if dragover says so. */
+      if (dragHasVideo(ev.dataTransfer)) {
+        ev.preventDefault();
+        blk.classList.add('drag-over');
+        return;
+      }
       if (ev.dataTransfer.types.indexOf(DND_SHOT) < 0) return;
       ev.preventDefault();
       blk.classList.add('drag-over');
@@ -1018,6 +1050,15 @@
       if (!blk.contains(ev.relatedTarget)) blk.classList.remove('drag-over');
     });
     blk.addEventListener('drop', function (ev) {
+      const vids = (ev.target && ev.target.closest && ev.target.closest('.card'))
+        ? [] : SB.videosFromTransfer(ev.dataTransfer);
+      if (vids.length) {
+        ev.preventDefault();
+        blk.classList.remove('drag-over');
+        unmark();
+        scoutCards(sc.id, vids);
+        return;
+      }
       if (ev.dataTransfer.types.indexOf(DND_SHOT) < 0) return;
       ev.preventDefault();
       blk.classList.remove('drag-over');
@@ -2257,6 +2298,14 @@
     f.addEventListener('drop', function (ev) {
       if (ev.dataTransfer.types.indexOf(DND_SHOT) >= 0) return;
       ev.preventDefault();
+      /* This card is the most specific target and it is about to handle the
+         drop, so the drop stops here. It used not to matter: the scene strip
+         above ignored anything that was not a card being moved. Now the strip
+         makes a card per clip, so a clip dropped ON a card arrived twice --
+         once as this card s frame, and again as a brand new card beside it.
+         The stock branches below always knew to do this; the ordinary file
+         branch did not, because nothing upstairs was listening yet. */
+      ev.stopPropagation();
       f.classList.remove('drag-over');
       /* Footage out of the drawer, checked first and exactly like DND_SHOT
          above: it carries the asset, so it can be placed WITH its licence
@@ -2279,7 +2328,9 @@
       const fromGetty = stockUrlFromTransfer(ev.dataTransfer);
       SB.imageFromTransfer(ev.dataTransfer).then(function (src) {
         if (src) setDroppedImage(sh, src, fromGetty);
-        if (clips.length) { clipDrop(sh, clips); return; }
+        /* `!src`: with no picture in the drop, the clip's own frame is what
+           boards the card -- which is the whole scout gesture. */
+        if (clips.length) { clipDrop(sh, clips, !src); return; }
         if (!src) SB.toast('No image or clip found in that drop', true);
       });
     });
@@ -2301,6 +2352,220 @@
    * its blob reference — the one thing that travels with a picture when cards
    * move. If nobody is holding that picture any more (replaced, deleted), the
    * record has nowhere to live and is dropped; gc() takes the bytes. */
+  /* ---------------- footage off a camera card -----------------------------
+   *
+   * A location scout comes home with a phone full of short clips, and each one
+   * should be able to become a card: its frame boards the shot, and the clip
+   * stays so the move can be reviewed.
+   *
+   * Nearly all of this already existed. A dropped video was already stored as
+   * a clip, `.mov` already passes the type gate as `video/quicktime`, and the
+   * awkward cases -- several clips in one drop, a card that already holds one
+   * -- already ask. The missing piece was that attaching a clip never made a
+   * picture, so a scout clip landed as footage on a card that still read as an
+   * empty frame. So this is placeStock's gesture, for footage we shot.
+   *
+   * Three ways own footage is NOT a Getty comp, all three load-bearing:
+   *
+   *  - **No licence, and not calling `markStock` is what makes that true.**
+   *    The register is what `Model.isStock` reads and `modelFrame` holds stock
+   *    frames out of every model feed. Own footage carries no licence, so its
+   *    frame IS a legitimate reference to hand a model -- and it stays one
+   *    precisely by this path not copying Getty's licence call.
+   *  - **Provenance still matters, as a note rather than a restriction:**
+   *    `made.by === 'scout'` with the file's name and its own timestamp, so
+   *    "where did this frame come from" is answerable in six weeks.
+   *  - **There is no still to fall back on.** When a comp will not decode,
+   *    Getty has a poster to place instead. A file off a camera card has
+   *    nothing, so a decode failure has to be said out loud, has to name the
+   *    likely cause, and has to leave the clip on the card rather than losing
+   *    both.
+   */
+
+  /* Frame zero is the worst frame in a handheld clip: a hand still on the
+     record button, exposure and focus settling, sometimes a black lead frame.
+     A third of a second in is almost always better -- and it is re-pickable
+     from the clip window besides, which matters more than the default. */
+  const SCOUT_SEEK = 0.3;
+  const K_SCOUT_KEEP = 'sb.scout.keep';
+  const K_SCOUT_MAX = 'sb.scout.maxmb';
+
+  function scoutKeep() {
+    try { return localStorage.getItem(K_SCOUT_KEEP) !== '0'; } catch (e) { return true; }
+  }
+  function setScoutKeep(on) {
+    try { localStorage.setItem(K_SCOUT_KEEP, on ? '1' : '0'); } catch (e) { }
+  }
+  /* Clips go into the board file as base64 (renders.js: keepVideo), so a phone
+     clip is its own size again and a third, the whole file is rewritten on
+     every save, and a scout day is many of them. The board is a real file
+     rather than localStorage, so this degrades as save time rather than
+     hitting a wall -- but a 2 GB .storyboard is still a dead board, so past
+     the threshold it asks instead of deciding. */
+  function scoutMax() {
+    let v = 0;
+    try { v = Number(localStorage.getItem(K_SCOUT_MAX)); } catch (e) { }
+    return (isFinite(v) && v > 0) ? v : 25;
+  }
+  function setScoutMax(m) {
+    try { localStorage.setItem(K_SCOUT_MAX, String(Math.max(1, Number(m) || 25))); } catch (e) { }
+  }
+
+  function scoutMade(file) {
+    return {
+      by: 'scout',
+      name: (file && file.name) || '',
+      at: (file && file.lastModified) || Date.now()
+    };
+  }
+
+  function codeOf(sh) {
+    const f = sh && SB.Model.findShot(P(), sh.id);
+    return (f && f.code) || 'the card';
+  }
+
+  /* A decode failure is the one failure this path cannot paper over, so it
+     says what is most likely wrong and what to do about it. An iPhone shooting
+     in "High Efficiency" writes HEVC, which Chrome reads only where the
+     platform has a decoder for it, and no amount of care in here changes
+     that. */
+  function scoutWhy(why) {
+    return 'No frame could be read from that clip' + (why ? ' (' + why + ')' : '') + '.' +
+      ' If it came off an iPhone it is probably HEVC — Settings → Camera → Formats →' +
+      ' Most Compatible records H.264 instead, which every browser can read.';
+  }
+
+  /* Asked once for a whole drop: twelve clips off a scout day must not mean
+     twelve dialogs. Resolves true (keep the clips), false (frames only) or
+     null (cancelled). */
+  function scoutAsk(files) {
+    const keep = scoutKeep();
+    const maxMb = scoutMax();
+    const big = files.filter(function (f) { return f.size > maxMb * 1048576; });
+    if (!keep || !big.length) return Promise.resolve(keep);
+    const total = files.reduce(function (n, f) { return n + f.size; }, 0);
+    return new Promise(function (resolve) {
+      const box = SB.el('div', 'clip-pick');
+      box.appendChild(SB.el('div', 'pp-note warn',
+        (big.length === 1
+          ? (big[0].name || 'That clip') + ' is ' + mb(big[0].size)
+          : big.length + ' of those clips are over ' + maxMb + ' MB') +
+        '. Clips are kept inside the board file, so this drop adds about ' +
+        mb(total * 1.37) + ' to it — and every save rewrites the lot.'));
+      box.appendChild(SB.el('div', 'pp-note',
+        'The frame' + (files.length === 1 ? '' : 's') + ' go' + (files.length === 1 ? 'es' : '') +
+        ' on the card' + (files.length === 1 ? '' : 's') + ' either way. The question is ' +
+        'whether the clip' + (files.length === 1 ? '' : 's') + ' come' +
+        (files.length === 1 ? 's' : '') + ' too.'));
+      SB.modal({
+        title: files.length === 1 ? 'That is a big clip' : 'Those are big clips',
+        body: box,
+        buttons: [
+          { label: 'Frame' + (files.length === 1 ? '' : 's') + ' only', primary: true,
+            onClick: function (close) { close(); resolve(false); } },
+          { label: 'Keep the clip' + (files.length === 1 ? '' : 's') + ' too',
+            onClick: function (close) { close(); resolve(true); } },
+          { label: 'Cancel', onClick: function (close) { close(); resolve(null); } }
+        ]
+      });
+    });
+  }
+
+  /* The frame and the clip, in one gesture. The clip goes on even when the
+     frame cannot be made: losing both because a decoder said no is the worst
+     of the outcomes available here. */
+  function scoutPlace(sh, file, keepClip, quiet) {
+    const made = scoutMade(file);
+    let why = '';
+    return SB.frameFromVideo(file, SCOUT_SEEK).then(function (data) {
+      return setImage(sh, data, made).then(function () { return !!sh.image; });
+    }, function (e) {
+      why = (e && e.message) || String(e);
+      return false;
+    }).then(function (placed) {
+      const after = keepClip
+        ? SB.Clip.attach(P(), sh, file, made).then(function (rec) {
+            SB.app.changed(true);
+            return rec;
+          }).catch(function (e) {
+            SB.toast((placed ? 'The frame is on the card, but that' : 'That') +
+              ' clip could not be kept: ' + (e.message || e), true);
+            return null;
+          })
+        : Promise.resolve(null);
+      return after.then(function (rec) {
+        if (quiet) return { placed: placed, rec: rec };
+        if (placed) {
+          const what = SB.Clip.label(rec);
+          SB.toast('Frame on ' + codeOf(sh) + (rec ? ' · clip kept' : '') +
+            (what ? ' · ' + what : ''));
+        } else {
+          SB.toast(scoutWhy(why) + (rec
+            ? ' The clip is on the card, so you can take a frame off it in the clip window.'
+            : ' Nothing landed.'), true);
+        }
+        return { placed: placed, rec: rec };
+      });
+    });
+  }
+
+  /* One clip onto one card, size question and all. */
+  function scoutOne(sh, file) {
+    return scoutAsk([file]).then(function (keep) {
+      if (keep === null) return null;
+      return scoutPlace(sh, file, keep);
+    });
+  }
+
+  /* A scout day is a dozen clips, not one. Dropping them on a scene makes a
+     card each, in the order the files are named -- which is the order they
+     were shot, on every camera and phone that names its own files.
+     `videosFromTransfer` has already sorted them that way. */
+  function scoutCards(sceneId, files, atIdx) {
+    return scoutAsk(files).then(function (keep) {
+      if (keep === null) return;
+      const codes = [];
+      let frames = 0, clips = 0;
+      const next = function (i) {
+        if (i >= files.length) {
+          SB.app.changed(true);
+          SB.toast(files.length + ' clip' + (files.length === 1 ? '' : 's') + ' → ' +
+            codes.length + ' card' + (codes.length === 1 ? '' : 's') +
+            (codes.length ? ' (' + codes[0] +
+              (codes.length > 1 ? ' to ' + codes[codes.length - 1] : '') + ')' : '') +
+            ' · ' + frames + ' frame' + (frames === 1 ? '' : 's') +
+            (keep ? ', ' + clips + ' clip' + (clips === 1 ? '' : 's') + ' kept' : ''),
+            frames < files.length);
+          return;
+        }
+        const sh = SB.Model.addShot(P(), sceneId, {},
+          typeof atIdx === 'number' ? atIdx + i : undefined);
+        if (!sh) { next(i + 1); return; }
+        SB.app.changed(true);
+        codes.push(codeOf(sh));
+        scoutPlace(sh, files[i], keep, true).then(function (out) {
+          if (out && out.placed) frames++;
+          if (out && out.rec) clips++;
+        }).catch(function () { }).then(function () { next(i + 1); });
+      };
+      next(0);
+    });
+  }
+
+  /* During `dragover` the files themselves are withheld, so the only thing
+     there is to ask is what the items claim to be. */
+  function dragHasVideo(dt) {
+    if (!dt) return false;
+    if (dt.items) {
+      for (let i = 0; i < dt.items.length; i++) {
+        const it = dt.items[i];
+        if (it.kind === 'file' && /^video\//.test(it.type || '')) return true;
+      }
+    }
+    const t = dt.types;
+    return !!t && Array.prototype.indexOf.call(t, 'Files') >= 0;
+  }
+
   function mb(n) { return (n / 1048576).toFixed(1) + ' MB'; }
 
   /* Every card in board order, with its code — for spreading a multi-clip
@@ -2314,7 +2579,11 @@
     return out;
   }
 
-  function takeClip(sh, file) {
+  function takeClip(sh, file, wantFrame) {
+    /* A clip dropped on its own boards the card from its own frame. One
+       dropped alongside a picture does not: the picture in the drop is the
+       more explicit answer to "what goes on this card". */
+    if (wantFrame) return scoutOne(sh, file);
     const had = !!sh.video;
     return SB.Clip.attach(P(), sh, file).then(function (rec) {
       if (!rec) return null;
@@ -2333,13 +2602,13 @@
    * one and ignored the rest, and a drop onto a card that already had one
    * replaced it — bytes and all — with a toast you could easily miss. Both
    * now ask, and the question names what is at stake either way. */
-  function clipDrop(sh, files) {
+  function clipDrop(sh, files, wantFrame) {
     if (!files.length) return;
     const p = P();
     const here = SB.Model.findShot(p, sh.id);
     const code = here ? here.code : 'this card';
 
-    if (files.length === 1 && !sh.video) { takeClip(sh, files[0]); return; }
+    if (files.length === 1 && !sh.video) { takeClip(sh, files[0], wantFrame); return; }
 
     const box = SB.el('div', 'clip-pick');
     let m = null;
@@ -2359,7 +2628,7 @@
       const row = SB.el('button', 'clip-row');
       row.appendChild(SB.el('span', 'n', f.name || 'clip'));
       row.appendChild(SB.el('span', 'b', mb(f.size)));
-      row.onclick = function () { if (m) m.close(); takeClip(sh, f); };
+      row.onclick = function () { if (m) m.close(); takeClip(sh, f, wantFrame); };
       box.appendChild(row);
     });
 
@@ -2383,18 +2652,25 @@
         label: 'One each, from ' + run[0].code,
         onClick: function (close) {
           close();
-          let n = 0;
-          const next = function (i) {
-            if (i >= files.length) {
-              SB.toast(n + ' clip' + (n === 1 ? '' : 's') + ' placed, ' +
-                run[0].code + ' to ' + run[run.length - 1].code);
-              return;
-            }
-            SB.Clip.attach(P(), run[i].shot, files[i]).then(function (rec) {
-              if (rec) n++;
-            }).catch(function () { }).then(function () { next(i + 1); });
-          };
-          next(0);
+          /* The size question belongs to the drop, not to each file in it. */
+          (wantFrame ? scoutAsk(files) : Promise.resolve(false)).then(function (keep) {
+            if (wantFrame && keep === null) return;
+            let n = 0;
+            const next = function (i) {
+              if (i >= files.length) {
+                SB.toast(n + ' clip' + (n === 1 ? '' : 's') + ' placed, ' +
+                  run[0].code + ' to ' + run[run.length - 1].code);
+                return;
+              }
+              const one = wantFrame
+                ? scoutPlace(run[i].shot, files[i], keep, true)
+                  .then(function (out) { return out && (out.placed || out.rec); })
+                : SB.Clip.attach(P(), run[i].shot, files[i]);
+              one.then(function (ok) { if (ok) n++; })
+                .catch(function () { }).then(function () { next(i + 1); });
+            };
+            next(0);
+          });
         }
       });
     }
@@ -2690,6 +2966,11 @@
     saveFeed: saveFeed,
     setImage: setImage, clipDrop: clipDrop,
     placeStock: placeStock,
+    /* the scout path: own footage, frame and clip in one gesture */
+    scoutPlace: scoutPlace, scoutCards: scoutCards,
+    scoutKeep: scoutKeep, setScoutKeep: setScoutKeep,
+    scoutMax: scoutMax, setScoutMax: setScoutMax,
+    SCOUT_SEEK: SCOUT_SEEK,
     swap: doSwap,
     select: selectShot,
     selection: selection,

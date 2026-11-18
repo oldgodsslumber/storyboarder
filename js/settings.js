@@ -36,6 +36,57 @@
    * so the board says it, with the age of each one, in the same place it says
    * what it weighs. Empty on every board with no stock on it, which is most
    * of them, so it costs nothing to carry. */
+  /* ---------------- footage we shot ----------------
+   *
+   * Applied as it is clicked rather than on Save, because both of these are
+   * machine preferences about what a drop does next -- somebody who turns the
+   * clips off is usually about to drop twenty of them, and a setting that
+   * waits for a Save button is a setting that was not on when it mattered.
+   */
+  function scoutBlock() {
+    const g = SB.el('div', 'pp-group');
+    g.appendChild(SB.el('div', 'pp-label', 'Footage we shot'));
+    g.appendChild(SB.el('div', 'pp-note',
+      'Drop a clip on a card and its frame boards the shot. Drop a handful on a scene ' +
+      'and you get a card each, in filename order \u2014 which is the order they were shot. ' +
+      'The frame is a guess a third of a second in, because frame zero of a handheld ' +
+      'clip is usually a hand on the record button; the clip window can take a better ' +
+      'one at the playhead.'));
+
+    const keep = document.createElement('input');
+    keep.type = 'checkbox';
+    keep.checked = !(SB.Board && SB.Board.scoutKeep && !SB.Board.scoutKeep());
+    const keepLbl = SB.el('label', 'pp-check');
+    keepLbl.appendChild(keep);
+    keepLbl.appendChild(SB.el('span', null, ' Keep the clip as well as the frame'));
+    keep.onchange = function () {
+      if (SB.Board && SB.Board.setScoutKeep) SB.Board.setScoutKeep(keep.checked);
+    };
+    g.appendChild(keepLbl);
+
+    const maxWrap = SB.el('label', 'pp-check');
+    const maxEl = document.createElement('input');
+    maxEl.type = 'number';
+    maxEl.min = '1';
+    maxEl.className = 'pp-num';
+    maxEl.value = String((SB.Board && SB.Board.scoutMax) ? SB.Board.scoutMax() : 25);
+    maxEl.onchange = function () {
+      if (SB.Board && SB.Board.setScoutMax) SB.Board.setScoutMax(maxEl.value);
+      maxEl.value = String(SB.Board.scoutMax());
+    };
+    maxWrap.appendChild(SB.el('span', null, 'Ask before keeping a clip over '));
+    maxWrap.appendChild(maxEl);
+    maxWrap.appendChild(SB.el('span', null, ' MB'));
+    g.appendChild(maxWrap);
+
+    g.appendChild(SB.el('div', 'pp-note',
+      'Clips live inside the board file as text, so one is about its own size again and ' +
+      'a third, and every save rewrites the whole file. A phone clip runs 50 to 200 MB ' +
+      'and a scout day is many of them \u2014 so past that size the drop asks rather than ' +
+      'deciding. The frame goes on the card either way.'));
+    return g;
+  }
+
   function stockBlock() {
     const rows = SB.Model.stockShots(P());
     const box = SB.el('div', 'pp-block');
@@ -291,6 +342,7 @@
     /* ---- what this board is carrying ---- */
     panels.general.appendChild(originalsBlock());
     panels.general.appendChild(stockBlock());
+    panels.general.appendChild(scoutBlock());
 
     /* ---------------- Card fields ---------------- */
     panels.fields.appendChild(SB.el('div', 'pp-note',

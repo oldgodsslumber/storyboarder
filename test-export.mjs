@@ -569,6 +569,18 @@ section('the things a QA pass found');
   t('but "only what was made in here" passes it by',
     mine.items.filter(i => i.name === '0040.mp4').length === 0,
     mine.items.map(i => i.name).join(' '));
+
+  /* The same clip, now carrying scout provenance. "Made in here" means a
+     model in this app made it; the scout path sets a `made` so the card can
+     say which file the footage came off, and the old test for this read
+     "not Getty" -- which started answering yes to our own camera. */
+  b.video.made = { by: 'scout', name: 'IMG_4471.MOV', at: Date.now() };
+  const scout = E.plan(p, withOpts({ madeOnly: true }));
+  t('a scout clip is passed by too, though it now carries a made',
+    scout.items.filter(i => i.name === '0040.mp4').length === 0,
+    scout.items.map(i => i.name).join(' '));
+  t('and still exports when everything does',
+    E.plan(p, withOpts({})).items.filter(i => i.name === '0040.mp4').length === 1, '');
 }
 
 console.log('\n— the 3D blocking —');

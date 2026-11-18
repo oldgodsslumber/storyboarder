@@ -661,74 +661,10 @@
    */
   function firstFrame(blob) {
     if (deps.firstFrame) return deps.firstFrame(blob);       // test seam
-    return new Promise(function (resolve, reject) {
-      let url = '', done = false, tries = 0;
-      const v = document.createElement('video');
-      const finish = function (data, err) {
-        if (done) return;
-        done = true;
-        clearTimeout(cap);
-        try { v.removeAttribute('src'); v.load(); } catch (e) { }
-        if (url) URL.revokeObjectURL(url);
-        if (data) resolve(data); else reject(err || new Error('no frame'));
-      };
-      const grab = function () {
-        try {
-          const w = v.videoWidth, h = v.videoHeight;
-          if (!w || !h) { finish(null, new Error('the clip reported no size')); return; }
-          const c = document.createElement('canvas');
-          c.width = w; c.height = h;
-          const ctx = c.getContext('2d');
-          ctx.drawImage(v, 0, 0, w, h);
-          /* A clip that opens on black would board as a black card. One
-             nudge forward, once — this is not a hunt for a good frame, it is
-             a guard against the degenerate one. */
-          if (tries === 0 && blank(ctx, w, h) && isFinite(v.duration) && v.duration > 0.2) {
-            tries++;
-            v.currentTime = Math.min(0.25, v.duration / 10);
-            return;
-          }
-          finish(c.toDataURL('image/png'));
-        } catch (e) { finish(null, e); }
-      };
-      const cap = setTimeout(function () {
-        finish(null, new Error('the clip did not decode in time'));
-      }, 15000);
-      v.muted = true;
-      v.preload = 'auto';
-      v.playsInline = true;
-      v.onerror = function () { finish(null, new Error('the clip could not be decoded here')); };
-      v.onseeked = grab;
-      v.onloadeddata = function () {
-        /* already at zero on most builds, in which case no seeked fires */
-        if (v.currentTime === 0 && v.readyState >= 2) grab();
-        else v.currentTime = 0;
-      };
-      try {
-        url = URL.createObjectURL(blob);
-        v.src = url;
-        v.load();
-      } catch (e) { finish(null, e); }
-    });
-  }
-
-  /* Uniform to the eye: every sampled pixel within a few levels of the first.
-   * Sampled rather than scanned — this runs on a 1080p frame. */
-  function blank(ctx, w, h) {
-    try {
-      const step = Math.max(1, Math.floor(Math.min(w, h) / 16));
-      const d = ctx.getImageData(0, 0, w, h).data;
-      const at = function (x, y) { return (y * w + x) * 4; };
-      const i0 = at(0, 0);
-      for (let y = 0; y < h; y += step) {
-        for (let x = 0; x < w; x += step) {
-          const i = at(x, y);
-          if (Math.abs(d[i] - d[i0]) > 6 || Math.abs(d[i + 1] - d[i0 + 1]) > 6 ||
-            Math.abs(d[i + 2] - d[i0 + 2]) > 6) return false;
-        }
-      }
-      return true;
-    } catch (e) { return false; }     // a read that throws is not a blank frame
+    /* A comp starts clean, so frame zero is the right frame here -- unlike
+       footage off a camera card, which asks for a little way in. The decoder
+       itself is in util.js: it was never Getty's. */
+    return SB.frameFromVideo(blob, 0);
   }
 
   /* ---------------- the words for a filter ----------------

@@ -3505,6 +3505,7 @@
     if (!rec) return '';
     const bits = [];
     if (rec.made && rec.made.by === 'getty') bits.push('Getty comp');
+    if (rec.made && rec.made.by === 'scout') bits.push('scout clip');
     if (rec.dur) bits.push(rec.dur + 's');
     if (rec.w) bits.push(rec.w + '×' + rec.h);
     if (rec.bytes) bits.push((rec.bytes / 1048576).toFixed(1) + ' MB');
@@ -3543,6 +3544,16 @@
         ', placed' + when + '. Watermarked, licensed for layout for ' +
         SB.Model.COMP_DAYS + ' days, and never in the cut: the edit licenses the asset. ' +
         'An export of \u201cwhat was made in here\u201d passes it by.';
+    }
+    /* Own footage: a note, not a restriction. The important half is the last
+       sentence -- a scout frame carries no licence, so unlike a comp it is
+       ours to hand a model, and the way that stays true is board.js not
+       calling markStock on this path. */
+    if (made && made.by === 'scout') {
+      const shot = made.at ? ' Recorded ' + new Date(made.at).toLocaleDateString() + '.' : '';
+      return 'Footage we shot' + (made.name ? ' \u2014 ' + made.name : '') + '.' + shot +
+        ' Nothing here generated it, so an export of \u201cwhat was made in here\u201d passes ' +
+        'it by. It carries no licence either: its frame is a reference like any other.';
     }
     if (!made) {
       return rec ? 'Added from a file' + (rec.name ? ' (' + rec.name + ')' : '') +
