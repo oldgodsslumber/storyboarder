@@ -181,7 +181,11 @@
           script: SB.Doc.renderHTML(w.doc, w.from, w.to, null),
           /* every box: a card written only in a lane box printed as
              "(no description yet)" on the deliverable */
-          desc: SB.Refs.text(p, sh)
+          desc: SB.Refs.text(p, sh),
+          /* the people on the card, by name — the shot list's cast column */
+          cast: (sh.personaIds || []).map(function (id) { return SB.Personas.find(p, id); })
+            .filter(function (x) { return x && SB.Personas.kindOf(x).id === 'person' && x.name; })
+            .map(function (x) { return x.name; })
         });
         first = false;
       });
@@ -492,6 +496,14 @@
   function layout(o) {
     o = options(o);
     const pr = preset(o.preset);
+    if (o.doc === 'shotlist') {
+      const L = listPages(o);
+      return {
+        preset: LIST.preset, boardPreset: pr, opts: o, perPage: 1, paper: PAPER.portrait,
+        shots: L.count, scenes: L.scenes, refs: 0,
+        sheets: L.sheets, boardSheets: 0, refSheets: 0
+      };
+    }
     const list = cells();
     const board = o.doc === 'refs' ? 0 : paginate(list, pr, o).length;
     const refs = o.doc === 'board' ? null : refPages(o);
@@ -676,6 +688,12 @@
      * one thing to send rather than two. The two halves have their own paper
      * and their own grid, so each rule is scoped to its own pages rather than
      * one stylesheet trying to be both. */
+    if (o.doc === 'shotlist') {
+      const L = listPages(o);
+      return '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + SB.esc(p.name) +
+        ' — shot list</title><style>' + L.css + '</style></head><body>' + L.html +
+        (o.silent ? '' : '<script>' + READY + '<\/script>') + '</body></html>';
+    }
     if (o.doc === 'refs' || o.doc === 'both') {
       const refs = refPages(o);
       const boardPart = o.doc === 'both' ? boardPages(o) : null;
@@ -741,6 +759,232 @@
     return { html: pages, css: sheetCSS(pr, o) };
   }
 
+  /* ---------- the shot list ----------
+   *
+   * The page an AD carries on the day: every shot in shoot order, scene by
+   * scene, a frame small enough that a page holds a run of them, and an empty
+   * box to tick with a pen as each one is in the can. Ink, not state: nothing
+   * here reads or writes whether a shot was got.
+   *
+   * Every row is a fixed height, so the list is paginated HERE rather than
+   * left to the browser. Left to flow, a table split a scene's band from its
+   * first shot at the foot of a page, and the dialog could not say how many
+   * sheets it was about to print. All sizes are mm. */
+  const LIST = {
+    preset: { id: 'shotlist', label: 'Shot list', orient: 'portrait', cols: 1, rows: 1, font: 10 },
+    head: 15,       // title block, its rule and the gap under it
+    thead: 6.5,     // the column names
+    foot: 7,
+    band: 13,       // where a scene starts
+    cont: 7.5,      // a scene carried over from the page before
+    row: 19,        // a shot with its frame
+    rowText: 10.5,  // a shot without
+    frameW: 30, frameH: 16.9   // 16:9; any other shape letterboxes inside
+  };
+
+  /* The columns, in order. Exactly one takes the leftover width: the
+   * description, else the notes, else the cast, else an empty spacer — so the
+   * boxes and codes stay put whatever is switched off. */
+  function listCols(o) {
+    const cols = [{ k: 'box', label: '✓', w: '9mm' }, { k: 'code', label: 'Shot', w: '12mm' }];
+    if (o.listThumbs) cols.push({ k: 'frame', label: 'Frame', w: (LIST.frameW + 3) + 'mm' });
+    if (o.listType) cols.push({ k: 'type', label: 'Type', w: '24mm' });
+    if (o.listDesc) cols.push({ k: 'desc', label: 'Description', w: '' });
+    if (o.listCast) cols.push({ k: 'cast', label: 'Cast', w: '30mm' });
+    if (o.listNotes) cols.push({ k: 'notes', label: 'Notes', w: '46mm' });
+    const pick = function (k) { return cols.filter(function (c) { return c.k === k; })[0]; };
+    const flex = pick('desc') || pick('notes') || pick('cast');
+    if (flex) flex.w = '';
+    else cols.push({ k: 'pad', label: '', w: '' });
+    cols.forEach(function (c) { if (!c.w) c.w = 'minmax(0,1fr)'; });
+    return cols;
+  }
+
+  /* [{items}] where an item is {band: scene} | {cont: scene} | {shot: cell}.
+   * A band never sits at the foot of a page without at least one of its
+   * shots under it. */
+  function paginateList(list, o) {
+    const rowH = o.listThumbs ? LIST.row : LIST.rowText;
+    const room = parseFloat(PAPER.portrait.h) - LIST.head - LIST.thead - (o.footer ? LIST.foot : 0);
+    const fits = function (h) { return left + 0.01 >= h; };   // mm sums are not exact in floats
+
+    const scenes = [];
+    list.forEach(function (c) {
+      let g = scenes[scenes.length - 1];
+      if (!g || g.idx !== c.sceneIdx) {
+        g = { idx: c.sceneIdx, heading: c.scene, desc: c.sceneDesc, shots: [] };
+        scenes.push(g);
+      }
+      g.shots.push(c);
+    });
+
+    const pages = [];
+    let page = null, left = 0;
+    function fresh() { page = { items: [] }; pages.push(page); left = room; }
+    scenes.forEach(function (g, gi) {
+      if (!page || (o.listScenePageBreak && gi > 0) || !fits(LIST.band + rowH)) fresh();
+      page.items.push({ band: g });
+      left -= LIST.band;
+      g.shots.forEach(function (c) {
+        if (!fits(rowH)) {
+          fresh();
+          page.items.push({ cont: g });
+          left -= LIST.cont;
+        }
+        page.items.push({ shot: c });
+        left -= rowH;
+      });
+    });
+    return { pages: pages, scenes: scenes };
+  }
+
+  function sceneLabel(g) {
+    return 'Scene ' + (g.idx + 1);
+  }
+
+  function listCellHTML(col, c) {
+    switch (col.k) {
+      case 'box': return '<div class="sc"><span class="box"></span></div>';
+      case 'code': return '<div class="sc code">' + SB.esc(c.code) + '</div>';
+      case 'frame':
+        return '<div class="sc fr"><div class="thumb">' +
+          (c.img ? '<img src="' + c.img + '">' : '<span class="empty">no frame</span>') +
+          /* clay is not a frame, and a comp is not footage: both say so */
+          (c.img && c.blocked ? '<span class="tag">blocking</span>' : '') +
+          (c.img && c.stock ? '<span class="tag">comp</span>' : '') +
+          '</div></div>';
+      case 'type':
+        return '<div class="sc ty">' + (c.type ? SB.esc(c.type) : '<span class="dim">—</span>') + '</div>';
+      case 'desc':
+        return '<div class="sc tx"><div class="clip">' +
+          (c.desc ? SB.esc(c.desc) : '<i class="dim">(no description yet)</i>') + '</div></div>';
+      case 'cast':
+        return '<div class="sc tx"><div class="clip">' +
+          (c.cast.length ? SB.esc(c.cast.join(', ')) : '<span class="dim">—</span>') + '</div></div>';
+      case 'notes': return '<div class="sc nt"></div>';
+      default: return '<div class="sc"></div>';
+    }
+  }
+
+  function listItemHTML(it, cols) {
+    if (it.band) {
+      const g = it.band, n = g.shots.length;
+      return '<div class="band"><div class="bl">' +
+        '<span class="sn">' + sceneLabel(g) + '</span>' +
+        (g.heading ? '<span class="bh">' + SB.esc(g.heading) + '</span>' : '') +
+        '<span class="bn">' + n + (n === 1 ? ' shot' : ' shots') + '</span></div>' +
+        (g.desc ? '<div class="bd">' + SB.esc(g.desc) + '</div>' : '') +
+        '</div>';
+    }
+    if (it.cont) {
+      return '<div class="cont"><b>' + sceneLabel(it.cont) + '</b>' +
+        (it.cont.heading ? ' · ' + SB.esc(it.cont.heading) : '') +
+        ' <span class="dim">(continued)</span></div>';
+    }
+    return '<div class="srow">' +
+      cols.map(function (col) { return listCellHTML(col, it.shot); }).join('') + '</div>';
+  }
+
+  function listCSS(cols, o) {
+    const paper = PAPER.portrait;
+    const rowH = o.listThumbs ? LIST.row : LIST.rowText;
+    const lines = o.listThumbs ? 4 : 2;
+    const grid = 'display:grid;grid-template-columns:' +
+      cols.map(function (c) { return c.w; }).join(' ') + ';column-gap:0';
+    return [
+      '@page{size:portrait;margin:12mm}',
+      '*{box-sizing:border-box}',
+      ':root{--page-w:' + paper.w + ';--page-h:' + paper.h + '}',
+      'html,body{margin:0;padding:0}',
+      'body{font:' + LIST.preset.font + 'px/1.35 "Segoe UI",system-ui,sans-serif;color:#111;' +
+      'background:#e9eaee;-webkit-print-color-adjust:exact;print-color-adjust:exact}',
+      '.page{width:var(--page-w);height:var(--page-h);margin:8mm auto;background:#fff;' +
+      'display:flex;flex-direction:column;box-shadow:0 1px 8px rgba(0,0,0,.22);break-after:page}',
+      '.page:last-child{break-after:auto}',
+
+      '.lhead{flex:0 0 auto;height:' + (LIST.head - 3) + 'mm;margin-bottom:3mm;display:flex;' +
+      'align-items:flex-end;gap:10px;padding-bottom:2mm;border-bottom:2px solid #111}',
+      '.lhead h1{margin:0;font-size:1.9em;line-height:1;letter-spacing:.3px}',
+      '.lhead .sub{color:#555}',
+      '.lhead .tot{margin-left:auto;color:#555;font-variant-numeric:tabular-nums}',
+
+      '.thead{flex:0 0 auto;height:' + LIST.thead + 'mm;' + grid + ';align-items:center;' +
+      'font-size:.78em;text-transform:uppercase;letter-spacing:.5px;color:#666;' +
+      'border-bottom:1.5px solid #111}',
+      '.thead>div{padding:0 1.5mm;white-space:nowrap;overflow:hidden}',
+
+      '.lbody{flex:1 1 auto;min-height:0;overflow:hidden}',
+
+      '.band{height:' + LIST.band + 'mm;padding:2mm 2.5mm;margin:0;overflow:hidden;' +
+      'background:' + INK.meta + ';border-left:2.5mm solid #111;border-bottom:1px solid ' + INK.line + '}',
+      '.bl{display:flex;align-items:baseline;gap:8px;white-space:nowrap;overflow:hidden}',
+      '.sn{font-size:.8em;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:#555}',
+      '.bh{font-size:1.25em;font-weight:700;overflow:hidden;text-overflow:ellipsis}',
+      '.bn{margin-left:auto;color:#666;font-size:.85em}',
+      '.bd{color:#333;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:.6mm}',
+
+      '.cont{height:' + LIST.cont + 'mm;display:flex;align-items:center;gap:4px;padding:0 2.5mm;' +
+      'border-left:2.5mm solid ' + INK.line + ';border-bottom:1px solid ' + INK.line + ';' +
+      'white-space:nowrap;overflow:hidden;color:#333}',
+
+      /* every cell is a plain block, top-aligned: a line clamp inside a flex
+         item is the thing that cut text through the middle of a line before */
+      '.srow{height:' + rowH + 'mm;' + grid + ';border-bottom:1px solid #e3e5e9;break-inside:avoid}',
+      '.sc{min-width:0;overflow:hidden;padding:1.4mm 1.5mm}',
+      '.box{display:block;width:5.5mm;height:5.5mm;border:1.5px solid #111;border-radius:1px;background:#fff}',
+      '.code{font-weight:700;font-size:1.15em;line-height:5.5mm;font-variant-numeric:tabular-nums}',
+      '.ty{font-size:.88em;text-transform:uppercase;letter-spacing:.4px;color:#444;line-height:1.3}',
+      '.fr{padding-top:1mm;padding-bottom:0}',
+      '.thumb{position:relative;width:' + LIST.frameW + 'mm;height:' + LIST.frameH + 'mm;' +
+      'background:#f2f3f5;border:1px solid ' + INK.soft + ';display:flex;align-items:center;' +
+      'justify-content:center;overflow:hidden}',
+      '.thumb img{width:100%;height:100%;object-fit:contain;display:block}',
+      '.tag{position:absolute;left:2px;bottom:2px;padding:0 3px;border-radius:2px;' +
+      'background:rgba(255,255,255,.88);color:#555;font-size:6.5px;letter-spacing:.4px;text-transform:uppercase}',
+      '.empty{color:#9aa0aa;font-size:8px;letter-spacing:.4px;text-transform:uppercase}',
+      '.clip{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:' + lines + ';' +
+      'overflow:hidden;white-space:pre-wrap}',
+      '.nt{border-left:1px solid #e3e5e9}',
+      '.dim{color:#9aa0aa}',
+
+      'footer{flex:0 0 auto;height:' + LIST.foot + 'mm;padding-top:3mm;font-size:9px;color:#666;text-align:center}',
+      '@media print{body{background:#fff}.page{width:auto;height:var(--page-h);margin:0;box-shadow:none}}'
+    ].join('');
+  }
+
+  function listPages(o) {
+    const p = P();
+    o = options(o);
+    const list = cells();
+    const cols = listCols(o);
+    const built = paginateList(list, o);
+    const pages = built.pages;
+    const tot = list.length + (list.length === 1 ? ' shot' : ' shots') + ' · ' +
+      built.scenes.length + (built.scenes.length === 1 ? ' scene' : ' scenes');
+    const thead = '<div class="thead">' +
+      cols.map(function (c) { return '<div>' + SB.esc(c.label) + '</div>'; }).join('') + '</div>';
+
+    let out = pages.map(function (pg, i) {
+      const head = '<div class="lhead"><h1>Shot list</h1><span class="sub">' +
+        SB.esc(p.name || 'Untitled') + ' · ' + SB.esc(p.versionName || '') + '</span>' +
+        '<span class="tot">' + tot + '</span></div>';
+      const foot = o.footer
+        ? '<footer>' + SB.esc(p.name) + ' · ' + SB.esc(p.versionName) + ' · shot list · page ' +
+          (i + 1) + ' of ' + pages.length + '</footer>'
+        : '';
+      return '<section class="page">' + head + thead + '<div class="lbody">' +
+        pg.items.map(function (it) { return listItemHTML(it, cols); }).join('') +
+        '</div>' + foot + '</section>';
+    }).join('');
+    if (!out) {
+      out = '<section class="page"><p>Nothing to shoot — every shot is marked “no shot”.</p></section>';
+    }
+    return {
+      html: out, css: listCSS(cols, o), count: list.length,
+      scenes: built.scenes.length, sheets: Math.max(pages.length, 1)
+    };
+  }
+
   function exportPdf(o) {
     const w = window.open('', '_blank');
     if (!w) { SB.toast('Allow pop-ups for this page to export the PDF', true); return; }
@@ -753,7 +997,7 @@
     exportPdf: exportPdf, html: html, cells: cells,
     PRESETS: PRESETS, REF_PRESETS: REF_PRESETS, PAPER: PAPER,
     preset: preset, refPreset: refPreset,
-    refCells: refCells, feedRows: feedRows, refPages: refPages,
+    refCells: refCells, feedRows: feedRows, refPages: refPages, listPages: listPages,
     layout: layout, options: options
   };
 

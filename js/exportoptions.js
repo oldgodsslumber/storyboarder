@@ -57,7 +57,8 @@
     const docSel = document.createElement('select');
     [['board', 'The storyboard'],
      ['refs', 'The references \u2014 what everything looks like'],
-     ['both', 'Both \u2014 the storyboard, then the references']].forEach(function (o) {
+     ['both', 'Both \u2014 the storyboard, then the references'],
+     ['shotlist', 'Shot list \u2014 for the shoot, with a box to tick per shot']].forEach(function (o) {
       const op = document.createElement('option');
       op.value = o[0]; op.textContent = o[1];
       if ((working.doc || 'board') === o[0]) op.selected = true;
@@ -145,8 +146,32 @@
       'showing 854×480, which is not enough to match a face against.'));
     left.appendChild(refWrap);
 
-    /* On every sheet of either document, so it is not in either box. */
-    left.appendChild(SB.el('div', 'xp-head', 'Both'));
+    /* ---------------- the shot list ----------------
+     *
+     * The page carried on the day. Its boxes are ink: ticking one is done with
+     * a pen, and nothing about what was shot comes back into the board. */
+    const listWrap = SB.el('div', 'xp-list');
+    listWrap.appendChild(SB.el('div', 'xp-head', 'On each row'));
+    [
+      ['listThumbs', 'Frame thumbnail'],
+      ['listType', 'Shot type'],
+      ['listDesc', 'Description'],
+      ['listCast', 'Cast — who is on the card'],
+      ['listNotes', 'A blank notes column to write in']
+    ].forEach(function (t) {
+      listWrap.appendChild(toggle(t[1], working[t[0]], function (v) { working[t[0]] = v; draw(); }));
+    });
+    listWrap.appendChild(SB.el('div', 'xp-head', 'Scenes'));
+    listWrap.appendChild(toggle('Start each scene on a new page',
+      working.listScenePageBreak, function (v) { working.listScenePageBreak = v; draw(); }));
+    listWrap.appendChild(SB.el('div', 'pp-note',
+      'In shoot order, grouped under a band for each scene, with an empty box to tick as each ' +
+      'shot is got. Cards marked “no shot” are left off. A scene that runs onto the next page ' +
+      'carries its name over.'));
+    left.appendChild(listWrap);
+
+    /* On every sheet of every document, so it is in none of the boxes. */
+    left.appendChild(SB.el('div', 'xp-head', 'Every sheet'));
     left.appendChild(toggle('Footer with the project name, version and page number',
       working.footer, function (v) { working.footer = v; draw(); }));
 
@@ -168,14 +193,20 @@
       /* Only the half being printed is on screen: a dialog offering card
          toggles for a document with no cards on it is a dialog that has to be
          read twice. */
-      boardWrap.style.display = doc === 'refs' ? 'none' : '';
-      refWrap.style.display = doc === 'board' ? 'none' : '';
+      boardWrap.style.display = (doc === 'board' || doc === 'both') ? '' : 'none';
+      refWrap.style.display = (doc === 'refs' || doc === 'both') ? '' : 'none';
+      listWrap.style.display = doc === 'shotlist' ? '' : 'none';
 
       const info = SB.Pdf.layout(working);
       shape.textContent = describe(info.preset);
       const bits = [];
-      if (doc !== 'refs') bits.push(info.shots + (info.shots === 1 ? ' shot' : ' shots'));
-      if (doc !== 'board') bits.push(info.refs + (info.refs === 1 ? ' reference' : ' references'));
+      if (doc === 'shotlist') {
+        bits.push(info.shots + (info.shots === 1 ? ' shot' : ' shots') + ' in ' +
+          info.scenes + (info.scenes === 1 ? ' scene' : ' scenes'));
+      } else {
+        if (doc !== 'refs') bits.push(info.shots + (info.shots === 1 ? ' shot' : ' shots'));
+        if (doc !== 'board') bits.push(info.refs + (info.refs === 1 ? ' reference' : ' references'));
+      }
       count.textContent = bits.join(' · ') + ' → ' +
         info.sheets + (info.sheets === 1 ? ' sheet' : ' sheets');
 

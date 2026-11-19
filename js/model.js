@@ -815,7 +815,16 @@
        * sheets; the references are what the subjects on it LOOK like, which is
        * a different thing on paper and the thing you hand somebody who has to
        * match them. 'both' prints the references after the board. */
-      doc: 'board',              // 'board' | 'refs' | 'both'
+      doc: 'board',              // 'board' | 'refs' | 'both' | 'shotlist'
+      /* The shot list is the page an AD carries on the day: every shot in
+       * order, a small frame, and a box to tick with a pen. Ink, not state —
+       * nothing about what was shot is ever written back into the board. */
+      listThumbs: true,          // the frame column
+      listType: true,
+      listDesc: true,
+      listCast: false,           // the people on each card, by name
+      listNotes: false,          // a blank column to write in on set
+      listScenePageBreak: false, // each scene starts a fresh page
       refPreset: 'refs4',
       refShots: true,            // which cards each subject appears on
       refUnused: true,           // subjects no card uses

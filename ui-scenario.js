@@ -441,7 +441,7 @@
         var docSel = back.querySelector('.xp-left select');
         t('the dialog asks which document to print first',
           docSel && [].map.call(docSel.options, function (o) { return o.value; }).join(',')
-            === 'board,refs,both',
+            === 'board,refs,both,shotlist',
           docSel ? [].map.call(docSel.options, function (o) { return o.value; }).join(',') : 'none');
         t('and opens on the storyboard', docSel.value === 'board', docSel.value);
 
@@ -502,6 +502,36 @@
         t('and the count is both halves',
           /shots? · .*reference/.test(back.querySelector('.xp-count').textContent),
           back.querySelector('.xp-count').textContent);
+
+        /* ---- the shot list: the page carried on the day ---- */
+        t('the shot list controls are out of the way until they are wanted',
+          back.querySelector('.xp-list').style.display === 'none',
+          back.querySelector('.xp-list').style.display);
+        docSel.value = 'shotlist';
+        docSel.onchange();
+        t('choosing the shot list shows only its own controls',
+          back.querySelector('.xp-list').style.display !== 'none' &&
+          back.querySelector('.xp-board').style.display === 'none' &&
+          back.querySelector('.xp-refs').style.display === 'none',
+          back.querySelector('.xp-list').style.display + '/' +
+          back.querySelector('.xp-board').style.display + '/' +
+          back.querySelector('.xp-refs').style.display);
+        t('and previews an actual shot list, a box to a shot',
+          /shot list/.test(pv.contentDocument.title) &&
+          pv.contentDocument.querySelectorAll('.srow').length ===
+            pv.contentDocument.querySelectorAll('.srow .box').length &&
+          pv.contentDocument.querySelectorAll('.srow').length > 0,
+          pv.contentDocument.title + ' / ' + pv.contentDocument.querySelectorAll('.srow').length);
+        t('counted in shots and scenes',
+          /shots? in \d+ scenes? → \d+ sheets?/.test(back.querySelector('.xp-count').textContent),
+          back.querySelector('.xp-count').textContent);
+        /* fixed-height rows are what the pagination counts on: nothing may
+           spill out of the page it was put on */
+        var lb = pv.contentDocument.querySelector('.lbody');
+        t('the rows fit the page they were paginated onto',
+          lb && lb.scrollHeight <= lb.clientHeight + 1,
+          lb ? lb.scrollHeight + ' > ' + lb.clientHeight : 'no list body');
+
         docSel.value = 'board';
         docSel.onchange();
 

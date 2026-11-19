@@ -3737,6 +3737,110 @@ console.log('\n— the reference sheets —');
   eq(SB.Pdf.cells()[0].img, 'data:image/png;base64,U1RJTEw=', 'and the still is what prints');
 }
 
+console.log('\n— the shot list is the page carried on the day —');
+{
+  /* Every shot in order, under its scene, with a frame and a box to tick. */
+  const p = SB.Model.newProject();
+  p.name = 'Harbour Day';
+  SB.app = { project: p, changed: function () { } };
+  const pic = SB.Blobs.image(p, 'data:image/png;base64,RlJBTUU=', 16, 9);
+  const kit = SB.Personas.add(p, { kind: 'person', name: 'Kit' });
+  const dock = SB.Personas.add(p, { kind: 'place', name: 'The dock' });
+
+  const s1 = p.scenes[0];
+  s1.heading = 'Dawn at the pier';
+  s1.description = 'Fog. The boats come in.';
+  s1.shots.push(SB.Model.newShot(), SB.Model.newShot());
+  s1.shots[0].type = 'Wide'; s1.shots[0].description = 'The whole pier in fog.'; s1.shots[0].image = pic;
+  s1.shots[0].personaIds = [kit.id, dock.id];
+  s1.shots[1].noShot = true;
+  s1.shots[2].description = 'Kit ties off.';
+  /* a scene long enough to run over a page */
+  const s2 = SB.Model.newScene('The market');
+  for (let i = 0; i < 16; i++) {
+    const sh = SB.Model.newShot();
+    sh.description = 'Stall ' + (i + 1) + '.';
+    sh.image = pic;
+    s2.shots.push(sh);
+  }
+  p.scenes.push(s2);
+
+  const html = SB.Pdf.html({ doc: 'shotlist', silent: true });
+  const rows = html.match(/class="srow"/g) || [];
+  eq(rows.length, 18, 'one row per shot that is not "no shot"');
+  eq((html.match(/class="box"/g) || []).length, 18, 'and every row has a box to tick');
+  eq(/<title>Harbour Day — shot list<\/title>/.test(html), true, 'titled as a shot list');
+  eq((html.match(/class="band"/g) || []).length, 2, 'a band where each scene starts');
+  eq(/Dawn at the pier/.test(html) && /Fog\. The boats come in\./.test(html), true,
+    'carrying the scene heading and description');
+  eq(/Scene 1<\/span>.*2 shots/.test(html), true, 'and how many shots it holds, "no shot" not counted');
+
+  const codes = (html.match(/class="sc code">([^<]+)</g) || []).map(function (m) { return m.split('>')[1].slice(0, -1); });
+  eq(codes.slice(0, 3), ['1A', '1C', '2A'], 'in shoot order, with the board’s own codes');
+  eq(/RlJBTUU=/.test(html), true, 'the frame is printed');
+  eq(/no frame/.test(html), true, 'and a shot without one says so');
+
+  /* pagination: the market runs onto a second page, and says whose page it is */
+  const L = SB.Pdf.layout({ doc: 'shotlist' });
+  eq(L.shots, 18, 'the dialog counts the shots');
+  eq(L.scenes, 2, 'and the scenes');
+  eq(L.sheets, (html.match(/class="page"/g) || []).length, 'and the sheets it actually prints');
+  eq(L.sheets > 1, true, 'a long list runs over pages');
+  eq(/Scene 2<\/b> · The market <span class="dim">\(continued\)/.test(html), true,
+    'a scene carried over names itself at the top of the next page');
+
+  /* a band is never left alone at the foot of a page */
+  const pages = html.split('<section class="page">').slice(1);
+  pages.forEach(function (pg, i) {
+    const last = pg.lastIndexOf('class="band"'), afterRow = pg.indexOf('class="srow"', last);
+    eq(last < 0 || afterRow > last, true, 'page ' + (i + 1) + ' does not end on a scene band');
+  });
+
+  /* every page fits in its own height, by arithmetic on the fixed row heights */
+  pages.forEach(function (pg, i) {
+    const mm = (pg.match(/class="band"/g) || []).length * 13 +
+      (pg.match(/class="cont"/g) || []).length * 7.5 +
+      (pg.match(/class="srow"/g) || []).length * 19;
+    eq(mm <= 251 - 15 - 6.5 - 7 + 0.01, true, 'page ' + (i + 1) + ' holds what was put on it (' + mm + 'mm)');
+  });
+
+  /* each scene on its own page when asked */
+  const broken = SB.Pdf.html({ doc: 'shotlist', listScenePageBreak: true, silent: true });
+  eq(broken.split('<section class="page">')[2].indexOf('class="band"') >= 0, true,
+    'a page break before each scene puts the market at the top of page 2');
+
+  /* the columns follow the toggles */
+  eq(/class="thumb"/.test(SB.Pdf.html({ doc: 'shotlist', listThumbs: false, silent: true })), false,
+    'thumbnails can be left off');
+  eq(SB.Pdf.layout({ doc: 'shotlist', listThumbs: false }).sheets, 1,
+    'and the shorter rows fit the same list on fewer pages');
+  eq(/>Kit</.test(SB.Pdf.html({ doc: 'shotlist', listCast: true, silent: true })), true,
+    'the cast column names the people on the card');
+  eq(/The dock/.test(SB.Pdf.html({ doc: 'shotlist', listCast: true, silent: true })), false,
+    'and only the people, not the places');
+  eq(/class="sc nt"/.test(SB.Pdf.html({ doc: 'shotlist', listNotes: true, silent: true })), true,
+    'a blank notes column can be added');
+  eq(/Stall 1\./.test(SB.Pdf.html({ doc: 'shotlist', listDesc: false, silent: true })), false,
+    'and the description dropped');
+
+  /* print-only: making the list changes nothing on the board */
+  const before = JSON.stringify(p);
+  SB.Pdf.html({ doc: 'shotlist' });
+  SB.Pdf.layout({ doc: 'shotlist' });
+  eq(JSON.stringify(p), before, 'printing the shot list writes nothing back to the board');
+
+  /* the storyboard print is untouched */
+  eq(/class="srow"/.test(SB.Pdf.html({ doc: 'board', silent: true })), false,
+    'the storyboard document has no shot-list rows in it');
+
+  const empty = SB.Model.newProject();
+  empty.scenes[0].shots.forEach(function (sh) { sh.noShot = true; });
+  SB.app = { project: empty, changed: function () { } };
+  eq(/Nothing to shoot/.test(SB.Pdf.html({ doc: 'shotlist', silent: true })), true,
+    'a board with nothing to shoot says so');
+  eq(SB.Pdf.layout({ doc: 'shotlist' }).sheets, 1, 'on one sheet');
+}
+
 console.log('\n— a framing is how a description opens —');
 {
   /* Bare word patterns read ordinary English as a shot type, and the badge
