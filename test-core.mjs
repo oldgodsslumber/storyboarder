@@ -3786,8 +3786,28 @@ console.log('\n— the shot list is the page carried on the day —');
   eq(L.scenes, 2, 'and the scenes');
   eq(L.sheets, (html.match(/class="page"/g) || []).length, 'and the sheets it actually prints');
   eq(L.sheets > 1, true, 'a long list runs over pages');
-  eq(/Scene 2<\/b> · The market <span class="dim">\(continued\)/.test(html), true,
+  eq(/Scene 2<\/b><span class="ch">· The market<\/span><span class="dim cn">\(continued\)/.test(html), true,
     'a scene carried over names itself at the top of the next page');
+
+  /* found in testing: text that could not be broken broke the page instead */
+  {
+    const was = { name: p.name, ver: p.versionName, type: s1.shots[0].type };
+    p.name = 'N'.repeat(400); p.versionName = '';
+    s1.shots[0].type = 'Establishing aerial drone wide shot over the harbour at first light';
+    const h = SB.Pdf.html({ doc: 'shotlist', silent: true });
+    eq(/\.lhead\{[^}]*white-space:nowrap;overflow:hidden/.test(h), true,
+      'the title block stays one line however long the project name is');
+    eq(/footer\{[^}]*white-space:nowrap;overflow:hidden;text-overflow:ellipsis/.test(h), true,
+      'and so does the footer');
+    eq(/ · <\/span>/.test(h) || / ·  · /.test(h), false,
+      'an empty version leaves no stray separator');
+    eq(/\.clip\{[^}]*overflow-wrap:anywhere/.test(h), true, 'a word with no spaces wraps instead of escaping its cell');
+    eq(/class="sc ty"><div class="clip">Establishing/.test(h), true, 'a long custom type is clamped like the text');
+    p.name = was.name; p.versionName = was.ver; s1.shots[0].type = was.type;
+  }
+  eq(/grid-template-columns:[^;]*minmax\(0,3fr\)[^;]*minmax\(0,2fr\)/
+    .test(SB.Pdf.html({ doc: 'shotlist', listCast: true, listNotes: true, silent: true })), true,
+    'with notes on, the description still gets the larger share');
 
   /* a band is never left alone at the foot of a page */
   const pages = html.split('<section class="page">').slice(1);

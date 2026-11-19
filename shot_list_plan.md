@@ -28,6 +28,16 @@ scene, each with a thumbnail small enough that five or six fit on a line of sigh
 to mark done. The storyboard sheets are too big (2–12 cards a page) and have no way to track
 progress; the CSV has no picture and no box. This is a third document, not a preset of either.
 
+**Tested (2026-11-19)** by two independent passes: 128 option combinations across 52 boards
+in Node, and real Chrome measurement plus Letter/A4 PDF prints. The fixed heights held
+exactly. Fixes that came out of it: the title block and footer stay one line and end in an
+ellipsis, because a long project name used to wrap them and push an extra page onto Letter.
+Unbroken words wrap inside their cell. A long custom type clamps like the text columns, and
+"(continued)" survives a long heading. Empty name or version leaves no stray "·". The "nothing
+to shoot" sheet keeps its header and footer. Description and notes split the spare width 3:2.
+The dialog preview leaves room for its scrollbar (that also fixes the storyboard preview's
+clipped right edge).
+
 ## What the data already gives us
 
 Everything the row needs is on the shot and reachable the same way the contact sheet reaches

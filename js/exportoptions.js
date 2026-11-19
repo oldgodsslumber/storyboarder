@@ -213,7 +213,11 @@
       /* the sheet is laid out in mm; scale the real thing down rather than
        * re-styling it, so what is previewed is what prints */
       const wide = info.preset.orient === 'landscape';
-      const pw = wide ? 964 : 703;              // page width in px at 96dpi
+      /* page width in px at 96dpi, plus room for the iframe's own scrollbar:
+         a document of more than one page scrolls, and the bar used to come out
+         of the page's width and cut its right edge off. The page is centred,
+         so with no bar the room is just margin. */
+      const pw = (wide ? 964 : 703) + 20;
       const ph = wide ? 703 : 949;
       const scale = 300 / pw;
       frame.style.width = pw + 'px';

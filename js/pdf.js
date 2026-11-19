@@ -797,6 +797,14 @@
     if (flex) flex.w = '';
     else cols.push({ k: 'pad', label: '', w: '' });
     cols.forEach(function (c) { if (!c.w) c.w = 'minmax(0,1fr)'; });
+    /* With every column on, a fixed notes column left the description — the
+       thing actually read on set — narrower than an empty box. They split
+       what is left 3:2 instead, so the description always has the larger
+       share and the notes still have room for a pen. */
+    if (pick('desc') && pick('notes')) {
+      pick('desc').w = 'minmax(0,3fr)';
+      pick('notes').w = 'minmax(0,2fr)';
+    }
     return cols;
   }
 
@@ -854,7 +862,9 @@
           (c.img && c.stock ? '<span class="tag">comp</span>' : '') +
           '</div></div>';
       case 'type':
-        return '<div class="sc ty">' + (c.type ? SB.esc(c.type) : '<span class="dim">—</span>') + '</div>';
+        /* clamped like the text columns: a custom type can be any length */
+        return '<div class="sc ty"><div class="clip">' +
+          (c.type ? SB.esc(c.type) : '<span class="dim">—</span>') + '</div></div>';
       case 'desc':
         return '<div class="sc tx"><div class="clip">' +
           (c.desc ? SB.esc(c.desc) : '<i class="dim">(no description yet)</i>') + '</div></div>';
@@ -877,9 +887,10 @@
         '</div>';
     }
     if (it.cont) {
+      /* the heading is the part that gives way, never "(continued)" */
       return '<div class="cont"><b>' + sceneLabel(it.cont) + '</b>' +
-        (it.cont.heading ? ' · ' + SB.esc(it.cont.heading) : '') +
-        ' <span class="dim">(continued)</span></div>';
+        (it.cont.heading ? '<span class="ch">· ' + SB.esc(it.cont.heading) + '</span>' : '') +
+        '<span class="dim cn">(continued)</span></div>';
     }
     return '<div class="srow">' +
       cols.map(function (col) { return listCellHTML(col, it.shot); }).join('') + '</div>';
@@ -902,11 +913,15 @@
       'display:flex;flex-direction:column;box-shadow:0 1px 8px rgba(0,0,0,.22);break-after:page}',
       '.page:last-child{break-after:auto}',
 
+      /* One line, always: the page is paginated on this block being 15mm, and a
+         long project name that wrapped it pushed a blank page out on Letter.
+         The name is what gives way, with an ellipsis. */
       '.lhead{flex:0 0 auto;height:' + (LIST.head - 3) + 'mm;margin-bottom:3mm;display:flex;' +
-      'align-items:flex-end;gap:10px;padding-bottom:2mm;border-bottom:2px solid #111}',
-      '.lhead h1{margin:0;font-size:1.9em;line-height:1;letter-spacing:.3px}',
-      '.lhead .sub{color:#555}',
-      '.lhead .tot{margin-left:auto;color:#555;font-variant-numeric:tabular-nums}',
+      'align-items:flex-end;gap:10px;padding:0 1mm 2mm;border-bottom:2px solid #111;' +
+      'white-space:nowrap;overflow:hidden}',
+      '.lhead h1{flex:0 0 auto;margin:0;font-size:1.9em;line-height:1;letter-spacing:.3px}',
+      '.lhead .sub{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;color:#555}',
+      '.lhead .tot{flex:0 0 auto;margin-left:auto;color:#555;font-variant-numeric:tabular-nums}',
 
       '.thead{flex:0 0 auto;height:' + LIST.thead + 'mm;' + grid + ';align-items:center;' +
       'font-size:.78em;text-transform:uppercase;letter-spacing:.5px;color:#666;' +
@@ -926,6 +941,8 @@
       '.cont{height:' + LIST.cont + 'mm;display:flex;align-items:center;gap:4px;padding:0 2.5mm;' +
       'border-left:2.5mm solid ' + INK.line + ';border-bottom:1px solid ' + INK.line + ';' +
       'white-space:nowrap;overflow:hidden;color:#333}',
+      '.cont b,.cont .cn{flex:0 0 auto}',
+      '.cont .ch{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}',
 
       /* every cell is a plain block, top-aligned: a line clamp inside a flex
          item is the thing that cut text through the middle of a line before */
@@ -942,12 +959,16 @@
       '.tag{position:absolute;left:2px;bottom:2px;padding:0 3px;border-radius:2px;' +
       'background:rgba(255,255,255,.88);color:#555;font-size:6.5px;letter-spacing:.4px;text-transform:uppercase}',
       '.empty{color:#9aa0aa;font-size:8px;letter-spacing:.4px;text-transform:uppercase}',
+      /* overflow-wrap: a pasted URL or one long name has no space to break
+         at, and ran straight out of its column with no ellipsis */
       '.clip{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:' + lines + ';' +
-      'overflow:hidden;white-space:pre-wrap}',
+      'overflow:hidden;white-space:pre-wrap;overflow-wrap:anywhere}',
       '.nt{border-left:1px solid #e3e5e9}',
       '.dim{color:#9aa0aa}',
 
-      'footer{flex:0 0 auto;height:' + LIST.foot + 'mm;padding-top:3mm;font-size:9px;color:#666;text-align:center}',
+      'footer{flex:0 0 auto;height:' + LIST.foot + 'mm;padding:3mm 1mm 0;font-size:9px;color:#666;' +
+      'text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+      '.none{flex:1 1 auto;margin:0;padding-top:6mm}',
       '@media print{body{background:#fff}.page{width:auto;height:var(--page-h);margin:0;box-shadow:none}}'
     ].join('');
   }
@@ -964,20 +985,27 @@
     const thead = '<div class="thead">' +
       cols.map(function (c) { return '<div>' + SB.esc(c.label) + '</div>'; }).join('') + '</div>';
 
-    let out = pages.map(function (pg, i) {
-      const head = '<div class="lhead"><h1>Shot list</h1><span class="sub">' +
-        SB.esc(p.name || 'Untitled') + ' · ' + SB.esc(p.versionName || '') + '</span>' +
-        '<span class="tot">' + tot + '</span></div>';
-      const foot = o.footer
-        ? '<footer>' + SB.esc(p.name) + ' · ' + SB.esc(p.versionName) + ' · shot list · page ' +
-          (i + 1) + ' of ' + pages.length + '</footer>'
+    /* joined, not concatenated: an empty version left "Untitled · " */
+    const who = [p.name || 'Untitled', p.versionName || ''].filter(Boolean)
+      .map(SB.esc).join(' · ');
+    const head = '<div class="lhead"><h1>Shot list</h1><span class="sub">' + who + '</span>' +
+      '<span class="tot">' + tot + '</span></div>';
+    const n = Math.max(pages.length, 1);
+    const foot = function (i) {
+      return o.footer
+        ? '<footer>' + who + ' · shot list · page ' + (i + 1) + ' of ' + n + '</footer>'
         : '';
+    };
+
+    let out = pages.map(function (pg, i) {
       return '<section class="page">' + head + thead + '<div class="lbody">' +
         pg.items.map(function (it) { return listItemHTML(it, cols); }).join('') +
-        '</div>' + foot + '</section>';
+        '</div>' + foot(i) + '</section>';
     }).join('');
     if (!out) {
-      out = '<section class="page"><p>Nothing to shoot — every shot is marked “no shot”.</p></section>';
+      out = '<section class="page">' + head +
+        '<p class="none">Nothing to shoot — every shot is marked “no shot”.</p>' +
+        foot(0) + '</section>';
     }
     return {
       html: out, css: listCSS(cols, o), count: list.length,
