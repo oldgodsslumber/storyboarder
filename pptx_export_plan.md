@@ -9,8 +9,8 @@ of them: caption fitting measures ems (CJK a full em, capitals wider, 1.36 line 
 caption overflows under real Segoe UI metrics; a cut always ends in "…" and never leaves a
 bare one; the footer stays one line; RTL captions are `rtl="1"`; failures are counted per
 panel; the preview shows the unreadable-frame placeholder; a busy Export says so; zip.js
-decodes percent-encoded binary and writes real DOS dates. **Not yet opened in real
-PowerPoint** — none on the test machine.
+decodes percent-encoded binary and writes real DOS dates. **Verified in real PowerPoint by the
+user (2026-11-23).**
 
 A fifth export: the board as a `.pptx` deck, laid out **three or six
 frames a slide**. Unlike the four existing documents, the output is a real file the browser
