@@ -837,7 +837,11 @@
       sceneBanner: false,       // heading + description as a band where a scene starts
       scenePageBreak: false,    // each scene starts a fresh sheet
       color: 'accent',          // 'off' | 'accent' — carry shot.color onto paper
-      footer: true              // name · version · page N of M
+      footer: true,             // name · version · page N of M
+      /* The PowerPoint deck (pptx.js). It shares the card toggles, scene and
+       * footer choices above; these two are its own. */
+      slidePreset: 'six',       // 'six' (3×2) | 'three' (3 across)
+      slideOriginals: false     // embed the full-size frame where the board has one
     };
   }
 

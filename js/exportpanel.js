@@ -808,6 +808,10 @@
     pdf.title = 'The print sheets, with their own layout options.';
     pdf.onclick = function () { close(); SB.ExportOptions.open(); };
     sb.appendChild(pdf);
+    const deck = SB.el('button', 'tb', 'Slides (PowerPoint)…');
+    deck.title = 'The board as a .pptx deck, three or six frames a slide.';
+    deck.onclick = function () { close(); SB.PptxOptions.open(); };
+    sb.appendChild(deck);
     sheet.appendChild(sb);
     bodyEl.appendChild(sheet);
 

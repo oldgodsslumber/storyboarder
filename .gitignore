@@ -11,3 +11,4 @@ _dump*
 premiere-plugin*.zip
 posebench/models/sketchfab/
 _uitest_*.html
+test-out/
