@@ -1586,7 +1586,7 @@ body.stock-dragging .frame{outline:1px dashed color-mix(in srgb, var(--accent) 5
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-11-23 16:52 · a609de8+";</script>
+<script>window.SB_BUILD = "2026-11-23 17:05 · 4807a74+";</script>
 
 <div id="app">
 
@@ -16866,24 +16866,52 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
       for (let k = 0; k < b.length; k++) out[k] = b.charCodeAt(k);
       return out;
     }
-    return new TextEncoder().encode(decodeURIComponent(body));
+    /* Percent-encoded: %XX is a raw BYTE, not UTF-8 — decodeURIComponent threw
+       on %89 (a PNG signature) and would have mangled any binary it let past.
+       Anything else is a character, written as UTF-8. */
+    const out = [];
+    for (let k = 0; k < body.length; k++) {
+      const ch = body.charAt(k);
+      if (ch === '%' && /^[0-9a-f]{2}$/i.test(body.substr(k + 1, 2))) {
+        out.push(parseInt(body.substr(k + 1, 2), 16));
+        k += 2;
+      } else {
+        const cp = body.codePointAt(k);
+        if (cp > 0xffff) k++;
+        new TextEncoder().encode(String.fromCodePoint(cp)).forEach(function (b) { out.push(b); });
+      }
+    }
+    return new Uint8Array(out);
+  }
+
+  /* A real DOS date and time. Zero reads as 1980-00-00, which archive tools
+     print as garbage. */
+  function dosStamp() {
+    const d = new Date();
+    return {
+      time: (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1),
+      date: ((Math.max(1980, d.getFullYear()) - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate()
+    };
   }
 
   function store(files) {
     const parts = [], central = [];
     let off = 0;
+    const when = dosStamp();
     files.forEach(function (f) {
       const data = bytes(f.data);
       const nm = new TextEncoder().encode(f.name), c = crc32(data);
       const h = new DataView(new ArrayBuffer(30));
       h.setUint32(0, 0x04034b50, true); h.setUint16(4, 20, true);
       h.setUint16(6, 0x0800, true);            // names are UTF-8
+      h.setUint16(10, when.time, true); h.setUint16(12, when.date, true);
       h.setUint32(14, c, true); h.setUint32(18, data.length, true); h.setUint32(22, data.length, true);
       h.setUint16(26, nm.length, true);
       parts.push(new Uint8Array(h.buffer), nm, data);
       const ce = new DataView(new ArrayBuffer(46));
       ce.setUint32(0, 0x02014b50, true); ce.setUint16(4, 20, true); ce.setUint16(6, 20, true);
       ce.setUint16(8, 0x0800, true);
+      ce.setUint16(12, when.time, true); ce.setUint16(14, when.date, true);
       ce.setUint32(16, c, true); ce.setUint32(20, data.length, true); ce.setUint32(24, data.length, true);
       ce.setUint16(28, nm.length, true); ce.setUint32(42, off, true);
       central.push(new Uint8Array(ce.buffer), nm);
@@ -30542,7 +30570,8 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
   function clean(s) {
     return String(s == null ? '' : s)
       .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f￾￿]/g, '')
-      .replace(/[\ud800-\udbff](?![\udc00-\udfff])|(^|[^\ud800-\udbff])[\udc00-\udfff]/g, '$1');
+      /* a lookbehind, so two lone low halves in a row both go */
+      .replace(/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g, '');
   }
 
   function xml(s) {
@@ -30552,10 +30581,41 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
 
   /* PowerPoint does not shrink text on open — normAutofit is a request it only
    * acts on once somebody edits the box — so words that do not fit are cut
-   * here, at a line, with an ellipsis, the way the sheets clamp. The estimate
-   * is deliberately pessimistic: an average glyph at half the point size, and
-   * a line at 1.2. A caption that comes up a line short is fine; one that runs
-   * off the bottom of the slide into the next row is not. */
+   * here, at a line, with an ellipsis, the way the sheets clamp.
+   *
+   * Widths are measured in ems, per character, not counted: Segoe UI has no
+   * CJK, so PowerPoint draws those in a fallback face a full em wide, and a
+   * count that treated them as half that let a Japanese caption run twice its
+   * box, into the next row. Capitals are wider than the average too. A line
+   * is 1.36 em — Segoe UI's own metrics come to 1.33. Pessimistic on
+   * purpose: a caption a line short is fine; one over the next frame is not. */
+  const LINE = 1.36;
+
+  function charEm(c) {
+    const n = c.codePointAt(0);
+    if (n > 0xffff) return 1.05;                           // emoji and the astral planes
+    if ((n >= 0x1100 && n <= 0x115f) || (n >= 0x2e80 && n <= 0xa4cf) ||
+      (n >= 0xac00 && n <= 0xd7a3) || (n >= 0xf900 && n <= 0xfaff) ||
+      (n >= 0xfe30 && n <= 0xfe4f) || (n >= 0xff00 && n <= 0xff60) ||
+      (n >= 0xffe0 && n <= 0xffe6)) return 1.02;          // full width
+    if (/[A-Z0-9@#%&MW]/.test(c)) return 0.64;
+    if (c === ' ') return 0.3;
+    return 0.54;
+  }
+
+  function ems(t) {
+    let w = 0;
+    for (const c of String(t)) w += charEm(c);
+    return w;
+  }
+
+  function lineCount(pa, wPt) {
+    const perLine = wPt / pa.size;                         // ems a line holds
+    const w = pa.runs.reduce(function (n, r) { return n + ems(r.t) * (r.b ? 1.06 : 1); }, 0);
+    /* word wrap wastes the end of every line; a fifth of a line is plenty */
+    return Math.max(1, Math.ceil(w / (perLine * 0.85)));
+  }
+
   function fit(paras, boxW, boxH) {
     const wPt = boxW / 12700 - 10;        // the box's insets
     const hPt = boxH / 12700 - 7;
@@ -30563,12 +30623,10 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
     const out = [];
     for (let i = 0; i < paras.length; i++) {
       const pa = paras[i];
-      const lineH = pa.size * 1.2;
-      const cpl = Math.max(8, Math.floor(wPt / (pa.size * 0.52)));
-      const left = Math.floor((hPt - used) / lineH);
-      if (left <= 0) break;
-      const text = pa.runs.map(function (r) { return r.t; }).join('');
-      const need = Math.max(1, Math.ceil(text.length / cpl));
+      const lineH = pa.size * LINE;
+      const left = Math.floor((hPt - used) / lineH + 1e-9);
+      if (left <= 0) { markCut(out); break; }
+      const need = lineCount(pa, wPt);
       if (need <= left) {
         out.push(pa);
         used += need * lineH;
@@ -30576,26 +30634,63 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
       }
       /* Cut the last paragraph that fits at all, on a word, and stop. A run
          list is cut from its end, so the bold code at the front survives. */
-      const room = Math.max(0, left * cpl - 1);
-      out.push(cutTo(pa, room));
+      const cut = cutTo(pa, left * (wPt / pa.size) * 0.85 - 1.2);
+      if (cut) out.push(cut);
+      else markCut(out);
       break;
     }
     return out;
   }
 
+  /* Something after the last kept paragraph was dropped: say so on it. */
+  function markCut(out) {
+    const last = out[out.length - 1];
+    if (!last || !last.runs.length) return;
+    const runs = last.runs.slice();
+    const r = runs[runs.length - 1];
+    if (/…$/.test(r.t)) return;
+    runs[runs.length - 1] = Object.assign({}, r, { t: r.t.replace(/[\s,.;:–—-]+$/, '') + '…' });
+    out[out.length - 1] = Object.assign({}, last, { runs: runs });
+  }
+
+  /* The paragraph cut to `room` ems with an ellipsis, or null when what would
+     be left is not even a word — the caller then ends the one before it. */
   function cutTo(pa, room) {
     const runs = [];
     let left = room;
-    for (let i = 0; i < pa.runs.length && left > 0; i++) {
+    for (let i = 0; i < pa.runs.length; i++) {
       const r = pa.runs[i];
-      if (r.t.length <= left) { runs.push(r); left -= r.t.length; continue; }
-      let t = r.t.slice(0, left);
+      const k = r.b ? 1.06 : 1;
+      const w = ems(r.t) * k;
+      if (w <= left && i < pa.runs.length - 1) { runs.push(r); left -= w; continue; }
+      if (w <= left) { runs.push(r); break; }              // cannot happen for a paragraph that overflowed, kept for safety
+      let t = '', acc = 0;
+      for (const c of r.t) {
+        const cw = charEm(c) * k;
+        if (acc + cw > left) break;
+        t += c; acc += cw;
+      }
       const sp = t.lastIndexOf(' ');
-      if (sp > left * 0.6) t = t.slice(0, sp);
-      runs.push(Object.assign({}, r, { t: t.replace(/[\s,.;:–—-]+$/, '') + '…' }));
-      left = 0;
+      if (sp > t.length * 0.6) t = t.slice(0, sp);
+      t = t.replace(/[\s,.;:–—-]+$/, '');
+      if (t) runs.push(Object.assign({}, r, { t: t }));
+      break;
     }
+    if (!runs.length) return null;
+    const text = runs.map(function (r) { return r.t; }).join('');
+    if (!/[\p{L}\p{N}]/u.test(text)) return null;
+    const last = runs[runs.length - 1];
+    runs[runs.length - 1] = Object.assign({}, last,
+      { t: last.t.replace(/[\s,.;:–—-]+$/, '') + '…' });
     return Object.assign({}, pa, { runs: runs });
+  }
+
+  /* A paragraph reads right to left when its first strong letter is Hebrew or
+     Arabic script. */
+  function isRtl(pa) {
+    const t = pa.runs.map(function (r) { return r.t; }).join('');
+    const m = /[A-Za-zÀ-ɏͰ-ϿЀ-ӿ֐-ࣿיִ-﷿ﹰ-﻿]/.exec(t);
+    return !!m && /[֐-ࣿיִ-﷿ﹰ-﻿]/.test(m[0]);
   }
 
   function lines(text) {
@@ -30707,6 +30802,19 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
     return out;
   }
 
+  function footerName(p, tail, boxW) {
+    const who = clean([p.name || 'Untitled', p.versionName || ''].filter(Boolean).join(' · '))
+      .replace(/\s+/g, ' ');
+    const room = (boxW / 12700 - 10) / 9 * 0.8 - ems(tail);
+    if (ems(who) <= room) return who;
+    let t = '', acc = 0;
+    for (const c of who) {
+      if (acc + charEm(c) > room - 1.2) break;
+      t += c; acc += charEm(c);
+    }
+    return t.replace(/\s+$/, '') + '…';
+  }
+
   /* Cards → slides. A section slide is its own slide, so a scene that gets one
    * always starts a fresh slide of panels after it; scenePageBreak on its own
    * starts one without the title. */
@@ -30733,16 +30841,24 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
       cur.cards.push(c.code);
     });
     if (!slides.length) {
+      /* "every shot is marked no shot" is only true when there are shots */
+      const any = p.scenes.some(function (sc) { return sc.shots.length; });
       slides.push({ kind: 'empty', shapes: [{ kind: 'text', x: IN(1), y: IN(3), w: SLIDE.w - IN(2), h: IN(1),
         anchor: 'ctr', align: 'ctr',
-        paras: [{ size: 18, runs: [{ t: 'Nothing to show — every shot is marked “no shot”.', color: '666666' }] }] }] });
+        paras: [{ size: 18, runs: [{ t: any
+          ? 'Nothing to show — every shot is marked “no shot”.'
+          : 'Nothing to show — this board has no shots yet.', color: '666666' }] }] }] });
     }
     if (o.footer) {
-      const who = [p.name || 'Untitled', p.versionName || ''].filter(Boolean).join(' · ');
+      const fw = SLIDE.w - 2 * MARGIN, fh = FOOT - IN(0.04);
       slides.forEach(function (s, i) {
+        /* One line, always. The box sits on the bottom edge, so a second line
+           would grow UP into the captions; it is the name that gives way,
+           never the slide number. */
+        const tail = ' · ' + (i + 1) + ' of ' + slides.length;
         s.shapes.push({ kind: 'text', x: MARGIN, y: SLIDE.h - MARGIN - FOOT + IN(0.04),
-          w: SLIDE.w - 2 * MARGIN, h: FOOT - IN(0.04), anchor: 'b', align: 'ctr',
-          paras: [{ size: 9, runs: [{ t: who + ' · ' + (i + 1) + ' of ' + slides.length, color: '777777' }] }] });
+          w: fw, h: fh, anchor: 'b', align: 'ctr',
+          paras: [{ size: 9, runs: [{ t: footerName(p, tail, fw), color: '777777' }, { t: tail, color: '777777' }] }] });
       });
     }
     return {
@@ -30779,7 +30895,12 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
   function decodeInBrowser(url) {
     return new Promise(function (resolve, reject) {
       const im = new Image();
+      /* anything thrown in here would leave the promise hanging and the
+         export silent forever, so every failure becomes a rejection */
       im.onload = function () {
+        try { onload(); } catch (e) { reject(e); }
+      };
+      function onload() {
         const w = im.naturalWidth, h = im.naturalHeight;
         if (!w || !h) { reject(new Error('a frame decoded to nothing')); return; }
         const mime = mimeOf(url);
@@ -30798,7 +30919,7 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
         cx.fillRect(0, 0, cv.width, cv.height);
         cx.drawImage(im, 0, 0, cv.width, cv.height);
         resolve({ bytes: SB.Zip.fromDataUrl(cv.toDataURL('image/jpeg', 0.88)), w: cv.width, h: cv.height, ext: 'jpeg' });
-      };
+      }
       im.onerror = function () { reject(new Error('a frame could not be read')); };
       im.src = url;
     });
@@ -30813,8 +30934,17 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
     const list = urls(pl);
     const media = {};
     let n = 0, failed = 0;
+    /* `failed` counts PANELS, which is what the toast and the slides say:
+       one bad picture used on four cards is four frames that could not be read */
+    const panels = function () {
+      let k = 0;
+      pl.slides.forEach(function (s) {
+        s.shapes.forEach(function (sh) { if (sh.kind === 'pic' && !media[sh.url]) k++; });
+      });
+      return k;
+    };
     const step = function (i) {
-      if (i >= list.length) return Promise.resolve({ media: media, failed: failed });
+      if (i >= list.length) return Promise.resolve({ media: media, failed: panels(), badPictures: failed });
       return Promise.resolve().then(function () { return decode(list[i]); })
         .then(function (m) {
           if (m && m.bytes && m.bytes.length && m.w && m.h) {
@@ -30865,7 +30995,10 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
   function textXml(sh, id) {
     const ins = sh.inset != null ? sh.inset : IN(0.05);
     const body = sh.paras.map(function (pa) {
-      return '<a:p>' + (sh.align ? '<a:pPr algn="' + sh.align + '"/>' : '') +
+      const rtl = isRtl(pa);
+      const algn = sh.align || (rtl ? 'r' : '');
+      return '<a:p>' + (algn || rtl
+        ? '<a:pPr' + (algn ? ' algn="' + algn + '"' : '') + (rtl ? ' rtl="1"' : '') + '/>' : '') +
         pa.runs.filter(function (r) { return r.t; }).map(function (r) { return runXml(r, pa.size); }).join('') +
         '<a:endParaRPr lang="en-US" sz="' + Math.round(pa.size * 100) + '" dirty="0"/></a:p>';
     }).join('') || '<a:p><a:endParaRPr lang="en-US" dirty="0"/></a:p>';
@@ -31128,7 +31261,10 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
       'box-shadow:0 1px 6px rgba(0,0,0,.25);overflow:hidden}' +
       '.sh{position:absolute;overflow:hidden}' +
       '.sh img{width:100%;height:100%;object-fit:contain;display:block}' +
-      '.tx{display:flex;flex-direction:column;line-height:1.2}' +
+      /* Segoe UI's own single spacing, which is what PowerPoint uses */
+      '.tx{display:flex;flex-direction:column;line-height:1.33}' +
+      '.bad{display:flex;align-items:center;justify-content:center}' +
+      '.bad::after{content:"FRAME COULD NOT BE READ";color:#a4442c;font-size:9px}' +
       '.tx p{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}' +
       '.more{text-align:center;color:#555;font-size:22px;padding:10px}';
     /* 960px across 13.333in is 72px an inch, so a point is a pixel */
@@ -31144,7 +31280,9 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
             (s.line ? ';border:1px solid #' + s.line : '') + '"></div>';
         }
         if (s.kind === 'pic') {
-          return '<div class="sh" style="' + box(s) + '"><img src="' + s.url + '"></div>';
+          /* a frame that will not decode shows what the file will say there */
+          return '<div class="sh" style="' + box(s) + '"><img src="' + s.url + '" onerror="' +
+            'this.parentNode.className=\'sh bad\';this.remove()"></div>';
         }
         const ins = ((s.inset != null ? s.inset : IN(0.05)) / PX).toFixed(1) + 'px';
         const just = s.anchor === 'ctr' ? 'center' : s.anchor === 'b' ? 'flex-end' : 'flex-start';
@@ -31152,7 +31290,7 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
           ';text-align:' + (s.align === 'ctr' ? 'center' : 'left') +
           (s.fill ? ';background:rgba(255,255,255,' + ((s.alpha || 100) / 100) + ')' : '') + '">' +
           s.paras.map(function (pa) {
-            return '<p style="font-size:' + pt(pa.size) + '">' + pa.runs.map(function (r) {
+            return '<p' + (isRtl(pa) ? ' dir="rtl"' : '') + ' style="font-size:' + pt(pa.size) + '">' + pa.runs.map(function (r) {
               return '<span style="color:#' + (r.color || '111111') +
                 (r.b ? ';font-weight:700' : '') + (r.i ? ';font-style:italic' : '') + '">' +
                 SB.esc(r.t) + '</span>';
@@ -31295,7 +31433,9 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
         { label: 'Cancel' },
         {
           label: 'Export .pptx', primary: true, onClick: function (close) {
-            if (busy) return;
+            /* said, not swallowed: a click that silently did nothing looked
+               like a dead button */
+            if (busy) { SB.toast('A deck is still being built — export again once it has downloaded', true); return; }
             const saved = SB.clone(p.settings.export || SB.Model.defaultExport());
             Object.keys(working).forEach(function (k) { saved[k] = working[k]; });
             p.settings.export = saved;
@@ -31303,7 +31443,9 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
             close();
             busy = true;
             SB.toast('Building the deck…');
-            SB.Pptx.exportPptx(working).catch(function (e) {
+            /* inside a then, so a synchronous throw in plan() is a rejection
+               too — otherwise `busy` stuck true for the rest of the session */
+            Promise.resolve().then(function () { return SB.Pptx.exportPptx(working); }).catch(function (e) {
               SB.toast('The deck could not be built: ' + (e && e.message || e), true);
             }).then(function () { busy = false; });
           }

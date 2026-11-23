@@ -187,5 +187,62 @@ section('text fitting');
   t('code survives', out[0].runs[0].t === '1A');
 }
 
+section('regressions from the two test passes');
+{
+  /* CJK is a full em in PowerPoint's fallback face: a caption of it must be
+     cut, not handed through at half its real height */
+  const cjk = '雨の夜、マリアはドアを開けて静かに部屋に入る。犬が顔を上げ、台所でやかんが鳴り始める。'.repeat(4).slice(0, 160);
+  const out = SB.Pptx.fit([{ size: 11, runs: [{ t: '1A', b: true }] }, { size: 9, runs: [{ t: cjk }] }], 3698240, 731520);
+  const kept = out.map(p => p.runs.map(r => r.t).join('')).join('');
+  t('CJK caption is cut', kept.endsWith('…') && kept.length < 100, kept.length);
+
+  /* a run that ends exactly at the room still says something was dropped */
+  const tail = SB.Pptx.fit([{ size: 11, runs: [{ t: '12C', b: true }, { t: '  ' + 'w'.repeat(60) }, { t: '  ·  ' + 'h'.repeat(400) }] }],
+    3698240, 300000);
+  const last = tail[tail.length - 1].runs.slice(-1)[0].t;
+  t('a cut always ends in an ellipsis', last.endsWith('…'), last);
+
+  /* never a paragraph that is nothing but the ellipsis */
+  const dash = SB.Pptx.fit([{ size: 11, runs: [{ t: 'A1', b: true }] }, { size: 9, runs: [{ t: 'x'.repeat(116) }] },
+    { size: 9, runs: [{ t: '—— ——'.repeat(200) }] }], 3698240, 731520);
+  t('no paragraph is only an ellipsis', dash.every(p => p.runs.map(r => r.t).join('') !== '…'));
+  t('the cut still ends in one', dash[dash.length - 1].runs.slice(-1)[0].t.endsWith('…'));
+
+  t('two lone low surrogates both go', SB.Pptx.clean('a\udc00\udc00b') === 'ab');
+
+  /* the footer stays one line, and the slide number survives */
+  const p = board(1, 2);
+  p.name = 'N'.repeat(20) + ' a very long project name '.repeat(12);
+  const pl = SB.Pptx.plan({});
+  const foot = pl.slides[0].shapes.slice(-1)[0].paras[0].runs.map(r => r.t).join('');
+  t('long name cut in the footer', foot.length < 200 && foot.includes('…'), foot.length);
+  t('slide number kept', /1 of 1$/.test(foot), foot.slice(-12));
+
+  /* failures counted per panel */
+  const p2 = board(1, 4);
+  const pl2 = SB.Pptx.plan({});
+  const r = await SB.Pptx.resolve(pl2, () => Promise.reject(new Error('nope')));
+  t('failed counts panels, not pictures', r.failed === 4, r.failed);
+
+  /* an empty board is not "every shot is marked no shot" */
+  const p3 = board(1, 1);
+  p3.scenes[0].shots = [];
+  const msg = SB.Pptx.plan({}).slides[0].shapes[0].paras[0].runs[0].t;
+  t('empty board says it has no shots', /no shots yet/.test(msg), msg);
+
+  /* right to left */
+  const p4 = board(1, 1);
+  p4.scenes[0].shots[0].description = 'שלום עולם, זה תיאור.';
+  const m4 = partMap(SB.Pptx.parts(SB.Pptx.plan({}), {}));
+  t('Hebrew caption is an rtl paragraph', /<a:pPr algn="r" rtl="1"\/>/.test(m4['ppt/slides/slide1.xml']));
+
+  /* zip.js */
+  const raw = SB.Zip.fromDataUrl('data:image/png,%89PNG%0D%0A');
+  t('percent-encoded binary decodes to bytes', raw[0] === 0x89 && raw[1] === 0x50 && raw.length === 6, Array.from(raw).join(','));
+  const zb = new Uint8Array(await SB.Zip.store([{ name: 'a.txt', data: 'x' }]).arrayBuffer());
+  const dv = new DataView(zb.buffer);
+  t('zip entries carry a real date', dv.getUint16(12, true) !== 0 && ((dv.getUint16(12, true) >> 5) & 15) >= 1);
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

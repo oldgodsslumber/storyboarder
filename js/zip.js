@@ -41,24 +41,52 @@
       for (let k = 0; k < b.length; k++) out[k] = b.charCodeAt(k);
       return out;
     }
-    return new TextEncoder().encode(decodeURIComponent(body));
+    /* Percent-encoded: %XX is a raw BYTE, not UTF-8 — decodeURIComponent threw
+       on %89 (a PNG signature) and would have mangled any binary it let past.
+       Anything else is a character, written as UTF-8. */
+    const out = [];
+    for (let k = 0; k < body.length; k++) {
+      const ch = body.charAt(k);
+      if (ch === '%' && /^[0-9a-f]{2}$/i.test(body.substr(k + 1, 2))) {
+        out.push(parseInt(body.substr(k + 1, 2), 16));
+        k += 2;
+      } else {
+        const cp = body.codePointAt(k);
+        if (cp > 0xffff) k++;
+        new TextEncoder().encode(String.fromCodePoint(cp)).forEach(function (b) { out.push(b); });
+      }
+    }
+    return new Uint8Array(out);
+  }
+
+  /* A real DOS date and time. Zero reads as 1980-00-00, which archive tools
+     print as garbage. */
+  function dosStamp() {
+    const d = new Date();
+    return {
+      time: (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1),
+      date: ((Math.max(1980, d.getFullYear()) - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate()
+    };
   }
 
   function store(files) {
     const parts = [], central = [];
     let off = 0;
+    const when = dosStamp();
     files.forEach(function (f) {
       const data = bytes(f.data);
       const nm = new TextEncoder().encode(f.name), c = crc32(data);
       const h = new DataView(new ArrayBuffer(30));
       h.setUint32(0, 0x04034b50, true); h.setUint16(4, 20, true);
       h.setUint16(6, 0x0800, true);            // names are UTF-8
+      h.setUint16(10, when.time, true); h.setUint16(12, when.date, true);
       h.setUint32(14, c, true); h.setUint32(18, data.length, true); h.setUint32(22, data.length, true);
       h.setUint16(26, nm.length, true);
       parts.push(new Uint8Array(h.buffer), nm, data);
       const ce = new DataView(new ArrayBuffer(46));
       ce.setUint32(0, 0x02014b50, true); ce.setUint16(4, 20, true); ce.setUint16(6, 20, true);
       ce.setUint16(8, 0x0800, true);
+      ce.setUint16(12, when.time, true); ce.setUint16(14, when.date, true);
       ce.setUint32(16, c, true); ce.setUint32(20, data.length, true); ce.setUint32(24, data.length, true);
       ce.setUint16(28, nm.length, true); ce.setUint32(42, off, true);
       central.push(new Uint8Array(ce.buffer), nm);

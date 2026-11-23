@@ -116,7 +116,9 @@
         { label: 'Cancel' },
         {
           label: 'Export .pptx', primary: true, onClick: function (close) {
-            if (busy) return;
+            /* said, not swallowed: a click that silently did nothing looked
+               like a dead button */
+            if (busy) { SB.toast('A deck is still being built — export again once it has downloaded', true); return; }
             const saved = SB.clone(p.settings.export || SB.Model.defaultExport());
             Object.keys(working).forEach(function (k) { saved[k] = working[k]; });
             p.settings.export = saved;
@@ -124,7 +126,9 @@
             close();
             busy = true;
             SB.toast('Building the deck…');
-            SB.Pptx.exportPptx(working).catch(function (e) {
+            /* inside a then, so a synchronous throw in plan() is a rejection
+               too — otherwise `busy` stuck true for the rest of the session */
+            Promise.resolve().then(function () { return SB.Pptx.exportPptx(working); }).catch(function (e) {
               SB.toast('The deck could not be built: ' + (e && e.message || e), true);
             }).then(function () { busy = false; });
           }

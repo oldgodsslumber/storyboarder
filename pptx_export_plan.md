@@ -1,6 +1,18 @@
 # PowerPoint slides export — plan
 
-Status: **planned**. A fifth export: the board as a `.pptx` deck, laid out **three or six
+Status: **built (2026-11-23)** — Export → on paper → *Slides (PowerPoint)…*. Code in
+[js/pptx.js](js/pptx.js) and [js/pptxoptions.js](js/pptxoptions.js), covered by
+[test-pptx.mjs](test-pptx.mjs). Two independent test passes: the package validated against
+the ISO/IEC 29500 transitional schemas and round-tripped through python-pptx across 26 edge
+boards; the real app driven in headless Chrome, decks captured and opened. Fixes that came out
+of them: caption fitting measures ems (CJK a full em, capitals wider, 1.36 line height) so no
+caption overflows under real Segoe UI metrics; a cut always ends in "…" and never leaves a
+bare one; the footer stays one line; RTL captions are `rtl="1"`; failures are counted per
+panel; the preview shows the unreadable-frame placeholder; a busy Export says so; zip.js
+decodes percent-encoded binary and writes real DOS dates. **Not yet opened in real
+PowerPoint** — none on the test machine.
+
+A fifth export: the board as a `.pptx` deck, laid out **three or six
 frames a slide**. Unlike the four existing documents, the output is a real file the browser
 downloads, not an HTML page handed to Chrome's print dialog — so it gets its own small module
 [js/pptx.js](js/pptx.js) and its own button, not a new `doc:` value on the PDF dialog.
