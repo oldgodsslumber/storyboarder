@@ -70,7 +70,7 @@
    * height on words, and sits centred rather than hanging off the top. */
   function grid(pr, o) {
     const top = MARGIN;
-    const bottom = SLIDE.h - MARGIN - (o.footer ? FOOT : 0);
+    const bottom = SLIDE.h - MARGIN - (o.slideFooter ? FOOT : 0);
     const availW = SLIDE.w - 2 * MARGIN;
     const availH = bottom - top;
     const cellW = Math.floor((availW - GAP * (pr.cols - 1)) / pr.cols);
@@ -387,7 +387,7 @@
           ? 'Nothing to show — every shot is marked “no shot”.'
           : 'Nothing to show — this board has no shots yet.', color: '666666' }] }] }] });
     }
-    if (o.footer) {
+    if (o.slideFooter) {
       const fw = SLIDE.w - 2 * MARGIN, fh = FOOT - IN(0.04);
       slides.forEach(function (s, i) {
         /* One line, always. The box sits on the bottom edge, so a second line

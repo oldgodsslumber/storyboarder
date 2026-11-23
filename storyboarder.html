@@ -1586,7 +1586,7 @@ body.stock-dragging .frame{outline:1px dashed color-mix(in srgb, var(--accent) 5
 </style>
 </head>
 <body>
-<script>window.SB_BUILD = "2026-11-23 17:05 · 4807a74+";</script>
+<script>window.SB_BUILD = "2026-11-23 17:16 · 7919129+";</script>
 
 <div id="app">
 
@@ -12838,10 +12838,13 @@ window.SB = window.SB || {};
       scenePageBreak: false,    // each scene starts a fresh sheet
       color: 'accent',          // 'off' | 'accent' — carry shot.color onto paper
       footer: true,             // name · version · page N of M
-      /* The PowerPoint deck (pptx.js). It shares the card toggles, scene and
-       * footer choices above; these two are its own. */
+      /* The PowerPoint deck (pptx.js). It shares the card toggles and scene
+       * choices above; these three are its own. */
       slidePreset: 'six',       // 'six' (3×2) | 'three' (3 across)
-      slideOriginals: false     // embed the full-size frame where the board has one
+      slideOriginals: false,    // embed the full-size frame where the board has one
+      /* The deck's own footer, apart from the sheets' — slides are usually
+       * dropped into somebody else's deck, which has its own. Off by default. */
+      slideFooter: false
     };
   }
 
@@ -30532,7 +30535,7 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
    * height on words, and sits centred rather than hanging off the top. */
   function grid(pr, o) {
     const top = MARGIN;
-    const bottom = SLIDE.h - MARGIN - (o.footer ? FOOT : 0);
+    const bottom = SLIDE.h - MARGIN - (o.slideFooter ? FOOT : 0);
     const availW = SLIDE.w - 2 * MARGIN;
     const availH = bottom - top;
     const cellW = Math.floor((availW - GAP * (pr.cols - 1)) / pr.cols);
@@ -30849,7 +30852,7 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
           ? 'Nothing to show — every shot is marked “no shot”.'
           : 'Nothing to show — this board has no shots yet.', color: '666666' }] }] }] });
     }
-    if (o.footer) {
+    if (o.slideFooter) {
       const fw = SLIDE.w - 2 * MARGIN, fh = FOOT - IN(0.04);
       slides.forEach(function (s, i) {
         /* One line, always. The box sits on the bottom edge, so a second line
@@ -31390,8 +31393,10 @@ window.SB_POSEBENCH_SRC = "<!DOCTYPE html>\r\n<html lang=\"en\">\r\n<head>\r\n<m
       working.slideOriginals, function (v) { working.slideOriginals = v; draw(); }));
     left.appendChild(toggle('Card colour as a stripe beside each caption',
       working.color === 'accent', function (v) { working.color = v ? 'accent' : 'off'; draw(); }));
+    /* the deck's own, not the sheets' `footer` — off by default, because
+       these slides usually go into a deck that has a footer of its own */
     left.appendChild(toggle('Footer with the project name, version and slide number',
-      working.footer, function (v) { working.footer = v; draw(); }));
+      working.slideFooter, function (v) { working.slideFooter = v; draw(); }));
 
     left.appendChild(SB.el('div', 'pp-note',
       'Cards marked “no shot” are left out. Words that do not fit under a frame are ' +

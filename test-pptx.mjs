@@ -213,8 +213,18 @@ section('regressions from the two test passes');
   /* the footer stays one line, and the slide number survives */
   const p = board(1, 2);
   p.name = 'N'.repeat(20) + ' a very long project name '.repeat(12);
-  const pl = SB.Pptx.plan({});
+  const pl = SB.Pptx.plan({ slideFooter: true });
   const foot = pl.slides[0].shapes.slice(-1)[0].paras[0].runs.map(r => r.t).join('');
+
+  /* the deck's footer is its own: off by default, apart from the sheets' */
+  const hasFoot = pl2 => pl2.slides[0].shapes.some(s => s.kind === 'text' && /1 of 1$/.test(
+    (s.paras[0].runs.map(r => r.t).join(''))));
+  t('no footer by default', !hasFoot(SB.Pptx.plan({})));
+  t('the sheets’ footer does not turn it on', !hasFoot(SB.Pptx.plan({ footer: true })));
+  t('slideFooter turns it on', hasFoot(SB.Pptx.plan({ slideFooter: true })));
+  const gOff = SB.Pptx.grid(SB.Pptx.preset('six'), { slideFooter: false });
+  const gOn = SB.Pptx.grid(SB.Pptx.preset('six'), { slideFooter: true });
+  t('with it off the panels take the room', gOff.capH > gOn.capH);
   t('long name cut in the footer', foot.length < 200 && foot.includes('…'), foot.length);
   t('slide number kept', /1 of 1$/.test(foot), foot.slice(-12));
 

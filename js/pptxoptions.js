@@ -73,8 +73,10 @@
       working.slideOriginals, function (v) { working.slideOriginals = v; draw(); }));
     left.appendChild(toggle('Card colour as a stripe beside each caption',
       working.color === 'accent', function (v) { working.color = v ? 'accent' : 'off'; draw(); }));
+    /* the deck's own, not the sheets' `footer` — off by default, because
+       these slides usually go into a deck that has a footer of its own */
     left.appendChild(toggle('Footer with the project name, version and slide number',
-      working.footer, function (v) { working.footer = v; draw(); }));
+      working.slideFooter, function (v) { working.slideFooter = v; draw(); }));
 
     left.appendChild(SB.el('div', 'pp-note',
       'Cards marked “no shot” are left out. Words that do not fit under a frame are ' +

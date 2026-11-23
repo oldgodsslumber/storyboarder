@@ -838,10 +838,13 @@
       scenePageBreak: false,    // each scene starts a fresh sheet
       color: 'accent',          // 'off' | 'accent' — carry shot.color onto paper
       footer: true,             // name · version · page N of M
-      /* The PowerPoint deck (pptx.js). It shares the card toggles, scene and
-       * footer choices above; these two are its own. */
+      /* The PowerPoint deck (pptx.js). It shares the card toggles and scene
+       * choices above; these three are its own. */
       slidePreset: 'six',       // 'six' (3×2) | 'three' (3 across)
-      slideOriginals: false     // embed the full-size frame where the board has one
+      slideOriginals: false,    // embed the full-size frame where the board has one
+      /* The deck's own footer, apart from the sheets' — slides are usually
+       * dropped into somebody else's deck, which has its own. Off by default. */
+      slideFooter: false
     };
   }
 
